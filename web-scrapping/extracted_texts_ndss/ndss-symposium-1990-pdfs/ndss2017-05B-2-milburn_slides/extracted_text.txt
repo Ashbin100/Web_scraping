@@ -1,0 +1,407 @@
+Vrije Universiteit Amsterdam
+SafeInit: Comprehensive
+and Practical Mitigation
+of Uninitialized Read
+Vulnerabilities
+Alyssa Milburn, Herbert Bos,
+Cristiano GiuffridaContact: Alyssa Milburn (milburn@riscure.com)
+Riscure is hiring! visit www.riscure.com/careers
+Riscure B.V. Riscure North America
+Frontier Building, Delftechpark 49 550 Kearny St., Suite 330
+2628 XJ Delft San Francisco, CA 94108
+The Netherlands USA
+Phone: +31 15 251 40 90 Phone: +1 650 646 99 79
+www.riscure.com inforequest@riscure.comInformation exposure
+keyMemory = malloc(); Heap allocation is
+*keyMemory = cryptoKeys; currently used by:
+keyMemory
+(Secret)
+encryption keysInformation exposure
+keyMemory = malloc(); Heap allocation is
+*keyMemory = cryptoKeys; currently used by:
+free(keyMemory); nothing
+(Secret)
+encryption keysInformation exposure
+keyMemory = malloc(); Heap allocation is
+*keyMemory = cryptoKeys; currently used by:
+free(keyMemory); buffer
+buffer = malloc();
+(Secret)
+encryption keysInformation exposure
+keyMemory = malloc(); Heap allocation is
+*keyMemory = cryptoKeys; currently used by:
+free(keyMemory);
+buffer = malloc();
+(Secret)
+send(sock, buffer, ...);
+encryption keys• Information exposure
+Encryption keys, passwords
+•
+Pointers (ASLR)
+•
+• Control flow attacks
+• Undefined behaviour
+Uninitialized read vulnerabilitiesPointers (ASLR)
+•
+• Control flow attacks
+• Undefined behaviour
+Uninitialized read vulnerabilities
+• Information exposure
+Encryption keys, passwords
+•• Control flow attacks
+• Undefined behaviour
+Uninitialized read vulnerabilities
+• Information exposure
+Encryption keys, passwords
+•
+Pointers (ASLR)
+•• Undefined behaviour
+Uninitialized read vulnerabilities
+• Information exposure
+Encryption keys, passwords
+•
+Pointers (ASLR)
+•
+• Control flow attacksUninitialized read vulnerabilities
+• Information exposure
+Encryption keys, passwords
+•
+Pointers (ASLR)
+•
+• Control flow attacks
+• Undefined behaviourCompiler warnings?
+warning:
+‘variable’ may be used
+uninitialized in this functionCompiler warnings?
+github search for -Wno-uninitialized:
+118,732 code resultsCVE-2016-4020: i386: leakage of stack memory to
+guest in kvmvapic.c
+- uint32 t imm32;
++ uint32 t imm32 = 0;
+CVE-2016-5105: scsi: megasas: stack information
+leakage while reading configuration
+- uint8 t data[4096];
++ uint8 t data[4096] = { 0 };
+qemu- uint32 t imm32;
++ uint32 t imm32 = 0;
+CVE-2016-5105: scsi: megasas: stack information
+leakage while reading configuration
+- uint8 t data[4096];
++ uint8 t data[4096] = { 0 };
+qemu
+CVE-2016-4020: i386: leakage of stack memory to
+guest in kvmvapic.cCVE-2016-5105: scsi: megasas: stack information
+leakage while reading configuration
+- uint8 t data[4096];
++ uint8 t data[4096] = { 0 };
+qemu
+CVE-2016-4020: i386: leakage of stack memory to
+guest in kvmvapic.c
+- uint32 t imm32;
++ uint32 t imm32 = 0;- uint8 t data[4096];
++ uint8 t data[4096] = { 0 };
+qemu
+CVE-2016-4020: i386: leakage of stack memory to
+guest in kvmvapic.c
+- uint32 t imm32;
++ uint32 t imm32 = 0;
+CVE-2016-5105: scsi: megasas: stack information
+leakage while reading configurationqemu
+CVE-2016-4020: i386: leakage of stack memory to
+guest in kvmvapic.c
+- uint32 t imm32;
++ uint32 t imm32 = 0;
+CVE-2016-5105: scsi: megasas: stack information
+leakage while reading configuration
+- uint8 t data[4096];
++ uint8 t data[4096] = { 0 };Structure padding
+char int shortStructure paddingStructure padding
+pointerCVE-2016-4569: infoleak in Linux sound module
+struct snd timer tread tread;
++ memset(&tread, 0, sizeof(tread));
+Linux examplestruct snd timer tread tread;
++ memset(&tread, 0, sizeof(tread));
+Linux example
+CVE-2016-4569: infoleak in Linux sound moduleLinux example
+CVE-2016-4569: infoleak in Linux sound module
+struct snd timer tread tread;
++ memset(&tread, 0, sizeof(tread));safeinit• Custom allocator (heap)
+• Compiler pass
+clang -fsanitize=safeinit
+mycode.c
+• Using clang/LLVM (May 2016) and tcmalloc
+SafeInit
+Goal: ensure initialization of the heap and stackclang -fsanitize=safeinit
+mycode.c
+• Using clang/LLVM (May 2016) and tcmalloc
+SafeInit
+Goal: ensure initialization of the heap and stack
+• Custom allocator (heap)
+• Compiler pass• Using clang/LLVM (May 2016) and tcmalloc
+SafeInit
+Goal: ensure initialization of the heap and stack
+• Custom allocator (heap)
+• Compiler pass
+clang -fsanitize=safeinit
+mycode.cSafeInit
+Goal: ensure initialization of the heap and stack
+• Custom allocator (heap)
+• Compiler pass
+clang -fsanitize=safeinit
+mycode.c
+• Using clang/LLVM (May 2016) and tcmallocSafeInit stack
+int a;
+a = 1;SafeInit stack
+int *a = alloca;
+*a = 1;SafeInit stack
+int *a = alloca;
+*a = 0;
+*a = 1;SafeInit stack
+int *a = alloca;
+*a = 0;
+*a = 1;SafeInit stack
+int *a = alloca;
+/*//a//=///0//;
+*a = 1;main() {
+int val; // uninitialized!
+printf("%d", val);
+}SafeInit stack: IR-level
+baseline
+define @main() {
+%ptr = alloca i32
+%val = load %ptr
+call printf(..., %val)
+}SafeInit stack: IR-level
+mem2reg
+define @main() {
+%ptr = alloca i32
+%val = undef
+call printf(..., %val)
+}SafeInit stack: IR-level
+mem2reg
+define @main() {
+call printf(..., undef)
+}SafeInit stack: IR-level
+baseline
+define @main() {
+%ptr = alloca i32
+%val = load %ptr
+call printf(..., %val)
+}SafeInit stack: IR-level
+SafeInit
+define @main() {
+%ptr = alloca i32
+call llvm.memset(%ptr, 0, 4) // zero it!
+%val = load %ptr
+call printf(..., %val)
+}SafeInit stack: IR-level
+SafeInit
+define @main() {
+%ptr = alloca i32
+call llvm.memset(%ptr, 0, 4) // zero it!
+%val = 0
+call printf(..., %val)
+}SafeInit stack: IR-level
+SafeInit
+define @main() {
+call printf(..., 0)
+}SPEC CINT2006: naive SafeInit
+20% 76%
+10 naive SafeInit
+8 8.0%
+6
+4
+2
+0
+perlbench bzip2 gcc mcf gobmk
+hm
+mer
+sj
+lie bn qg uantum h264re of mnetpp ast xa alr ancbmkoptimizationsSinking stores
+int a, b, c;
+...
+if (err) {
+char buf[10000];
+complexPrepare(buf);
+complexError(buf);
+}Sinking stores
+int a, b, c;
+...
+if (err) {
+char buf[10000];
+complexPrepare(buf);
+complexError(buf);
+}Sinking stores
+int a, b, c;
+...
+if (err) {
+char buf[10000];
+complexPrepare(buf);
+complexError(buf);
+}• Dead Store Elimination patches
+• New: Non-constant lengths
+• New: Non-constant initialization
+• More: ‘Safe’ string buffers, non-constant
+length store shortening, ...
+More optimizations
+• New: Write-only buffer detection• New: Non-constant lengths
+• New: Non-constant initialization
+• More: ‘Safe’ string buffers, non-constant
+length store shortening, ...
+More optimizations
+• New: Write-only buffer detection
+• Dead Store Elimination patches• New: Non-constant initialization
+• More: ‘Safe’ string buffers, non-constant
+length store shortening, ...
+More optimizations
+• New: Write-only buffer detection
+• Dead Store Elimination patches
+• New: Non-constant lengths• More: ‘Safe’ string buffers, non-constant
+length store shortening, ...
+More optimizations
+• New: Write-only buffer detection
+• Dead Store Elimination patches
+• New: Non-constant lengths
+• New: Non-constant initializationMore optimizations
+• New: Write-only buffer detection
+• Dead Store Elimination patches
+• New: Non-constant lengths
+• New: Non-constant initialization
+• More: ‘Safe’ string buffers, non-constant
+length store shortening, ...benchmarksSPEC CINT2006: SafeInit overhead
+36%
+10 SafeInit
+8
+6
+4
+3.5%
+2
+0
+−2
+perlbench bzip2 gcc mcf gobmk
+hm
+mer
+sj
+lie bn qg uantum h264re of mnetpp ast xa alr ancbmknginx: (worst-case) SafeInit overhead
+6 SafeInit
+5
+4
+3
+2
+1
+0
+K K B K K B
+4 4 M 4 4 M
+6 1 sendfile- sendfile-6 sendfile-1Linux: SafeInit overhead
+Worst results from LMbench (microbenchmarking
+system calls) on LLVMLinux:
+Sub-benchmark SafeInit (stack)
+no-op system call 0%
+fstat system call 4.9%
+signal handler (prot fault) 5.9%Bonus: actually works
+• Often just running valgrind is enough to make
+it obvious we fixed code!
+• Some less trivial CVEs: 2016-4243 (PHP),
+2016-5337 (qemu), 2016-4486 (Linux)
+• Assembly code sometimes changes drastically!• We obtained acceptable overhead (< 5%)
+• Even better as compiler optimizations improve!
+• SafeInit prototype:
+github.com/vusec/safeinit
+• See the paper for more results and discussion!
+Summary
+• SafeInit: mitigate this entire class of
+vulnerabilities by simply guaranteeing
+initialization on stack and heap• SafeInit prototype:
+github.com/vusec/safeinit
+• See the paper for more results and discussion!
+Summary
+• SafeInit: mitigate this entire class of
+vulnerabilities by simply guaranteeing
+initialization on stack and heap
+• We obtained acceptable overhead (< 5%)
+• Even better as compiler optimizations improve!• See the paper for more results and discussion!
+Summary
+• SafeInit: mitigate this entire class of
+vulnerabilities by simply guaranteeing
+initialization on stack and heap
+• We obtained acceptable overhead (< 5%)
+• Even better as compiler optimizations improve!
+• SafeInit prototype:
+github.com/vusec/safeinitSummary
+• SafeInit: mitigate this entire class of
+vulnerabilities by simply guaranteeing
+initialization on stack and heap
+• We obtained acceptable overhead (< 5%)
+• Even better as compiler optimizations improve!
+• SafeInit prototype:
+github.com/vusec/safeinit
+• See the paper for more results and discussion!Questions?SPEC CINT2006: Optimizer overhead
+1
+0.5
+0
+-0.3%
+−0.5
+−1
+−1.5
+−2
+perlbench bzip2 gcc mcf gobmk
+hm
+mer
+sj
+lie bn qg uantum h264re of mnetpp ast xa alr ancbmkLoop initialization
+int buffer[N];
+memset(buffer, 0, sizeof(buffer));
+for (int i = 0; i < N; ++i)
+buffer[i] = 1;Loop initialization
+int buffer[N];
+memset(buffer, 0, sizeof(buffer));
+initialized(buffer, 0, sizeof(buffer));
+for (int i = 0; i < N; ++i)
+buffer[i] = 1;Loop initialization
+int buffer[N];
+/m/e//m/s/e//t/(//b/u//f/f/e//r/,///0//,//s//i/z//e/o//f/(/b//u/f//f/e//r/)/)//;/
+initialized(buffer, 0, sizeof(buffer));
+for (int i = 0; i < N; ++i)
+buffer[i] = 1;String buffers
+char buffer[500];
+strcpy(buffer, tempString);
+strcpy(output, buffer);Undefined behaviour
+int deny access;
+if (deny access) exit();
+print secret keys();Undefined behaviour
+int deny access = 0;
+if (deny access) exit();
+print secret keys();Undefined behaviour
+int deny access = 0;
+/i/f///(/d//e/n//y//a//c/c/e//s/s//)///e/x/i//t/(//)/;/
+print secret keys();WARNING: Excessive size stack allocation of type
+move s[500] in test.c on line 20
+Annotations
+Huge zero initialization getting you down?
+attribute ((no zeroinit))WARNING: Excessive size stack allocation of type
+move s[500] in test.c on line 20
+Annotations
+Huge zero initialization getting you down?
+attribute ((no zeroinit))Annotations
+Huge zero initialization getting you down?
+attribute ((no zeroinit))
+WARNING: Excessive size stack allocation of type
+move s[500] in test.c on line 20Related Work: mitigation
+Heap allocators
+Debug allocators, jemalloc, ...Related Work: mitigation
+Secure deallocation
+“Shredding your garbage”
+by Chow et al.
+Clear heap memory in free!Related Work: mitigation
+Secure deallocation
+Frame clearing in epilogue:
+“10% – 40%” runtime overhead
+(we tried clearing in prologue:
+still > 10%)Related Work: mitigation
+PaX gcc plugins
+• Stackleak
+• StructleakRelated Work: mitigation
+UniSan
+Lu et al, CCS 2016.
+Kernel info exposure:
+static analysis + initialization

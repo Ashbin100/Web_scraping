@@ -1,0 +1,926 @@
+The Design and Implementation of Datagram TLS
+NagendraModadugu EricRescorla
+StanfordUniversity RTFM,Inc.
+nagendra@cs.stanford.edu ekr@rtfm.com
+Abstract anumberofunsatisfactorychoicesforprovidingsecurity.
+First,theycanuseIPsec[18]. However,IPsecisnotwell
+suitedforclient-serverapplicationmodelsandisdifficult
+A number of applications have emerged over recent to package with applications since it runs in the kernel.
+years that use datagram transport. These applications Section 2.1 has a detailed discussion of why IPsec has
+includereal time video conferencing, Internettelephony, beenfoundtobealess thansatisfactoryoption. Second,
+andonlinegamessuchasQuakeandStarCraft.Theseap- they can design a custom application layer security pro-
+plicationsarealldelaysensitiveanduseunreliabledata- tocol. SIP,forinstance,uses avariantofS/MIME[2]to
+gram transport. Applications that are based on reliable secure its traffic. GraftingS/MIME into SIP tookvastly
+transportcanbesecuredusingTLS,butnocompellingal- moreeffortthandidrunningtheTCPvariantofSIPover
+ternativeexistsforsecuringdatagrambasedapplications. TLS.Third,onecanrehosttheapplicationonTCPanduse
+InthispaperwepresentDTLS,adatagramcapablever- TLS. Unfortunately many such applications depend on
+sionofTLS.DTLSisextremelysimilartoTLSandthere- datagram semantics and have unacceptable performance
+fore allows reuse of pre-existing protocol infrastructure. whenrunoverastreamprotocolsuchasTCP.
+Our experimental results show that DTLS adds minimal The obviousalternative is to design a generic channel
+overheadtoapreviouslynon-DTLScapableapplication. security protocol that will do for long lived applications
+using datagram transport what TLS did for TCP. Such a
+protocolcouldbeimplementedinuserspaceforportabil-
+ityandeasyinstallationbutwouldbeflexibleandgeneric
+1.Introduction enough to provide security for a variety of datagram-
+orientedapplications.Despiteinitialconcernsthatthisso-
+TLS [7] is the most widely deployed protocol for se- lutionwouldbe a largeanddifficultdesignproject, con-
+curingnetworktraffic. TLSisusedtoprotectWebtraffic structing a working protocol was fairly straightforward,
+(HTTP [9] [25]) and e-mail protocols such as IMAP [6] especially with TLS as a starting point and IPsec as a
+and POP [23]. The primary advantage of TLS is that reference. This paperdescribesthe new protocol, which
+it provides a secure, transparent channel; it is easy to wecall“DatagramTLS”.DTLSisamodifiedversionof
+provide security for an application protocol by insert- TLSthatfunctionsproperlyoverdatagramtransport.This
+ing TLS between the application layer and the network approachhastwomajoradvantagesoverthealternatives.
+layer—wherethesessionlayerisintheOSImodel. TLS, First,sinceDTLSisverysimilartoTLS,preexistingpro-
+however,requiresareliabletransportchannel—typically tocol infrastructure and implementations can be reused.
+TCP—and therefore cannot be used to secure datagram Todemonstrate,weimplementedDTLSbyaddingtothe
+traffic. OpenSSL[30]library; in all, weaddedabout7000lines
+WhenTLSwasdeveloped,thislimitationwasnotcon- of code, about 60% of which were cut and pasted from
+sidered particularly serious because the vast majority of OpenSSL.Second,sinceDTLSprovidesafamiliarinter-
+applicationsthenranoverTCP.Whilethisisstilllargely facetoagenericsecuritylayer,itiseasytoadaptprotocols
+true today, the situation is changing. Over the past few touseit.ExperiencewithTLShasshownthatthiseaseof
+yearsanincreasingnumberofapplicationlayerprotocols, adaptationisakeytowidedeployment.
+suchasSessionInitiationProtocol(SIP)[26],RealTime The basic design principle of DTLS is “bang for the
+Protocol(RTP)[28],theMediaGatewayControlProtocol buck.”Wewishedtominimizebothourdesignandimple-
+(MGCP)[1],andavarietyofgamingprotocolshavebeen mentationeffortandthatofthedesignersandimplemen-
+designedtouseUDPtransport. torswhoarepotentialDTLSusers.Thus,inourdesignof
+Currently,designersofsuchapplicationsarefacedwith DTLSwechoosenottoincludeanyfeaturesas“improve-ments”overTLS;allthefeaturesadditionaltoDTLSare IPsec security policy is controlled using the Security
+included for the sole purpose of dealing with unreliable PolicyDatabase(SPD).SPDentriescanbecreatedintwo
+datagramtraffic. Thisdesignpointsimplifiesthesecurity ways. First, administrators can directly create entries in
+analysisofDTLS. the SPD. In addition, many host-based implementations
+allow applicationstoset per-socketpolicies, forinstance
+2.DesignOverview using the PF_KEY API [20], thus allowing finer control
+ofpolicy.
+The target applications for DTLS are primarily of the When a socket is createdin a host-basedIPsec imple-
+client-servervariety. These are the kindsof applications mentation,theSPDis consultedtodeterminethecorrect
+forwhichTLSwasdesignedandforwhichitworkswell. security policy. If IPsec processing is required and an
+Thepresentsecuritymodelofsuchapplicationsisthatthe appropriate SA does not exist, IKE is invoked to create
+serverisauthenticatedbyitsDNSnameandIPaddressbut one. Future packets sent using that socket are protected
+the client is either anonymousor authenticates via some usingthatSA.Innetworkgateway-basedIPsecimplemen-
+form of credential, typically in the form of a username tationsthestackperformsaSPDlookupforeachoutgoing
+andpasswordhandledbytheapplicationlayerprotocol. packet.
+Thispracticeis notespeciallysecure. However,appli- Intheremainderofthissection,wediscussseveralas-
+cation protocol designers, want to maintain as much of pectsofIPsecthatmakeitlessthanidealforthekindof
+their protocol and implementation infrastructure as pos- applicationsweareconcernedwith.
+sible while adding security. This makes a channel secu-
+rity protocol such as TLS or IPsec very attractive since
+Server Authentication Client-serverapplicationstypi-
+changes are minimized. From this perspective, ideally
+cally identifyendpointsinterms ofdomainnames. This
+a datagram channel security protocol would substitute
+isthescenarioforwhichTLSisoptimized.Insuchanen-
+strongcryptographicauthenticationoftheserverforDNS
+vironment,theclienthasanidentifierfortheserver,typ-
+andIP-basedauthenticationbutleaveclientauthentication
+ically of the form of a DNS name or a URL. When the
+totheapplicationlayerprotocol.
+clientconnectstotheserver,itwantstheservertoauthen-
+Ourdesignisnottheonlypossibleonethatcanbeused
+ticateusingacredentialthatmatchesthatidentity.
+in this scenario. In the following sections we consider
+IPsecsecuritypolicies(asdefinedintheSPD)areusu-
+severalalternativeapproachesandarguethattheyfitthese
+ally expressed in terms of IP addresses, although there
+requirementslesswellthandoesDTLS.
+is nominal support for symbolic names, including DNS
+names. IKE supports use of symbolic names, including
+2.1.WhynotuseIPsec?
+DNS names in certificates analogous to TLS. However,
+IPsecwasdesignedasagenericsecuritymechanismfor theprimarymotivationforsupportofthesesortsofiden-
+Internet protocols. Unlike TLS, IPsec is a peer-to-peer tifiers in IKE was for road warriors, whose IP address
+protocol.FormanyyearsIPsecwasexpectedtobeasuit- could not be known in advance. Thus use of a DNS
+able security protocol for datagram traffic generated by name to securely identify a server, for example, is not
+client-serverapplications. Inpractice,however,thereare supported by most host IPsec implementations. In prin-
+anumberofproblemswithusingIPsecforsecuringsuch ciple, IPsec could provide verification by DNS name in
+traffic. TheseproblemsstemdirectlyfromIPsecresiding two ways. First, DNSSEC [8] couldbe usedto securely
+atthenetworklayerratherthanthesessionorapplication map the server’s DNS name to its IP address. However,
+layer. DNSSEC deployment has so far been minimal, making
+this optionproblematic. Second,IPsec certificates could
+containDNSnamesandtheclientcoulduseanIPsecAPI
+Review of IPsec architecture Unlike TLS, IPsec is
+to verify that the correct certificate was used. Unfortu-
+notoneprotocolbutratherthree: AuthenticationHeader
+nately, not all IPsec APIs allow certification information
+(AH)[16]andEncapsulatingSecurityPayload(ESP)[17]
+to be determinedand so this verificationcannot be done
+are used for traffic security and Internet Key Exchange
+reliablyorportably.
+(IKE)[12]isusedfortheestablishmentofkeyingmaterial
+and other traffic security parameters. These parameters
+arecollectivelyreferredtoas SecurityAssociation(SA). Residence inthekernel BecauseIPsecoperatesatthe
+In host implementations, AH and ESP are typically im- IPlayer,itgenerallymustbeimplementedintheoperating
+plementedinthekernelaspartoftheIPstack,whileIKE systemkernel,eitherdirectlycompiledinorlinkedinas
+is implemented as a user daemon. In network gateways aloadablemodule. ThismakesIPsecfairlyinconvenient
+the architecturevariesbased onthe deviceprogramming toinstallonnon-IPsecsystems. Thisisnolongeraslarge
+model. a problem as it once was, since most modern operatingsystemscontainIPsecstacks.However,alargenumberof 2.3.DesignRequirements
+legacy operating systems still are not IPsec-capable and
+Once we decided on a user-space protocol that runs
+installingIPseconthemisgenerallyamajoroperation.
+over a single channel, the direct course of action was to
+A related problem is the lack of standardized IPsec
+make TLS datagram capable. Although DTLS must be
+APIs. An IPsec using application which wishes to con-
+somewhatdifferentfromTLS,in keepingwith ourbasic
+trol keying policy has no way to portably do so. While
+principle we have kept TLS unchanged wherever possi-
+TLS APIs arenot standardizedeither, an applicationde-
+ble. Where we have had to make changes to TLS, we
+velopercaneasilyshipaTLStoolkitalongwiththeirap-
+have attemptedto borrowfrompreexistingsystems such
+plication,thusachievingportability. Increaseddeveloper
+asIPsec. Similarly,DTLSisexplicitlydesignedtobeas
+control does introduce the possibility that the developer
+compatibleaspossiblewithexistingdatagramcommuni-
+willusethetoolkitinsecurely.Developershave,however,
+cationsystems,thusminimizingtheeffortrequiredtose-
+historicallybeenwillingtobearthisrisk.
+cureone’sapplication.
+2.2.KeyExchangeoverTCP?
+DatagramTransport DTLSmust be ableto complete
+keynegotiationandbulkdatatransferoverasingledata-
+Key negotiationoveran unreliableconnectionis more gram channel. This propertyallows applications to sim-
+complicated than with a reliable connection. One alter- plyreplaceeachdatagramsocketwithasecuredatagram
+native is to complete key negotiation on a TCP connec- socketmanagedbyDTLS.
+tion and use the negotiated parameters to secure a sepa-
+ratedatagramchannel. Thissplitdesignissimilartothat
+ReliableSessionEstablishment DTLSmustprovidea
+usedbyIPsecbuthasanumberofproblems.
+mechanism for authenticating endpoints, reliably estab-
+The primary virtue of a split design is that it releases
+lishingkeyingmaterialandnegotiatingalgorithmsandpa-
+DTLS from having to implement a reliable handshake
+rameters. Since DTLS must run entirely over unreliable
+layer. Inexchange,anapplicationmustnowmanagetwo
+datagram transport, it must implement a retransmission
+sockets (one TCP, and one UDP). Synchronizing these
+mechanismforensuringthathandshakemessagesarere-
+socketsisasignificantapplicationprogrammingproblem.
+liablydelivered. However,theretransmissionmechanism
+Inparticular,sessionrenegotiationiscomplicatedbythis
+shouldbesimpleandlightweight,ensuringthatDTLSis
+architecture. With the TCP connection closed once key
+asportableaspossible.Notethattherequirementtocreate
+negotiationis complete, renegotiationmessages must be
+a session means that DTLS is primarily suited for long-
+communicatedover the unreliabledatagramchannel, re-
+lived “connection-oriented” protocols as opposed to to-
+quiring the implementation of a retransmission mecha-
+tallyconnectionlessoneslikeDNS.Connectionlessproto-
+nism.
+colsarebetterservedbyapplicationlayerobject-security
+IftheTCPconnectionisleftopenoncekeynegotiation
+protocols.
+iscomplete,unnecessarysystemresourcesareconsumed.
+Thisisaproblembecauseoperatingsystemkernelsoften
+Security Services DTLS must provide confidentiality
+exhibitproblemswhenprogramshavealargenumbersof
+and integrity for the data transmitted over it. It should
+socketsopen[14]. Inparticular,select()performspoorly
+optionallyprovidetheabilitytodetectreplayedpackets.
+(ifatall)withlargenumbersofopensocketsandreplace-
+mentsareoftennotportable.Inaddition,someolderoper-
+atingsystemshavetightlimitsonthenumberofopenfiles EaseofDeployment TheabilitytoimplementTLSen-
+perprocess(inolderLinuxkernelsthislimitwas1024.) tirelyinuserspacewithoutchangingthekernelhasbeena
+An ordinary UDP server expects to read and write on majorcontributortoTLSdeployment.Thisfeatureallows
+only a single socket. Thus, the use of a TCP handshake developerstobundleaTLSimplementationwiththeirap-
+channel could force significant rewriting of server code. plication without dependence on operating system ven-
+Additionally, error case handling becomes complicated: dors. DTLSshouldsimilarlybeimplementablesolelyin
+saytheTCP connectionis reset, doesthatimplythatthe userspace.
+bulktransferchannelshouldbeclosed?
+Theseconsiderationsleadustoconcludethatitis bet- Semantics FormanyTCPbasedapplicationsithasbeen
+ter to have the handshake and data transfer occur over verysimpletoimplementasecuritylayerbyusingTLS.
+the same channel from the beginning. As we shall see, One of the main reasons is that TLS semantics mimic
+DTLS’s reliability requirements are quite primitive, al- thoseofTCP.Thus,aTLSAPIcanmimicthewellknown
+lowingustomakedowithaprotocolmuchsimplerthan socket interface, making network connections appear to
+TCP. be read-write streams. DTLS semantics should mimicUDP semantics thus allowing DTLS implementations to 3.2.Protocol
+mimictheUDPAPI.
+TLS is a layered protocol consisting of four pieces,
+showninFigure1.
+MinimalChanges DTLSmustbeassimilartoTLSas
+possible. Over the years, TLS has become more robust
+Change
+andhasbeenrefinedtowithstandnumerousattacks. Our Handshake Cipher Alert Application
+Data
+goal is for DTLS to be equally robust by inheriting all Spec
+the tested and popular features of TLS. By minimizing
+changeswe reducethe likelihoodofintroducinganyun-
+foreseenweaknesses.
+Record
+Additionally, minimizing changes has the benefit that
+Layer
+DTLS can be easily implemented based on TLS imple-
+mentationssuchasOpenSSL[30]. Hardwareimplemen-
+tationsofTLSareoptimizedtospeedupasymmetricand
+TCP
+symmetric cryptographic operations. DTLS should not
+introduce new cipher suites or make changes to the key
+derivationalgorithms. HenceDTLSimplementationscan Figure1.TheStructureofTLS
+leveragehardwareimplementationsofTLS.
+AtthebottomistheTLSRecordLayerwhichhandles
+2.4.Non-Requirements all data transport. The recordlayer is assumed to sit di-
+rectlyontopofsomereliabletransportsuchasTCP.The
+DTLSisnotintendedtoprovideanycongestioncontrol
+recordlayercancarryfourkindsofpayloads:
+functionality. Congestion control needs to be addressed
+by a datagram transport using application regardless of
+1. Handshake messages—used for algorithm negotia-
+whetherasecuritylayerisinplace,andhenceisbeyond
+tionandkeyestablishment.
+the scope of DTLS. Applications that do not implement
+congestioncontrolcanusetheDatagramCongestionCon- 2. ChangeCipherSpec messages—really part of the
+trolProtocol(DCCP)[19]astheunderlyingtransportpro- handshake but technically a separate kind of mes-
+tocolwithDTLSprovidingthesecuritylayer. sage.
+3. Alert messages—usedto signal that errorshave oc-
+3.TLS Overview
+curred
+SinceDTLSisbasedonTLS,itisusefulforthereader
+4. Applicationlayerdata
+tobefamiliarwithTLS.Inthissectionweprovideabrief
+overviewofTLS.
+Wefocusondescribingtherecordandhandshakelayers
+sincetheyareofthemostrelevancetoDTLS.
+3.1.TLSFeatures
+TLSisagenericapplicationlayersecurityprotocolthat 3.3.RecordProtocol
+runsoverreliabletransport. Itprovidesa securechannel
+TheTLSrecordprotocolisasimpleframinglayerwith
+toapplicationprotocolclients.Thischannelhasthreepri-
+record format as shown below (see RFC 2246 [7] for a
+marysecurityfeatures:
+descriptionofthespecificationlanguage):
+1. Authenticationoftheserver.
+struct {
+2. Confidentialityofthecommunicationchannel. ContentType type;
+ProtocolVersion version;
+3. Messageintegrityofthecommunicationchannel. uint16 length;
+Optionally TLS can also provideauthenticationof the opaque payload[length];
+} TLSRecord;
+client.
+In general, TLS authentication uses public key based EachrecordisseparatelyencryptedandMACed.Inor-
+digitalsignaturesbackedbycertificates. Thus,theserver der to prevent reordering and replay attacks a sequence
+authenticateseitherbydecryptinga secret encryptedun- number is incorporated into the MAC but is not carried
+derhispublickeyorbysigninganephemeralpublickey. in the record itself. Since records are delivered using a
+The client authenticates by signing a random challenge. reliable transport, the sequence number of a record can
+Server certificates typically contain the server’s domain be obtained simply by counting the records seen. Simi-
+name.Clientcertificatescancontainarbitraryidentities. larly, encryptionstate (CBC residuesor RC4 keystream)ClientHello −−−−−−→ 4.DTLS Design
+ServerHello
+DTLS reusesalmost all theprotocolelementsofTLS,
+Certificate
+←−−−−−− ServerHelloDone with minor but important modifications for it to work
+ClientKeyExchange properlywithdatagramtransport. TLSdependsonasub-
+[ChangeCipherSpec] setofTCPfeatures:reliable,in-orderpacketdeliveryand
+Finished −−−−−−→ replay detection. Unfortunately, all of these features are
+[ChangeCipherSpec] absent from datagram transport. In this section we de-
+←−−−−−− Finished scribe the DTLS protocol and how it copes with the ab-
+senceofthesefeatures.Notethatalthoughwebelievethat
+Figure2.ThesimpleRSATLShandshake
+IPsecisthewrongtoolforprovidingthistypeofsecurity,
+manyofitstechniquesforhandlingtheseeffectsarequite
+usefulandareborrowedforDTLS.
+is chained between records. Thus, a record cannot be
+independentlydecryptedif for some reason the previous
+4.1.RecordLayer
+recordislost.
+As with TLS, all DTLS data is carried in records. In
+3.4.HandshakeProtocol
+both protocols, records can only be processed when the
+TheTLShandshakeisaconventionaltworound-tripal- entire recordis available. In orderto avoid dealingwith
+fragmentation, we require DTLS records to fit within a
+gorithmnegotiationandkeyestablishmentprotocol. For
+singledatagram. Therearethreebenefitstothis require-
+illustration,weshowthemostcommonRSA-basedvari-
+antofthehandshakeinFigure2. ment. First,sincetheDTLSlayerdoesnotneedtobuffer
+partialrecords,hostmemorycanbeusedmoreefficiently,
+A TLS client initiates the handshake by sending the
+which makes the host less susceptible to a DoS attack.
+ClientHellomessage. ThismessagecontainstheTLSver-
+sion, a list of algorithms and compression methods that Second, it is quite possible that datagrams carrying the
+remaining record fragments are lost, in which case the
+the client will accept and a randomnonce used for anti-
+replay. received fragments are useless and cannot be processed.
+Third,itisnotclearhowlongreceivedfragmentsshould
+Theserverrespondswiththreemessages. TheServer-
+bebufferedbeforebeingdiscarded.Bufferingrecordfrag-
+Hello contains the server’s choice of version and algo-
+rithmsanda randomnonce. The Certificatecontainsthe ments would unnecessarily complicate a DTLS imple-
+mentation without providingany obvious benefits. Note
+server’s certificate chain. The ServerHelloDone is sim-
+thatDTLSwill stilloperatecorrectlywithIP fragmenta-
+plya markermessageto indicatethat noothermessages
+are forthcoming. In more complicatedhandshakes other tionandre-assembly,sinceIPre-assemblyistransparently
+handledbythekernel.
+messages would appear between the Certificate and the
+The DTLS record format is shown below. The boxed
+ServerHelloDonemessages.
+fields are introducedby DTLS and are absent fromTLS
+The client then chooses a random PreMasterSecret
+records.
+whichwillbeusedasthebasisforeachside’skeyingma-
+terial. TheclientencryptsthePreMasterSecretunderthe struct {
+server’sRSA publickeyandsends it tothe serverin the ContentType type;
+ProtocolVersion version;
+ClientKeyExchange message. The client then sends the
+uint16 epoch;
+ChangeCipherSpecmessage to indicate that it is chang-
+ing to the newlynegotiatedprotectionsuite. Finally, the uint48 sequence_number;
+clientsendstheFinishedmessagewhichcontainsaMAC uint16 length;
+opaque payload[length];
+of the previous handshake messages. Note that the Fin-
+} DTLSRecord;
+ishedmessageisencryptedunderthenewprotectionsuite.
+TheserverrespondswithitsownChangeCipherSpecand
+Finishedmessages. Epoch Epoch numbers are used by endpoints to de-
+As with the record layer, the handshake protocol as- termine which cipher state has been used to protect the
+sumesthatdataiscarriedoverreliabletransport. Theor- record payload. Epoch numbers are required to resolve
+derofthemessagesispreciselydefinedandeachmessage ambiguitythatariseswhendatalossoccursduringases-
+dependsonpreviousmessages.Anyotherorderisanerror sion renegotiation. To illustrate, consider a client trans-
+andresultsinprotocolfailure.Inaddition,nomechanism mitting data records 7, 8 and 9, followed by ChangeCi-
+isprovidedforhandlingmessageloss. Retransmissionin pherSpec message in record 10. Suppose the server re-
+caseoflossmustbehandledbythetransportlayer. ceives records 7 and 9 (8 and 10 are lost). From theserver’s point of view, record 8 could have been the quiring records to be processed in order without loss.
+ChangeCipherSpec message, in which case record 9 is However, the CBC mode proposed for TLS 1.1 is com-
+(incorrectly) assumed to be associated with the pending patible with DTLS, as we describe in this section. We
+cipherstate. Sinceepochnumbersareincrementedupon alsoexplainwhyRC4isunsuitableforuseinDTLS.
+sendingaChangeCipherSpecmessage,theservercanuse DTLS can also make use of counter mode AES, once
+the epochnumbertoresolvethe ambiguity. In this case, thismodehasbeenstandardized.
+records7and9havethesameepoch,implyingthatrecord
+8musthavebeenadatarecord.
+CBC Mode An attack [31] againstCBC modeciphers
+An alternative to epoch numbers would be to simply
+as employed by TLS 1.0 has resulted in the use of a
+userandominitialsequencenumbersforrecords. These-
+slightlymodifiedversionofCBCthatrequiresexplicitini-
+quence numbers are sufficiently large that the chance of
+tializationvectors(IVs).Thenewversionislikelytobea
+collisionofactivesequencenumberrangesisvanishingly
+featureofTLS1.1andiswellsuitedforuseinDTLS.
+small. However, this would probably require slightly
+more code to implement than the epoch strategy and is
+R M M
+less in keeping with the style of TLS, which uses zero- 2 3
+basedsequencenumbers.
+IV
+Sequence Number TLS employs implicit record se-
+quencenumbers(RSN)forreplayprotection. RSNsplay E E E
+a similar role in DTLS, but must be explicitly specified
+sincerecordscangetlostorbedeliveredoutoforder. As
+withTLS,RSNsareincrementedby1foreachrecordand C 1 C 2 C 3
+are reset to zero wheneverthe cipher state is rolled over
+duetoasessionrenegotiation. NotethatDTLSsequence Figure3.CBCEncryptionwithExplicitIV
+numbersare48bits(TLS’sare64bits)andthereforethe
+totalspaceoccupiedbyepochandsequencenumberisthe
+As shown above, in explicit IV mode a random data
+sameasthesequencenumberinTLS.
+block is prepended to record data. All the encrypted
+Replaydetectionisperformedusingthereplaywindow
+blocks are transmitted, and the receiver simply discards
+mechanism of RFC 2401 [18]. If datagrams always ar-
+thefirstplaintextblocktoretrieverecorddata.Withanex-
+rivedinorder,itwouldbesufficientforaDTLSendpoint
+plicitIV,eachrecordcanbeseparatelydecrypted.Triple-
+to keep track of the most recent record seen in order to
+DESandAEScanbeusedwithDTLSinthismode.
+detect replays. But since datagrams may also arrive out
+of order, a replay window mechanism is required. This
+RC4 RC4 has been the cipher of choice for securing
+ismosteasilyimplementedasabitmapwherethesetbits
+TLS 1.0connectionsdue to its computationalefficiency.
+represent the most recently received records. RSNs that
+Unfortunately,RC4isnoteasilyappliedtolossydatagram
+aretoooldtobecheckedagainstthebitmaparediscarded.
+traffic: randomaccess implies that the key stream needs
+Note,however,thatreplaydetectioncanbeundesirable
+to be buffered. Alternatively,the RC4 enginecan be re-
+in some applicationssince packetduplicationmaybe an
+seededforeachincomingrecord,whichisalsofairlyinef-
+unintentionalnetworkeffect. Ifreplaydetectionisturned
+ficient especiallyconsideringthat workbyMironov[21]
+off,thensequencenumbersarenotofanysignificancein
+recommendsthatthefirst512bytesofRC4keystreambe
+MAC computation, but can be useful for counter mode
+discarded due to a weakness in the RC4 key scheduling
+ciphers.
+algorithm[10].
+WeconcludethatRC4isanunsuitablecipherforusein
+PayloadLength DTLSrequiresthatarecordfitentirely
+DTLS.
+withinasingledatagram. ThismeansthatDTLSrecords
+willoftenbesmallerthanTLSrecords.Thelargestpacket 4.3.HandshakeProtocol
+thatcanbetransmittedbetweentwohosts—thePathMax-
+imumTransmissionUnit(PMTU)—istypicallylessthan The DTLS handshake, shown in Figure 4, is nearly
+themaximumsizeofaTLSrecord. identicaltothatofTLS.Therearetwomajorchanges:
+4.2.CipheringModes 1. Stateless cookie exchange to prevent denial of ser-
+vice.
+DTLS cannot use any of the TLS 1.0 cipher modes,
+sincetheyallmaintainresidualstatebetweenrecordsre- 2. Messagefragmentationandre-assemblyWebeginbydescribingthemodificationstoprotectthe wellknown,seeforinstancePhoturis[13].
+handshakeexchangefromdenialofservice. Serversthatarewillingtoresumesessionscanskipthe
+cookieexchangephaseif a validsession ID is presented
+by the client, since the identity of the client must have
+Handshake Exchange Because the DTLS handshake
+been previously established. One possible optimization
+takes place over datagram transport, it is vulnerable to
+for servers that do not support session resumption is to
+two denial of service attacks that TLS is not. The first
+maintain a cache of recent (client, cookie) pairs, so that
+attack is the standard resource consumption attack. The
+cookieexchangecanbeskippedifamatchismadeonthe
+secondattackisanamplificationattackwheretheattacker
+sendsaClientHellomessageapparentlysourcedbythevic-
+firstClientHello.
+The formats of the ClientHelloand HelloVerifyRequest
+tim. TheserverthensendsaCertificatemessage—which
+messagesareprovidedbelow.
+ismuchlarger—tothevictim.
+opaque Cookie<0..32>;
+To mitigate these attacks, DTLS uses the cookie ex-
+changetechniquethathasbeenusedinprotocolssuchas
+struct {
+Photuris [13]. Before the handshake proper begins, the
+ProtocolVersion client_version;
+clientmustreplaya“cookie”providedbytheserverinor-
+Random random;
+dertodemonstratethat it is capableofreceivingpackets
+SessionID session_id;
+atitsclaimedIPaddress. Cookie cookie;
+Figure4showstheDTLSprotocol. CipherSuite cipher_suites<2..2^16-1>;
+CompressionMethod comp_meth<1..2^8-1>;
+ClientHello −−−−−−→ } ClientHello;
+←−−−−−− HelloVerifyRequest struct {
+ProtocolVersion server_version;
+ClientHello −−−−−−→
+Cookie cookie;
+ServerHello
+} HelloVerifyRequest;
+Certificate
+←−−−−−− ServerHelloDone
+Unlikeapplicationdata,handshakemessages(including
+ClientKeyExchange
+[ChangeCipherSpec]
+the ChangeCipherSpecmessage) must be reliably deliv-
+Finished −−−−−−→ eredsinceallhandshakemessagesarenecessaryforsuc-
+[ChangeCipherSpec] cessful session negotiation. This creates three problems.
+←−−−−−− Finished First,messagesmaybelostonthenetwork. Second,they
+may be reordered, confusing the receiving peer. Third,
+Figure4.ThesimpleDTLSRSAhandshake
+some handshake messages are too large to fit in a sin-
+gleDTLSrecordandthereforemustbefragmentedacross
+multiplerecords. TheDTLShandshakelayerisresponsi-
+TheDTLSClientHellomessagecontainsacookiefield.
+bleforreassemblingtheserecordsintoacoherentstream
+The initial ClientHello contains an empty (zero-length)
+of complete handshake messages. This necessitates the
+cookie or potentially one cached from a prior exchange.
+additionofretransmissionaswellasamorecomplicated
+Aserverthatisunabletoverifytheincomingcookieand
+messageformat.
+wishestoestablishthelivenessoftheDTLSclientsends
+aHelloVerifyRequestmessage. Serversthataremoresen-
+4.4.TimeoutandRetransmission
+sitivetooverallhandshakelatencycanskiptheHelloVeri-
+fyRequestmessageandinsteadrespondwithServerHello BecauseDTLShandshakemessagesmaybelost,
+messages,inwhichcasetheprotocolflowisthesameas DTLSneedsamechanismforretransmission. DTLSim-
+inTLS.Notethatserverswhichchoosetomakethis op- plementsretransmissionusingasingletimerateachend-
+timizationcanstillbeusedasdenialofserviceamplifiers point. Each end-point keeps retransmitting its last mes-
+and should therefore only do so in environments where sageuntilareplyisreceived. Thestatemachinethatim-
+amplificationattackisknownnottobeaproblem. plementsthetimerandresultingretransmissionsisshown
+The HelloVerifyRequest message contains a cookie. in Figure 5. In the balance of this section, we describe
+This cookie should be generated in such a way that it theoperationofthetimerstatemachineandexplainhow
+does not require keeping state on the server, thus avoid- timerexpiryvaluesarepicked.
+ing memory consumption denial of service attacks. For
+example,thecookiecanbegeneratedfromakeyedhash State Machine Once in the Read Message Fragment
+oftheclientIPaddress,usingaglobalkey.Techniquesfor state, transitionsaretriggeredbythearrivalofdatafrag-
+generatingandverifyingthiskindofstateless cookieare mentsortheexpiryoftheretransmissiontimer. IfadataAre ACKs necessary? When a retransmission event
+happens,theentireflightofun-answeredmessagesis re-
+INIT, reset
+timer transmitted. If that flight is large, like a Certificatemes-
+sage, a nontrivialamountof networkbandwidth(though
+probablyless than 5k) is wasted. In addition, the desire
+toavoidunnecessaryretransmissionmotivateslargetimer
+Reset Retransmit valueswhichresultinhighlatency.Analternativestrategy
+Timer
+wouldbetoallowreceiverstotransmitanACKvaluethat
+Yes Timer indicated that they have received the message and were
+expired processing it. This would allow timers to be set lower
+No
+Read as well as reducing the number of packets that have to
+Want Expected
+message
+message? fragment? beretransmitted(sincethesenderwouldknowthatsome
+fragment
+Fragment had already been received.) In the interest of simplicity,
+received
+we decidednotto addan ACK featureto DTLS, but fu-
+No
+Return fragment turemeasurementmayindicatethatACKsprovidealarge
+Yes enoughimprovementtobeworthwhileadding.
+Reset
+Done timer
+4.5.HandshakeMessageOrderingandFragmen-
+Fragment tation
+received
+No Becausehandshakemessagesmaybetoolargetofitinto
+a singleDTLSrecord,weneedtomodifythehandshake
+Finished Retransmit
+messages to be able to span records. The new format is
+message? Finished
+Yes
+shownbelow.
+struct {
+Figure5.Timerstatemachine HandshakeType msg_type;
+uint24 length;
+uint16 message_seq;
+uint24 frag_offset;
+fragmentistheexpectednexthandshakemessagethenthe
+fragment is returned to the higher layers and the timer uint24 frag_length;
+is cancelled. Otherwise, the fragmentis bufferedor dis- HandshakeMessage msg_frag[frag_length];
+} Handshake;
+cardedasappropriateandthetimerisallowedtocontinue
+ticking.Whentheretransmittimerexpires,theimplemen-
+tationretransmitsthelastflightofmessagesthatittrans- Message Length The handshake message header con-
+mitted. tains the overall message length. This makes it easy to
+allocatebufferspaceforthemessageregardlessofwhich
+fragmentisreceivedfirst.
+TimerValues Pickingappropriatetimervaluesisadif- Message Sequence Number Handshake (and Change
+ficultproblemduetotheheterogeneousnatureoftheIn- Cipher Spec) messages include their own message se-
+ternet and the wide variance in round trip times (RTT). quencenumbers(MSN),independentofrecordsequence
+WhileestimatingRTTwouldallowforestimatingatimer numbers(RSN).Sincetherecordlayerassignsuniquese-
+value, requiringthat DTLS estimate RTT is an unneces- quencenumberstoeachrecord,itispossiblethataDTLS
+sary burden, given the simplicity of the handshake pro- end-point receives a handshake message and its retrans-
+tocol. Deciding on the exact timer value is especially mittedversionunderdifferentRSNs.Intheabsenceofthe
+trickybecausethepeerisoftendoingsomekindofcryp- MSN, itis notpossibleforthehandshakelayertodetect
+tographiccomputation,whichcantakeasubstantialfrac- duplicates. All fragments of a handshake message carry
+tionoftheRTT.Thus,onewishestosetone’stimervalues thesameMSN.
+conservativelytoavoidunnecessaryretransmissions. It is worthwhile considering whether retransmits can
+We recommendthat DTLS implementationsuse timer reuse the original RSN, and hence make do without the
+valuesbetween500to1000ms.Ingeneral,well-behaving MSN.Asitturnsout,therearetwoproblemswithreusing
+implementations should back off their retransmission RSNs. First,itisalayeringviolation:thehandshakelayer
+timers. is a client of the record layer, just like the applicationlayer,andshouldnotreceivedifferenttreatment. Second, tofollowtheTLSspecificationascloselyaspossible. As
+the original handshake message may have been dropped a result, DTLS does not offer any “improvements” over
+dueto the packetsize exceedingPMTU.In this case the TLS. All the features introduced into DTLS are for the
+handshake message needs to be fragmented, which im- sole purpose of dealing with unreliable datagram trans-
+plies that it spans multiple records, each with their own port.
+uniqueRSN. We argue that DTLS does not reveal any additional
+information beyond TLS during the handshake or bulk
+transferphase—alltheadditionalinformationinaDTLS
+Fragment Offset and Length As previously men-
+stream can be derived by passively monitoring a TLS
+tioned, handshake messages may be fragmented when
+stream. To justify this argument,considerthe additional
+they are larger than PMTU. In fact such fragmentation
+informationthatisavailablefromaDTLSstream.
+isfairlylikelysincecertificatescaneasilybeacoupleof
+kilobytes in size. We chose to use fragment offset and
+length rather than fragment sequence numbers to aid in
+RecordLayer TheDTLSrecordlayerrevealsthe cur-
+handlingmessageswhicharefragmentedtwiceintwodif-
+rentepochandsequencenumber. Thisispublicinforma-
+ferentways.Withthisscheme,itiseasytoreassemblethe
+tion to an adversary monitoring a TLS session: the se-
+originalmessageprovidedatleastonecopyofeachbyte
+quencenumbersareimplicitinTLS,butnonethelessmay
+isreceived.
+beinferred,andepochnumbersmayalsobederivedfrom
+the stream since session renegotiations may be detected
+FinishedMessage ThepurposeofFinishedmessagesis (byobservingHandshakerecordsbeingexchangedduring
+to verify that parties have correctly negotiated keys and anestablishedsession.)
+algorithms. InTLS,theFinishedmessagecontainsMD5
+andSHA1hashesofallthehandshakemessages,sequen-
+Handshake Layer Handshake messages reveal mes-
+tially appended to each other (including their message
+sagenumber,fragmentlengthandfragmentoffset. Once
+headers). The DTLS algorithm for computing finished
+again,thisinformationiseasilyderivedbyaneavesdrop-
+hasheshas to beslightlydifferentduetothe presenceof
+per monitoring a TLS session. Message number is ob-
+messagefragmentationheaders.Sincethemessagemight
+tainedbycountingexchangedmessages,fragmentlength
+havebeenfragmentedmultipletimeswithdifferentfrag-
+is obtainedfromrecordlengthandfragmentoffsetisde-
+ment sizes, this creates a potential inconsistency. In or-
+rived from the length of preceding message fragments.
+dertoremovethisinconsistency,thehandshakehashesare
+Only the Finished message is encrypted during the ini-
+computedasifhandshakemessageshadbeenreceivedas
+tialhandshakephase,andsinceitisofafixedformat,its
+asinglefragment.
+fragmentlengthandoffsetareobvious.
+Handshakemessagesexchangedduetosessionrenego-
+Alert Messages DTLS reuses all of the TLS alerts.
+tiationarecompletelyencryptedinbothDTLSandTLS.
+Most TLS alerts signal the end of the connection–either
+graceful or abortive–and therefore no data should come
+after them. Under no circumstances should a record be Timing information Recently, timing information has
+accepted with a sequence number postdating that of an beenusedasthebasisforattacksonTLS[4][5].Therefore
+alertwhichclosedtheconnection. it is critical to consider what information is revealed by
+There is, however, a complication introduced by a timing.
+sender transmitting data followed by an alert but have DTLSreceiverecordprocessingisessentiallythesame
+them arrive in the reverse order. We have not analyzed asthatofTLS.Onreception,recordsandhandshakemes-
+this situation, but believethat it is safer for implementa- sages are not processed until available in entirety, and
+tionstorejectsuchdatarecords. therefore the processing of DTLS records and messages
+isidenticaltotheprocessingprocedureofTLS.
+DTLStransmitprocessingleaksasmallamountoftim-
+5.Security Analysis
+inginformationwhencomparedtoTLS.Ingeneral,when
+Considering the complexity of modern security pro- applicationsissueTLSorDTLSwrites,thiscausesasin-
+tocols and the current state of proof techniques, it is gle DTLS/TLS record to be generated. The time when
+rarelypossibletocompletelyprovethesecurityofaproto- the packetis deliveredto the networkpotentiallyreveals
+colwithoutmakingatleastsomeunrealisticassumptions informationabouttheplaintext[29].WithTLS,TCPcon-
+abouttheattackmodel. gestion and flow control hides this information to some
+Insteadofattemptingtorigorouslyprovethesecurityof extent,especiallyiftheNaglealgorithm[24]isused.With
+DTLS, one of our main goals in the design of DTLS is DTLS, however, records are likely to be transmitted assoon as they are generated. Users who wish to prevent inOpenSSL.Withsomeeffortitshouldbepossibletore-
+thiskindoftrafficanalysisshouldbufferwrites. ducetheamountofduplicatedcodesubstantially.
+One of the nice side effects of implementing DTLS
+this wayisthatDTLScanbeaccessedthroughthesame
+Implementation We implementedDTLS based on the functionsusedbyTLS, forexampleSSL_connect(),
+OpenSSLtoolkitandreusemuchofthecodealreadyused SSL_read(),SSL_write()and,SSL_close().
+inproductionTLSservers.Asaresult,DTLSinheritswell
+Belowwedescribesomeissuesencounteredinourim-
+testedandstablecode.
+plementation.
+6.Implementation
+PMTU Path Maximum Transmission Unit (PMTU) is
+themaximumsizedpacketthatcantravelonapathwith-
+WeimplementedDTLSbasedonthepopularOpenSSL
+out requiringfragmentation. In general, paths consist of
+library[30].OpenSSListhedefactostandardopensource
+heterogeneousnetworksthathavelinkswithvaryinglim-
+TLS/SSL implementation. Additionally, OpenSSL has
+its on maximumpacket size. Thereforethe PMTU for a
+provento be stable and is used by numerous production
+givenpathissetbythelimitinglinkonthepath.Previous
+qualityserverssuchastheApacheWebserver.
+work[15]showsthatfragmentationisundesirable. Frag-
+We modified the demo server and client applications
+mentation results in inefficient use of network and rout-
+thatarepartoftheOpenSSLdistributiontobeUDPcapa-
+ing resources, andlost fragmentscause degradedperfor-
+ble. We also implementeda UDP proxyapplicationthat
+mance. Additionally, IP fragments interact poorly with
+iscapableofdropping,delayingandduplicatingpackets.
+firewallsandNATdevices,whichoftendiscardfragments.
+ResultsfromourexperimentsarelistedinSection8. Our
+ThereforeitisusefultoknowthePMTU.
+implementation was tested and run on the Linux 2.4.21
+RFC1191[22]specifiestheprocessbywhichPMTUis
+kernel.
+discovered.Inshort,hostssendoutIPpacketswiththeDF
+Our implementation required adding about 7000 lines
+(Don’t Fragment) bit set, iteratively reducing the size of
+of additional code to the OpenSSL base distribution.
+packetsuntilthehostisreached. Therefore,itisdifficult
+Considering that this line count includes libraries, data
+forthekerneltoknowaprioriwhattheappropriatePMTU
+structuresandsocketmanagementneededforDTLS,our
+is without incurring a significant probing cost–though it
+code makes up only a small portion of the 240,000 line
+canguessit afterenoughtraffichasbeentransmitted. In
+OpenSSLpackage. Conveniently,wewereabletolever-
+general, kernel support for PMTU is quite poor. On the
+age a number of OpenSSL features that were designed
+Linux system, where we developed our implementation,
+fordifferentuse. Forexample,OpenSSLprovidesanI/O
+buffering layer that causes TLS to only make send() the kernel keeps track of its PMTU estimate and returns
+anerrorifanapplicationattemptstosendalargerpacket.
+system calls when it has serialized all data to be sent on
+DTLS needs to be agnostic about such kernel behav-
+aparticularroundofthehandshake. Weareabletoreuse
+ior so as to not get caught using an excessive PMTU
+thebufferingcodetomaximizehandshakepacketpayload
+value. Unless an application explicitly sets a PMTU
+size.
+value we turn on the DF bit in outgoing datagrams via
+In the remainderof this section we describe some de-
+setsockopt() and query the kernel for the MTU. If
+tailsofourimplementation.
+the PMTU is unavailable, we guess a PMTU starting
+with1500(theethernetMTU),successivelyreducingthe
+OpenSSL Architecture OpenSSL implements SSLv2, PMTU estimate if the current setting happens to be too
+SSLv3 and TLSv1. Each of these protocols are imple- large. We can detect that PMTU has been exceeded if
+mented by sharing as much code as possible, with vir- send()returns-1andsetserrnotoEMSGSIZE.
+tualfunctionshandlingprotocoldifferences. Fromtheli- Onsomeoperatingsystems,eventhislevelof
+brary’sstandpoint,DTLSappearstobeanotherversionof PMTU supportis unavailableandtheonlyfeedbackthat
+theTLSprotocol. thePMTUhasbeenexceededispacketloss. It’snotclear
+As a result of implementing DTLS in this way, whatthebestapproachfordealingwithsuchanenviron-
+we can reuse much of the utility, state machine and mentis,butourintentionistostartwithalargepacketsize
+record/messagegeneration code of OpenSSL. In a num- andthenbackoffthepacketsizewitheachsuccessivere-
+ber of cases we found it was inconvenient to write spe- transmit.
+cial cases into TLS processing code, and as a result we Notehowever,thatperformancesensitivedatagramap-
+copiedmanyfunctionsand modifiedthemappropriately. plications are generally PMTU aware anyway, in which
+Roughly 60% of the 7000 lines of additional code were caseDTLScanberelievedofhavingtoguessPMTU.
+actually copied from the other protocolimplementations Duringthehandshakephase,DTLSattemptstosendthelargestpacketspossible,whichincludespackingmultiple havior,thefirstcalltothereadorwritefunctionsattempts
+recordsintoasinglepacket. to negotiate a DTLS connection. This simple approach
+workswellforapplicationswhichuseablockingI/Odis-
+ciplinebutdoesnotworkwellforthosewhichwanttoop-
+Buffering Because retransmits may be necessary, we
+erateinnon-blockingmode. Thus,applicationsthatwish
+buffera copyofoutboundhandshakemessages. Option-
+tohaveamorecomplicatedI/Ocontroldisciplineneedto
+ally,handshakemessagesmaybereconstructedwhenever
+eitherusethreadsornon-blockingmode.
+a retransmit requestis received, but this is unnecessarily
+computationintensive,especiallywhenmemoryisavail-
+able. Bufferedmessages need only be buffereduntil the Thread-basedI/Odiscipline Incaseofthreadedappli-
+nextexpectedhandshakemessageisreceived. Thisisbe- cations, calls to the DTLS library are blocking, and the
+causethehandshakeprotocolisexecutedinlock-stepand libraryis fullyresponsibleforhandlingtimerexpiryand
+the incomingmessage provides an implicit acknowledg- dispatchingretransmits. Thus,theapplicationcanessen-
+ment forall the bufferedmessages. Our implementation tiallybeoblivioustoDTLSbeinginuse,providedthatit
+of DTLS also buffers out-of-order handshake messages, usesaseparatethreadforeachDTLS“connection.”
+since the handshake layer expects messages to be deliv- One consequence of protocol logic being abstracted
+eredinorder. from applications is a slight break from blocking-socket
+convention. In the case of blocking datagram sockets,
+recv()eitherreturns-1onerror,oranon-zeronumber
+Retransmit Timer Our implementation uses a timer
+ofbytesread.However,SSL_read()canreturn0.This
+valueof 750ms, whichis morethan sufficientgiventhat
+happenswhen the data available on the incomingsocket
+ourexperimentswererunonaLAN.Whenusingblock-
+is not applicationdata, but control information,an Alert
+ingsockets,thetimeout(setviasetsockopt())causes
+messageforexample.ThisbehaviorofSSL_read()in-
+recv()toreturnwithanexplicittimeouterrorifdatais
+terfaceisnotspecifictoDTLS.TheTLSprogrammerhas
+not received during the time period. While we chose a
+asimilarexperiencewhenusingOpenSSL.
+valuesuitabletoourenvironment,ourDTLSAPIallows
+applications to set their own read and write timeout val-
+ues. Non-blocking I/O discipline When DTLS is used in
+Socketsthatruninnon-blockingmodecauseDTLSto the context of a non-blocking event driven application,
+returneitherSSL_ERROR_WANT_READor the application needs to be prepared for timeouts dur-
+SSL_ERROR_WANT_WRITE which are effectively ing handshake processing. Effectively, any I/O call to
+equivalent to EAGAIN, signalling that data was not im- DTLS can return with SSL_ERROR_WANT_READ or
+mediatelyavailableforreadingorwriting(thisisthesame SSL_ERROR_WANT_WRITE,signalling that an I/O op-
+behavior as the TLS API). Non-blocking DTLS appli- eration blocked. An application receiving such an error
+cations are required to call DTLS1_get_timeout() needs to determine the current DTLS timeout by calling
+to determine when the next DTLS I/O call should be DTLS1_get_timeout()andrestarttheI/Ocallwhen
+invokedandusetheirowntimerstoarrangeforthecallat thetimerexpires.Oncethehandshakeiscomplete,DTLS
+thattime. returns a value of 0 for the timer, signalling that it does
+nothaveanypendingI/Oevents. Forsimplicity,applica-
+7.ProgrammerExperience tions maychoosetocall DTLS1_get_timeout()re-
+gardlessofwhetherthehandshakeisinprogress.
+TheDTLS APIis verysimilarto theAPI providedby
+OpenSSL for operating TLS connections. The only ad- 8.Experiments and Results
+ditional calls providedby DTLS are related to datagram
+transport: setting and getting PMTU, timer values and Our results from comparing network traffic gen-
+datagramsocketconnectionoptions.Fortestingpurposes, erated by TLS and DTLS are listed in Tables 1
+weportedthes_serverands_clientprogramsthat and 2. The cipher negotiated in these tests was
+arepartoftheOpenSSLdistributiontouseDTLS.Almost EDH-RSA-DES-CBC3-SHA.Thiscipherresultsinato-
+alltheeffortrequiredtoporttheseapplicationstoDTLS tal of 10 records being exchanged between client and
+wasconcentratedonmakingthemUDP-capable. server for TLS. The DTLS negotiation had at least two
+At a high level, one can take an ordinary UDP ap- more records due to the cookie exchange phase and the
+plication and render it DTLS-capable by simply replac- restduetomessagefragmentation.
+ing all calls to send() and recv() with calls to EachDTLShandshakemessagefragmenthas25bytes
+SSL_write()andSSL_read(),thedefaultI/Ocalls ofoverheadfromheaders(13forrecordheaderand12for
+oftheOpenSSLlibrary. AswithOpenSSL’sordinarybe- message fragment),comparedto 9 bytesforTLS. Inall,the headers contribute to most of the overheadin DTLS easier to incorporateDTLS into an application since the
+(the remainder comes from the the extra padding block DTLS implementation can simply be delivered with the
+requiredbyCBCwithexplicitIV).Eventhoughtheover- application. This ease ofdeploymentis toa greatextent
+headforDTLSiscloseto35%,theactualsizeoftheover- responsibleforthewideuseofTLS.
+headisquitesmall, sinceevenexchangeswithlargecer- Second, DTLS uses the familiar TLS programming
+tificates generate less than 3 KB of data. It should also model in which security contexts are application con-
+be noted that the results providedare only for the hand- trolledandhaveaone-to-onerelationshipwithcommuni-
+shakephase;overheadfordatarecordsislowerduetothe cation channels. By contrast, there is no standard IPsec
+absenceofthefragmentheader. API or programming model and the widely deployed
+IPsec implementations are all extremely difficult to pro-
+DTLS TLS gramto. Aspreviouslynoted,thisisprimarilyaresultof
+Packets Bytes Packets Bytes thefactthattheIPseckeymanagementmodelisextremely
+Client 3 446 2 228 complexcomparedtothatofTLS.
+Server 3 1015 2 857
+Total 6 1461 4 1085 9.2.WTLS
+Therehasbeenatleastonepreviousattempttoadddata-
+Table 1. Bytes and Packets transferred with PMTU
+gramcapabilitytoTLS:theWirelessApplicationProtocol
+1500,Certificatesize562bytes
+Forum’sWTLS[11].However,WTLSmadealargenum-
+berofotherchanges,includingintegratingnetworktrans-
+portwiththesecurityprotocol,thusmakingitunsuitable
+DTLS TLS
+fordeploymentonthe Internet. Inaddition,WTLS does
+Packets Bytes Packets Bytes
+notappeartohandlesmallpathMTUs.Finally,theWTLS
+Client 3 446 2 228
+designersappeartohavemadeanumberofoptimizations
+Server 4 2313 3 2105
+thatleadtosecurityflawsnotinTLS[27]andistherefore
+Total 7 2759 5 2333
+notwidelyused.
+Table 2. Bytes and Packets transferred with PMTU
+9.3.SRTP
+1500,Certificatesize1671bytes
+TheReal TimeProtocol(RTP)is widelyusedtocarry
+multimedia traffic such as voice and video. RTP has
+8.1.Latency no support for security. The IETF is currently consid-
+ering standardization of the Secure Real Time Protocol
+WemeasuredlatencyoftheTLSandDTLShandshakes
+(SRTP) [3]whichis anapplication-specificsecuritypro-
+on a local machine. DTLS and TLS handshakes took
+tocol for RTP. SRTP is substantially more limited than
+42.9msand41.5msrespectively.Thedifferencebetween
+DTLS.First,itcannotbeusedtoprotecttrafficotherthan
+these results is small dueto the negligibleRTT. Inorder
+RTP. Second, it relies on an external signaling protocol
+todifferentiatethetwoprotocols,weintroduceda150ms
+such as SIP to set up the keying material. By contrast,
+delayelement,afterwhichtheDTLShandshaketook927
+DTLScanbeusedtosetupitsownchannel.However,in
+msandtheTLShandshaketook627ms. Thisis exactly
+extremely bandwidth constrained applications SRTP has
+asexpected,sinceDTLSresultsincludeoneextraRTTfor
+advantages over DTLS because its tight integrationwith
+cookie exchange. Our measurements do not include the
+RTP allows it to havelower networkoverhead. Insitua-
+timetakenforTCPconnectionestablishment. Sinceses-
+tions where bandwidth is less limited DTLS would be a
+sion establishment requiresa minimumof one RTT, this
+potentialsubstituteforSRTP.
+virtuallyeliminatesthelatencydifference.
+10.Future Work
+9.RelatedWork
+FutureworkonTLSfocusesmostlyonintegrationwith
+9.1.IPsec
+otherprotocols. Currently,wehaveanimplementationof
+ThedesignofDTLSisprobablyclosesttothatofIPsec. DTLSat theearlytoolkitstage. Ournextstepis tointe-
+AnumberofthetechniquesthatweusedtomakeDTLS grateitwithsomecommondatagram-basedapplications,
+records safe for datagram transport were borrowedfrom whichwillgiveusfeedbackastothesuitabilityofourde-
+IPsec. However,DTLSdiffersfromIPsec intwoimpor- sign. OurinitialtargetisSIP.SinceSIPalreadyusesTLS
+tant respects. First, DTLS is an application layer proto- inTCPmode,integratingDTLSinUDPmodeisanattrac-
+col rather than a network layer protocol. Thus, it is far tive design choiceand opensource SIP implementationsare readily available. FollowingSIP, we are considering [5] B. Canvel, A. Hiltgen, S. Vaudenay, and M. Vuagnoux.
+integratingDTLSwithanumberofgamingandmultime- PasswordInterceptioninaSSL/TLSChannel.InProceed-
+diaprotocols. Moreover,integratingDTLSwithavariety ingsoftheCrypto,August2003.
+[6] M. Crispin. Internet Message Access Protocol -Version
+ofotherprotocolswill giveus anopportunitytoobserve
+4rev1(IMAP). RFC3501,March2003.
+its performancebehaviorandmakechangesas appropri-
+[7] T. Dierks and C. Allen. The TLSProtocol, Version 1.0.
+ate.
+RFC2246,January1999.
+We wouldalso like toperformadditionalperformance [8] D. Eastlake. Domain Name System Security Extensions
+tuning on DTLS. AlthoughTLS works well, subsequent (DNSSEC). RFC2535,March1999.
+performance analysis has uncovered some unfortunate [9] R.Fielding,J.Gettys,J.Mogul, H.Frystyk,L.Masinter,
+interactions with TCP, especially with the Nagle algo- P.Leach,andT.Berners-Lee.HypertextTransferProtocol
+(HTTP). RFC2616,June1999.
+rithm [24]. As DTLS allows finer control of timers and
+[10] S.Fluhrer, I.Mantin, and A.Shamir. Weaknesses inthe
+recordsizes,itisworthdoingadditionalanalysistodeter-
+Scheduling Algorithm of RC4. In Proceedings of SAC,
+mine the optimal values and backoff strategies. Finally,
+August2001.
+we intend to do further analysis in an attempt to more [11] W.A.P.Forum. WAPWTLS.WAPForumprotocolstan-
+tightlydefinethesecurityboundsofDTLS. dard,November1999.
+[12] D. Harkins and D. Carrel. The Internet Key Exchange
+(IKE). RFC2409,November1998.
+11.Summary
+[13] P.KarnandW.Simpson. Photuris: Session-KeyManage-
+mentProtocol. RFC2522,March1999.
+WehavedescribedDatagramTransportLayerSecurity,
+[14] D. Kegel. The C10K Problem.
+a generic channel security protocol designed for use in
+http://www.kegel.com/c10k.html.
+datagramenvironments.DTLSisbasedonthewellunder- [15] C. A. Kent and J. C. Mogul. Fragmentation considered
+stoodTLSprotocolandlikeTLSisdesignedtoprovidea harmful. In Proceedings of ACM SIGCOMM, August
+securechannelthatmimicsthesemanticsexpectedbyex- 1987.
+istingapplicationprotocols.Duetosimplicityandeaseof [16] S.KentandR.Atkinson. IPAuthenticationHeader(AH).
+RFC2402,November1998.
+deployment,DTLSprovidesanattractivealternativetoIP
+[17] S.KentandR.Atkinson. IPEncapsulatingSecurityPay-
+security or custom applicationlayer protocols. We have
+load(ESP). RFC2406,November1998.
+implementedDTLSaspartofthepopularOpenSSLcryp-
+[18] S. Kent and R. Atkinson. Security Architecture for the
+tographiclibraryandfindthatitprovidesacceptableper- InternetProtocol(IPsec). RFC2401,November1998.
+formanceandisrelativelyeasytoprogramto. [19] E. Kohler, M. Handley, S. Floyd, and J. Pad-
+hye. Datagram Congestion Control Protocol (DCCP).
+draft-ietf-dccp-spec-04.txt,June2003.
+12.Acknowledgements
+[20] C. Metz and B. Phan. PF_KEY Key Management API,
+Version2. RFC2367,May1998.
+The authors would like to thank Dan Boneh, Eu-Jin
+[21] I.Mironov. (NotSo) Random Shufflesof RC4. In Pro-
+Goh, Constantine Sapuntzakis, and Hovav Shacham for
+ceedingsofCrypto,August2002.
+discussionsandcommentsonthedesignofDTLS.Thanks [22] J. Mogul and S. Deering. Path MTU Discovery. RFC
+to the anonymous reviewers for their comments, which 1191,November1990.
+helped us improvethe paper. Also thanks to Steve Kent [23] J. Myers and M. Rose. Post Office Protocol - Version 3
+forfeedbackthathelpedclarifymanypoints.DanBoneh, (POP). RFC1939,May1996.
+[24] J. Nagle. Congestion Control in IP/TCP Internetworks.
+Lisa Dusseault, and Eu-Jin Goh provided comments on
+RFC896,January1984.
+thepaper.
+[25] E.Rescorla. HTTPOverTLS. RFC2818,May2000.
+ThefirstauthorissupportedbytheNSF. [26] J.Rosenberg,H.Schulzrinne,G.Camarillo,A.Johnston,
+J.Peterson,R.Sparks,andM.H.E.Schooler.SIP:Session
+References InitiationProtocol. RFC3261,June2002.
+[27] M.-J.O.Saarinen. AttacksagainsttheWAPWTLSproto-
+[1] F.AndreasenandB.Foster. MediaGatewayControlPro- col. CMS99,1999.
+tocol(MGCP). RFC3435,January2003. [28] H.Schulzrinne,S.Casner,R.Frederick,andV.Jacobson.
+[2] E. B. Ramsdell. S/MIME Version 3 Message Specifica- RTP: A Transport Protocol for Real-Time Applications.
+tion. RFC2633,June1999. RFC3550,July2003.
+[29] D. Song, D. Wagner, and X. Tian. Timing Analysis of
+[3] M. Baugher, D. McGrew, D. Oran, R. Blom,
+KeystrokesandSSHTimingAttacks. Proceedingsofthe
+E. Carrara, M. Naslund, and K. Norrman.
+10thUSENIXSecuritySymposium,August2001.
+The Secure Real-time Transport Protocol.
+[30] TheOpenSSLProject.http://www.openssl.org/.
+draft-ietf-avt-srtp-08.txt,May2003.
+[31] S.Vaudenay. SecurityFlawsInduced byCBCPadding-
+[4] D. Boneh and D. Brumley. Remote Timing Attacks are
+ApplicationstoSSL,IPSEC,WTLS.... InProceedings
+Practical. Proceedingsofthe12thUSENIXSecuritySym-
+ofEurocrypt,April2002.
+posium,August2003.

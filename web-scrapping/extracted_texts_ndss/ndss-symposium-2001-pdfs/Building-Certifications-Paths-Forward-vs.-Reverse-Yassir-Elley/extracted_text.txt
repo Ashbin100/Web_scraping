@@ -1,0 +1,485 @@
+Building Certification Paths: Forward vs. Reverse
+Yassir Elley, Anne Anderson, Steve Hanna, Sean Mullan, Radia Perlman, Seth Proctor
+{yassir.elley, anne.anderson, steve.hanna, sean.mullan, radia.perlman, seth.proctor}@sun.com
+Sun Microsystems Laboratories
+1 Network Drive
+Burlington, MA 01803
+Abstract A public key certificate is a signed statement that is
+used to establish an association between an identity and a
+In general, building and validating a certification path public key. The entity that vouches for this association
+connecting a trust anchor to a target can be a very time- and signs the certificate is the issuer of the certificate and
+consuming process. As such, any optimizations are the identity whose public key is being vouched for is the
+valuable. Certification paths are commonly built from the subject of the certificate. If Alice has a certificate that
+target to the trust anchor (“building in the forward vouches for Bob’s public key and Alice trusts the issuer
+direction”) or from the trust anchor to the target of that certificate and knows the issuer’s public key, then
+(“building in the reverse direction”). This paper presents Alice can trust that the public key in the certificate is truly
+a comparison of these two approaches, analyzes the Bob’s public key, assuming that the signature on the
+advantages and disadvantages of each approach, and certificate verifies successfully.
+concludes that building in the reverse direction is often Typically, Alice uses a chain of certificates, also known
+more effective than building in the forward direction. as a certification path, which starts with a public key she
+trusts (one of her trust anchors) and ends with Bob’s
+public key. In order to validate the path, Alice uses her
+trusted public key to verify the first certificate in the path.
+1. Introduction
+She extracts the public key and other information
+contained in the first certificate, uses it to verify the
+Public key cryptography can be used for many
+second certificate, and continues this process until she
+purposes, including checking someone’s signature or
+reaches the target certificate vouching for Bob’s public
+encrypting something only they can read. Several public
+key. There are many steps involved in validating the
+key algorithms exist, including RSA [11], ElGamal [5],
+certification path, including verifying the signatures,
+and DSA [9]. A variety of protocols use public key
+ensuring that the subject and issuer names chain correctly,
+techniques, including IPSec [8], S/MIME [4], and TLS
+verifying that none of the certificates have expired or
+[3].
+been revoked, and processing the various other extensions
+Public key cryptography allows two parties to securely
+found in certificates. The PKIX Certificate and CRL
+communicate with each other without any prior contact.
+Profile [6] describes a typical validation procedure.
+However, public key systems depend on securely
+establishing the other party’s public key. For example, if
+2. Building Certification Paths
+Alice wants to verify the signature on a document she has
+received from Bob, she needs to know Bob’s public key.
+If Bob’s public key successfully verifies the signature, If Alice doesn’t already have a valid certification path
+then Alice can be sure that the document must have been from one of her trust anchors to Bob, she must build one.
+signed using Bob’s private key, which only Bob knows. If Building a certification path (also known as discovering
+Alice is somehow tricked into believing that an or developing a certification path) is an important topic
+impostor’s public key is Bob’s public key, then the with little published research. Silva and Stanton discuss
+impostor can sign the document and Alice will verify the various techniques for building certification paths in their
+signature using the impostor’s public key and will believe paper [12], but do not cover several important issues that
+that the document was signed by Bob. Therefore, Alice are presented in this paper.
+needs to be sure that she has the correct public key for Certificates are often stored in directories. The subject
+Bob. and issuer names in X.509 [10] certificates are
+hierarchical X.500 names, which map directly to directoryentries. A particular certificate can be stored at the each CA at the next level of the namespace and so on
+issuer’s directory entry, at the subject’s directory entry, or until the end entities are reached. Since each entity below
+at both places. Using these directory entries, we can the root has exactly one certificate issued for it by its
+attempt to build a certification path connecting a trust superior, building in the forward direction from the target
+anchor to the target. There are two basic ways of building to the trust anchor is more effective than building in the
+certification paths, depending on where the certificates are reverse direction in this trust model. If we start with the
+stored in the directory. target and build in the forward direction, there is only one
+The PKIX LDAPv2 Schema [1] defines the schema that possible candidate certificate at each step of the process,
+is to be used when certificates are stored with LDAP which greatly simplifies the process of building the
+servers in an LDAPv2 environment [2]. An entity that is certification path. Building in the reverse direction is
+authorized to issue certificates is referred to as a more problematic with this trust model. The fan-out from
+certification authority (CA), while an end-user that is not the root CA may be substantial with the root CA having
+authorized to issue certificates is referred to as an end- issued many certificates to its subordinates. If we start
+entity (EE). A certificate issued to another CA is referred with the trust anchor and build in the reverse direction,
+to as a CA certificate, while a certificate issued to an end- there will be many candidate certificates to choose from
+entity is referred to as an EE certificate. This schema at each step of the process, thus making it more difficult
+requires EE certificates to be stored in the userCertificate to build the certification path.
+attribute of the subject’s directory entry (“stored with the For more general trust models, however, we can not
+subject,” for short). CA certificates must be stored with take advantage of these particular constraints. An example
+the subject in the “forward” element of the is a cross-certified trust model, where every entity can
+crossCertificatePair attribute and can optionally be stored issue certificates for every other entity. In this case,
+with the issuer in the “reverse” element of the building a certification path can be a very time-consuming
+crossCertificatePair attribute. When a certification path is process. We have to follow every certificate issued by the
+built from the target to a trust anchor, this is called trust anchor (if building reverse) or issued for the target
+building in the forward direction. When a certification (if building forward). There may be many certificates
+path is built from a trust anchor to the target, this is called issued by each entity and there may be many certificates
+building in the reverse direction. issued for each entity. Any technique that can be used to
+If certificates are stored with the subject, it is easy to filter out some of those certificates is very valuable.
+build in the forward direction (from the target to the trust To this end, it is useful to validate the certification path
+anchor). We start by retrieving all the certificates in the as it is being built. This allows us to quickly reject paths
+target’s directory entry. Each of these is a possible that fail to validate, and then we can backtrack and try
+candidate certificate. We select one of these certificates, other paths. The PKIX certification path validation
+and then retrieve all the certificates from the directory procedure [6] is defined in the reverse direction, starting
+entry of this certificate’s issuer. We continue with this with the trust anchor and proceeding to the target. As a
+procedure working our way to the trust anchor. If result, it naturally lends itself to building in the reverse
+certificates are only stored with the subject, it is extremely direction. Even when building forward, we can validate
+difficult to build in the reverse direction from the trust certain parts of the certificates as we are building.
+anchor to the target because we have no idea where in the However, certain steps of the validation algorithm are
+directory to search for certificates issued by the trust much less effective when building forward.
+anchor.
+Similarly, if certificates are stored with the issuer, it is 3. Name Constraints
+easy to build in the reverse direction (from the trust
+anchor to the target). This time, we start by retrieving all One of the certificate extensions that is particularly
+the certificates in the trust anchor’s directory entry and useful in filtering out certificates as we are building is the
+work our way toward the target. If certificates are only name constraints extension. “The name constraints
+stored with the issuer, it is extremely difficult to build in extension … indicates a name space within which all
+the forward direction (starting with the target). Storing subject names in subsequent certificates in a certification
+certificates with the issuer and the subject provides the path shall be located.” [6] For the purposes of validation,
+greatest flexibility. the certification path is processed in the reverse direction,
+For certain trust models, building a certification path is starting with the trust anchor and proceeding to the target.
+fairly straightforward because we can take advantage of Suppose Alice works at Company A and is trying to
+constraints inherent to that particular trust model. An build a certification path to Bob, who works in the eastern
+example of this is a top-down hierarchical trust model, division of Company B. Figure 1 illustrates the hierarchy
+where the trust anchor is typically a root CA at the top of of certificates that Alice is dealing with. We have used
+a hierarchical namespace which issues certificates for DNS names instead of X.500 names to simplify thediagram and have used NC as an abbreviation for the she will be able to reject that candidate immediately. In
+name constraints extension. this case, neither candidate will be rejected. Alice may
+decide to accept Certificate 5, only to find out in the next
+step, when she is examining Certificate 3, that the name
+Certificate 1 constraints in Certificate 3 do not allow the target subject
+Issuer: a.com to be reached. More generally, when building forward,
+Subject: a.com Alice may follow some other certificate which will never
+even connect to the trust anchor. In this way, she may
+keep accepting certificates aimlessly without getting
+closer to the trust anchor.
+Certificate 2 Certificate 3 In general, building reverse is more effective than
+Issuer: a.com Issuer: a.com building forward with regard to processing name
+Subject: b.com Subject: c.com constraints. When building reverse, we are always
+NC: *.b.com NC: *.c.com “homing in” on the target subject and are rejecting any
+candidate certificates that could not possibly lead us to the
+target. When building forward, we are not able to "home
+in" on the trust anchor, because name constraints only
+Certificate 4 Certificate 5
+apply to SUBSEQUENT certificates in the path, not to
+Issuer: b.com Issuer: c.com
+preceding certificates in the path.
+Subject: east.b.com Subject: east.b.com
+NC: *.east.b.com NC: *.east.b.com
+4. Policy Processing
+Another set of certificate extensions that allows us to
+Certificate 6
+filter out certificates as we are building is the set of policy
+Issuer: east.b.com
+extensions. The algorithm used to process these policies is
+Subject: bob.east.b.com
+defined by X.509 [10]. A revised policy processing
+algorithm is currently being developed by the PKIX
+working group [7]. Since this revised algorithm is still a
+Figure 1: Name Constraints Scenario work in progress, we present our analysis based on the
+X.509 standard. Although the details of the algorithms are
+different, our conclusions remain the same even with the
+When building reverse, Alice starts with her trust
+revised algorithm.
+anchor (Certificate 1). She then has to choose between
+For an EE certificate, the certificate policies extension
+two candidate certificates for the next leg of the path
+is used by the issuer to specify what policies were
+(Certificates 2 and 3). She can examine the name
+followed when issuing the certificate and for which
+constraints in each candidate certificate and reject any
+purposes the certificate may be used. For a CA certificate,
+candidate whose name constraints do not allow the target
+the certificate policies extension is used by the issuer to
+subject to be reached. In this case, Alice rejects
+place limits on which policies are considered acceptable
+Certificate 3 because the name constraints in Certificate 3
+in a certification path which includes this certificate. One
+do not let her reach the target subject (i.e.
+example of a set of certificate policies is a group of trust
+bob.east.b.com). After accepting Certificate 2, she
+ratings which indicate the level of care the issuer has
+examines Certificate 4 as a candidate for the next leg of
+taken in authenticating the subject before issuing a
+the path. At this point, there are two checks she can make
+certificate for that subject. A HIGH trust rating indicates
+to determine whether to accept Certificate 4. First, she can
+that a great deal of care has been taken to properly
+verify whether Certificate 4’s subject is consistent with
+authenticate the subject. Perhaps the issuer met the
+the name constraints in Certificate 2. Additionally, she
+subject in person and verified his identity using a driver’s
+can make sure that the name constraints in Certificate 4
+license. MEDIUM or LOW trust ratings correspond to
+would allow her to reach the target subject. In this case,
+lower levels of care. Different domains may have
+both checks succeed and Alice can accept Certificate 4
+different names for equivalent policies, and the policy
+and continue building the certification path to Bob.
+mappings extension can be used to indicate that a
+When building forward, Alice starts with a target
+specified policy in the issuer’s domain is equivalent to
+certificate (Certificate 6) and then has to choose between
+another specified policy in the subject’s domain. Thus, a
+two candidate certificates for the next leg of the path
+HIGH trust rating in Company A’s domain may map to a
+(Certificates 4 and 5). If the name constraints in either
+CONFIDENTIAL trust rating in Company B’s domain.
+candidate do not allow the target subject to be reached,
+Users with particular policy requirements can specify aset of initial policies that they find acceptable (or the
+special value “any-policy”). They can require that every Certificate 1
+certificate must contain an acceptable policy. They can
+Issuer: a.com
+also prohibit the use of policy mappings in every
+Subject: a.com
+certificate. Certificates themselves may also have a policy
+constraints extension that requires explicit policies or
+inhibits policy mappings after a specified number of
+subsequent certificates. Certificate 2 Certificate 3
+When processing policies, two state variables are used: Issuer: a.com Issuer: a.com
+user-constrained-policy-set and authority-constrained- Subject: b.com Subject: c.com
+policy-set. The user-constrained-policy-set consists of the CP: HIGH, MED, LOW CP: TOP-SECRET
+policies that the user currently considers to be acceptable, PM: HIGH¨CONF
+while the authority-constrained-policy-set consists of the
+policies that the CAs in the certification path currently
+Certificate 4 Certificate 5
+consider to be acceptable. The user-constrained-policy-set
+is initialized with the user's initial policies and the Issuer: b.com Issuer: c.com
+authority-constrained-policy-set is initialized with “any- Subject: east.b.com Subject: east.b.com
+policy”. There are three reasons that policy processing CP: CONF CP: TOP-SECRET
+could reject a certificate during validation (failure
+modes):
+Certificate 6
+1. If explicit policies are required (whether specified by
+Issuer: east.b.com
+the user or by a preceding certificate), we must make sure
+Subject: bob.east.b.com
+that at least one member of the user-constrained-policy-
+set appears in the certificate's certificate policies. CP: CONF, TOP-SECRET
+2. We must replace the authority-constrained-policy-set
+with the intersection of itself and the certificate's
+certificate policies and we must make sure that the result
+Figure 2: Policy Processing Scenario
+is not null.
+3. After performing all intersection steps, we must make
+sure that the intersection of the authority-constrained- When building in the reverse direction, we can quickly
+policy-set and the user-constrained-policy-set is not null. reject certificates that do not contain acceptable policies.
+In this example, the user-constrained-policy-set is
+If none of these failure modes is encountered, the initialized with {HIGH} and the authority-constrained-
+current certificate’s policy mappings are then processed. policy-set is initialized with “any”. We start with the trust
+If policy mappings are inhibited (whether specified by the anchor (Certificate 1) and must decide between two
+user or by a preceding certificate), the policy mappings candidate certificates for the next leg of the path
+are not processed at all. However, if policy mappings are (Certificates 2 and 3). We can immediately reject
+allowed, the user-constrained-policy-set and authority- Certificate 3, because TOP-SECRET has no intersection
+constrained-policy-set are augmented as follows. For each with the user-constrained-policy-set. We accept
+policy mapping in the current certificate, if the user- Certificate 2 because its certificate policies intersect with
+constrained-policy-set contains the issuer domain policy both of the state variables (i.e. with the user-constrained-
+for that policy mapping, then the corresponding subject policy-set and the authority-constrained-policy-set). After
+domain policy is added to the user-constrained-policy-set. processing Certificate 2, the user-constrained-policy-set
+Similarly, if the authority-constrained-policy-set contains becomes {HIGH,CONF} and the authority-constrained-
+the issuer domain policy for that policy mapping, then the policy-set becomes {HIGH,MED,LOW,CONF}. Thus,
+corresponding subject domain policy is added to the we are able to accept Certificates 4 and 6 because CONF
+authority-constrained-policy-set. intersects with both of the state variables.
+Using our example, let us assume that Alice requires a When building in the forward direction, it is much more
+certificate policy corresponding to a HIGH trust rating in difficult to filter out certificates based on their policy
+every certificate. Figure 2 illustrates the hierarchy of extensions. The main culprit here is policy mappings. If
+certificates we are dealing with. We have used CP as an we examine the failure modes dealing with the user-
+abbreviation for the certificate policies extension and PM constrained-policy-set (failure modes 1 and 3), we
+as an abbreviation for the policy mappings extension. observe that the user-constrained-policy-set can keep
+changing and increasing because of policy mappings. Asa result, when building forward, we must first build the SECRET. Therefore, our forward-policy-set is currently
+entire certification path before we can check whether {CONF, TOP-SECRET}. We are now trying to choose
+either of these failure modes has been encountered. To between several candidates for the next certificate to
+illustrate this, let us take an example where initial-policies prepend to this path. The situation is illustrated in Figure
+= HIGH. We start by examining a target certificate 3.
+(Certificate 6), which has been issued with certificate When deciding whether a candidate certificate should
+policies of CONF and TOP-SECRET. At this point, we be accepted or rejected, we need to run the policy
+may think that Certificate 6 can be rejected because processing algorithm in the reverse direction on the new
+neither of these policies intersect with the initial policy of path to see if it is feasible. If we accepted Certificate 3,
+HIGH. However, this is only true if policy mappings are then after processing Certificate 3 in the reverse direction,
+inhibited from the very first certificate. In the general case the authority-constrained-policy-set would be
+where policy mappings are not inhibited, a previous {HIGH,MED,CONF}, which would clearly allow us to
+certificate closer to the trust anchor may have a policy accept the target certificate (Certificate 5). Therefore, we
+mapping of the form HIGH¨CONF or HIGH¨TOP- would accept Certificate 3 when building forward. If we
+SECRET, which would augment the user-constrained- accepted Certificate 4, then after processing Certificate 4
+policy-set to be {HIGH,CONF} or {HIGH,TOP- in the reverse direction, the authority-constrained-policy-
+SECRET}, in which case the candidate certificate is set would be {HIGH,CLASSIFIED}, which would not
+clearly valid. For this reason, we have to accept allow us to reach the target certificate. Therefore, we
+Certificate 6. Similarly, when choosing between would reject Certificate 4. Similarly, we would accept
+Certificates 4 and 5 for the next leg of the path, we will Certificate 1 and reject Certificate 2. In general, we will
+not be able to reject either of them. In fact, when policy only accept candidates under either of two conditions:
+mappings are allowed, we can not filter out any
+certificates based on these failure modes. This is a major • if the candidate has a certificate policy which
+drawback when building in the forward direction. intersects with the forward-policy-set
+With regard to failure mode 2, which deals with the • if policy mappings are not inhibited AND the
+authority-constrained-policy-set, we can filter out some candidate’s subject domain policy intersects with the
+certificates when building forward, but still not as forward-policy-set AND the candidate has a
+effectively as when building reverse. We observe that the certificate policy which intersects with the
+authority-constrained-policy-set is typically reduced in corresponding issuer domain policy
+the reverse direction and is only augmented by policy
+mappings. We also observe that because of this We refer to the specific certificate policies of the
+intersecting nature, the policy mappings of one certificate candidate that meet either of these conditions as the
+only apply to the immediately following certificate candidate’s useful certificate policies. After accepting a
+("following” in the reverse sense). When building candidate certificate, the forward-policy-set is replaced
+forward, we will be maintaining a forward-policy-set state with the candidate’s useful certificate policies and these
+variable, which is initialized with the certificate policies are used to determine which certificates to accept next.
+in the target certificate. Let us take an example. Assume Using our example, after accepting Certificate 3, our new
+we have already found a target certificate that has been forward-policy-set would simply be {HIGH}. We would
+issued with certificate policies of CONF and TOP- not include MED in the forward-policy-set because that
+Certificate 1 Certificate 2 Certificate 3 Certificate 4
+Issuer: b.com Issuer: d.com Issuer: e.com Issuer: f.com
+Subject: east.b.com Subject: east.b.com Subject: east.b.com Subject: east.b.com
+CP: CONF CP: CLASSIFIED CP: HIGH, MED CP: HIGH
+PM: HIGH¨CONF PM: HIGH¨CLASSIFIED
+Certificate 5
+Issuer: east.b.com
+Subject: bob.east.b.com
+CP: CONF, TOP-SECRET
+Figure 3: Policy Processing Scenario (Forward Direction)certificate policy did not meet either of the two conditions Let us assume Alice requires that a HIGH trust rating
+and was therefore not useful in allowing us to reach the appear in every certificate. Therefore, the user-
+target certificate. constrained-policy-set is initialized to be {HIGH}. After
+processing Certificate 1, the user-constrained-policy-set
+5. Loop Detection becomes {HIGH, CONF} because this set is only
+augmented when a policy that is already in the set is
+When building a certification path, it is also useful to be mapped to another policy. At this point, Certificate 3 is
+able to detect loops as the path is being built. This allows not acceptable for the next leg of the path because its
+us to quickly reject paths that are just looping around certificate policy of Z does not intersect with the user-
+uselessly. At first glance, it may seem that we can detect a constrained-policy-set. Since Certificate 2 is acceptable,
+loop by keeping track of the distinguished names of the we process Certificate 2, and the user-constrained-policy-
+directory entries we have visited. If we encountered the set becomes {HIGH, CONF, TOP-SECRET}. Now, since
+same distinguished name (DN) twice, we would assert the subject of Certificate 2 is a.com, we go back to
+that we had encountered a loop and so we would not Certificate 1 for the second time. If we had been using the
+continue building down that path. Unfortunately, simply algorithm where loops are detected when the same
+comparing DNs is not adequate. This algorithm breaks certificate is encountered for the second time, then we
+down if there is more than one public key associated with would have rejected Certificate 1 at this point. However,
+a DN. It could be that a CA with a given DN has two this would have yielded an incorrect result. After
+public keys because it is phasing one of them out. It could accepting and processing Certificate 1 for the second
+also be that there are actually two different CAs with time, the user-constrained-policy-set becomes {HIGH,
+different public keys that just happen to have the same CONF, TOP-SECRET, Z}. Now that Z has been added to
+DN. In this case, the path A¨B¨C¨B¨D, where B this set, Certificate 3 has become acceptable for the next
+and B(cid:3)DUH(cid:3)&$V(cid:3)ZLWK(cid:3)WKH(cid:3)VDPH(cid:3)’1(cid:3)EXW(cid:3)GLIIHUHQW(cid:3)NH\V(cid:3)(cid:11)RU leg of the path. Clearly, in this case, Certificate 1 needed
+the same CA with two different keys), can be a valid path. to appear twice in the path to allow us to reach Certificate
+However, using the algorithm where loops are detected if 3. Similarly, it is also possible for the authority-
+we encounter the same DN twice, we would have constrained-policy-set to be augmented by policy
+incorrectly rejected this path after encountering B(cid:17) mappings in such a way that certificates that were not
+To deal with this situation, we can use the algorithm acceptable before traversing the loop become acceptable
+that a loop is detected if we encounter the same certificate after traversing the loop. Therefore, we can only assert
+twice. This works well in the absence of policy mappings. that a useless loop has been detected if we encounter the
+However, if policy mappings are present, then it is same certificate twice AND the two state variables (user-
+possible that the policy mappings in a loop of certificates constrained-policy-set and authority-constrained-policy-
+may actually allow certificates to be acceptable after set) after processing the certificate for the second time do
+traversing the loop which were not acceptable before not have any different policies than they had after
+traversing the loop. For example, when building reverse, processing the certificate for the first time. In our
+we may be faced with the situation illustrated in Figure 4. example, this was not the case and we did not have a
+useless loop. As a result, Certificate 3, which was not
+acceptable after Certificate 1 was processed for the first
+Certificate 1
+time, became acceptable after Certificate 1 was processed
+Issuer: a.com for the second time. Although this may seem an odd case,
+Subject: b.com we must deal with it properly for the sake of correctness.
+CP: HIGH, TOP-SECRET Although our algorithm for detecting loops works well
+PM: HIGH¨CONF, when building reverse, it does not work well when
+TOP-SECRET¨Z
+building forward. The difficulty when building forward is
+that we don’t have an accurate representation of the user-
+constrained-policy-set and the authority-constrained-
+Certificate 2 Certificate 3 policy-set until we reach the trust anchor because a
+Issuer: b.com Issuer: b.com certificate near the trust anchor may have policy
+Subject: a.com Subject: bob.east.b.com mappings that we are unaware of when dealing with
+CP: CONF CP: Z certificates near the target. Since policy mappings are at
+PM:CONF¨TOP-SECRET the root of the problem, we can come up with an
+algorithm when policy mappings are not present. We
+Figure 4: Loop Detection Scenario observe that the user-constrained-policy-set and authority-
+constrained-policy-set are only augmented by policy
+mappings. Therefore, when building forward, if policymappings are inhibited or if there are no policy mapping When building forward, we begin by finding a target
+extensions between occurrences of the same certificate, certificate whose subject is bob.east.b.com. There may be
+then we can detect a loop if we encounter the same many such certificates to choose from (Certificate 3,
+certificate twice. This algorithm when building forward is Certificate 3(cid:15)(cid:3) HWF(cid:12)(cid:17)(cid:3) 6XSSRVH(cid:3) WKDW(cid:3) ZH(cid:3) FKRRVH(cid:3) WR(cid:3) ILUVW
+not as effective as the algorithm we used when building examine Certificate 3 as a candidate. At this point, we can
+reverse. Although it guarantees that we will not reject any not check this candidate’s signature nor its revocation
+useful loops, we are not able to reject as many useless status, because we don’t yet have b.com’s public key. So
+loops as we could when building reverse. we will have to delay this check and tentatively accept
+this certificate. This is inefficient because it is quite
+6. Signature Processing possible that this certificate has been revoked or that it has
+an invalid signature.
+Processing signatures is another area in which building After tentatively accepting Certificate 3, we have to
+forward is less effective than building reverse. Both choose between Certificate 1 and Certificate 2 for the next
+certificates and CRLs need to have their signatures leg of the path. When examining Certificate 1, we now
+verified to ensure that they have been signed by the have a candidate for b.com’s public key and we can check
+supposed issuers. When building reverse, we start with whether this public key is able to verify the signature on
+the public key of the trust anchor, which is explicitly Certificate 3. Now, if the signature verification fails, we
+trusted. Therefore, when we are looking for the next are really not quite sure whether the public key in
+candidate certificate, we can very quickly reject any Certificate 1 is bad, or the signature on Certificate 3 is
+candidate whose signature does not verify with our trusted bad. Neither of those pieces of information are known to
+public key. Similarly, we can quickly reject any candidate be "trusted" a priori. Since we don’t want to reject any
+certificate that has been revoked, because we can fetch the certificate that could possibly be valid, we are going to
+CRL issued by the candidate’s issuer, verify the CRL’s have to assume that the public key in Certificate 1 is bad,
+signature using our trusted public key, and check to see remove Certificate 1 from consideration (for now), and
+whether the candidate’s serial number is on that CRL. try all of the other certificates pointing to b.com (in this
+When building forward, however, we can not case, Certificate 2). This is inefficient in the case where
+immediately reject a candidate if it has an invalid the real culprit was Certificate 3 itself (i.e. the signature
+signature, nor can we immediately reject a candidate that on Certificate 3 was bad). We won't find that out until we
+has been revoked. Both of these checks have to be cycle through all the certificates pointing to b.com and
+delayed for one cycle. The reason for this delay is that we notice that none of them are able to verify the signature
+don’t yet have the public key of the candidate’s issuer, on Certificate 3. Only then will we backtrack, remove
+which is needed to verify the candidate’s signature and Certificate 3 from consideration, and try another target
+also needed to verify the candidate’s revocation status (i.e. certificate (perhaps Certificate 3(cid:12)(cid:17)
+needed to verify the signature on the CRL issued by the On the other hand, when examining Certificate 1, if the
+candidate’s issuer). Figure 5 illustrates the situation when candidate for b.com’s public key successfully verifies the
+we are building forward. signature on Certificate 3, then we can proceed to verify
+the revocation status of Certificate 3. We would fetch the
+CRL issued by b.com and verify the CRL’s signature
+Certificate 1 Certificate 2 using our candidate for b.com’s public key. If the CRL
+Issuer: a.com Issuer: c.com signature verification fails, we would try the public key
+Subject: b.com Subject: b.com against other CRLs stored at b.com’s directory entry (if
+Public Key: b.com? Public Key: b.com? any). If we were unable to find a CRL whose signature
+Signature: Signature: verified, then we would conclude that we are unable to
+determine the revocation status of Certificate 3. Note that
+we would not have to examine Certificate 2 in this case.
+Certificate 3 Since the signature on Certificate 3 verified using the
+Issuer: b.com public key in Certificate 1, then Certificate 2 would only
+Subject: bob.east.b.com be useful if it had the same public key as Certificate 1. If
+Public Key: that were the case, then Certificate 2’s public key would
+Signature: b.com? also be unable to verify the signatures on b.com’s CRLs.
+Of course, if the signature on b.com’s CRL verified
+Figure 5: Signature Processing Scenario using the public key in Certificate 1 and Certificate 3’s
+serial number was on the list of revoked certificates, then
+we would conclude that Certificate 3 has been revoked.
+Again, this is inefficient because we are only now findingout that Certificate 3 has been revoked. At this point, we thereby allowing us to more quickly reject certificates that
+would remove Certificate 3 from consideration and try are not useful in constructing a valid certification path.
+another target certificate (perhaps Certificate 3(cid:12)(cid:17) Building in the reverse direction allows us to more
+Even if Certificate 3’s signature and revocation status effectively process name constraints, policies, signatures,
+successfully verify using the public key in Certificate 1, and CRL-based revocation. It also allows us to more
+we are still not sure if this is really b.com’s public key. effectively detect useless loops of certificates. In order to
+Since the only public key we really trust is the trust allow certification paths to be built in either direction, we
+anchor’s public key and since we won't be using that recommend that certificates stored in a directory be
+trusted key until the entire path is built, it is possible that required to be stored with both the issuer and the subject.
+some malicious user could launch a denial of service
+attack by putting many bogus certificates and CRLs in the 9. Bibliography
+directory to slow us down. We would continue accepting
+these bogus certificates until we reached our trust anchor, 1. S. Boeyen, T. Howes, P. Richard, “Internet X.509 Public
+when we would notice that our trusted public key is Key Infrastructure LDAPv2 Schema”, RFC 2587, June
+unable to successfully verify the signature on one of these 1999.
+bogus certificates. When building reverse, we would not 2. S. Boeyen, T. Howes, P. Richard, “Internet X.509 Public
+Key Infrastructure Operational Protocols – LDAPv2”, RFC
+have this particular problem. Even if there were bogus
+2559, April 1999.
+certificates in the directory, we would never accept any of
+3. T. Dierks, C. Allen, “The TLS Protocol Version 1.0”, RFC
+them since their signatures would not verify with our
+2246, January 1999.
+trusted public key.
+4. S. Dusse, P. Hoffman, B. Ramsdell, L. Lundblade, L.
+Repka, “S/MIME Version 2 Message Specification”, RFC
+7. Requesting Revocation 2311, March 1998.
+5. T. ElGamal, “A Public-Key Cryptosystem and a Signature
+Scheme Based on Discrete Logarithms,” IEEE
+Storing certificates only in the directory entry of the
+Transactions on Information Theory, v. IT-31, n. 4, 1985,
+subject essentially disables building in the reverse
+pp. 469-472.
+direction, which is a major disadvantage. On the other
+6. R. Housley, W. Ford, W. Polk, D. Solo, “Internet X.509
+hand, one advantage of storing certificates with the
+Public Key Infrastructure Certificate and CRL Profile”,
+subject has to do with requesting revocation. If Bob RFC 2459, January 1999.
+believes that his private key has been compromised, he 7. R. Housley, W. Ford, W. Polk, D. Solo, “Internet X.509
+needs to inform everyone that has signed a certificate for Public Key Infrastructure Certificate and CRL Profile”,
+the corresponding public key, so that they can revoke Internet Draft (work in progress), <draft-ietf-pkix-new-
+their certificate. If certificates are stored with the subject, part1-02.txt>, July 2000.
+8. S. Kent, R. Atkinson, “Security Architecture for the
+then all certificates issued for Bob’s public key would be
+Internet Protocol”, RFC 2401, November 1998.
+stored in Bob’s directory entry. Therefore, Bob would
+9. National Institute of Standards and Technology, NIST FIPS
+know everyone who has signed certificates for his public
+PUB 186, “Digital Signature Standard,” U.S. Department
+key and he would be able to inform them that they should
+of Commerce, May 1994.
+revoke their certificates. If certificates are stored in the 10. Recommendation X.509. The Directory: Authentication
+directory entry of the issuer, then Bob would not be able Framework. Information technology – Open Systems
+to use the directory to figure out who has signed Interconnection, June 1997.
+certificates for his public key and would have to use some 11. R.L. Rivest, A. Shamir, L.M. Adleman, “A Method for
+other mechanism to do this. Obtaining Digital Signatures and Public-Key
+Cryptosystems,” Communications of the ACM, v. 21, n. 2,
+February 1978, pp. 120-126.
+8. Conclusion
+12. A.R. Silva, M.A. Stanton, “Pequi: A PKIX Implementation
+for Secure Communication,” Proceedings of the 1999
+In this paper, we compared building certification paths International Networking Conference (INET ’99), 1999.
+in the forward direction (from target to trust anchor) with
+building certification paths in the reverse direction (from
+trust anchor to target). For certain trust models, such as a
+hierarchical trust model, building in the forward direction
+is more effective because we can take advantage of the
+fact that every entity has only one certificate issued for it
+by its superior. For more general trust models, however,
+we conclude that building in the reverse direction is more
+effective because it allows us to perform superior
+validation of the certification path as we are building it,

@@ -1,0 +1,279 @@
+ContexIoT: Towards Providing Contextual Integrity
+To Appified IoT Platform
+Yunhan Jack Jia, Qi Alfred Chen, Shiqi Wang, Amir Rahmati,
+Earlence Fernandes, Z.Morley Mao, Atul Prakash
+University of MichiganAppified Platform
+● Software platform that supports 3rd-party app development
+IoT
+● Emerging IoT threats ( conventional vs. appified )
+Cloud backend
+Appi3ied IoT
+Conventional IoT
+Platform 2
+PlatformThe Ecosystem and Threats
+3rd Party Developer
+Developer Toolchain
+Publish app
+App Market
+Install
+3rd Party App Platform
+Accessing API
+Access Control Mechanism
+Application Framework
+● Problem : allowing untrusted app to control the user’s device
+● Solution : access control system ( Permission system )
+3Permission System: Practices & Limitations
+Installation time prompts: decision made out-of-context
+Runtime prompts: coarse-grained and insufficient
+SmartThings app setup page Android 6.0 runtime prompt
+4Permission System: Practices & Limitations
+Installation time prompts: decision made out-of-context
+Runtime prompts: coarse-grained and insufficient
+Install Press2Unlock app
+Request Unlock capability
+Press button to unlock Remote command to unlock
+IoT malware example
+Ideal access control needs to be in context and sufficiently fine-grained
+5Contextual Integrity
+● First appeared in “Washington Law Review 2004”
+○ Advocated as a benchmark for privacy
+● Contextual integrity for access control
+○ A permission granted to an app shall only allow the app behavior under that specific
+context, in which the permission is granted.
+● Requirements for the context:
+○ Distinguishable : differentiate context upon permission request
+○ Meaningful : tell benign from malicious
+61. How to de*ine context in an access control system for IoT?
+2. How to enforce its integrity in the IoT apps?
+7Attack Taxonomy Methodology
+Reported IoT attacks Mobile adversary techniques
+Pin code snooping Repackaging
+Get remote shell Shadow payload
+…... …...
+12 BLE relay unlocking 17 Side channel
+Evaluate attacks against context
+definitions in related work
+Context components
+Control flow
+Data flow
+…...
+8Context Definition
+Related Context components Decision made
+work in context?
+UID/GID UI Activity Control flow Runtime value Data flow
+ACG ✔ ✔ ❌ ❌ ❌ ✔
+CRePE ✔ ❌ ❌ ✔ ❌ ❌
+AppContext ✔ ❌ ✔ ❌ ✔ ❌
+AppFence ✔ ❌ ❌ ❌ ✔ ❌
+Aurasium ✔ ✔ ❌ ✔ ❌ ✔
+FlaskDroid ✔ ❌ ❌ ✔ ❌ ❌
+SEAndroid ✔ ❌ ❌ ❌ ❌ ❌
+SEACAT ✔ ✔ ❌ ✔ ❌ ✔
+TaintDroid ✔ ✔ ❌ ✔ ✔ ✔
+TriggerScope ✔ ❌ ✔ ❌ ✔ ❌
+ContexIoT ✔ N/A ✔ ✔ ✔ ✔
+9ContexIoT Design Goal
+● Objective:
+Prompt user with essential context to grant access to desired app behavior
+Context Allow
+Triggering Sensitive Triggering Sensitive
+event action event action
+User
+Why SmartThings: Access
+control
+○ Relatively mature: 500~ apps, 150~ devices
+Trigger-action
+model
+○ Sharing design principles with other platforms
+Cloud-backed
+● Design challenge: limited access to the cloud-backed IoT platform
+10Design: SmartThings Background
+SmartThings Cloud Platform Developer Console
+Web-based IDE
+Permission Develop
+SmartDevice (Capability) SmartApp App Instrumentation
+System
+Submit
+App Vetting
+Publish
+Configure Choose App & Install
+Wifi ZWave
+App Market
+Companion App
+User Space
+11
+Cloud-backed SmartThings EcosystemContexIoT Design
+● Patch SmartApps with the access control logic
+? Reuse() : Prompt()
+Context collection logic End-to-end secure logic
+12Implementation: Context Collection
+● Patch SmartApp with context collection logic
+○ Naive approach: add runtime logging to the entire instruction set
+○ To reduce runtime overhead, use offline static analysis to:
+■ Prune: Identify a subset of app code that requires runtime logging
+■ Precompute: calculate context information that is deterministic
+Temperature > 100 Mode == “sleep”
+log log log log
+log log
+13
+window.open()Static Analysis: Precompute Context
+● Precompute intra-procedure context that are deterministic
+○ Chained later to construct complete context according to the call trace
+○ GString -- dynamic feature in Groovy
+Open window when temperature goes high above 100
+14
+Open window when receiving network commandRuntime Logging
+● Dynamic taint tracking for SmartThings’ Groovy
+○ Data dependency tracking: field-sensitive, implicit taint
+■ E.g., luminance as side channel attack
+○ Construct runtime context: maintain caller info for each method
+■ Merge intra-procedure context based on the call stack
+Foo() Bar()
+Context (sink) =
+Context(Foo)
+⊕
+Context(Bar)
+⊕
+sink
+Luminance as side channel malware Runtime call stack Context(Foo) 15End-to-end Implementation
+● Patch the app with the context-based permission requesting logic
+● A permission server to manage permission granting decisions
+● Presentation of context on Android:
+Legitimate logic: automatically lock Backdoor logic: unlock the door when
+door after 240 seconds receiving network request
+16Evaluation
+● Effectiveness:
+○ Dataset: 283 commodity SmartApps, 25 malicious SmartApps created based on the evasion
+attack taxonomy, including 3 reported SmartThings malware1
+○ Result:
+■ Sensitive functionalities of all the SmartApps are correctly patched
+■ Malicious paths of the 25 malware can be distinguished without ambiguity
+● Prompt frequency:
+○ Fuzz testing on the 283 commodity SmartApps by injecting events
+○ Mean life-time permission prompts are only 3.5
+1”Secure Analysis of Emerging Smart Home
+17
+Applications”, Fernandez et al. Oakland’ 16Evaluation (Cont’d)
+● Performance overhead: latency
+○ Tested on both virtual and physical devices
+■ +26.7% latency on virtual devices
+■ +4.5% ~ 9.6% latency on physical devices
+Breakdown of the end-to-end event trigger
+18
+latency on virtual and physical devicesConclusion and Future Work
+Future Work:
+Usability: better presentation of context in IoT scenarios
+Efficiency: adapt when app functionality is enriched
+Conclusion:
+A context definition that defeats known classes of malware on appified platforms
+ContexIoT approach that help enforce contextual integrity in IoT apps
+We released our malware dataset:
+https://tinyurl.com/contexIoT
+19Conclusion
+20Backup
+21Static Analysis: Pruning
+● Instrument Groovy AST transformation to build CFG
+○ Prune code that are not in the CFG from Source to Sink
+○ Adapt to the trigger-action based programing model
+TTTeeemmmpppeeerrraaatttuuurrreeeHHHaaannndddllleee((())) MMMooodddeeeCCChhhaaannngggeeeHHHaaannndddllleeerrr((()))
+○ Exception: add missing edges to model side-effects
+setMode(“Away”)
+22
+wwwiiinnndddooowww...ooopppeeennn((())) wwwiiinnndddooowww...ooopppeeennn((()))Appification of IoT
+● Evolution of software platform:
+Functional Software Defined Appified
+23Permission System Revisit: Implementations
+● Contemporary implementations:
+○ Install time prompt ( Android 5.x, SmartThings, … )
+○ Runtime prompt (iOS, OSX, Windows, …)
+○ User-driven access control ( research prototype, some apps, …)
+Example Access Control Gadgets Location button on Google Maps
+24Appified Platform
+● Software platform that supports 3rd party app development
+● The evolution of software platform
+Functional Software Defined Appified
+25Permission System Revisit: Implementations
+● Contemporary implementations:
+○ Install time prompt ( Android before 5.x, SmartThings, … )
+26
+App installation on Android 5.0 App installation on Samsung SmartThingsPermission System Revisit: Implementations
+● Contemporary implementations:
+○ Install time prompt ( Android 5.x, SmartThings, … )
+○ Runtime prompt (iOS, OSX, Windows, …)
+27
+Runtime prompt on Android 6.0 Runtime prompt on iOS 9.xPermission System Revisit: Limitations
+Installation time and runtime prompt solutions:
+Coarse-grained, insufficient, undemanding
+Install QRScanner App Install AutoUnlock App
+Request Camera permission
+Request Unlock capability
+Ideal access control needs to be In-Context !
+28Providing Contextual Integrity to IoT Platform
+Challenges Solutions
+(1) Definition of context [1] Extensive survey of evasion attacks
+(2) Availability of context [2] ContexIoT to extract context information
+(3) Frequency of prompts [3] Adapt context comparison to reduce prompts
+29Attack Taxonomy Methodology
+● Extensive survey of attacks reported on
+○ Existing IoT devices (12)
+○ Smartphone platform (17)
+● Construct misbehave SmartApps that achieve similar malicious
+functionality (25)
+● Evaluate the attacks against representative work in permission
+evolution/revolution
+30Context Definition
+Context de3inition comparison among representative related work
+31ContexIoT Design Goal
+● Objective:
+Prompt users with essential context to grant access to desired app behavior
+Why SmartThings:
+●
+○ Relatively mature: 500~ apps, 1
+● Design Challenges: limited access to the cloud-backed IoT platform
+Triggering Triggering
+event event
+Context
+User
+Allow
+Sensitive
+Sensitive
+action
+action
+32Design: SmartThings Background
+SmartThings Cloud Platform Developer Console
+Web-based IDE
+Groovy Sandbox Groovy Sandbox
+Permission
+Develop
+(Capability)
+Groovy Transformation
+System
+SmartDevice SmartApp
+Submit
+App Vetting
+Publish
+Choose App & Install
+Wi-Fi Configure
+ZWave Control
+Companion App App Market
+Cloud-baked SmartThings Ecosystem
+33Runtime Logging: Construct Context
+● Construct inter-procedural context
+○ Reconstruct call stack by maintaining the caller function for each method
+○ Construct context by assembling intra-procedure context based on the call
+Foo() Bar()
+stack
+Context (sink) =
+Context(Foo)
+⊕ Context(Bar)
+⊕ Context(Foo)
+sink
+34Outline:
+● Methodology:
+○ Attack & related work taxonomy
+■ Extensive survey of evasion attacks to complete the definition of context
+○ Design of ContexIoT on SmartThings platform, which
+■ Collects essential context of IoT apps in real time
+■ Enforces contextual integrity for each permission granting decisions
+○ Evaluation on commodity apps and sample malware
+35

@@ -1,0 +1,940 @@
+WireGuard: Next Generation Kernel Network Tunnel
+Jason A. Donenfeld
+jason@zx2c4.com
+Abstract—WireGuard is a secure network tunnel, operating WireGuardsimplygivesavirtualinterface—wg0forexample—
+at layer 3, implemented as a kernel virtual network interface for which can then be administered using the standard ip(8) and
+Linux,whichaimstoreplacebothIPsecformostusecases,aswell ifconfig(8) utilities. After configuring the interface with a
+aspopularuserspaceand/orTLS-basedsolutionslikeOpenVPN,
+private key (and optionally a pre-shared symmetric key as
+while being more secure, more performant, and easier to use.
+explained in section V-B) and the various public keys of
+The virtual tunnel interface is based on a proposed fundamental
+peers with whom it will communicate securely, the tunnel
+principle of secure tunnels: an association between a peer public
+key and a tunnel source IP address. It uses a single round trip simply works. Key exchanges, connections, disconnections,
+keyexchange,basedonNoiseIK,andhandlesallsessioncreation reconnections, discovery, and so forth happen behind the
+transparently to the user using a novel timer state machine scenes transparently and reliably, and the administrator does
+mechanism. Short pre-shared static keys—Curve25519 points— not need to worry about these details. In other words, from the
+areusedformutualauthenticationinthestyleofOpenSSH.The perspective of administration, the WireGuard interface appears
+protocol provides strong perfect forward secrecy in addition to a to be stateless. Firewall rules can then be configured using
+high degree of identity hiding. Transport speed is accomplished
+the ordinary infrastructure for firewalling interfaces, with the
+using ChaCha20Poly1305 authenticated-encryption for encapsu-
+guarantee that packets coming from a WireGuard interface will
+lationofpacketsinUDP.AnimprovedtakeonIP-bindingcookies
+be authenticated and encrypted. Simple and straightforward,
+isusedformitigatingdenialofserviceattacks,improvinggreatly
+WireGuard is much less prone to catastrophic failure and
+on IKEv2 and DTLS’s cookie mechanisms to add encryption
+and authentication. The overall design allows for allocating no misconfiguration than IPsec. It is important to stress, however,
+resources in response to received packets, and from a systems that the layering of IPsec is correct and sound; everything
+perspective, there are multiple interesting Linux implementation is in the right place with IPsec, to academic perfection. But,
+techniques for queues and parallelism. Finally, WireGuard can as often happens with correctness of abstraction, there is a
+besimplyimplementedforLinuxinlessthan4,000linesofcode, profound lack of usability, and a verifiably safe implementation
+making it easily audited and verified. is very difficult to achieve. WireGuard, in contrast, starts from
+the basis of flawed layering violations and then attempts to
+rectify the issues arising from this conflation using practical
+I. Introduction&Motivation
+engineering solutions and cryptographic techniques that solve
+In Linux, the standard solution for encrypted tunnels is real world problems.
+IPsec, which uses the Linux transform (“xfrm”) layer. Users
+fill in a kernel structure determining which ciphersuite and OntheotherendofthespectrumisOpenVPN,auserspace
+key, or other transforms such as compression, to use for which TUN/TAPbasedsolutionthatusesTLS.Byvirtueofitbeingin
+selector of packets traversing the subsystem. Generally a user user space, it has very poor performance—since packets must
+space daemon is responsible for updating these data structures becopiedmultipletimesbetweenkernelspaceanduserspace—
+based on the results of a key exchange, generally done with and a long-lived daemon is required; OpenVPN appears far
+IKEv2 [12], itself a complicated protocol with much choice from stateless to an administrator. While TUN/TAP interfaces
+and malleability. The complexity, as well as the sheer amount (say, tun0) have similar wg0-like benefits as described above,
+of code, of this solution is considerable. Administrators have OpenVPN is also enormously complex, supporting the entire
+a completely separate set of firewalling semantics and secure plethoraofTLSfunctionality,whichexposesquiteabitofcode
+labeling for IPsec packets. While separating the key exchange topotentialvulnerabilities.OpenVPNisrighttobeimplemented
+layer from the transport encryption—or transformation—layer in user space, since ASN.1 and x509 parsers in the kernel have
+is a wise separation from a semantic viewpoint, and similarly historically been quite problematic (CVE-2008-1673, CVE-
+while separating the transformation layer from the interface 2016-2053), and adding a TLS stack would only make that
+layeriscorrectfromanetworkingviewpoint,thisstrictlycorrect issueworse.TLSalsobringswithitanenormousstatemachine,
+layering approach increases complexity and makes correct as well as a less clear association between source IP addresses
+implementation and deployment prohibitive. and public keys.
+WireGuard does away with these layering separations. For key distribution, WireGuard draws inspiration from
+Instead of the complexity of IPsec and the xfrm layers, OpenSSH, for which common uses include a very simple
+approach toward key management. Through a diverse set of
+Permission to freely reproduce all or part of this paper for noncommercial out-of-band mechanisms, two peers generally exchange their
+purposes is granted provided that copies bear this notice and the full citation
+static public keys. Sometimes it is simple as PGP-signed email,
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society or the first-named and other times it is a complicated key distribution mechanism
+author (for reproduction of an entire paper only). usingLDAPandcertificateauthorities.Importantly,forthemost
+NDSS ’17, 26 February – 1 March 2017, San Diego, CA, USA part OpenSSH key distribution is entirely agnostic. WireGuard
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+follows suit. Two WireGuard peers exchange their public keys
+http://dx.doi.org/10.14722/ndss.2017.23160
+through some unspecified mechanism, and afterward they are
+Permanent ID: 4846ada1492f5d92198df154f48c3d54205657bcable to communicate. In other words, WireGuard’s attitude The interface itself has a private key and a UDP port on
+towardkeydistributionisthatthisisthewronglayertoaddress which it listens (more on that later), followed by a list of peers.
+that particular problem, and so the interface is simple enough Each peer is identified by its public key. Each then has a list
+that any key distribution solution can be used with it. As an of allowed source IPs.
+additional advantage, public keys are only 32 bytes long and
+When an outgoing packet is being transmitted on a Wire-
+can be easily represented in Base64 encoding in 44 characters,
+Guardinterface,wg0,thistableisconsultedtodeterminewhich
+which is useful for transferring keys through a variety of
+public key to use for encryption. For example, a packet with
+different mediums.
+a destination IP of 10.192.122.4 will be encrypted using
+Finally, WireGuard is cryptographically opinionated. It the secure session derived from the public key TrMv...WXX0.
+intentionally lacks cipher and protocol agility. If holes are Conversely, when wg0 receives an encrypted packet, after
+found in the underlying primitives, all endpoints will be decrypting and authenticating it, it will only accept it if its
+required to update. As shown by the continuing torrent of source IP resolves in the table to the public key used in the
+SSL/TLS vulnerabilities, cipher agility increases complexity secure session for decrypting it. For example, if a packet is
+monumentally. WireGuard uses a variant of Trevor Perin’s decrypted from xTIB...qp8D, it will only be allowed if the
+Noise [22]—which during its development received quite a bit decrypted packet has a source IP of 10.192.122.3 or in the
+of input from the authors of this paper for the purposes of range of 10.192.124.0 to 10.192.124.255; otherwise it is
+being used in WireGuard—for a 1-RTT key exchange, with dropped.
+Curve25519[6]forECDH,HKDF[15]forexpansionofECDH
+With this very simple principle, administrators can rely
+results, RFC7539 [16]’s construction of ChaCha20 [7] and
+on simple firewall rules. For example, an incoming packet
+Poly1305 [5] for authenticated encryption, and BLAKE2s [2]
+on interface wg0 with a source IP of 10.10.10.230 may be
+for hashing. It has built-in protection against denial of service
+considered as authentically from the peer with a public key
+attacks, using a new crypto-cookie mechanism for IP address
+of gN65...Bz6E. More generally, any packets arriving on a
+attributability.
+WireGuard interface will have a reliably authentic source IP
+Similarly opinionated, WireGuard is layer 3-only; as ex- (in addition, of course, to guaranteed perfect forward secrecy
+plained below in section II, this is the cleanest approach for of the transport). Do note that this is only possible because
+ensuring authenticity and attributability of the packets. The WireGuardisstrictlylayer3based.UnlikesomecommonVPN
+authors believe that layer 3 is the correct way for bridging protocols, like L2TP/IPsec, using authenticated identification
+multipleIPnetworks,andtheimpositionofthisontoWireGuard of peers at a layer 3 level enforces a much cleaner network
+allowsformanysimplifications,resultinginacleanerandmore design.
+easily implemented protocol. It supports layer 3 for both IPv4
+In the case of a WireGuard peer who wishes to route all
+and IPv6, and can encapsulate v4-in-v6 as well as v6-in-v4.
+traffic through another WireGuard peer, the cryptokey routing
+WireGuard puts together these principles, focusing on table could be configured more simply as:
+simplicityandanauditablecodebase,whilestillbeingextremely Configuration 2a
+high-speed and suitable for a modicum of environments. By
+Interface Public Key Private Key UDP Port
+combiningthekeyexchangeandthelayer3transportencryption
+gN65...z6EA gI6E...fWGE 9182
+into one mechanism and using a virtual interface rather than a
+Peer Public Key Allowed IPs
+transform layer, WireGuard indeed breaks traditional layering
+principles,inpursuitofasolidengineeringsolutionthatisboth HIgo...8ykw 0.0.0.0/0
+more practical and more secure. Along the way, it employs
+several novel cryptographic and systems solutions to achieve Here, the peer authorizes HIgo...f8yk to put packets onto
+its goals. wg0 with any source IP, and all packets that are outgoing on
+wg0 will be encrypted using the secure session associated with
+that public key and sent to that peer’s endpoint.
+II. CryptokeyRouting
+ThefundamentalprincipleofasecureVPNisanassociation A. Endpoints & Roaming
+between peers and the IP addresses each is allowed to use as
+source IPs. In WireGuard, peers are identified strictly by their Of course, it is important that peers are able to send
+public key, a 32-byte Curve25519 point. This means that there encrypted WireGuard UDP packets to each other at particular
+is a simple association mapping between public keys and a Internet endpoints. Each peer in the cryptokey routing table
+set of allowed IP addresses. Examine the following cryptokey may optionally pre-specify a known external IP address and
+routing table: UDP port of that peer’s endpoint. The reason it is optional is
+Configuration 1a that if it is not specified and WireGuard receives a correctly
+authenticated packet from a peer, it will use the outer external
+Interface Public Key Private Key UDP Port
+source IP address for determining the endpoint.
+HIgo...8ykw yAnz...fBmk 8746
+Peer Public Key Allowed IPs Since a public key uniquely identifies a peer, the outer
+xTIB...p8Dg 10.192.122.3/32, externalsourceIPofanencryptedWireGuardpacketisusedto
+10.192.124.0/24 identify the remote endpoint of a peer, enabling peers to roam
+TrMv...WXX0 10.192.122.4/32, freely between different external IPs, between mobile networks
+192.168.0.0/16 for example, similar to what is allowed by Mosh [24]. For
+gN65...z6EA 10.10.10.230/32 example, the prior cryptokey routing table could be augmented
+2to have the initial endpoint of a peer: 4) A header containing various fields, explained in sec-
+Configuration 2b tion V-D, is prepended to the now encrypted packet.
+5) This header and encrypted packet, together, are sent as a
+Interface Public Key Private Key UDP Port
+UDP packet to the Internet UDP/IP endpoint associated
+gN65...z6EA gI6E...fWGE 9182
+withpeerTrMv...WXX0,resultinginanouterUDP/IPpacket
+Peer Public Key Allowed IPs Internet Endpoint
+containing as its payload a header and encrypted inner-
+HIgo...8ykw 0.0.0.0/0 192.95.5.69:8746
+packet. The peer’s endpoint is either pre-configured, or it
+is learned from the outer external source IP header field
+Then, this host, gN65...z6EA, sends an encrypted packet of the most recent correctly-authenticated packet received.
+to HIgo...f8yk at 192.95.5.69:8746. After HIgo...f8yk re- (Otherwise,ifnoendpointcanbedetermined,thepacketis
+ceives a packet, it updates its table to learn that the endpoint dropped, an ICMP message is sent, and -EHOSTUNREACH
+for sending reply packets is, for example, 192.95.5.64:9182: is returned to user space.)
+Configuration 1b A UDP/IP packet reaches UDP port 8746 of the host, which is
+Interface Public Key Private Key UDP Port the listening UDP port of interface wg0:
+HIgo...8ykw yAnz...fBmk 8746
+1) A UDP/IP packet containing a particular header and an
+Peer Public Key Allowed IPs Internet Endpoint
+encrypted payload is received on the correct port (in this
+xTIB...p8Dg 10.192.122.3/32,
+particular case, port 8746).
+10.192.124.0/24
+2) Using the header (described below in section V-D),
+TrMv...WXX0 10.192.122.4/32,
+192.168.0.0/16 WireGuard determines that it is associated with peer
+gN65...z6EA 10.10.10.230/32192.95.5.64:9182 TrMv...WXX0’s secure session, checks the validity of the
+message counter, and attempts to authenticate and decrypt
+Note that the listen port of peers and the source port of it using the secure session’s receiving symmetric key. If
+packets sent are always the same, adding much simplicity, it cannot determine a peer or if authentication fails, the
+while also ensuring reliable traversal behind NAT. And since packet is dropped.
+this roaming property ensures that peers will have the very 3) Since the packet has authenticated correctly, the source IP
+latest external source IP and UDP port, there is no requirement of the outer UDP/IP packet is used to update the endpoint
+for NAT to keep sessions open for long. (For use cases in for peer TrMv...WXX0.
+which it is imperative to keep open a NAT session or stateful 4) Once the packet payload is decrypted, the interface has a
+firewall indefinitely, the interface can be optionally configured plaintext packet. If this is not an IP packet, it is dropped.
+to periodically send persistent authenticated keepalives.) Otherwise, WireGuard checks to see if the source IP
+addressoftheplaintextinner-packetroutescorrespondingly
+This design allows for great convenience and minimal
+in the cryptokey routing table. For example, if the source
+configuration. While an attacker with an active man-in-the-
+IP of the decrypted plaintext packet is 192.168.31.28,
+middle could, of course, modify these unauthenticated external
+the packet correspondingly routes. But if the source IP is
+source IPs, the attacker would not be able to decrypt or modify
+10.192.122.3,thepacketdoesnotroutecorrespondingly
+anypayload,whichmerelyamountstoadenial-of-serviceattack, for this peer, and is dropped.
+which would already be trivially possible by just dropping the
+5) If the plaintext packet has not been dropped, it is inserted
+originalpacketsfromthispresumedman-in-the-middleposition.
+into the receive queue of the wg0 interface.
+And, as explained in section VI-E, hosts that cannot decrypt
+and subsequently reply to packets will quickly be forgotten.
+It would be possible to separate the list of allowed IPs into two
+lists—one for checking the source address of incoming packets
+III. Send/ReceiveFlow and one for choosing peer based on the destination address.
+The roaming design of section II-A, put together with the But, by keeping these as part of the same list, it allows for
+cryptokey routing table of section II, amounts to the following something similar to reverse-path filtering. When sending a
+flows when receiving and sending a packet on interface wg0 packet, the list is consulted based on the destination IP; when
+using “Configuration 1” from above. receivingapacket,thatsamelistisconsultedfordeterminingif
+the source IP is allowed. However, rather than asking whether
+the received packet’s sending peer has that source IP as part
+A packet is locally generated (or forwarded) and is ready to be
+of its allowed IPs list, it instead is able to ask a more global
+transmitted on the outgoing interface wg0:
+question—which peer would be chosen in the table for that
+1) TheplaintextpacketreachestheWireGuardinterface,wg0. source IP, and does that peer match that of the received packet.
+2) ThedestinationIPaddressofthepacket,192.168.87.21, This enforces a one-to-one mapping of sending and receiving
+IP addresses, so that if a packet is received from a particular
+is inspected, which matches the peer TrMv...WXX0. (If it
+peer, replies to that IP will be guaranteed to go to that same
+matches no peer, it is dropped, and the sender is informed
+peer.
+by a standard ICMP “no route to host” packet, as well as
+returning -ENOKEY to user space.)
+3) The symmetric sending encryption key and nonce counter
+IV. BasicUsage
+of the secure session associated with peer TrMv...WXX0
+are used to encrypt the plaintext packet using ChaCha20- Beforegoingdeepintothecryptographyandimplementation
+Poly1305. details,itmaybeusefultoseeasimplecommandlineinterface
+3for using WireGuard, to bring concreteness to the concepts processed asynchronously to transport data messages. These
+thus far presented. messagesusethe“IK”patternfromNoise[22],inadditiontoa
+novel cookie construction to mitigate denial of service attacks.
+Consider a Linux environment with a single physical
+The net result of the protocol is a very robust security system,
+network interface, eth0, connecting it to the Internet with
+which achieves the requirements of authenticated key exchange
+a public IP of 192.95.5.69. A WireGuard interface, wg0,
+(AKE) security [17], avoids key-compromise impersonation,
+can be added and configured to have a tunnel IP address
+avoidsreplayattacks,providesperfectforwardsecrecy,provides
+of 10.192.122.3 in a /24 subnet with the standard ip(8)
+identity hiding of static public keys similar to SIGMA [14],
+utilities:
+and has resistance to denial of service attacks.
+Adding the wg0 interface
+$ ip link add dev wg0 type wireguard
+$ ip address add dev wg0 10.192.122.3/24 A. Silence is a Virtue
+$ ip route add 10.0.0.0/8 dev wg0
+$ ip address show One design goal of WireGuard is to avoid storing any
+1: lo: <LOOPBACK> mtu 65536 state prior to authentication and to not send any responses to
+inet 127.0.0.1/8 scope host lo unauthenticated packets. With no state stored for unauthenti-
+2: eth0: <BROADCAST> mtu 1500
+cated packets, and with no response generated, WireGuard is
+inet 192.95.5.69/24 scope global eth0
+invisible to illegitimate peers and network scanners. Several
+3: wg0: <POINTOPOINT,NOARP> mtu 1420
+classes of attacks are avoided by not allowing unauthenticated
+inet 10.192.122.3/24 scope global wg0
+packetstoinfluenceanystate.Andmoregenerally,itispossible
+to implement WireGuard in a way that requires no dynamic
+The cryptokey routing table can then be configured using
+memory allocation at all, even for authenticated packets, as
+the wg(8) tool in a variety of fashions, including reading from
+explained in section VII. However, this property requires the
+configuration files:
+very first message received by the responder to authenticate
+Configuring the cryptokey routing table of wg0
+the initiator. Having authentication in the first packet like this
+$ wg setconf wg0 configuration-1.conf
+potentiallyopensuptherespondertoareplayattack.Anattacker
+$ wg show wg0
+could replay initial handshake messages to trick the responder
+interface: wg0
+public key: HIgo...8ykw into regenerating its ephemeral key, thereby invalidating the
+private key: yAnz...fBmk session of the legitimate initiator (though not affecting the
+listening port: 8746 secrecy or authenticity of any messages). To prevent this, a
+peer: xTIB...p8Dg 12-byte TAI64N [4] timestamp is included, encrypted and
+allowed ips: 10.192.124.0/24, 10.192.122.3/32 authenticated, in the first message. The responder keeps track
+peer: TrMv...WXX0 ofthegreatesttimestampreceivedperpeeranddiscardspackets
+allowed ips: 192.168.0.0/16, 10.192.122.4/32
+containing timestamps less than or equal to it. (In fact, it does
+peer: gN65...z6EA
+not even have to be an accurate timestamp; it simply must
+allowed ips: 10.10.10.230/32
+be a per-peer monotonically increasing 96-bit number.) If the
+endpoint: 192.95.5.70:54421
+responder restarts and loses this state, that is not a problem:
+$ ip link set wg0 up
+$ ping 10.10.10.230 even though an initial packet from earlier can be replayed, it
+PING 10.10.10.230 56(84) bytes of data. couldnotpossiblydisruptanyongoingsecuresessions,because
+64 bytes: icmp_seq=1 ttl=49 time=0.01 ms the responder has just restarted and therefore has no active
+secure sessions to disrupt. Once the initiator reestablishes a
+secure session with the responder after its restart, the initiator
+At this point, sending a packet to 10.10.10.230 on that
+will be using a greater timestamp, invalidating the previous
+system will send the data through the wg0 interface, which
+one. This timestamp ensures that an attacker may not disrupt
+will encrypt the packet using a secure session associated
+a current session between initiator and responder via replay
+with the public key gN65...z6EA and send that encrypted
+attack. From an implementation point of view, TAI64N [4] is
+and encapsulated packet to 192.95.5.70:54421 over UDP.
+very convenient because it is big-endian, allowing comparisons
+When receiving a packet from 10.10.10.230 on wg0, the
+between two 12-byte timestamps to be done using standard
+administrator can be assured that it is authentically from
+memcmp().
+gN65...z6EA.
+V. Protocol&Cryptography B. Optional Pre-shared Symmetric Key Mode
+As mentioned prior, in order to begin sending encrypted WireGuard rests upon peers exchanging static public keys
+encapsulated packets, a 1-RTT key exchange handshake must with each other a priori, as their static identities. The secrecy
+first take place. The initiator sends a message to the responder, of all data sent relies on the security of the Curve25519 ECDH
+and the responder sends a message back to the initiator. After function. In order to mitigate any future advances in quantum
+this handshake, the initiator may send encrypted messages computing, WireGuard also supports a mode in which all peers
+using a shared pair of symmetric keys, one for sending and might additionally pre-share a single symmetric encryption
+one for receiving, to the responder, and following the first key amongst themselves, in order to add an additional layer of
+encrypted message from initator to responder, the responder symmetricencryption.Theattackmodelhereisthatadversaries
+may begin to send encrypted messages to the initiator. This may be recording encrypted traffic on a long term basis, in
+ordering restriction is to require confirmation as described for hopes of someday being able to break Curve25519 and decrypt
+KEA+C [17], as well as allowing handshake message to be past traffic. While pre-sharing a single symmetric encryption
+4key is troublesome from a key management perspective and knowing its public key, and possibly the PSK), in order to
+might be more likely stolen, the idea is that by the time elicit any kind of response. Under load or not under load, this
+quantum computing advances to break Curve25519, this pre- first MAC (msg.mac1) always is required to be present and
+shared symmetric key has been long forgotten. And, more valid. While the public key of the responder itself is not secret,
+importantly, in the shorter term, if the pre-shared symmetric it is sufficiently secret within this attack model, in which the
+key is compromised, the Curve25519 keys still provide more goal is to ensure stealthiness of services, and so knowing the
+than sufficient protection. In lieu of using a completely post- responder’s public key is sufficient proof for already knowing
+quantum crypto system, which as of writing are not practical of its existence. (And of course, if the PSK is in use, this adds
+for use here, this optional hybrid approach of a pre-shared another even stronger layer).
+symmetric key to complement the elliptic curve cryptography
+Likewise, to solve the second problem—that of sending
+provides a sound and acceptable trade-off for the extremely
+MACsincleartext—weapplyanAEADtothecookieintransit,
+paranoid.Inthefollowingsections,“PSK”referstothis32-byte
+again using as a symmetric encryption key the responder’s
+pre-shared symmetric key.
+publickey,optionallythePSK,andarandompublicsalt.Again,
+the mostly public values here are sufficient for our purposes
+C. Denial of Service Mitigation & Cookies
+within the denial-of-service attack threat model.
+Computing Curve25519 point multiplication is CPU inten- Finally, to solve the third problem, we use the “additional
+sive, even if Curve25519 is an extremely fast curve on most data” field of the AEAD to encrypt the cookie in transit to
+processors.Inordertodeterminetheauthenticityofahandshake additionally authenticate the first MAC (msg.mac1) of the
+message,aCurve25519multiplicationmustbecomputed,which initiating message that provoked a cookie reply message. This
+means there is a potential avenue for a denial-of-service attack. ensures that an attacker without a man-in-the-middle position
+InordertofendoffaCPU-exhaustionattack,iftheresponder— cannot send torrents of invalid cookie replies to initiators to
+the recipient of a message—is under load, it may choose to prevent them from authenticating with a correct cookie. (An
+not process a handshake message (either an initiation or a attacker with an man-in-the-middle position could simply drop
+response handshake message), but instead to respond with a cookie reply messages anyway to prevent a connection, so that
+cookie reply message, containing a cookie. The initiator then case is not relevant.) In other words, we use the AD field to
+uses this cookie in order to resend the message and have it be bind cookie replies to initiation messages.
+accepted the following time by the responder.
+With these problems solved, we can then add the aforemen-
+Therespondermaintainsasecretrandomvaluethatchanges
+tioned second MAC (msg.mac2) using the securely transmitted
+every two minutes. A cookie is simply the result of computing
+cookie as the MAC key. When the responder is under load, it
+a MAC of the initiator’s source IP address using this changing
+will only accept messages that additionally have this second
+secret as the MAC key. The initiator, when resending its
+MAC.
+message, sends a MAC of its message using this cookie as
+the MAC key. When the responder receives the message, if In sum, the responder, after computing these MACs as well
+it is under load, it may choose whether or not to accept and and comparing them to the ones received in the message, must
+process the message based on whether or not there is a correct always reject messages with an invalid msg.mac1, and when
+MAC that uses the cookie as the key. This mechanism ties under load may reject messages with an invalid msg.mac2. If
+messages sent from an initiator to its IP address, giving proof the responder receives a message with a valid msg.mac1 yet
+of IP ownership, allowing for rate limiting using classical IP with an invalid msg.mac2, and is under load, it may respond
+rate limiting algorithms (token bucket, etc—see section VII-D with a cookie reply message, detailed in section V-D7. This
+for implementation details). considerably improves on the cookie scheme used by DTLS
+and IKEv2.
+This is more or less the scheme used by DTLS [23] and
+IKEv2 [12]. However it suffers from three major flaws. First, In contrast to HIPv2 [19], which solves this problem by us-
+as mentioned in section V-A, we prefer to stay silent by not ing a 2-RTT key exchange and complexity puzzles, WireGuard
+sendinganyreplytounauthenticatedmessages;indiscriminately eschews puzzle-solving constructs, because the former requires
+sending a cookie reply message when under load would break storing state while the latter makes the relationship between
+this property. Second, the cookie should not be sent in clear initiator and responder asymmetric. In WireGuard, either peer
+text, because a man-in-the-middle could use this to then send at any point might be motivated to begin a handshake. This
+fraudulent messages that are processed. And third, the initiator means that it is not feasible to require a complexity puzzle
+himself could be denial-of-service attacked by being sent fromtheinitiator,becausetheinitatiorandrespondermaysoon
+fraudulent cookies, which it would then use with no success in change roles, turning this mitigation mechanism into a denial
+computing a MAC of its message. The cookie mechanism of of service vulnerability itself. Our above cookie solution, in
+WireGuard,whichusestwoMACs(msg.mac1andmsg.mac2), contrast, enables denial of service attack mitigation on a 1-
+fixestheseproblems,thecomputationsforwhichwillbeshown RTT protocol, while keeping the initiator and responder roles
+in section V-D4 below. symmetric.
+For the first problem, in order for the responder to remain
+silent, even while under load, all messages have a first MAC D. Messages
+(msg.mac1) that uses the responder’s public key and optionally
+the PSK. This means that at the very least, a peer sending There are four types of messages, each prefixed by a single-
+a message must know to whom it is talking (by virtue of byte message type identifier, notated as msg.type below:
+5• Section V-D2: The handshake initiation message that BLAKE2s hash function used in an HMAC construction,
+begins the handshake process for establishing a secure returning 32 bytes of output.
+session. Kdf(key,input) Sets τ (cid:66) Hmac(key,input),τ(cid:48) (cid:66)
+• Section V-D3: The handshake response to the initiation Hmac(τ,0x1),τ(cid:48)(cid:48) (cid:66) Hmac(τ,τ(cid:48) (cid:107) 0x2), and returns a
+messagethatconcludesthehandshake,afterwhichasecure pair of 32 byte values, (τ(cid:48),τ(cid:48)(cid:48)). This is the HKDF [15]
+session can be established. function.
+• Section V-D7: A reply to either a handshake initiation Mac(key,input,length) If key(cid:44)(cid:15), Keyed-Blake2s(key,
+message or a handshake response message, explained in input,length), the keyed MAC variant of the BLAKE2s
+sectionV-C,thatcommunicatesanencryptedcookievalue hash function, and otherwise Hash(input,length), either
+foruseinresendingeithertherejectedhandshakeinitiation returning length bytes of output.
+message or handshake response message. Timestamp() ReturnstheTAI64Ntimestamp[4]ofthecurrent
+• Section V-D6: An encapsulated and encrypted IP packet time, which is 12 bytes of output, the first 8 bytes being
+that uses the secure session negotiated by the handshake. a big-endian integer of the number of seconds since 1970
+TAI and the last 4 bytes being a big-endian integer of
+The initator of the handshake is denoted as subscript i, and the number of nanoseconds from the beginning of that
+the responder of the handshake is denoted as subscript r, and second.
+either one is denoted as subscript ∗. For messages that can Construction If Q (cid:44) (cid:15), the value Hash(“NoisePSK_IK_
+be created by either an initiator or sender, if the peer creating 25519_ChaChaPoly_BLAKE2s”, 32), and otherwise the
+the message is the initator, let (m,m(cid:48)) = (i,r), and if the peer value Hash(“Noise_IK_25519_ChaChaPoly_BLAKE2s”,
+creating the message is the responder, let (m,m(cid:48)) = (r,i). The 32), 32 bytes of output.
+two peers have several variables they maintain locally: Identifier The string literal “WireGuard v0 zx2c4
+Jason@zx2c4.com”, 34 bytes of output.
+I A 32-bit index that locally represents the
+∗
+other peer, analogous to IPsec’s “SPI”.
+Spriv, Spub The static private and public key values. 1)Protocol Overview: In the majority of cases, the hand-
+∗ ∗
+Epriv, Epub The ephemeral private and public key shake will complete in 1-RTT, after which transport data
+∗ ∗
+values. follows:
+Q The optional (sometimes (cid:15), empty)
+pre-shared symmetric key value from
+Initiator—i Responder—r
+section V-B.
+H , C , K A hash result value, a chaining key value,
+∗ ∗ ∗
+and a symmetric key value.
+Handshake Initiation
+Tsend, Trecv Transport data symmetric key values for
+∗ ∗ Handshake Response
+sending and receiving.
+Nsend, Nrecv Transport data message nonce counters for Transport Data
+∗ ∗
+sending and receiving.
+Transport Data
+In the constructions that follow, several symbols, functions,
+and operators are used. The binary operator (cid:107) represents
+concatenation of its operands, and the binary operator (cid:66)
+represents assignment of its right operand to its left operand. If one peer is under load, then a cookie reply message is
+The annotation (cid:68)n returns the value (n + 16), which is the added to the handshake, to prevent against denial-of-service
+Poly1305 authentication tag length added to n. (cid:15) represents an attacks:
+empty zero-length bitstring, 0n represents the all zero (0x0)
+bitstring of length n, and ρn represents a random bitstring
+of length n. Let τ be considered a temporary variable. All Initiator—i Responder—r
+integer assignments are little-endian, unless otherwise noted.
+The following functions and constants are utilized:
+Handshake Initiation
+DH(privatekey,publickey) Curve25519 point multiplica- Cookie Reply
+tion of privatekey and publickey, returning 32 bytes
+of output. Handshake Initiation
+DH-Generate() Generates a random Curve25519 private key
+Handshake Response
+and derives its corresponding public key, returning a pair
+of 32 bytes values, (private,public). Transport Data
+Aead(key,counter,plaintext,authtext)
+Transport Data
+ChaCha20Poly1305 AEAD, as specified in [16],
+with its nonce being composed of 32 bits of zeros
+followed by the 64-bit little-endian value of counter.
+Hash(input,length) Blake2s(input, length), returning
+length bytes of output. 2)FirstMessage:InitiatortoResponder: Theinitiatorsends
+Hmac(key,input) Hmac-Blake2s(key,input), the ordinary this message, msg:
+6Thefieldsmac1andmac2areexplainedfurtherinsectionV-D4.
+type (cid:66) 0x1 (1 byte) reserved (cid:66) 03 (3 bytes) The above remaining fields are calculated [22] as follows:
+sender (cid:66) I
+i
+(4 bytes) (E rpriv,E rpub) (cid:66) DH-Generate()
+if Q (cid:44)(cid:15):
+ephemeral (32 bytes)
+(C ,K ) (cid:66) Kdf(C ,Epub)
+(cid:76) r r r r
+static (32 bytes)
+msg.ephemeral (cid:66) Epub
+(cid:76) r
+timestamp (12 bytes) H (cid:66) Hash(H (cid:107) msg.ephemeral,32)
+r r
+mac1 (16 bytes) mac2 (16 bytes) (C ,K ) (cid:66) Kdf(C ,DH(Epriv,Epub))
+r r r r i
+(C ,K ) (cid:66) Kdf(C ,DH(Epriv,Spub))
+r r r r i
+The timestamp field is explained in section V-A, and mac1 msg.empty (cid:66) Aead(K ,0,(cid:15),H )
+r r
+andmac2areexplainedfurtherinsectionV-D4. I isgenerated
+i H (cid:66) Hash(H (cid:107) msg.empty,32)
+randomly (ρ4) when this message is sent, and is used to tie r r
+subsequent replies to the session begun by this message. The When the responder receives this message, it does the same
+above remaining fields are calculated [22] as follows: operationssothatitsfinalstatevariablesareidentical,replacing
+the operands of the DH function to produce equivalent values.
+C i (cid:66) Construction Note that this handshake response message is smaller than the
+H (cid:66) Hash(C (cid:107) Identifier,32) handshake initiation message, preventing amplification attacks.
+i i
+if Q (cid:44)(cid:15): 4)CookieMACs: InsectionsV-D2andV-D3,thetwohand-
+(C,τ) (cid:66) Kdf(C,Q) shake messages have the msg.mac1 and msg.mac2 parameters.
+i i
+H (cid:66) Hash(H (cid:107) τ,32) For a given handshake message, msg α represents all bytes of
+i i msg prior to msg.mac1, and msg represents all bytes of msg
+H (cid:66) Hash(H (cid:107) Spub,32) β
+i i r prior to msg.mac2. The latest cookie received (cid:102)L seconds ago
+∗
+(Epriv,Epub) (cid:66) DH-Generate() is represented by L ∗. The msg.mac1 and msg.mac2 fields are
+i i
+if Q (cid:44)(cid:15): populated as follows:
+(C i,K i) (cid:66) Kdf(C i,E ipub) msg.mac1 (cid:66) Mac(Q,S mpu (cid:48)b (cid:107) msg α,16)
+msg.ephemeral (cid:66) Epub if L m =(cid:15) or (cid:103)L m ≥ 120:
+i
+H (cid:66) Hash(H (cid:107) msg.ephemeral,32) msg.mac2 (cid:66) 016
+i i
+(C,K ) (cid:66) Kdf(C,DH(Epriv,Spub)) otherwise:
+i i i i r msg.mac2 (cid:66) Mac(L ,msg ,16)
+msg.static (cid:66) Aead(K ,0,Spub,H ) m β
+i i i
+H (cid:66) Hash(H (cid:107) msg.static,32) 5)Transport Data Key Derivation: After the above two
+i i
+(C,K ) (cid:66) Kdf(C,DH(Spriv,Spub)) messages have been exchanged, keys are calculated [22] by the
+i i i i r initiator and responder for sending and receiving transport data
+msg.timestamp (cid:66) Aead(K i,0,Timestamp(),H i) messages (section V-D6):
+H
+i
+(cid:66) Hash(H
+i
+(cid:107) msg.timestamp,32)
+(Tsend =Trecv,Trecv =Tsend) (cid:66) Kdf(C =C ,(cid:15))
+i r i r i r
+When the responder receives this message, it does the same Nsend = Nrecv = Nrecv = Nsend (cid:66) 0
+i r i r
+operationssothatitsfinalstatevariablesareidentical,replacing
+Epriv = Epub = Epriv = Epub =C =C = K = K (cid:66) (cid:15)
+the operands of the DH function to produce equivalent values. i i r r i r i r
+On the last line, most prior states of the handshake are zeroed
+3)Second Message: Responder to Initiator: The responder from memory (described in section VII-D), but the value H =
+i
+sends this message, after processing the first message above
+H is not necessarily zeroed, as it could potentially be useful
+r
+from the initiator and applying the same operations to arrive
+in future revisions of Noise [22].
+at an identical state. I is generated randomly (ρ4) when this
+message is sent, and ir s used to tie subsequent replies to the 6)Subsequent Messages: Transport Data Messages: The
+session begun by this message, just as above. The responder initiatorandtheresponderexchangetransportdatamessagesfor
+sends this message, msg: exchanging encrypted encapsulated packets. The inner plaintext
+packet that is encapsulated is represented as P, of length (cid:107)P(cid:107).
+Both peers send this message, msg:
+type (cid:66) 0x2 (1 byte) reserved (cid:66) 03 (3 bytes)
+sender (cid:66) I r (4 bytes) receiver (cid:66) I i (4 bytes) type (cid:66) 0x4 (1 byte) reserved (cid:66) 03 (3 bytes)
+ephemeral (32 bytes) receiver (cid:66) I m(cid:48) (4 bytes)
+empty ((cid:68) 0 bytes) counter (8 bytes)
+mac1 (16 bytes) mac2 (16 bytes) packet ((cid:107)(cid:77) P(cid:107) bytes)
+7The remaining fields are populated as follows: peers from being attacked by sending them fraudulent cookie
+replymessages.Arandomsaltisaddedtothemessagetoavoid
+P (cid:66) P (cid:107) 016·(cid:100)(cid:107)P(cid:107)/16(cid:101)−(cid:107)P(cid:107)
+key reuse. Also note that this message is smaller than either
+msg.counter (cid:66) Nsend the handshake initiation message or the handshake response
+m
+msg.packet (cid:66) Aead(Tsend,Nsend,P,(cid:15)) message, avoiding amplification attacks.
+m m
+Nsend (cid:66) Nsend +1 Upon receiving this message, if it is valid, the only thing
+m m
+the recipient of this message should do is store the cookie
+The recipient of this messages uses Trecv to read the message. along with the time at which it was received. The mechanism
+m(cid:48)
+Note that no length value is stored in this header, since the described in section VI will be used for retransmitting hand-
+authentication tag serves to determine whether the message shake messages with these received cookies; this cookie reply
+is legitimate, and the inner IP packet already has a length message should not, by itself, cause a retransmission.
+field in its header. The encapsulated packet itself is zero
+padded (without modifying the IP packet’s length field) before VI. Timers&StatelessUX
+encryption to complicate traffic analysis, though that zero
+From the perspective of the user, WireGuard appears
+padding should never increase the UDP packet size beyond
+the maximum transmission unit length. Prior to msg.packet, stateless.Theprivatekeyoftheinterfaceisconfigured,followed
+by the public key of each of its peers, and then a user may
+there are exactly 16 bytes of header fields, which means that
+simply send packets normally. The maintenance of session
+decryption may be done in-place and still achieve natural
+states, perfect forward secrecy, handshakes, and so forth is
+memory address alignment, allowing for easier implementation
+completely behind the scenes, invisible to the user. While
+in hardware and a significant performance improvement on
+similarautomaticmechanismshistoricallyhavebeenbuggyand
+many common CPU architectures. This is in part the result of
+disastrous, WireGuard employs an extremely simple timer state
+the 3 bytes of reserved zero fields, making the first four bytes
+machine,inwhicheachstateandtransitionstoalladjacentstates
+readable together as a little-endian integer.
+are clearly defined, resulting in total reliability. There are no
+The msg.counter value is a nonce for the ChaCha20- anomalousstatesorsequencesofstates;everythingisaccounted
+Poly1305 AEAD and is kept track of by the recipient using for. It has been tested with success on 10 gigabit intranets as
+N mre (cid:48)cv.Italsofunctionstoavoidreplyattacks.SinceWireGuard wellasonlow-bandwidthhigh-latencytransatlanticcommercial
+operates over UDP, messages can sometimes arrive out of airline Internet. The simplicity of the timer state machine is
+order. For that reason we use a sliding window to keep track owed to the fact that only a 1-RTT handshake is required, that
+of received message counters, in which we keep track of the initiator and responder can transparently switch roles, and
+the greatest counter received, as well as a window of prior that WireGuard breaks down traditional layering, as discussed
+messages received, using the algorithm detailed by appendix in section I, and can therefore use intra-layer characteristics.
+C of RFC2401 [13] or by RFC6479 [25], which uses a larger
+bitmap while avoiding bitshifts, enabling more extreme packet A. Preliminaries
+reordering that may occur on multi-core systems.
+The following constants are used for the timer state system:
+7)Under Load: Cookie Reply Message: As mentioned in
+Symbol Value
+sectionV-C,whenamessagewithavalidmsg.mac1isreceived,
+but msg.mac2 is invalid or expired, and the peer is under load, Rekey-After-Messages 264−216−1 messages
+the peer may send a cookie reply message. I m(cid:48) is determined Reject-After-Messages 264−24−1 messages
+from the msg.sender field of the message that prompted this Rekey-After-Time 120 seconds
+cookie reply message, msg: Reject-After-Time 180 seconds
+Rekey-Attempt-Time 90 seconds
+Rekey-Timeout 5 seconds
+type (cid:66) 0x3 (1 byte) reserved (cid:66) 03 (3 bytes) Keepalive-Timeout 10 seconds
+receiver (cid:66) I m(cid:48) (4 bytes)
+Under no circumstances will WireGuard send an initiation
+salt (cid:66) ρ32 (32 bytes) messagemorethanonceeveryRekey-Timeout.Asecuresession
+(cid:76) is created after the successful receipt of a handshake response
+cookie (16 bytes)
+message (section V-D3), and the age of a secure session
+is measured from the time of processing this message and
+Thesecretvariable, R m,changeseverytwominutestoarandom the immediately following derivation of transport data keys
+value, A m(cid:48) represents the subscript’s external IP address, and (section V-D5).
+M represents the msg.mac1 value of the message to which
+this is in reply. The remaining encrypted cookie reply field is B. Transport Message Limits
+populated as such:
+Afterasecuresessionhasfirstbeenestablished,WireGuard
+τ (cid:66) Mac(R m,A m(cid:48),16) will try to create a new session, by sending a handshake
+msg.cookie (cid:66) Aead(Mac(Q,Spub (cid:107) msg.salt,32),0,τ,M)
+initiationmessage(sectionV-D2),afterithassentRekey-After-
+m Messages transport data messages or after the current secure
+By using M as the additional authenticated data field, we bind sessionisRekey-After-Timesecondsold,whichevercomesfirst.
+the cookie reply to the relevant message, in order to prevent If this secure session was created by a responder rather than an
+8initiator,thereinitiationispromptedinsteadafter(Rekey-After- encapsulated encrypted inner-packet. Since all other transport
+Time + Rekey-Timeout × 2) seconds, in order to prevent the data messages contain IP packets, which have a minimum
+“thundering herd” problem in which both parties repeatedly try length of min((cid:107)IPv4header(cid:107),(cid:107)IPv6header(cid:107)), this keepalive
+to initiate new sessions at the same time. After Reject-After- message can be easily distinguished by simple virtue of having
+Messages transport data messages or after the current secure a zero length encapsulated packet. (Note that the msg.packet
+session is Reject-After-Time seconds old, whichever comes field of the message will in fact be of length 16, the length
+first, WireGuard will refuse to send any more transport data of the Poly1305 [5] authentication tag, since a zero length
+messages using the current secure session, until a new secure plaintext still needs to be authenticated, even if there is nothing
+session is created through the 1-RTT handshake. to encrypt.)
+C. Key Rotation This passive keepalive is only sent when a peer has nothing
+to send, and is only sent in circumstances when another peer is
+NewsecuresessionsarecreatedapproximatelyeveryRekey- sending authenticated transport data messages to it. Thismeans
+After-Time seconds (which is far more likely to occur before that when neither side is exchanging transport data messages,
+Rekey-After-Messages transport data messages have been the network link will be silent.
+sent), due to the transport message limits described above in
+section VI-B. This means that the secure session is constantly Because every transport data message sent warrants a reply
+rotating, creating a new ephemeral symmetric session key of some kind—either an organic one generated by the nature
+each time, for perfect forward secrecy. But, keep in mind of the encapsulated packets or this keepalive message—we can
+that after an initiator receives a handshake response message determine if the secure session is broken or disconnected if a
+(section V-D3), the responder cannot send transport data transport data message has not been received for (Keepalive-
+messages (section V-D6) until it has received the first transport
+Timeout +Rekey-Timeout)seconds,inwhichcaseahandshake
+data message from the initiator. And, further, transport data initiation message is sent to the unresponsive peer, once every
+messages encrypted using the previous secure session might Rekey-Timeout seconds, as in section VI-D, until a secure
+be in transit after a new secure session has been created. For session is recreated successfully or until Rekey-Attempt-Time
+these reasons, WireGuard keeps in memory the current secure seconds have passed.
+sessionandtheprevioussecuresession.Everytimeanewsecure
+session is created, the existing one rotates into the “previous”
+slot,andthenewoneoccupiesthe“current”slot.The“previous- F. Interaction with Cookie Reply System
+previous” one is then discarded and its memory is zeroed (see
+section VII-D for a discussion of memory zeroing). If no new As noted in sections V-C and V-D7, when a peer is under
+securesessioniscreatedafter(Reject-After-Time×3)seconds, load, a handshake initiation message or a handshake response
+both the current secure session and the previous secure session message may be discarded and a cookie reply message sent.
+are discarded and zeroed out. On receipt of the cookie reply message, which will enable the
+peer to send a new initiation or response message with a valid
+D. Handshake Initiation Retransmission msg.mac2 that will not be discarded, the peer is not supposed
+toimmediatelyresendthenowvalidmessage.Instead,itshould
+The first time the user sends a packet over a WireGuard simply store the decrypted cookie value from the cookie reply
+interface, the packet cannot immediately be sent, because no message, and wait for the expiration of the Rekey-Timeout
+current session exists. So, after queuing the packet, WireGuard timerforretryingahandshakeinitiationmessage.Thisprevents
+sends a handshake initiation message (section V-D2). potentialbandwidth generation abuse,and helpsto alleviatethe
+load conditions that are requiring the cookie reply messages in
+After sending a handshake initiation message, because of
+the first place.
+a first-packet condition, or because of the limit conditions of
+section VI-B, if a handshake response message (section V-D3)
+is not subsequently received after Rekey-Timeout seconds, a
+new handshake initiation message is constructed (with new VII. LinuxKernelImplementation
+randomephemeralkeys)andsent.Thisreinitiationisattempted
+for Rekey-Attempt-Time seconds before giving up. Critically The implementation of WireGuard inside the Linux kernel
+important future work includes adjusting the Rekey-Timeout has a few goals. First, it should be short and simple, so that
+value to use exponential backoff, instead of the current fixed auditing and reviewing the code for security vulnerabilities is
+value. not only easy, but also enjoyable; WireGuard is implemented
+in less than 4,000 lines of code (excluding cryptographic
+E. Passive Keepalive primitives). Second, it must be extremely fast, so that it is
+competitive with IPsec on performance. Third, it must avoid
+Mostimportantly,andmostelegant,WireGuardimplements allocations and other resource intensive allocations in response
+a passive keepalive mechanism to ensure that sessions stay to incoming packets. Forth, it must integrate as natively and
+active and allow both peers to passively determine if a con- smoothly as possible with existing kernel infrastructure and
+nection has failed or been disconnected. If a peer has received userland expectations, tools, and APIs. And fifth, it must be
+a validly-authenticated transport data message (section V-D6), buildable as an external kernel module without requiring any
+but does not have any packets itself to send back for Keepalive- changes to the core Linux kernel. WireGuard is not merely an
+Timeout seconds, it sends a keepalive message. A keepalive academicprojectwithnever-releasedlaboratorycode,butrather
+message is simply a transport data message with a zero-length apracticalprojectaimingforproduction-readyimplementations.
+9A. Queuing System Likewise, handshake initiation and response messages and
+cookie reply messages are processed on a separate parallel low-
+The WireGuard device driver has flags indicating to the
+priority worker thread. As mentioned in section V-C, ECDH
+kernel that it supports generic segmentation offload (GSO),
+operations are CPU intensive, so it is important that a flood of
+scatter gather I/O, and hardware checksum offloading, which
+handshake work does not monopolize the CPU. Low priority
+in sum means that the kernel will hand “super packets” to
+background workqueues are employed for this asynchronous
+WireGuard, packets that are well over the MTU size, having
+handshake message handling.
+been priorly queued up by the upper layers, such as TCP or
+the TCP and UDP corking systems. This allows WireGuard to
+C. RTNL-based Virtual Interface & Containerization
+operate on batch groups of outgoing packets. After splitting
+packets into ≤MTU-sized chunks, WireGuard attempts to In order to integrate with the existing ip(8) utilities and
+encrypt, encapsulate, and send over UDP all of these at once, the netlink-based Linux user space, the kernel’s RTNL layer
+caching routing information, so that it only has to be computed is used for registering a virtual interface, known inside the
+once per cluster of packets. This has the very important effect kernel as a “link”. This easily gives access to the kernel APIs
+of also reducing cache misses: by waiting until all individual accessed by ip-link(8) and ip-set(8). For configuring the
+packetsofasuperpackethavebeenencryptedandencapsulated interface private key and the public keys and endpoints of
+to pass them off to the network layer, the very complicated and peers, initially the RTM_SETLINK RTNL message was used, but
+CPU-intensive network layer keeps instructions, intermediate this proved to be too limited. It proved to be much cleaner to
+variables,andbranchpredictionsinCPUcache,givinginmany simply implement an ioctl(2)-based API, passing a series
+cases a 35% increase in sending performance. of structures back and forth, through two different functions:
+WG_GET_DEVICE and WG_SET_DEVICE. At the moment, a separate
+Aswell,asmentionedinsectionVI-D,sometimesoutgoing
+user space tool, wg(8), is used for this purpose, but future
+packets must be queued until a handshake completes success-
+plans involve integrating this functionality directly into ip(8).
+fully. When packets are finally able to be sent, the entire queue
+of existing queued packets along are treated as a single super The RTNL subsystem allows for moving the WireGuard
+packet, in order to benefit from the same optimizations as virtual interfacebetweennetwork namespaces.Thisenablesthe
+above. sending and receiving sockets (for the outer UDP packets) to
+be created in one namespace, while the interface itself remains
+Finally, in order to prevent against needless allocations, all
+packet transformations are done in-place, avoiding the need for in another namespace. For example, a docker(1) or rkt(1)
+container guest could have as its sole network interface a
+copying.Thisappliesnotonlytotheencryptionanddecryption
+WireGuard interface, with the actual outer encrypted packets
+of data, which occur in-place, but also to certain user space
+beingsentoutoftherealnetworkinterfaceonthehost,creating
+data and files sent using sendfile(2); these are processed
+end-to-end authenticated encryption in and out of the container.
+using this zero-copy super packet queuing system.
+Futureworkonthequeuingsystemcouldpotentiallyinvolve D. Data Structures and Primitives
+integrating WireGuard with the FlowQueue [11]-CoDel [20]
+While the Linux kernel already includes two elaborate
+scheduling algorithm.
+routing table implementations—an LC-trie [21] for IPv4 and a
+radix trie for IPv6—they are intimately tied to the FIB routing
+B. Softirq & Parallelism
+layer, and not at all reusable for other uses. For this reason, a
+Thexfrmlayer,incontrasttoWireGuard,hastheadvantage very minimal routing table was developed. The authors have
+thatitdoesnotneedtodocryptographyinsoftirq,whichopens had success implementing the cryptokey routing table as an
+it up to a bit more flexibility. However, there is precedent for allotment routing table [10], an LC-trie [21], and a standard
+doing cryptographic processing in softirq on the interface level: radix trie, with each one giving adequate but slightly different
+the mac802111 subsystem used for wireless WPA encryption. performance characteristics. Ultimately the simplicity of the
+WireGuard, being a virtual interface that does encryption, is venerable radix trie was preferred, having good performance
+not architecturally so much different from wireless interfaces characteristics and the ability to implement it with lock-less
+doing encryption at the same layer. While in practice it does lookups, using the RCU system [18]. Every time an outgoing
+work very well, it is not parallel. For this reason, the kernel’s packet goes through WireGuard, the destination peer is looked
+padatasystemisusedforparallelizingintoconcurrentworkers up using this table, and every time an incoming packet reaches
+encryptionanddecryptionoperationsforutilizationofallCPUs WireGuard, its validity is checked by consulting this table, so
+and CPU cores. As well, packet checksums can be computed performance is in fact important here.
+in parallel with this method. When sending packets, however,
+For all handshake initiation messages (section V-D2), the
+they must be sent in order, which means each packet cannot
+responder must lookup the decrypted static public key of the
+simply be sent immediately after it is encrypted. Fortunately,
+initiator. For this, WireGuard employs a hash table using the
+the padata API divides operations up into a parallel step,
+extremely fast SipHash2-4 [1] MAC function with a secret, so
+followed by an in-order serial step. This is also helpful for
+that upper layers, which may provide the WireGuard interface
+parallel decryption, in which the message counter must be
+withpublickeysinamorecomplicatedkeydistributionscheme,
+checked and incremented in the order that packets arrive, lest
+cannot mount a hash table collision denial of service attack.
+they be rejected unnecessarily. In order to reduce latency, if
+there is only a single packet in a super packet and its length is WhiletheLinuxkernel’scryptoAPIhasalargecollectionof
+less than 256 bytes, or if there is only one CPU core online, primitivesandismeanttobereusedinseveraldifferentsystems,
+the packet is processed in softirq. theAPIintroducesneedlesscomplexityandallocations.Several
+10revisions of WireGuard used the crypto API with different have as their only networking means the WireGuard interface,
+integration techniques, but ultimately, using raw primitives preventing any potential clear-text packet leakage.
+with direct, non-abstracted APIs proved to be far cleaner
+and less resource intensive. Both stack and heap pressure F. Potential Userspace Implementations
+were reduced by using crypto primitives directly, rather than
+In order for WireGuard to have widespread adoption, more
+going through the kernel’s crypto API. The crypto API also
+implementationsthanourcurrentonefortheLinuxkernelmust
+makes it exceedingly difficult to avoid allocations when using
+bewritten.Asanextstep,theauthorsplantoimplementacross-
+multiple keys in the multifaceted ways required by Noise. As
+platform low-speed user space TUN-based implementation in
+of writing, WireGuard ships with optimized implementations
+a safe yet high-speed language like Rust, Go, or Haskell.
+of ChaCha20Poly1305 for the various Intel Architecture vector
+extensions,withimplementationsforARM/NEONandMIPSon
+theirway.Thefastestimplementationsupportedbythehardware VIII. Performance
+is selected at runtime, with the floating-point unit being used WireGuardwasbenchmarkedalongsideIPsecintwomodes
+opportunistically. All ephemeral keys and intermediate results and OpenVPN, using iperf3(1) between an Intel Core i7-
+of cryptographic operations are zeroed out of memory after 3820QM and an Intel Core i7-5200U with Intel 82579LM and
+use, in order to maintain perfect forward secrecy and prevent Intel I218LM gigabit Ethernet cards respectively, with results
+against various potential leaks. The compiler must be specially averaged over thirty minutes. The results were quite promising:
+informed about this explicit zeroing so that the “dead-store”
+is not optimized out, and for this the kernel provides the Protocol Configuration
+memzero_explicit function.
+WireGuard 256-bit ChaCha20, 128-bit Poly1305
+In contrast to crypto primitives, the existing kernel im- IPsec #1 256-bit ChaCha20, 128-bit Poly1305
+plementations of token bucket hash-based rate limiting, for IPsec #2 256-bit AES, 128-bit GCM
+rate limiting handshake initiation and response messages when OpenVPN 256-bit AES, HMAC-SHA2-256, UDP mode
+under-load after cookie IP attribution has occurred, have been
+very minimal and easy to reuse in WireGuard. WireGuard uses Throughput
+the Netfilter hashlimit matcher for this.
+OpenVPN 258
+E. FIB Considerations
+IPsec #2 881
+In order to avoid routing loops, one proposed change for
+IPsec #1 825
+the Linux kernel—currently posted by the authors to the Linux
+kernel mailing list [8]—is to allow for FIB route lookups that WireGuard 1,011
+exclude an interface. This way, the kernel’s routing table could
+have 0.0.0.0/1 and 128.0.0.1/1, for a combined coverage
+0 200 400 600 800 1,000
+of 0.0.0.0/0, while being more specific, sent to the wg0
+interface. Then, the individual endpoints of WireGuard peers Megabits per Second
+couldberoutedusingthedevicethataFIBlookupwouldreturn PingTime
+if wg0didnotexist,namelyonethroughtheactual0.0.0.0/0
+route. Or more generally, when looking up the correct interface OpenVPN 1.541
+for routing packets to particular peer endpoints, a route for
+an interface would be returned that is guaranteed not to be IPsec #2 0.508
+wg0. This is preferable to the current situation of needing to
+add explicit routes for WireGuard peer endpoints to the kernel IPsec #1 0.501
+routing table when the WireGuard-bound route has precedence.
+This work is ongoing. WireGuard 0.403
+Another approach, allude to above, is to use network
+0 0.2 0.4 0.6 0.8 1 1.2 1.4 1.6
+namespaces to entirely isolate the WireGuard interface and
+Milliseconds
+routing table from the physical interfaces and routing tables.
+One namespace would contain the WireGuard interface and a
+For both metrics, WireGuard outperformed OpenVPN and
+routing table with a default route to send all packets over the
+both modes of IPsec. The CPU was at 100% utilization during
+WireGuard interface. The other namespace would contain the
+the throughput tests of OpenVPN and IPsec, but was not
+various physical interfaces (Ethernet devices, wireless radios,
+completely utilized for the test of WireGuard, suggesting that
+and so forth) along with its usual routing table. The incoming
+WireGuard was able to completely saturate the gigabit Ethernet
+and outgoing UDP socket for the WireGuard interface would
+link.
+live in the second physical interface namespace, not the first
+WireGuard interface namespace. This way, packets sent in the While the AES-NI-accelerated AES-GCM IPsec ci-
+WireGuard interface namespace are encrypted there, and then pher suite appears to outperform the AVX2-accelerated
+sentusingasocketthatlivesinthephysicalinterfacenamespace. ChaCha20Poly1305 IPsec cipher suite, as future chips in-
+This prevents all routing loops and also ensures total isolation. crease the width of vector instructions—such as the upcoming
+Processes living in the WireGuard interface namespace would AVX512—it is expected that over time ChaCha20Poly1305
+11will outperform AES-NI [3]. ChaCha20Poly1305 is especially [3] D.J.Bernstein.Cpusareoptimizedforvideogames.[Online].Available:
+well suited to be implemented in software, free from side- https://moderncrypto.org/mail-archive/noise/2016/000699.html
+channel attacks, with great efficiency, in contrast to AES, so [4] ——. Tai64, tai64n, and tai64na. [Online]. Available: https:
+for embedded platforms with no dedicated AES instructions, //cr.yp.to/libtai/tai64.html
+ChaCha20Poly1305 will also be most performant. [5] ——,“Thepoly1305-aesmessage-authenticationcode,”inFastSoftware
+Encryption: 12th International Workshop, FSE 2005, Paris, France,
+Furthermore, WireGuard already outperforms both IPsec February21-23,2005,RevisedSelectedPapers,ser.LectureNotesin
+cipher suites, due to the simplicity of implementation and ComputerScience,vol.3557. Springer,2005,pp.32–49.
+lack of overhead. The enormous gap between OpenVPN and [6] ——,“Curve25519:newDiffie-Hellmanspeedrecords,”inPublicKey
+Cryptography – PKC 2006, ser. Lecture Notes in Computer Science,
+WireGuard is to be expected, both in terms of ping time and
+M.Yung,Y.Dodis,A.Kiayias,andT.Malkin,Eds.,vol.3958. Berlin,
+throughput, because OpenVPN is a user space application, Heidelberg:Springer-VerlagBerlinHeidelberg,2006,pp.207–228.
+which means there is added latency and overhead of the [7] ——,“Chacha,avariantofsalsa20,”inSASC2008,2008.
+scheduler and copying packets between user space and kernel
+[8] J.A.Donenfeld.Inverseofflowi{4,6}_oif:flowi{4,6}_not_oif.[Online].
+space several times. Available:http://lists.openwall.net/netdev/2016/02/02/222
+[9] N. Ferguson and B. Schneier, “A cryptographic evaluation of ipsec,”
+CounterpaneInternetSecurity,Inc,Tech.Rep.,2000.
+IX. Conclusion
+[10] Y.Hariguchi.(2002)Allotmentroutingtable:Afastfreemultibittrie
+In less than 4,000 lines, WireGuard demonstrates that it basedroutingtable.[Online].Available:https://github.com/hariguchi/
+is possible to have secure network tunnels that are simply art/blob/master/docs/art.pdf
+implemented, extremely performant, make use of state of [11] T.Hoeiland-Joergensen,P.McKenney,D.Taht,J.Gettys,andE.Dumazet,
+“Theflowqueue-codelpacketschedulerandactivequeuemanagement
+the art cryptography, and remain easy to administer. The
+algorithm,” Internet Research Task Force, Internet Engineering Task
+simplicity allows it to be very easily independently verified Force,RFC,March2016.
+and reimplemented on a wide diversity of platforms. The
+[12] C.Kaufman,P.Hoffman,Y.Nir,andP.Eronen,“Internetkeyexchange
+cryptographic constructions and primitives utilized ensure high- protocol version 2,” Internet Research Task Force, RFC Editor, RFC
+speed in a wide diversity of devices, from data center servers 5996,September2010.
+to cellphones, as well as dependable security properties well [13] S.KentandR.Atkinson,“Securityarchitectureforip,”InternetResearch
+into the future. The ease of deployment will also eliminate TaskForce,RFCEditor,RFC2401,November1998.
+many of the common and disastrous pitfalls currently seen [14] H.Krawczyk,“Sigma:The‘sign-and-mac’approachtoauthenticated
+diffie-hellmananditsuseintheike-protocols,”inAdvancesinCryptology
+with many IPsec deployments. Described around the time of its
+- CRYPTO 2003, 23rd Annual International Cryptology Conference,
+introduction by Furguson and Schneier [9], “IPsec was great SantaBarbara,California,USA,August17-21,2003,Proceedings,ser.
+disappointment to us. Given the quality of the people that [sic] Lecture Notes in Computer Science, vol. 2729. Springer, 2003, pp.
+worked on it and the time that was spent on it, we expected 400–425.
+a much better result. [...] Our main criticism of IPsec is its [15] ——,AdvancesinCryptology–CRYPTO2010:30thAnnualCryptology
+complexity.” WireGuard, in contrast, focuses on simplicity and
+Conference,SantaBarbara,CA,USA,August15-19,2010.Proceedings.
+Berlin,Heidelberg:SpringerBerlinHeidelberg,2010,ch.Cryptographic
+usability, while still delivering a scalable and highly secure
+ExtractionandKeyDerivation:TheHKDFScheme,pp.631–648.
+system. By remaining silent to unauthenticated packets and
+[16] A. Langley and Y. Nir, “Chacha20 and poly1305 for ietf protocols,”
+by not making any allocations and generally keeping resource
+InternetResearchTaskForce,RFCEditor,RFC7539,May2015.
+utilization to a minimum, it can be deployed on the outer edges [17] K. Lauter and A. Mityagin, Public Key Cryptography - PKC 2006:
+of networks, as a trustworthy and reliable access point, which 9th International Conference on Theory and Practice in Public-Key
+does not readily reveal itself to attackers nor provide a viable Cryptography, New York, NY, USA, April 24-26, 2006. Proceedings.
+attack target. The cryptokey routing table paradigm is easy to Berlin, Heidelberg: Springer Berlin Heidelberg, 2006, ch. Security
+AnalysisofKEAAuthenticatedKeyExchangeProtocol,pp.378–394.
+learn and will promote safe network designs. The protocol is
+[18] P. E. McKenny, D. Sarma, A. Arcangeli, A. Kleen, O. Krieger, and
+based on cryptographically sound and conservative principles,
+R.Russell,“Read-copyupdate,”inOttawaLinuxSymposium,Jun2002,
+usingwellunderstoodyetmoderncryptoprimitives.WireGuard
+pp.338–367.
+was designed from a practical perspective, meant to solve real
+[19] R. Moskowitz, T. Heer, P. Jokela, and T. Henderson, “Host identity
+world secure networking problems. protocol version 2,” Internet Research Task Force, RFC Editor, RFC
+7401,April2015.
+[20] K.NicholsandV.Jacobson,“Controllingqueuedelay,”Commun.ACM,
+Acknowledgments
+vol.55,no.7,pp.42–50,July2012.
+WireGuard was made possible with the great advice and [21] S.NilssonandG.Karlsson,“Ip-addresslookupusinglc-tries,”IEEE
+guidance of many, in particular: Trevor Perrin, Jean-Philippe
+JournalonSelectedAreasinCommunications,vol.17,no.6,pp.1083–
+1092,Jun1999.
+Aumasson, Steven M. Bellovin, and Greg Kroah-Hartman.
+[22] T. Perrin. (2016) The noise protocol framework. [Online]. Available:
+http://noiseprotocol.org/noise.pdf
+References [23] E.RescorlaandN.Modadugu,“Datagramtransportlayersecurityversion
+1.2,” Internet Research Task Force, RFC Editor, RFC 6347, January
+[1] J.-P. Aumasson and D. J. Bernstein, Progress in Cryptology - IN- 2012.
+DOCRYPT2012:13thInternationalConferenceonCryptologyinIndia,
+Kolkata,India,December9-12,2012.Proceedings. Berlin,Heidelberg: [24] K.WinsteinandH.Balakrishnan,“Mosh:Aninteractiveremoteshell
+formobileclients,”inUSENIXAnnualTechnicalConference,Boston,
+SpringerBerlinHeidelberg,2012,ch.SipHash:AFastShort-InputPRF,
+MA,June2012.
+pp.489–508.
+[25] X.ZhangandT.Tsou,“Ipsecanti-replayalgorithmwithoutbitshifting,”
+[2] J.-P. Aumasson, S. Neves, Z. Wilcox-O’Hearn, and C. Winnerlein,
+“Blake2: Simpler, smaller, fast as md5,” in Proceedings of the 11th InternetResearchTaskForce,RFCEditor,RFC6479,January2012.
+InternationalConferenceonAppliedCryptographyandNetworkSecurity,
+ser.ACNS’13. Berlin,Heidelberg:Springer-Verlag,2013,pp.119–135.
+12

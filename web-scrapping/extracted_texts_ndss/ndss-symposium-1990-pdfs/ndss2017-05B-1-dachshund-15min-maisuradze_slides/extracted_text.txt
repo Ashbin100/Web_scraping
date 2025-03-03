@@ -1,0 +1,237 @@
+Dachshund
+Digging for and Securing Against (Non-)Blinded
+Constants in JIT Code
+Giorgi Maisuradze, Michael Backes, Chris;an Rossow
+CISPA, Saarland University, Germany
+NDSS Symposium 2017Overview
+• Code reuse aGacks JavaScript
+• Code reuse with JIT code
+• Constant (non-)blinding in browsers
+• Defending nonblinded cases
+Na;ve Code
+28-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 2Revisi1ng Code ReuseCode Reuse A7acks
+• Iden;fy gadgets/func;ons STACK
+···
+• Put their addresses on the stack ··· libc@f7e0a000
+···
+&·G·· 2
+int syste··m···· (char*)
+• Use return instruc;ons to a&rcgms.d..
+···
+Sav&eGd1 R IP
+execute them
+SSaavveedd RRBBPP
+.text@4048000
+B“u/bffine/rb[2as5h6”] ···
+pop r·d·· i; ret
+···
+28-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 4Code Reuse Defenses
+• Iden;fy gadgets/func;ons STACK
+libc@ff78a000
+···
+···
+• Put their addresses on the stack ··· int sy?st?e?··m··?·· ?(?ch ar*)
+a&rGg 21 ···
+• Use return instruc;ons to &arcgm 0d
+Sav&eGd1 R IP
+execute them
+SSaavveedd RRBBPP .text@7093000
+···
+po?p? r?·d·?· i?; ?r et
+Defense:
+B“u/bffine/rb[2as5h6”]
+···
+• Randomize memory segments
+(ASLR)
+• Randomize code pages
+28-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 5Code Injec1on A7acks
+• Use constant values to create
+mov eax,0x90909090
+m = 0x90909090; JIT
+mov [rbp+0x20],eax
+controlled gadgets
+• JIT Spraying [WOOT’10]
+x = 0x3c909090^ mov eax,0x3c909090
+0x3c909090^ xor eax,0x3c909090
+• Spray code pages with NOP-sled JIT
+... ...
+0x3c909090; xor eax,0x3c909090
+followed by a shellcode
+nop,nop,nop,cmp al,0x35
+nop,nop,nop,cmp al,0x35
+...
+nop,nop,nop,cmp al,0x35
+28-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 6Browser Defenses
+• Constant Blinding (Edge,
+mov eax,0x2511663f
+mov eax,0x3c909090 CB
+xor eax,0x1981f6af
+Chrome)
+• Randomize immediate values by
+XORing them with a random key
+• Add XOR instruc;on to restore
+original value
+• Blind large constants (>2B)
+• Weaknesses
+• Small constants remain [NDSS’15]
+• Displacement fields [Usenix’16]
+28-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 7Constant Blinding CompletenessDachshund
+Controller
+C=0x123456 C=0x123456
+JS Fuzzer JIT Inspector
+...
+JIT
+FN=function(){ eval(“ mov rax, FOUND
+var a=-1; var a=-1; 0xff..ff 0x123456
+a^=0x123456; a^=0x123456; xor rax, at
+}; ”) 0x123456 0x1A17FE06085
+OPT
+...
+28-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 9Found Constants
+JavaScript Statements Containing
+function fn() { function fn() {
+Nonblinded Constants: console.log( return Math.trunc(
+0x12345678); 0x12345678);
+} }
+• Chrome:
+switch(j) {
+• Arguments to built-in func;ons, ternary
+v1 = b ? 0x12345678:
+case 0x12345678: m++;
+operators, return statements, bitwise 0x9abcdef0;
+}
+opera;ons, ...
+• Edge: return 0x12345678; arr[i] = 0x12345678;
+• Arguments to Math library func;ons,
+cases in switch statement, array indexes, v1 = v2 ^ 0x12345678; global = 0x12345678;
+global variable accesses, ...
+28-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 10Origins of Constants
+Chrome:
+mov rax,[rbp+0x20]
+m=i^0x12345678; OPT
+• Non blinded values are coming xor rax,0x12345678
+from the op;mizing compiler:
+switch(j) { mov rdx,[rbp+0x20]
+case 0x12345678: OPT cmp edx,0x12345678
+• condi;onal ?:, switch, arithme;c,
+m++; } jnz XXX
+array indexing, globals,...
+Edge:
+function fn() { mov rsi,0x12345678
+• Immediate value caching (both
+JIT
+return Math.trunc( ...
+in baseline and op;mizer) 0x12345678); mov r9, rsi
+OPT
+} call r12
+• Nonblinded values are stored in a
+spare register
+28-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 11Genera1ng Gadgets
+Required gadgets for seqng pop r8; ret 4158c3 function fn(){
+pop r9; ret 4159c3 glob[0]= 0xc35841;
+parameters for VirtualProtect: pop rcx; ret 59c3 glob[1]= 0xc35941;
+pop rdx; ret 5ac3 glob[2]=-0x3ca7a5a7;
+• Google Chrome 50: pop rax; ret 58c3 }
+mov [rbx+0x1b],0x00c35841
+• Create the func;on fn mov [rbx+0x23],0x00c35941
+mov [rbx+0x2b],0xc3585a59
+• Trigger op;mizing compiler
+function r8(){
+(>1000 calls)
+Math.trunc(0xc35841); }
+function r9(){
+• Microsor Edge 25:
+Math.trunc(0xc35941); }
+function racdx(){
+• Create func;ons r8, r9 and racdx
+Math.trunc(-0x3ca7a5a7);
+}
+• Trigger baseline compila;on for
+mov rsi,0x00c35841
+each of them (>50 calls)
+mov rsi,0x00c35941
+mov rsi,0xc3585a59
+28-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 12Blinding the ConstantsRewri1ng JavaScript
+• Replace all integer constants
+window._c1234=parseInt(“0x1234”)
+function fn(){ function fn(){
+with global objects
+var i=0x1234; var i=window._c1234;
+} }
+• Replace any other literal type
+function fn(){ function fn(){
+i=“1234”&567; i=(“1234”).toString()&567;
+that can be interpreted as a
+} }
+number
+28-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 14Rewri1ng JavaScript
+JavaScript rewriter is
+Server
+implemented as a proxy service
+between the browser and a
+webserver
+• Rewrite JavaScript in all possible
+JS Rewriter
+eval(“/*JS*/”)
+places
+Proxy Function(“/*JS*/”)
+setInterval(“/*JS*/”)
+• Hook dynamic func;ons to ...
+rewrite new code at run;me
+• Rewrite JS in dynamically added
+Browser
+DOM nodes
+kooH
+<script src=“lib.js”/>
+<script>/*JS*/</script>
+<img onclick=“/*JS*/”/>
+etirweR
+e.appendChild(...)
+e.innerHTML = ...
+rotinoM
+28-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 15Evalua1on
+Rewri;ng got rid of all integer
+constants found by Dachshund
+160
+145
+140
+120
+101
+100
+80
+63
+60 51
+40
+20
+0
+AngularJS Jquery
+)SM(
+EMIT
+ETIRWER
+Rewri/ng Time
+30000
+26495
+24245
+25000
+20820
+18528
+20000
+15000
+10000
+5000
+0
+Chrome Edge
+Uncompressed Minified
+EROCS
+ENATCO
+EGAREVA
+Run/me
+-23% -24%
+Original Proxy
+28-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 16Summary
+• JIT engines are vulnerable to code injec;on aGacks
+• Modern browsers do not sufficiently defend against them
+• Rewri;ng JavaScript can get rid of code injec;on via immediate
+values
+Thank you!
+28-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 1728-Feb-17 Giorgi Maisuradze, NDSS Symposium 2017 18

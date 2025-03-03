@@ -1,0 +1,1247 @@
+FBS-Radar: Uncovering Fake Base Stations
+at Scale in the Wild
+Zhenhua Li 1, Weiwei Wang 2, Christo Wilson 3, Jian Chen 1, Chen Qian 4,
+Taeho Jung 5, Lan Zhang 6, Kebin Liu 1, Xiangyang Li 6, Yunhao Liu 1
+1 Tsinghua University 2 Baidu Mobile Security 3 Northeastern University 4 UCSC
+5 Illinois Institute of Technology 6 University of Science and Technology China
+{lizhenhua1983, ww.wang.cs}@gmail.com, cbw@ccs.neu.edu, softwarecj@163.com, cqian12@ucsc.edu
+tjung@hawk.iit.edu, {zhanglan03, liukebin2006}@gmail.com, xiangyangli@ustc.edu.cn, yunhaoliu@gmail.com
+Abstract—Base stations constitute the basic infrastructure of signal-strength 2G cell towers, and nearby clients are likely to
+today’s cellular networks. Unfortunately, vulnerabilities in the attach to them. Attackers can even send jamming signals that
+GSM (2G) network protocol enable the creation of fake base force nearby GSM-compatible 3G/4G cellphones down to the
+stations (FBSes) that are not authorized by network operators. GSM mode [5], [6]. FBSes are not hypothetical: to date, they
+Criminal gangs are using FBSes to directly attack users by
+havebeenobservedintheUS,China,India,Russia,Israel,and
+sending spam and fraud SMS messages, even if the users have
+the UK [7], [8], [9], [10]. Although many mobile carriers are
+access to 3G/4G networks. In this paper, we present the design,
+planning to abandon GSM, it will take years to upgrade cell
+deployment, and evolution of an FBS detection system called
+towers [7] and phase out legacy end-user devices.
+FBS-Radar, based on crowdsourced data of nearly 100M users.
+In particular, we evaluate five different metrics for identifying Criminal gangs are now using FBSes to directly attack
+FBSesinthewild,andfindthatFBSescanbepreciselyidentified
+users. Using an FBS, an attacker can send SMS messages
+without sacrificing user privacy. Additionally, we present a
+to users from spoofed phone numbers, including privileged
+novel method for accurately geolocating FBSes while incurring
+numbersassociatedwithmobilecarriers,governmentagencies,
+negligible impact on end-user devices. Our system protects users
+public services, banks, etc. These messages can contain spam
+frommillionsofspamandfraudSMSmessagesperday,andhas
+helped the authorities arrest hundreds of FBS operators. advertisements, phishing links, and solicitations for high-fee
+premiumservices.InChinaalone,usersreceivedover2.9B(B
+=billion),4.2B,and5.7Bspam/fraudmessagesfromFBSesin
+I. INTRODUCTION 2013, 2014, and 2015, respectively, causing estimated losses
+of billions of dollars [11], [12], [13]. Surprisingly, an attacker
+Base stations (BSes), also known as base transceiver sta-
+witha$700FBSthatissmallenoughtomountinsideacar[4]
+tions(BTSes)orcelltowers,constitutethebasicinfrastructure
+can earn up to $1400 a day [14].
+of today’s cellular networks. They connect end-user cellular
+devices to a wide-area network (e.g., a mobile carrier network Although government agencies have undertaken efforts to
+and the Internet) by forwarding voice streams, short message detect and take down FBSes, these efforts are hampered by
+service (SMS) messages, and IP data packets. At present, several challenges. For example, in China the Ministry of
+millionsof 2G/3G/4Gand hybrid-modeBSes co-exist allover Public Security (MPS) and mobile network operators have
+the world, serving billions of mobile devices. Recent trends attempted to detect FBSes by deploying static and mobile
+suggest that cellular networks will be the dominant access sensors in metropolitan areas that scan for BSes with unex-
+methodfortheInternetinthenearfuture;infact,theyalready pectedly high signal strengths. However, this approach incurs
+are in many parts of the world [1], [2]. huge infrastructure costs and covers limited geographic areas.
+Additionally, the MPS and mobile carriers encourage users to
+Unfortunately, vulnerabilities in the GSM (2G) network
+report suspiciousBS signals and SMSmessages. Unfortunate-
+protocolenablethecreationoffakebasestations(FBSes)that
+ly, this crowdsourced detection approach yields poor results,
+arenotauthorizedbynetworkoperators.Specifically,theGSM
+since users are not trained to identify and report FBSes.
+standard does not require that devices authenticate BSes [3].
+Furthermore, typical cellular devices support 2G, 3G, and 4G Inthispaper,wepresentthedesign,deployment,andevolu-
+networks, and in the presence of multiple available networks, tion of an FBS detection system called FBS-Radar. The client
+tend to choose the one with the highest signal strength [4]. side of FBS-Radar is integrated into Baidu PhoneGuard [15],
+Thisallowsunauthorizedthird-partiestosetuptheirownhigh a mobile security app available on Android and iOS. Phone-
+Guard is currently used by over 100M (M = million) users,
+mostly in China. The goals of FBS-Radar are fourfold:
+Permission to freely reproduce all or part of this paper for noncommercial
+purposes is granted provided that copies bear this notice and the full citation 1) FBS-Radar should detect as many FBSes as possible
+on the first page. Reproduction for commercial purposes is strictly prohibited with few false positives, based on little ground truth
+without the prior written consent of the Internet Society, the first-named author
+(since we have no insight into criminals’ activities),
+(for reproduction of an entire paper only), and the author’s employer if the
+and without any specialized hardware.
+paper was prepared within the scope of employment.
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+2) To protect users, FBS-Radar should automatically
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23098 filter spam and fraud SMS messages sent by FBSesfrom users’ devices, with a high precision. FBS-Radarconductsallanalysisonthecloudside(employing
+around 30 commodity servers), so the client-side resource
+3) To aid law enforcement agencies, FBS-Radar should
+consumption is negligible.
+provide actionable intelligence about the physical
+locations of FBSes, so that they can be taken down. Taking the union of all five sets, we found that over 0.8M
+SMS messages were sent to users by FBSes each day in our
+4) To encourage adoption, FBS-Radar should use min-
+dataset, covering 4.7% of all messages marked as suspicious.
+imal resources on the client side (e.g., CPU, traffic,
+Furthermore,wefoundthattheunionofSet-1,2,4,and5had
+andbattery),minimizecollectionofsensitivedata(to
+over 98% overlap with Set-3. This was a critical observation,
+preserveuserprivacy),andnotrequirerootprivileges.
+since it meant that FBS-Radar did not need to collect the
+Since beginning this project, we have learned a great deal text content of SMS messages to identify FBSes.
+about FBSes, and made major changes to FBS-Radar as a
+consequence.Foreaseofexposition,wewilldiscussthealpha Beta Phase. In Jan. 2016, we deployed an updated and
+and beta phases of FBS-Radar’s development as follows. more feature-complete version of FBS-Radar. The most major
+change is that we automatically opted-out 99% of FBS-Radar
+Alpha Phase. When we released FBS-Radar in Aug. 2014, users from the collection of suspicious SMS message content.
+the goal was to explore whether it was possible to detect WecontinuetocollectthetextcontentofsuspiciousSMSmes-
+FBSes automatically, with high precision and accuracy, based sages from the remaining 1% of users to conduct A/B testing
+on data passively collected from end-user devices. To this ofnewfeatures,althoughweeventuallyplantoopttheseusers
+end, we asked PhoneGuard users to opt-in to the following out as well. As a result of this privacy-friendly change, many
+data collection process: whenever a suspicious SMS message more PhoneGuard users have enabled FBS-Radar, causing the
+arrived at their device, the message and accompanying meta- number of suspicious SMS messages flagged by the system to
+dataweresenttoacloudservicemaintainedbyBaidu,aswell increase from 17.5M per day in 2015 to 32M in 2016.
+as information about the device’s recent BSes (e.g., IDs and
+FBS-Radar protects users from FBS-originated SMS mes-
+signal strengths) and nearby WiFi Access Points (e.g., MAC
+sagesbyquarantiningtheminan“FBSmessagefolder”.After
+addresses). We define an SMS message to be suspicious if the
+the client-side app forwards a suspicious SMS message to the
+sender’s number is not in the recipient’s contact list, or the
+cloud,thecloud-sidesoftwareanalyzesthemessagemeta-data
+number is an authoritative number used by a mobile carrier,
+to determine if it was sent from an FBS. If so, the client-side
+a government agency, a public service, a bank, and so forth.
+app quarantines the SMS message and notifies the user. FBS-
+Throughout2015,FBS-Radarexaminedatotalof70BSM- Radar allows users to manually flag messages in the “FBS
+S messages, of which 6.4B (9.1%) were labeled as suspicious messagefolder”asvalid,indicatingthatthesystemproduceda
+andcollectedforfurtheranalysisonthecloudside.Usingthis falsepositive.Weobservethatonly0.05%offlaggedmessages
+data, we comprehensively explored different metrics/methods are marked as valid by users, indicating that FBS-Radar has a
+for detecting FBSes, ultimately isolating five sets of SMS very low false positive rate.
+messages that are highly likely to have been sent by FBSes:
+Using crowdsourced data, FBS-Radar is able to quickly
+provide accurate location estimates of FBSes to law enforce-
+• Set-1: 0.23% of suspicious messages were sent by
+ment (see § VII). We use a novel method to pinpoint FBSes
+BSes with unreasonably high-strength cellular signals
+withamedian(mean)accuracyof11meters(149meters).This
+(> −40 dBm versus −113 dBm to −51 dBm for
+achievement is non-trivial, since FBSes frequently move and
+legitimate BSes; see § V-A).
+changetheirIDs,sowemusttaketemporalandspatiallocality
+• Set-2: 0.15% of suspicious messages were sent by into account. Overall, we estimate that there are hundreds of
+BSes with invalid IDs that violate the syntax of active FBSes around China at any point in time. Between
+legitimate BS IDs (see § V-B). Jul. 2015 and Jun. 2016, the police were able to arrest 455
+FBS operators and take down 1109 FBSes thanks to the data
+• Set-3: 0.16% of suspicious messages came from
+provided by FBS-Radar.
+authoritative phone numbers and were determined to
+containfraudulenttextcontent(e.g.,phishing)usinga Finally, given the popularity of FBS-Radar, it is possible
+bag-of-wordsSVMclassifiertrainedon200,000hand- that FBS attackers may attempt to avoid our detection
+labeled SMS messages (see § V-C). methods. However, to avoid the detection of FBS-Radar,
+attackers must adopt strategies that decrease their ability
+• Set-4: 4.1% of suspicious messages were sent by
+to conduct attacks. First, an attacker may be able to avoid
+BSes that were not in their correct geolocation, i.e.,
+detection by reducing the signal strength of their FBS.
+they were spoofing the ID of a legitimate, but distant,
+Nonetheless, this reduces the effectiveness and radius of
+BS.Wedeterminedthisbygeolocatingtheuserbased
+their attack, and consequently reduces the attacker’s income.
+on nearby WiFi APs, and comparing the user’s loca-
+Second, an attacker may avoid detection by choosing a BS
+tion to authoritative coverage maps of BSes provided
+ID for their FBS that corresponds to a nearby legitimate
+by mobile carriers (see § V-D).
+BS tower. But in this case, user devices will maintain their
+• Set-5: 0.39% of suspicious messages were sent by existing connections to the legitimate BS tower, rather than
+BSes that were also in incorrect geolocations. In this switch over to the FBS. Both of these outcomes are positive
+case,weuseBS-handoverspeedtoestimatetheuser’s for users, and support our goal of making FBS-Radar an
+geolocation when WiFi AP data is too sparse to be effective deterrence against FBS attacks.
+accurate (see § V-E).
+2Contributions. In summary, our work on FBS-Radar makes
+the following contributions:
+Engineering
+• Using extensive crowdsourced data, we evaluate five Cellphone
+different metrics for identifying FBSes in the wild,
+andfindthatFBSescanbepreciselyidentifiedwithout
+sacrificing user privacy.
+FBS Legitimate
+• We present a novel method for accurately geolocating USB BS
+Cable
+FBSes based on crowdsourced measurements. Our Engineering Wireless
+method only relies on the data about the geolocations Laptop Transceiver
+of WiFi APs, and therefore has negligible impact on
+FBS
+end-user devices’ batteries.
+(a) (b)
+• As of Jun. 2016, FBS-Radar is in use by over 92M
+people. Our system protects users from millions of
+spamandfraudSMSmessagesperday,andhashelped Fig. 1. Operating principles of a typical FBS. Compared with a legitimate
+the authorities arrest hundreds of FBS operators. BS, an FBS usually possesses a smaller signal coverage area but a higher
+signalstrength.
+Limitations. Despite its large-scale deployment and solid
+real-worldimpact,FBS-Radarbearstwo-foldlimitations.First,
+as mentioned before, we have little ground truth about FBSes, cellphone. The three components are portable and require a
+thus limiting the recall rate of our FBS and spam/fraud SMS relatively small amount of electrical power, making it easy to
+message detection. We do not know how many FBSes have accommodate them in a van, a minibus, the trunk of a car, or
+evaded the detection of FBS-Radar, nor do we know the even a backpack. The mobility of modern FBSes makes them
+structure of the criminal organization(s) behind FBS attacks. difficult to localize and take down.
+Second, though FBS-Radar is effective in detecting FBSes TheGSMwirelesstransceiveristhecorecomponentofan
+that send spam/fraud SMS messages, it cannot detect FBSes FBS,mainlyconsistingofamainboard,aGSMradiofrequen-
+that do not send SMS messages. The latter are exemplified by cyduplexer,anexternalantenna,asignalpoweramplifier,and
+surveillance devices like IMSI-catchers [16], [17], [18]. We a power supply. These devices can simulate most of the BS-
+focus on spamming devices since they are a large-scale prob- to-cellphone functions of a legitimate GSM base station, but
+leminChina,andtherehavebeenfewpublicreportsofillegal not the BS-to-carrier functions (i.e., it cannot forward voice,
+IMSI-catcherattacksinChina.Althoughwehavenotevaluated SMS, and data packets to a mobile carrier’s network). These
+the use of FBS-Radar in detecting surveillance attacks, many devicestypicallyincludesupportforBCCH(BroadcastControl
+of these devices actively interrogate user devices [19], which Channel) allocation, location updating, identification requests,
+suggests that some of the features used by our system (e.g., user identification (particularly IMSI and IMEI) acquisition,
+crowdsourced measurements of BS IDs, cell tower locations, SMS message sending, and so on.
+and signal strengths) could be useful towards detecting these
+Theengineeringlaptopisusuallyconnectedtothewireless
+devices. We leave this investigation as future work.
+transceiver via a USB cable, through which it controls the
+Consequently, we view FBS-Radar as a first step towards transceiver, e.g., tuning the radio frequency, adjusting the sig-
+practically addressing the threat posed by FBSes. Our results nalstrength,settingtheBSID,andforgingthesender’sphone
+provide a first-of-its-kind window into the activities of crimi- number. The FBS operator typically installs a suite of GUI-
+nals that exploit FBSes to attack users. driven control software onto the laptop, to facilitate sending
+commands to and observing statistics from the transceiver.
+II. BACKGROUNDANDRELATEDWORK
+The engineering cellphone is employed to search for n-
+In this section, we first introduce the operating principles earby, legitimate BSes and record their wireless parameters
+of a typical FBS. Next, we present examples of spam and (e.g., their BS IDs). Based on this information, the operator
+fraud SMS messages sent by FBSes, and discuss state-of–the- canreconfiguretheparametersoftheFBStomimiclegitimate
+artFBSdetectionapproachesthatareusedinpractice.Finally, BSes, so as to maximize the number of affected users.
+we review related work on detecting and frustrating FBSes.
+Communication Process. When an FBS operator wants to
+A. Operating Principles of a Typical FBS send SMS messages to nearby user devices, s/he first uses
+the engineering cellphone to find the closest legitimate BS, as
+It is reported that the system architecture of FBSes has
+depicted in Fig. 1 (b). Suppose this legitimate BS is using
+evolved over several generations [20], where each generation
+the BCCH radio frequency f and identifier ID , and the
+0 0
+uses simpler and less costly hardware and communication
+signal strength perceived by the engineering cellphone is s
+0
+processes. Below, we explain the operating principles of a
+(s usuallyliesbetween-113and-51dBm).TheFBSoperator
+0
+widely reported type of FBS [4].
+will configure their transceiver to reuse frequency f or use
+0
+some other frequency f , and set a different identifier ID .
+1 1
+Hardware and Software. As shown in Fig. 1 (a), an FBS
+is generally made up of three components: 1) a GSM wireless In order to interrupt the existing connections between
+transceiver, 2) an engineering laptop, and 3) an engineering nearbyuserdevicesandlegitimateBSes,theFBSmustsatisfy
+3at least two requirements. First, ID must contain a different lossestomobileusers,inviolationofthelaw.Typicalexamples
+1
+LAC code (Location Area Code, as explained in § V-B) of fraud messages include:
+compared with ID , so that nearby user devices might (but
+0
+not necessarily) believe that they have entered a new cellular
+“Dear user, you are lucky to be the winner of
+this month’s big award! You will be offered 10-
+coverage area. However, for energy concerns, user devices are
+GB FREE 4G traffic by clicking on this URL:
+generallyinsensitivetoasmallBSIDdifference[3]—inthis
+case, they may well preserve existing connections unless the http://www.10086award.com.” – sent from China
+connectivity is intolerably poor. As a consequence, most FBS Mobile (10086). If the user clicks this URL, they
+operators would select BS IDs (more specifically, LAC codes) are taken to a page that attempts to phish their
+that are significantly different from those of nearby legitimate account credentials. Some URLs also lead to pages
+BSes, to make the FBS affect as many users as possible and containing drive-by download attacks.
+maximizetheirprofits. Second,followingthesameeconomic
+“Dearcustomer,youhavefailedtopayforthisyear’s
+motivation,theoperatorwouldadjustthesignalstrengthofthe
+managementfeeof100dollars.Ifyoudonotpayfor
+FBS to guarantee that it offers a much higher signal strength
+itbeforeJul.30th,youwillfaceafineof500dollars.
+(s (cid:29)s ) than the legitimate BS.
+1 0 You should pay it by transferring money to the
+Once the operator has properly configured the FBS, the following bank account: 0000000000123456789.” –
+following sequence of events begin to occur, culminating in sent from a well-known bank.
+SMS messages being sent to all users in close proximity:
+We present quantitative results on the spam and fraud
+• The FBS broadcasts its system information using the messages sent by FBSes in our dataset in § V-C.
+configured BCCH radio frequency.
+C. State-of-the-Art Detection Approaches
+• When a user device receives the system information
+oftheFBS,itdetectsitasanewBSinanewcoverage It is well-known that FBSes use a much higher signal
+areawithahighersignalstrengththanalternateBSes. strengththanlegitimateBSes[4],[20].Guidedbysuchknowl-
+Thus, the user device sends a Location Updating edge, the MPS and mobile carriers in China have adopted
+Request to the FBS. signal-based approaches to detect FBSes. Three methods have
+been deployed in practice:
+• On receiving the Location Updating Request, the
+FBSfirstsendsanIdentityRequesttotheuserdevice
+Static Electronic Fence. The MPS of China often deploys
+toacquireitsIMSIinformation,andthensendsanoth-
+a static “electronic fence” within a specific geographic area to
+er IdentityRequest to acquire its IMEI information.
+capturecellularsignalsfromFBSes[4].Thebasicunitsofthe
+Whenbothtypesofinformationareobtained,theFBS
+electronic fence can be a number of networked cellular signal
+returns a LocationUpdatingAccept to it.
+sensors, or a number of low-power feature cellphones [21],
+• Subsequently, the FBS sends an SMS message to the typically deployed at street corners. While static fences can
+userdeviceusingaspoofedphonenumber.Thisaction be effective tools, they incur high infrastructure costs, and it
+can be repeated multiple times. is not feasible to deploy them at scale across whole cities, let
+alone whole countries.
+• When the FBS finishes sending messages, it cuts off
+the cellular connections with its user devices by low- FBS-signal Detection Car. Mobile network operators in
+eringitssignalstrength,changingitsBSID,orsimply China employ dedicated FBS-signal detection cars to patrol
+shutting down the signal. After that, the affected user along major streets [22]. Unfortunately, this random-walk
+devices will re-connect to a legitimate BS. method is unable to provide detection coverage over a large
+area.Inaddition,FBSescaneasilybemovedawayfrommajor
+B. Spam and Fraud Messages Sent by FBSes streets or simply shut down when approaching major streets.
+FBSescansendspamandfraudSMSmessagestoconnect-
+ActiveUserReporting. BoththeMPSandmobilecarriersin
+eduserdevicesfromarbitrary(spoofed)phonenumbers.Inthis
+ChinaencourageuserstoactivelyreportsuspiciousBSsignals
+work, we define spam as messages containing advertisements.
+and SMS messages, e.g., by dialing certain phone numbers
+Example spam sent from FBSes include:
+like 12321 [23]. However, the vast majority of mobile users
+in China do not realize the existence of FBSes, making this
+“Wearesellingexcellent,cheapgoodsandfoodfrom
+detection method ineffective.
+Jul. to Aug. 2016. Visit our shops at the People’s
+Square as soon as possible!” – sent from a (usually
+Comparison with FBS-Radar. Like these signal-based ap-
+not well-known) mart or grocery.
+proaches, FBS-Radar also makes use of signal-strength infor-
+“We provide very cheap and legal invoices that can mation and user reports. However, there are two fundamental
+help you quickly make a big fortune. Don’t hesitate, differences. First, we do not use signal information as the
+dialusviathephonenumber:010-12345678!”–sent major,oronly,factorforFBSdetection.Asweshowin§V-A,
+from a (usually not well-known) company. signal-strength examination can only detect a small portion
+(4.9% = 0.23%/4.7%) of all FBS messages. Second, as we
+In contrast, we define fraud as messages that attempt to discuss in § VI, FBS-Radar only uses active user engagement
+maliciously deceive users. Fraud messages often cause severe to detect misclassified FBS messages, i.e., false positives.
+4All other data is collected passively by the client-side app
+after users opt-in. Thus, FBS-Radar achieves wide detection BS-location WiFi-location SVM Machine
+Database Database Learning Cluster
+coverage and quick responsiveness all in one system.
+D. Other Related Work User Report Content-free Content
+Analysis Analysis
+In academia, a few preliminary technologies have been
+recently proposed to detect or frustrate FBSes by monitoring
+BSes on the carrier and client sides.
+Message Authoritative
+Like the static electronic fence method, Dabrowski et al. Logs Phone Number List
+propose to deploy a network of signal measurement units in
+a geographical area, constantly scanning frequency bands and Fig.2. ArchitecturaloverviewofFBS-Radar.
+fingerprinting network parameters of nearby BSes [24]. Do et
+al. propose to utilize machine learning-based anomaly detec-
+tion of carrier contexts to discover FBSes [25]. Unfortunately, are controversial, they also have legitimate law enforcement
+neither study addresses the practical issue of how to scale the uses[19],[30],[31],[32].Besides,asmentionedattheendof
+detectors to cover large areas. § I, illegal IMSI-catcher attacks have rarely been reported in
+China.Fortheabovereasons,weleavethedetectionofpassive
+To mitigate the attacks from FBSes, Broek et al. sug-
+attackers as future work.
+gest replacing the IMSIs of user devices with changing
+pseudonyms [26]. The key limitation of this method is that
+it requires changes to the SIM (Subscriber Identity Module) IV. DATACOLLECTION
+andtheauthenticationserver,atgreatcosttocarriersandusers.
+Fig. 2 depicts the system architecture of FBS-Radar, made
+SRLabs developed two client-side tools for FBS detection, up of three functional components (Content-free Analysis,
+calledSnoopSnitch[27]andCatcherCatcher[28].SnoopSnitch Content Analysis, and SVM Machine Learning Cluster) and
+is an Android app that warns users about FBS threats by four data components (i.e., Authoritative Phone Number List,
+leveragingin-depthandfine-grainedanalysisofreceivedcellu- BS-location database, WiFi-location database, and Message
+lar signals. However, SnoopSnitch only works on Qualcomm- Logs). In this section, we present how each data component
+based Android phones and requires root privileges. Similarly, collects and parses its concerned data. We will explain how
+CatcherCatcher attempts to identify irregularities in mobile the three functional components work in § V and § VII .
+networks to detect FBS activity, but it only works on Os-
+mocom phones. Lastly, the ongoing Android IMSI-Catcher UserReports. Asmentionedin§I,FBS-Radarisimplement-
+Detector [29] (AIMSICD) project attempts to detect FBSes ed as a component of Baidu PhoneGuard, and leverages the
+through a variety of client-side heurstics, e.g., monitoring platform provided by PhoneGuard to collect data from users.
+signal strength, checking BS information consistency, and so Once a user opts-in to data collection, the client-side mobile
+forth.Nevertheless,AIMSICDisstillanalpha-versionAndroid app forwards suspicious SMS messages and associated device
+app, and its effectiveness in practice has not been evaluated. meta-datatothecloud(recallthatwedefineSMSmessagesas
+suspicious if the sender is not in the recipient’s contact list, or
+Comparison with FBS-Radar. FBS-Radar is conceptually the sender is using an authoritative phone number given on a
+similartomanyoftheseefforts,inthatitturnsend-userdevices predefined list). When a user report arrives at the cloud, it is
+into a crowdsourced network of sensors. However, FBS-Radar firstprocessedbythefunctionalcomponentsandextendedwith
+isabletooperateatscale(asof2016,itisusedby92Musers) additional meta-data from the data components, and finally
+since it runs on generic, non-rooted Android and iOS devices. backed up into the Message Logs storage cluster.
+III. THREATMODEL The mobile app submits user reports in JSON (JavaScript
+Object Notation) format. We choose to use JSON because it
+BeforedescribingthedesignofFBS-Radar,wefirstdiscuss is easy to read and analyze for both humans and machines. In
+the threat model under which we are operating. detail, each user report includes the following fields:
+In this work, our goal is to detect SMS messages sent
+• Reception time of the suspicious SMS message (t )
+by, and the geographic locations of, FBSes. We assume that 1
+in the UNIX time format.
+these FBSes are operated by active attackers who attempt
+to disseminate spam and fraud SMS messages. We make no • Perceived signal strength (s ) and BS identifier (ID )
+1 1
+assumptionsabouttheFBSes’underlyingtechnology(i.e.,they of the device’s current BS;
+can use any network protocol (2G/3G/4G), frequency, etc.)
+and we assume that FBSes may spoof identifiers (i.e., BS IDs • Perceivedsignalstrengths(s 2,s 3)andidentifiers(ID 2,
+andphonenumbers).Furthermore,weassumethatFBSesmay ID 3) of the two previously connected BSes, coupled
+change locations, and go on and offline at any time. withtwotimestamps(t 2,t 3)whenthesignalstrengths
+of the two BSes were measured by the mobile app;
+We make no attempt to detect passive eavesdropping on
+phone calls, SMS messages, and data packets. Passive eaves- • Sender’s phone number, and content of the SMS
+dropping is mainly conducted using IMSI-catchers [16], [17], message(notethatasofJan.2016,99%ofFBS-Radar
+[18],commonlyknownas“stingrays”.Althoughthesedevices users no longer submit SMS message content);
+5TABLEI. ANEXAMPLEUSERREPORT. coverage area of the BS is roughly taken as π ×(radius)2
+Field Value (as demonstrated in Fig. 1 (b)). The values of lat and lon
+t 1 1452869570549 are accurate to six decimal places, e.g., lat = 24.800947 and
+s 1 -79 dBm lon = 113.598193. That is to say, the localization accuracy
+ID 1 460-00-39185-21492 of a BS is about 0.1 meter in theory. However, according to
+t 1452865343627
+2 the mobile carriers who provide the BS-location database, the
+s -84 dBm
+2 localization error of a BS can be up to 10 meters in practice.
+ID 460-00-39185-52921
+2
+t 1452865278412
+3
+s -95 dBm WiFi-locationDatabase. Togeolocateusers,eachWiFiMAC
+3
+ID 460-00-39185-52112 addressinauserreportmustbemappedtoageographicloca-
+3
+Sender’s phone number +86-135-5281-9836 tion (lat, lon). We perform this mapping using a nationwide
+Content of the message ≤140 characters WiFi-location database maintained by Baidu. When the WiFi-
+MAC ec:26:ca:26:f6:c0 location database is queried with a MAC address, it returns a
+1
+MAC 2 d0:c7:c0:aa:6a:fc three-tuple < lat, lon, tag >, where tag represents whether
+··· ··· the queried MAC address can be found in the database. The
+MAC n 6a:3e:34:03:d8:13 values of lat or lon are accurate to six decimal places.
+According to Baidu, the localization error of a single WiFi
+AP can reach tens of meters, i.e., the WiFi-location database
+• MAC address (MAC 1) of the WiFi AP connected is less accurate than the BS-location database.
+to the user device, as well as the MAC addresses
+(MAC , i ∈ {2,··· ,n}) of the other n − 1 WiFi DifferentfromtheBS-locationdatabase,theWiFi-location
+i
+APs perceived by the user device. FBS-Radar uses database does not provide the signal coverage area of a
+theseMACaddressestoenhancetheaccuracyofWiFi WiFi AP because of two issues. First, most WiFi APs do
+localization (as explained in § VII-A). We do not not provide this information. Second, the signal coverage
+collect users’ GPS coordinates, since most users turn area of a WiFi AP is highly unstable, as it is significantly
+this feature off to preserve battery life. Meanwhile, influenced by the environment [33]. Advanced WiFi APs can
+we note that for those users who turn the GPS feature evenadaptivelyre-scalethesignalcoverageareabytuningthe
+on,theirGPScoordinatescouldpotentiallyhelpFBS- signal strength [34]. Accordingly, the WiFi-location database
+Radar achieve better localization. Inevitably, this will does not provide the signal strength information of a WiFi
+increase the complexity of our system design. AP. Furthermore, the WiFi-location database is updated on
+a daily basis (more frequently than the updating of the BS-
+An example user report is shown in Table I. Note that the location database) for two reasons. First, the number of WiFi
+user report does not include the recipient’s phone number. We APs (∼450M in our current WiFi-location database) is much
+do not collect this information to help preserve users’ privacy. larger than that of BSes (∼15M in our current BS-location
+database).Second,WiFiAPsaremoredynamicthanBSes.For
+Authoritative Phone Number List. FBSes often send spam example, a WiFi AP can be moved to several different places
+or fraud messages using spoofed authoritative phone num- in one day, while moving a legitimate BS to multiple (> 2)
+bers, such as those used by mobile carriers, public services, different places in one week is almost impossible. Overall, we
+and banks. Although real authoritative phone numbers are observe that between 71–75% of the WiFi MAC addresses in
+sometimes used to broadcast advertisements, they never send user reports are present in our WiFi-location database.
+fraud messages to intentionally cheat users. Therefore, a fraud
+messagecomingfromanauthoritativephonenumberisaclear MessageLogs. EachuserreportisextendedbyFBS-Radarto
+signal that an FBS sent the message. afull-fledgedmessagelogusingdatafromthetheauthoritative
+phone number list, BS-location database, and WiFi-location
+We collaborate with both the MPS and major mobile
+databases. In addition to the original fields in the user report,
+carriers of China to maintain an authoritative phone number
+amessagelogalsoincludesafieldisAuthtoindicatewhether
+list. This list is updated on a monthly basis, and its latest
+the sender’s phone number is authoritative, the geographic
+version (in Feb. 2016) contains 1446 phone numbers.
+location and signal coverage radius of the three most recent
+BSes, the geographic location all nearby WiFi APs. As of
+BS-location Database. FBSes have the capability to spoof
+Jun. 30th, 2016, we have archived more than 600 days of
+arbitrary BS IDs. To help distinguish legitimate from spoofed
+message logs, corresponding to petabytes of data. To facilitate
+BS IDs, we need a database of legitimate BS IDs and their
+our research in this paper, we select the message logs during
+respective coverage areas.
+one week (between Sep. 15–21, 2015) as the studied dataset,
+The mobile network operators in China provide us with a referred to as MsgLogs. We select this dataset because it
+confidential database of all BSes in China, and their coverage contains abundant (122M) message logs with complete infor-
+areas. This database is updated on a weekly basis. When the mation (particularly the text content of every message).
+BS-location database is queried with a valid BS ID, it returns
+a four-tuple < lat, lon, radius, tag >, where lat denotes Ethics. Throughout this project, we took the utmost care to
+the latitude and lon denotes the longitude of the BS; radius protect users of FBS-Radar and their sensitive data. Although
+is the theoretical signal coverage radius of the BS (measured Baidu does not have an internal Institutional Review Board
+in a laboratory environment); and tag represents whether the (IRB), we adopted fundamental ethical principals throughout
+queriedBSIDcanbefoundinthedatabase.Hence,thesignal this project, i.e., obtaining informed consent from users, and
+61
+0.8
+0.6
+0.4
+0.2
+0
+−150 −100 −50 0
+Signal Strength (dBm)
+FDC
+B. BS ID Syntax Checking
+The BS ID, also known as the BS CGI (Cell Global
+Identifier), is the globally unique identifier of a cell tower.
+It is the concatenation of four codes:
+BS ID = MCC + MNC + LAC + CID.
+Each code has a different size, meaning, and configuration
+rules. First, MCC is a 3-digit Mobile Country Code ranging
+from 000 to 999, where the values 0XX, 1XX, and 8XX are
+reserved. It is allocated by the ITU (International Telecommu-
+nicationUnion)[35].Onecountryorgeographicalareacanbe
+allocated with multiple MCCs, e.g., China only owns MCC =
+Fig.3. Distributionofuser-perceivedsignalstrengthsrecordedinMsgLogs.
+460 while the US owns MCC = 310–316.
+causingnoharmtoPhoneGuardusers.First,usersmustchoose Second, MNC is a 2-digit Mobile Network Code ranging
+to install PhoneGuard, and explicitly opt-in to data collection. from 00 to 99. It is jointly allocated and maintained by the
+Users are clearly informed about what data will be collected, governmentofacountryandtheITU.Aspecificmobilecarrier
+and they are free to opt-out at any time in the PhoneGuard can be allocated multiple MNCs, e.g., China Mobile owns
+settings (or by uninstalling the PhoneGuard app). Second, MNC=00,02,07.AsofAug.2016,nocountryhasusedupits
+the MsgLogs dataset used in our experiments was securely 100MNCs,sothenumberofvalidMCC+MNCcombinations
+stored on Baidu servers, and at no time did user data leave is much smaller than 1000×100. Specifically, valid MCC +
+Baidu’s systems. We are cognizant of the fact that FBS-Radar MNC combinations are publicly available at [36].
+collects sensitive data from users, most notably the content of
+suspicious SMS messages. Aswe describe in § V-F, we found Third,LACisa16-bitlocationareacoderangingfrom0to
+that SMS message content is not necessary to identify FBS 65535. It is assigned by a specific mobile carrier or network.
+messages, and thus we opted 99% of FBS-Radar users out of The former three codes together (MCC + MNC + LAC) are
+this data collection in Jan. 2016. also known as the LAI (Location Area Identification) of a BS.
+As mentioned in § II-A, an FBS usually uses a different LAC
+code from that of the closest legitimate BS, in order to break
+V. IDENTIFYINGFBSMESSAGES nearby cellphones’ connections to the legitimate BS.
+In§IV,wedescribethelarge-scale,comprehensivedataset- Finally, CID is a n-bit cell identity code, where n = 16
+sthatareavailabletoFBS-Radar.Inthissection,weinvestigate is for 2G/3G BSes (ranging from 0 to 65535) and n = 28
+five different methods for identifying SMS messages sent by is for 4G BSes (ranging from 0 to 268,435,455). CID is also
+FBSes (which we simply refer to FBS messages). This corre- assignedbyaspecificmobilecarrierornetwork.Thereshould
+sponds to the “alpha” phase of FBS-Radar’s deployment. We notbetwoidenticalCIDcodesinagivenareaexceptinspecial
+describeeachmethodindetail,andsummarizewithhigh-level cases (e.g., re-deployment of a BS by the mobile carrier).
+findings based on our analysis of identified FBS messages.
+In MsgLogs, we observe many BSes with syntactically
+invalidBSIDs.Forexample,“460-00-21880-25975”isavalid
+A. Signal Strength Examination BSID,while“460-80-21880-25975”isaninvalidBSID(non-
+existent MCC + MNC combination). Following the above
+As mentioned in § II, unreasonably high signal strength is
+syntax rules, we find that 0.15% of suspicious messages in
+the most obvious characteristic of an FBS. This motivated us
+MsgLogs were sent by FBSes with invalid BS IDs. We refer
+to try and use signal strength information as our first method
+to these FBS messages as Set-2. More specifically, in Set-
+to identify FBS messages. Fig. 3 illustrates the distribution of
+2 2.25% of BS IDs have problems with MCC + MNC, and
+all user-perceived signal strengths recorded in MsgLogs. The
+97.75% of BS IDs have problems with LAC and/or CID.
+signal strengths lie between -153 dBm and -1 dBm, and over
+95% of signal strengths are between -113 dBm and -51 dBm
+(i.e., the common range of user-perceived signal strengths). C. Message Content Mining
+ForalegitimateBS,themaximumsignalstrengthperceived As mentioned in § IV, a fraud message coming from an
+byauserdevicecanreach-40dBmiftheuserdeviceisplaced authoritative phone number should bean FBS message. Given
+just below the BS [3]. As a consequence, any message with a that we have a list of authoritative phone numbers, this mo-
+signal strength higher than -40 dBm is highly likely to have tivates us to try using automatic text classification techniques
+come from an FBS. Guided by this rule, we find that 0.23% to determine the functionality (i.e., legitimate, spam, or fraud)
+of suspicious messages have a signal strength higher than -40 of suspicious messages to identify FBS messages. FBS-Radar
+dBm, We refer to these FBS messages as Set-1. Note that determinesthefunctionalityofamessagebyminingitscontent
+-40 dBm is a very conservative threshold, and thus we expect with SVM (Support Vector Machine), a classical supervised
+many false negatives. For example, a device that is relatively machine learning model for data and text classification [37].
+far from an FBS will observe signal strength <-40 dBm, even Specifically, we conduct SVM classification by following the
+if the FBS has a high-powered transceiver. seven steps below:
+71) Labeling Suspicious Messages. We manually labeled Followingstandardprocedures,weperformed10-foldcross
+the content of 200,000 suspicious messages as legitimate, validationofourSVMmodel.Weconstruct10differentSVM
+spam, or fraud. Specifically, five experts were hired to do the models by randomly generating 10 different pairs of training
+labeling,andeachexpertindependentlylabeledallthe200,000 and test sets (from the 200,000 manually labeled messages),
+messages. For >94% of the messages, the five experts’ labels and then calculate their respective precisions and recalls.
+areconsistent;fortheremainder,weapplythemajorityruleto
+Using a commodity 8-core server it takes 20–25 minutes
+determinetheirfunctionality1.Amongtheselabeledmessages,
+to finish a complete round of SVM classification (including
+we randomly pick 160,000 messages as the training set, and
+the above Steps 1–7) with a given combination of parameters
+the remainder are used as the test set.
+on a given pair of training and test data. Thus, when the
+search space includes multiple parameters with hundreds of
+2) Word Segmentation. We make use of a classical
+combinations,weneedtensofservers(i.e.,theSVMMachine
+Chinese Word Segmentation (CWS) tool to divide the content
+Learning Cluster in Fig. 2) to parallelize the above process.
+of each message in the training set into individual Chinese
+Parallelization reduces the total optimization time of the SVM
+words.Afterwards,weremovefrequentlyoccurringstopwords
+model to within one day. The precision achieved by the final,
+that have little discriminatory power [39].
+tuned SVM model is 98%, while the recall is 91%.
+3) Feature Extraction. After eliminating stop words, we After classifying the content of all messages in MsgLogs,
+take the remaining words in the training set as features for we find that 93.53% are legitimate messages, 6% are spam,
+message content classification. Accordingly, each message is and 0.47% are fraud. However, not all of the fraud messages
+represented by a few features (words). However, the overall were sent from authoritative numbers; indeed, many originate
+feature set is too large to effectively process (over 200,000 fromnumbersthatweknownothingabout.Tobeconservative,
+features). Thus, we select the top-10000 most discriminative we can only attribute fraud messages sent from authoritative
+features from the feature set, which is referred to as feature numbers to FBSes. Thus, we find that 0.16% of all suspicious
+extraction or feature dimension reduction [40]. Several meth- messages were sent from authoritative numbers and are clas-
+ods exist for feature extraction, such as Chi-square Statistics sified as fraud by the SVM model. We refer to these FBS
+(CHI) [41], Principal Component Analysis (PCA) [42], and messages as Set-3.
+Linear Discriminant Analysis (LDA) [43]. We tried all three
+approaches and found CHI to yield the most precise result- D. BS-WiFi Location Analysis
+s [44]. Thus, we employ CHI to extract a 10000-element
+The next detection method we investigate relies on the
+feature vector from the feature set.
+location of BSes and users. Intuitively, if a user observes a
+BS ID at a location that does not match its true location (as
+4) Quantizing the Feature Vector. Since SVM requires
+specified by the mobile network operator), then it is likely to
+the feature vector to be represented by a series of num-
+be an FBS with a spoofed BS ID. We refer to all such FBS
+bers rather than words, we quantize the feature vector by
+messages in MsgLogs as Set-4.
+transforming it from < word ,word , ··· ,word > to <
+1 2 n
+N 1,N 2, ··· ,N n >, where N i is a positive integer. Then, the Since FBS-Radar does not collect GPS coordinates from
+content of message k is quantized as < F k,N k1 : w k1,N k2 : users, we instead rely on WiFi information to geolocate users.
+w k2, ··· ,N km : w km >, where F k is the functionality and For a given message log, as long as the MAC addresses
+w kj is the TF-IDF weight [45] of N kj. of nearby WiFi APs are available, FBS-Radar can usually
+estimate the geographic location (lat , lon ) of the
+User User
+5) Training the SVM Model. Based on the training set user device. We refer to this calculation as localization of the
+and the feature vector, we construct the SVM model using userdevice;wepresentthedetailsofthelocalizationalgorithm
+LIBLINEAR [46], a widely used open-source library that im- used by FBS-Radar in § VII-A.
+plements linear SVM. We manually configure key parameters
+for the SVM model, e.g., the soft margin parameter C and the At a high-level, we conclude that a BS is actually an FBS
+tolerance of termination criterion (cid:15). if (lat User, lon User) does not lie within the practical signal
+coverageareaoftheBS.ForagivenBSthatsendsasuspicious
+6)PreprocessingtheTestSet.Foreachmessageinthetest message, we can determine its coverage area by looking up
+set,wesegmentitintoChinesewords,removethestopwords, its BS ID in our BS-location database, which will return the
+and quantize its extracted features with the feature vector. true geographic location (lat BS, lon BS) and signal coverage
+area (π×r2) of the BS. To calculate the distance between
+7) SVM Classification of the Test Set. We use the con- a user and a BS, we apply a series of transformations to
+structedSVMmodeltoclassifythecontentofeachmessagein their coordinates. In both the BS-location and WiFi-location
+thetestset.Afterthat,wecalculatetheclassificationprecision databases, data are stored in Google Maps format [48]. Given
+as the major metric for performance evaluation, as well as a location (lat, lon) like (24.800947, 113.598193), we first
+recall. We use the standard machine learning definitions of transform it into radian form:
+precision and recall in our analysis [47]. π×lat π×lon
+rad(lat)= , rad(lon)= . (1)
+180 180
+1Forthefewexceptionalcaseswherethemajorityrulecannotbeapplied,
+e.g.,whenamessagewaslabeledwith{legitimate,spam,spam,fraud,fraud}, Then,wecalculatethedistanced i,j betweentwogeographical
+wediscussedwiththefiveexpertsinpersontodeterminetheirfunctionality. locations (lat i, lon i) and (lat j, lon j) as:
+Recently,wenotethatbesidesmanuallabellinginanexplicitmanner,itisalso
+possibletolabelspam/fraudcontentbyleveragingimplicituserbehaviors[38]. d i,j =2×r earth×
+820
+15
+10
+5
+0
+0 1 2 3 4 5 6
+Scaling Coefficient (δ)
+sgsM
+SBF
+detceteD
+fo
+%
+1
+0.8
+0.6
+0.4
+0.2
+0
+102 104 106
+BS−WiFi Distance (m)
+Fig. 4. Ratio of detected FBS messages through BS-
+WiFilocationanalysiswithdifferentδ.
+FDC Legitimate BSes
+Fake BSes
+Fig. 5. Distribution of the BS-WiFi distance for
+legitimateandfakeBSesusingδ=5.0.
+(cid:114)
+arcsin
+(sin(rad(lat i)−rad(lat j)
+))2+B, (2)
+BS to the second BS. If a user device is moving slowly, then
+2 weexpectcorrespondinglyslowhandoverspeeds,sinceitwill
+takesometimefortheusertomovefromonecoverageareato
+where r =6,378,137 m, and
+earth another.Conversely,ifauserdeviceismovingquickly(e.g.,it
+B =cos(rad(lat ))×cos(rad(lat ))× is in a car) then we expect fast handovers. However, if a user
+i j
+ismovingslowlybutweobserveafasthandover,thissuggests
+rad(lon )−rad(lon )
+(sin( i j ))2. that an FBS is overlapping the coverage area of a legitimate
+2 BS (see Fig. 1 (b)).
+Finally, the BS is taken as an FBS if SupposeBS 1 istheuser’scurrentlyconnectedbasestation,
+BS andBS aretheuser’spreviouslyconnectedbasestations,
+2 3
+d BS−WiFi >δ×r, (3) andt 1,t 2,andt 3 arethecorrespondingtimestampswhenthey
+weremostrecentlyobserved(refertoTableI).Ifthehandover
+where d is the BS-WiFi distance between (lat ,
+BS−WiFi BS speed from BS to BS is higher than a certain threshold
+lon ) and (lat , lon ), and δ is a positive scaling 2 1
+BS User User speed, either BS or BS is fake. Further, FBS-Radar uses
+coefficient. Theoretically, the signal coverage area of a BS is 2 1
+the estimated handover speed from BS to BS to determine
+π×r2 and δ =1.0. But in practice, the signal coverage area 3 2
+whetherBS orBS isthefake.AlltheFBSmessagesdetected
+ofaBScanbecomesmaller,larger,ordirectionalforavariety 2 1
+by this method are referred to as Set-5.
+of reasons (e.g., weather or obstructions), so we must “scale”
+the signal coverage area/radius of the BS with δ. Sincewedonotknowthevelocityoftheuserdeviceduring
+thehandoverprocess(e.g.,theusermaybewalkingordriving
+To quantify the impact of δ on the size of Set-4, we
+a car), we choose to estimate the maximum, minimum, and
+investigate different values of δ ranging from 0.5 to 6.0 as to
+average handover speeds from BS to BS as follows:
+MsgLogs.TheresultsinFig.4indicatethatthesizeofSet-4 2 1
+decreasesasδ increases.Whenδ =1.0,Set-4includes8.75%
+d +r +r
+of suspicious messages; when δ ≥ 5.0, Set-4 becomes quite V = 1,2 1 2, (4)
+stable, indicating that this is a “safe”, conservative threshold 1,2−max t 1−t 2
+that incurs few false positives. Therefore, we conclude that
+Set-4 includes at least 4.1% of suspicious messages, corre- V = d 1,2 , (5)
+sponding to δ =5.0. 1,2−avg t −t
+1 2
+Additionally, Fig. 5 plots the distribution of BS-WiFi
+distance (d ) for legitimate and fake BSes using the (cid:40)
+BS−WiFi d1,2−r1−r2 when d >r +r ,
+safe threshold δ = 5.0. Obviously, the BS-WiFi distance for V
+1,2−min
+= t1−t2 1,2 1 2 (6)
+FBSes is orders of magnitude greater than that for legitimate 0 when d 1,2 ≤r 1+r 2,
+BSes. Quantitatively, the median (mean) BS-WiFi distance for
+legitimateBSesis1.0km(1.35km),whilethemedian(mean) where d is the distance between BS and BS . The esti-
+1,2 1 2
+BS-WiFi distances for FBSes is 548 km (729 km). mation of V , V , and V is similar. With
+2,3−max 2,3−avg 2,3−min
+regard to the threshold speed, we have two choices: the first
+E. BS-Handover Speed Estimation is a very conservative threshold
+For some message logs, WiFi AP information may not be threshold CRH =350km/h, (7)
+available,andthusBS-WiFilocationanalysisisnotapplicable.
+which corresponds to the highest operational speed of China
+In these cases, FBS-Radar attempts to identify FBSes by
+RailwayHigh-speed(thefastestrailwayinChina),Thesecond
+detecting anomalies in handover speed. When a user device
+choice is a slightly less conservative threshold
+moves away from the area covered by one BS and enters the
+area covered by another BS, it is handed over from the first threshold =150km/h, (8)
+Highway
+912
+10
+8
+6
+4
+2
+0
+sgsM
+SBF
+detceteD
+fo
+%
+s Conservative Threshold g15000
+s
+Moderate Threshold M
+S
+B
+F10000
+d
+e
+tc
+e
+te 5000
+D
+fo
+#
+0
+0 4 8 12 16 20 24
+V V V
+min avg max Hour
+Fig. 6. Ratio of detected FBS messages through Fig.7. NumberofdetectedFBSmessagesinawhole
+BS-handoverspeedestimation. day,wherethetimeintervalis5minutes.
+which is above the speed limit on highways in China. locations around China where users received FBS
+messages on Sep. 18, 2015, while Fig. 9 focuses just
+Consequently, to detect an FBS based on the handover
+onFBSmessagesinBeijing.Frombothheatmaps,we
+speed,wehavethreechoicesforestimatingthehandoverspeed
+discover that the density of detected FBS messages is
+and two choices for setting the threshold speed. Obviously,
+proportional to population density.
+selecting V and threshold can detect the most
+max Highway
+FBSes while incurring the most false positives. Conversely, • Set-3 is >98% covered by the other four sets, espe-
+selecting V and threshold can detect the least FBSes cially Set-4. This reveals that it is unnecessary for
+min CRH
+while incurring almost zero false positives. To quantify the FBS-Radar to collect and analyze the content of SMS
+impacts of handover and threshold speed selections on Set- messages. To improve privacy for our users, starting
+5, we apply their different combinations to MsgLogs. The in 2016 we automatically opted 99% of FBS-Radar
+results in Fig. 6 indicate that using V detects more FBS users out of this data collection. Subsequently, FBS-
+max
+messages (than using V or V ), however this set may Radar experienced a surge in adoption — the daily
+avg min
+containmanyfalsepositives.Ultimately,weconcludethatSet- averagenumberofsuspiciousmessagesincreasesfrom
+5 includes at least 0.39% of suspicious messages, using the 17.5M in 2015 to 32M in 2016, and the daily average
+most conservative combination V + threshold . numberofinvolvedusersincreasesfrom8.5Min2015
+min CRH
+to 15.6M in 2016 accordingly.
+F. Performance Summary
+• Different from Set-3, only 1.3% of Set-1 is covered
+All the FBS messages in MsgLogs detected by the above bySet-4.Todiscoverwhy,weexaminedthemessage
+five methods are referred to as Set-all (= Set-1 (cid:83) Set-2 (cid:83) logs in Set-1, and found the vast majority were re-
+Set-3 (cid:83) Set-4 (cid:83) Set-5). By carefully analyzing all these portedviaacellular(notWiFi)connection.Giventhat
+sets, we make the following major observations: allmessagesinSet-1weredeliveredbyunreasonably
+high-strength cellular signals, we infer that most user
+• At least 4.7% of suspicious messages are likely to be devices in Set-1 were outside, and thus did not have
+FBS messages with a high precision. In § V-A and WiFi connections. Thus, their received FBS messages
+§ V-B, we use strict rules to detect FBS messages, so cannotbedetectedthroughBS-WiFilocationanalysis.
+we regard the detection precision of Set-1 and Set-2 Additionally, Set-2 has no intersection with Set-4
+as 100%. As we note in § V-C, the precision of our and Set-5, because all messages in Set-2 were sent
+SVM model is ∼98%, so the detection precision of byFBSeswithinvalidBSIDs,whichcannotbelooked
+Set-3 is also ∼98%. On the other hand, in § V-D and up in our BS-location database.
+§ V-E, the detection precision heavily depends on our
+choice of key parameters (see Fig. 4 and Fig. 6). In
+VI. DEPLOYMENTEXPERIENCE
+these cases, we always make the most conservative
+choice: δ =5.0 and V + threshold . In Jan. 2016, we used the results from § V to improve
+min CRH
+FBS-Radar and deploy additional features. This marks the
+Overall,thismeansthat4.7%isalowerboundonFBS
+transition from the “alpha” to the “beta” phase of FBS-
+messages.Furthermore,weobservethatthisfractionis
+Radar deployment. In this section, we describe some of our
+stable (between 4.2% and 5.5%) over time, indicating
+deployment experiences, including the empirical false positive
+that FBS attackers are not altering their methods in
+rate of FBS-Radar, and the practical overhead of FBS-Radar
+general.WeplotthenumberofdetectedFBSmessages
+on the client and cloud sides.
+in every 5 minute interval on a typical day (Sep. 18,
+2015) in Fig. 7, and observe that most FBS messages
+False Positive Analysis. As mentioned in § I, if an SMS
+are sent in the afternoon and evening.
+message is determined to be an FBS message by FBS-Radar,
+• FBSes are pervasive throughout all provinces and theclient-sidemobileappquarantinesitfromthenormalSMS
+municipalities of China. Fig. 8 plots a heatmap of messagelistandputsittoaseparateFBSmessagefolder.The
+10Fig.8. HeatmapofFBSmessagesdetectedinChinainatypicalday. Fig.9. HeatmapofFBSmessagesdetectedinBeijinginatypicalday.
+userisnotifiedaboutthisoperation,andsheisallowedtomark servers for three different tasks: content-free FBS message
+quarantined messages as valid to recover them from the FBS detection(§V-A,§V-B,§V-D,§V-E),user-devicelocalization
+message folder. When a user marks an FBS message as valid, (§ VII-A), and FBS localization (§ VII-B). Content Analysis
+the app reports this to the cloud. uses one server while its affiliated SVM Machine Learning
+Cluster uses 25 servers (§ V-C). However, note that Content
+This user feedback mechanism gives us an opportunity
+Analysis components are being phased out.
+to evaluate the false positive rate of FBS-Radar in practice.
+Evaluating the false positive rate of FBS-Radar would not be
+Among the four data components, the Authoritative Phone
+possible without user feedback, since we lack ground truth
+Number List is only 40 KB in size and thus it is simply
+dataaboutwhichSMSmessageswereactuallysentbyFBSes.
+loaded into the memory of the Content Analysis server. Both
+According to their recovery actions, the false positive rate the BS-location and WiFi-location databases are provided by
+of FBS-Radar is only 0.05%. Delving deeper into the false external parties, so FBS-Radar accessed them via web APIs.
+positive FBS messages, we find that 6% of them come from In addition, petabytes of Message Logs are stored on cheap
+Set-3, 10% from Set-5, and the remainder (84%) from Set- tapes for backup.
+4. Set-4 (BS-WiFi Location Analysis) is the largest of our
+five sets, so it is not surprising that it produces the most false
+positives.Furthermore,inaccuraciesandincompletenessinour
+WiFi-location database can also produce false positives.
+VII. LOCALIZINGFAKEBASESTATIONS
+Above we have described the methods employed by FBS-
+System Overhead. FBS-Radarincursbothclient-andcloud-
+Radar to identify FBS messages, and quarantine them on
+side overhead. First and foremost, we need to limit client-
+the client side. This fulfills our goal of helping to protect
+sideresourceconsumptionintermsofCPU,memory,network
+users from the attacks of FBSes. In this section, we address
+traffic, and battery. To this end, all computation-intensive
+anothermajorgoalofthisproject:localizingFBSessothatlaw
+operations, especially FBS message identification and FBS
+enforcement agencies can take them down. Our approach to
+localization, are carried out in the cloud. The client side only
+FBSlocalizationincludestwosteps:first,FBS-Radarlocalizes
+reports suspicious messages and receives the returned result
+the user device corresponding to each FBS message based on
+(i.e., whether the reported SMS comes from an FBS), so
+WiFi AP information (which is available for the vast majority
+its CPU, network traffic, and battery consumption is trivial.
+of suspicious messages in our dataset). Second, FBS-Radar
+With regard to memory consumption, the client side needs to
+localizes each identified FBS based on the locations of its af-
+maintain the Authoritative Phone Number List in memory for
+fected user devices. The latter step is particularly challenging,
+determining suspicious messages, which contains 1446 phone
+sinceFBSesfrequentlymoveandchangetheirIDs,sowemust
+numbers amounting to merely 40 KB of memory.
+take temporal and spacial locality into account.
+As described at the beginning of § IV, the cloud side
+consists of three functional components (i.e., Content-free The main purpose of FBS-Radar is not to localize FBSes
+Analysis, Content Analysis, and SVM Machine Learning with an extremely high spatial accuracy. Instead, FBS-Radar
+Cluster) and four data components (i.e., Authoritative Phone provides approximate location information based on the lim-
+Number List, BS-location database, WiFi-location database, ited information available in our message logs. Although we
+andMessageLogs).A10-Gbpsnetworkconnectionhandlesall might be able to improve accuracy by collecting WiFi signal
+traffictothecloud-sidecomponents.Allofthefunctionalcom- information like CSI (Channel State Information [49]) and
+ponents use homogeneous commodity servers (HP ProLiant RSSI (Received Signal Strength Indicator [50]), this would
+DL380). The configuration of each server is: 2×4-core Xeon require root privileges on user devices. Based on our conver-
+CPU E5-2609 @2.50GHz, 4×8-GB memory, and 6×300-GB sationswithpoliceofficers,theexistingspatialaccuracyofour
+10K-RPM SAS disk. Content-free Analysis employs three resultsisenoughforeffectivecounter-measuresagainstFBSes.
+111
+1
+0.8 0.8
+0.6 0.6
+F Max = 200
+D
+C 0.4 Mean = 8.5 0.4
+Median = 6
+0.2 (excluding the cases of 0.2
+no addressable WiFi APs)
+0
+0
+0 10 20 30 40 0 500 1000
+Number of Addressable WiFi APs Deviation Distance (m)
+Fig.11. Distributionofthenumberofaddress-
+ableWiFiAPsineachmessagelog.
+FDC
+1
+0.8
+Best k
+k=6 0.6
+k=5
+k=4 0.4
+k=3
+k=2 0.2
+k=1
+0
+0 500 1000
+Deviation Distance (m)
+Fig. 12. Distribution of location errors for user
+devices,usingthek-meansclusteringalgorithm.
+FDC
+Best minPts
+minPts=6
+minPts=5
+minPts=4
+minPts=3
+minPts=2
+minPts=1
+Fig. 13. Distribution of location errors for user
+devices,usingtheDBSCANclusteringalgorithm.
+evaluatethecorrespondinglocalizationaccuracy,sowedonot
+consider these cases in our accuracy evaluation. Specifically,
+the percentage of these cases amounts to 11%, and for these
+cases we roughly expect the location error to be around 55
+meters (i.e., the average location error of “Best k” in Fig. 12).
+deviation
+distance
+We tried two classical clustering algorithms to compute
+clusters of user devices: k-means [51] and DBSCAN [52].
+Centroid When applying each of them to MsgLogs, we need to select
+Dominant appropriate parameters to achieve sound clusters. With regard
+Cluster tok-means,insteadofusingafixedk (thenumberofclusters)
+to process all message logs, we dynamically select the best k
+foreachmessagelogaftertryingallpossiblevaluesofk.With
+Fig. 10. The centroid of the dominant cluster is the estimated location of regard to DBSCAN, there are two key parameters: minPts
+theuserdevice.
+(the minimum number of points required to form a dense
+cluster) and (cid:15) (the scanning distance threshold). For minPts,
+A. Localizing User Devices based on the WiFi Information wealsodynamicallyselectthebestminPtsforeachmessage
+log.Butfor(cid:15),weuseafixed(cid:15)=1000sincetryingallpossible
+As mentioned in § IV, to localize the user device for each values of (cid:15) for each message log is practically impossible.
+suspicious SMS message, FBS-Radar collects the MAC ad-
+Localization results corresponding to different clustering
+dressesofallnearby(includingbothconnectedandperceived)
+algorithms and parameters are shown in Fig. 12 and Fig. 13.
+WiFi APs. We then look up the locations of the WiFi APs in
+First, we observe that dynamically selecting the value of k for
+our WiFi-location database; we refer to APs that exist in the
+each message log (shown as “Best k”) obviously outperforms
+database as addressable. Finally, as illustrated in Fig. 10, we
+using a fixed k for all message logs, so we consider the
+estimatetheuser’slocationbyclusteringtheaddressableWiFi
+additional computational overhead to be worthwhile. On the
+APs (using either k-means [51] or DBSCAN [52]), and then
+contrary, the performance of DBSCAN is independent of
+selecting the centroid of the dominant (i.e., largest) cluster as
+minPts. Moreover, dynamical k-means with the “Best k”
+the user’s location.
+outperforms dynamic DBSCAN with the “Best minPts,” and
+Fig.11illustratesthedistributionofthenumberofaddress- thus we adopt k-means in practice. Fig. 12 reveals that the
+able WiFi APs in every message log from MsgLogs. When median(mean)locationerrorforuserdevicesis36(55)meters.
+a message log includes addressable WiFi APs, the average We do not compare our errors rates with state-of-the-art WiFi
+number of addressable WiFi APs is as high as 8.5, which localization algorithms from the literature [33], [53], [54],
+provides ample samples for our clustering approach. On the because we lack the necessary meta-data (i.e., signal strength
+other hand, we note that 14% of message logs do not include measurements) to perform a fair comparison.
+anyaddressableWiFiAPs,eitherduetoalackofnearbyWiFi
+APs, or coverage gaps in our WiFi-location database. We do B. Localizing FBSes based on User Device Locations
+not localize these 14% of message logs in this work.
+FBS-Radar localizes an FBS by clustering (using dynam-
+Since FBS-Radar does not collect GPS information, it is ical k-means with the best k) the locations of its affected
+impossibleforustoknowtheexactlocationofauserdevice.In user devices within a certain time window, as depicted in
+other words, we lack ground-truth user locations to evaluate Fig. 14. Here, we need to consider the time window because
+the accuracy of our estimator. Instead, we use the average FBSes may move and/or change their IDs. In other words,
+deviation distance from all WiFi APs in the dominant cluster only those FBS message logs 1) using the same BS ID, 2)
+to the centroid as an approximate measure of location error, happeninginthesametimewindow,and3)locatedinthesame
+where the deviation distance is the distance from a WiFi spatial cluster can be attributed to a specific FBS. Therefore,
+AP to the centroid of the cluster. Exceptionally, when the as demonstrated in Fig. 15, the centroid of every cluster is
+dominant cluster contains only one WiFi AP, we are unable to the estimated location of an FBS, because one ID can be
+12Time
+BS ID
+1
+deviation
+distance
+Window
+FBS
+BS ID
+2
+Fig. 14. FBS-Radar localizes an FBS by clustering the
+locationsofitsaffecteduserdevicesinacertaintimewindow. Fig.15. Thecentroidofeveryclusteristheestimatedloca-
+Each message log in the figure corresponds to an affected tionofanFBS.NotethatthisisdifferentfromFig.10where
+userdevice.NotethatoneIDcanbesimultaneouslyusedby only the centroid of the dominant cluster is the estimated
+multipleFBSesatasametime. locationoftheuserdevice.
+175
+170
+165
+160
+155
+150
+145
+5 10 15 20
+Time Window (s)
+)m(
+ecnatsiD
+noitaiveD
+.gvA
+1
+0.8
+0.6
+0.4
+0.2
+0
+0 1000 2000 3000
+Deviation Distance (m)
+Fig.16. Relationshipbetweenthetimewindow
+(inseconds)andtheaccuracyofFBSlocalization.
+FDC
+1
+0.8
+0.6
+Mean = 149 0.4
+Median = 11
+0.2
+0
+0 1000 2000 3000 4000 5000
+Radius of Legitimate Base Stations (m)
+Fig. 17. Distribution of the errors of FBS local-
+ization,usingthebest14-secondtimewindow.
+FDC
+Max = 9999
+Mean = 2284
+Median = 1866
+Min = 100
+Fig. 18. Distribution of the radius of legitimate
+basestations.
+simultaneously used by multiple FBses. This is different from Through the above FBS localization mechanism, we can
+Fig. 10 where only the dominant cluster is taken into account. estimatethenumberofactiveFBSesatanytimepointofaday.
+For example, using the 14-second time window, we estimate
+Inside each cluster, we use the average deviation distance thenumbersofactiveFBSesat24samplingtimepointsonJan.
+from all affected user devices to the centroid to measure 16th, 2016. The results are plotted in Fig. 19. We observe an
+the accuracy of FBS localization. However, when the cluster interestingtimepatternofFBSdeploymentbehavior,i.e.,most
+contains only one affected user device, we are unable to FBSestendtobeoperationalaround 22:00intheevening.We
+evaluate the corresponding accuracy of FBS localization, so hypothesize this is to avoid being discovered by the police.
+we do not consider these cases in our accuracy evaluation.
+AidingLawEnforcement. Weareactivelyworkingwithlaw
+Toquantifytheimpactofthetimewindowontheaccuracy
+enforcement agencies to put the data produced by FBS-Radar
+of FBS localization, we apply different time windows to
+into practice. We have made a website available to the public
+MsgLogs. The results in Fig. 16 indicate that time windows
+(at http://shoujiweishi.baidu.com/static/map/pseudo.html) that
+that are too small or too large degrade the accuracy of FBS
+shows the current locations of detected FBSes in real time.
+localization. The best time window seems to be 14 seconds,
+Fig.20presentsasnapshotofthewebsite’sinterface,showing
+where the average deviation distance is 149 m. Although we
+thegeolocationsofdetectedFBSesat19:00onJan.16th,2016.
+might be able to improve this accuracy, this would impose
+onerous requirements on users, as explained in § IV. In addition to the public website, we provide data to
+the Ministry of Public Security (MPS) and the three major
+Using the 14-second time window, we detail the distribu-
+mobile carriers of China. Specifically, once a suspicious SMS
+tion of deviation distances in Fig. 17. We observe that the
+message is reported to FBS-Radar and determined to be an
+median (mean) deviation distance of FBS localization is only
+FBS message, the cloud side of FBS-Radar notifies specific
+11(149)meters.Incomparison,Fig.18showsthedistribution
+staff in the MPS of the occurrence of the message, along
+of the radius of legitimate base stations, where the average is
+with the estimated geolocation of the suspected FBS. All data
+2284 meters ((cid:29) 149 meters) and the median is 1866 meters
+sent to the MPS is stripped of personal information (e.g., the
+((cid:29) 11 meters). Hence, such deviation distances are small
+recipient user’s phone number) and is encrypted in transit.
+compared to BS coverage ranges. Additionally, we note that
+thecomputationsnecessarytolocalizeanFBScanbefinished Our collaboration with law enforcement is similar to past
+in around one second on a commodity server, demonstrating effortsbyotherresearchers[55],[56],[57].Inthesecasesand
+that our system is responsive and scalable. in ours, the goal is to provide insight and intelligence to law
+131000
+s 200 Number of Arrests
+e
+S Number of FBSes Taken Down
+B 800
+F
+e
+150
+v 600
+itc
+A 100
+fo 400
+re
+b 50
+m 200
+u
+N
+0 0
+0 4 Ti8
+me
+o1
+f
+2
+the
+D1 a6
+y
+20 24 07/15 08/15 09/15 10/15 11/15 12/15 01/16 02/16 03/16 04/16 05/16 06/16
+Fig. 19. Estimated numbers of active FBSes Fig.20. AsnapshotofdetectedFBSesinChinaat19:00 Fig. 21. Number of arrests made by the
+at 24 sampling time points on Jan. 16th, 2016, onJan.16th,2016,whereeachcirclerepresentsanactive police and number of FBSes taken down
+withonesamplingtimepointperhour. FBS. duringoneyear,withthehelpofFBS-Radar.
+enforcement by pointing out activities that are unambiguously evaluatefivedifferentmethodsthatleveragethisdatatodetect
+illegal, such as operating an unlicensed, high-power radio FBSes, and find that FBSes can be identified with a high
+transceiveronregulatedfrequencies.However,werespectthat precision without needing to analyze the content of SMS
+this is fraught ethical terrain, as incorrect information could messages.Thisisanimportantfinding,asitopensthedoorfor
+potentially implicate innocent people. In our case, the MPS futureresearchonFBSdetectioninawaythatpreservesusers’
+uses data from FBS-Radar to guide their search for criminals, privacy. Based on feedback from users, we find that the false
+but only make arrests after conducting an independent inves- positive classification rate of FBS messages is only 0.05%.
+tigation, which typically involves catching suspects in the act
+We have visualized the results of FBS-Radar and released
+of operating an FBS. Thus, ordinary people are not placed at
+them to the public, which we hope will facilitate further
+risk or directly implicated by data from FBS-Radar; instead,
+research on FBSes in the academic community, and promote
+FBS-Radarissimplyatoolthathelpslawenforcementnarrow
+bettermobilesecurityaroundtheworld.Furthermore,notethat
+down the search for criminal activity.
+our detection methods are extremely conservative by design,
+AccordingtoconversationswehavehadwiththeMPSand since we lacked ground truth about FBSes when we began
+mobile network operators, the FBS localizations provided by this project. In the future, it may be possible to develop better
+FBS-Radar are sufficiently timely and fine-grained to enable algorithmswithahigherrecallbyleveragingthedataproduced
+law enforcement activities. Fig. 21 plots the number of FBS by FBS-Radar as ground truth.
+take-downs and corresponding arrests made by the Chinese
+police between Jul. 2015 and Jun. 2016 with the help of FBS- ACKNOWLEDGMENT
+Radar data. In total, the police made 455 arrests and took
+We wish to thank the following people for their contri-
+down 1109 FBSes during this time period. We also see that
+butions to the FBS-Radar system or paper. Changqing Han,
+both arrests and take downs are generally on the rise. The
+Min Guo, Xuefeng Luo, Cheng Peng, Junyi Shao, and Xin
+only exception happened in Feb. 2016 (“02/16”) when there
+Zhong (from Baidu Mobile Security) helped develop the
+was a sharp drop of both numbers, since the Chinese New
+system. Tianyin Xu (from UCSD) and Ennan Zhai (from Yale
+Year Festival happened in this month.
+University) offered useful suggestions on the presentation of
+the submission. Our shepherd Christina Poepper (from New
+Limitation. It is difficult for FBS-Radar to estimate the
+York University) guided the preparation of the camera-ready.
+numberofactiveFBSesduringarelativelylongperiodoftime
+(e.g., during a whole hour or day), as an FBS can frequently This work is supported by the High-Tech R&D Program
+changeitsIDduringtheperiod.Inotherwords,westilllackan of China (“863”) under grant 2015AA01A201, the NSF under
+effective method to attribute seemingly separate attacks back grants CNS-1563320, CNS-1464335, CNS-1526638, CMMI-
+to a single physical FBS over long periods of time. 1436786 and ECCS-1247944, the NSF of China under grants
+61471217, 61472218, 61432002, 61632020, 61572281 and
+VIII. CONCLUSION 61520106007,theKeyResearchProgramofFrontierSciences
+of CAS under grant QYZDY-SSW-JSC002, and the CCF-
+In this paper, we share our experiences on the design, Tencent Open Fund under grant AGR20160105.
+implementation,andimprovementofFBS-Radar,alarge-scale
+FBS detection and localization system. As of Jun. 2016, FBS- REFERENCES
+Radarisinusebyover92Mpeople;itsuccessfullyquarantines
+[1] “Cisco Visual Networking Index: Global Mobile Data Traffic
+millions of spam and fraud SMS messages per day, and it
+Forecast Update 2014-2019 White Paper,” http://www.cisco.com/c/
+hashelpedlawenforcement arresthundredsofFBSoperators.
+en/us/solutions/collateral/service-provider/visual-networking-index-
+FBS-Radar imposes minimal resource requirements on end- vni/white paper c11-520862.html.
+user devices, and does not require root privileges or active [2] Z.Li,W.Wang,T.Xu,X.Zhong,X.-Y.Li,Y.Liu,C.Wilson,andB.Y.
+user intervention (in the vast majority of the time). Zhao,“ExploringCross-ApplicationCellularTrafficOptimizationwith
+BaiduTrafficGuard,”inProc.ofNSDI. USENIX,2016,pp.61–76.
+FBS-Radarreliesontheautomatedcollectionofsuspicious
+[3] M.Mouly,M.-B.Pautet,andT.ForewordBy-Haug,TheGSMSystem
+SMS messages from end-user devices to identify FBSes. We forMobileCommunications. Telecompublishing,1992.
+14[4] C. Zhang, “Malicious Base Station and Detecting Malicious Base [33] P.Sapiezynski,R.Gatej,A.Mislove,andS.Lehmann,“Opportunities
+StationSignal,”ChinaCommunications,vol.11,no.8,pp.59–64,2014. andchallengesincrowdsourcedwardriving,”inProc.ofIMC. ACM,
+[5] “Demystifying Fake Base Stations,” http://business.sohu.com/ 2015,pp.267–273.
+20160507/n448197405.shtml. [34] “10WaystoBoostYourWi-FiSignal,”http://www.pcmag.com/article2/
+[6] “Can4GReallyBlocktheSMSMessagesfromFakeBaseStations?” 0,2817,2372811,00.asp.
+http://mobile.163.com/15/0414/08/AN58G1KT0011179O.html. [35] “List of Mobile Country or Geographical Area Codes,” http://itu.int/
+[7] “Phony cell towers are the next big security risk,” pub/T-SP-E.212A-2012/en.
+http://www.theverge.com/2014/9/18/6394391/phony-cell-towers- [36] “Status of reserved or assigned ITU-T E.212 shared Mobile Country
+are-the-next-big-security-risk. Codes (MCC) and associated Mobile Network Codes (MNC),” http:
+[8] “19 Fake Mobile Base Stations Found Across US – Are They For //itu.int/net/ITU-T/inrdb/e212 901.aspx.
+Spying or Crime?” http://ibtimes.co.uk/19-fake-mobile-base-stations- [37] S.TongandD.Koller,“SupportVectorMachineActiveLearningwith
+found-across-us-are-they-spying-crime-1464008. ApplicationstoTextClassification,”TheJournalofMachineLearning
+[9] “Areyourcallsbeingintercepted?17fakecelltowersdiscoveredinone
+Research(JMLR),vol.2,pp.45–66,2002.
+month,”http://computerworld.com/article/2600348/mobile-security/are- [38] E. Zhai, Z. Li, Z. Li, F. Wu, and G. Chen, “Resisting Tag Spam by
+your-calls-being-intercepted-17-fake-cell-towers-discovered-in-one- LeveragingImplicitUserBehaviors,”inProc.ofVLDB,2017.
+month.html. [39] D. Jurafsky and J. Martin, Speech & Language Processing: An intro-
+[10] “Fake Stingray mobile base stations discovered spying on million- ductiontonaturallanguageprocessing,computationallinguistics,and
+s of Londoners,” http://www.ibtimes.co.uk/fake-stingray-mobile-base- speechrecognition. PearsonEducationIndia,2000.
+stations-discovered-spying-millions-londoners-1505368. [40] “TextClassificationforSentimentAnalysis–EliminateLowInforma-
+[11] “Mobile Security Reports by Baidu,” http://shoujiweishi.baidu.com/ tionFeatures,”http://streamhacker.com/tag/feature-extraction.
+safety.html#mobile. [41] T.Ojala,M.Pietika¨inen,andT.Ma¨enpa¨a¨,“MultiresolutionGray-Scale
+[12] “MobileSecurityReportsbyQihu360,”http://zt.360.cn/2015/reportlist. andRotationInvariantTextureClassificationwithLocalBinaryPattern-
+html?list=1. s,” IEEE Transactions on Pattern Analysis and Machine Intelligence
+(TPAMI),vol.24,no.7,pp.971–987,2002.
+[13] “A Report of Fake Base Stations in China by Tencent, 2016,” http:
+//m.qq.com/security lab/news detail 361.html. [42] H. Ug˘uz, “A Two-Stage Feature Selection Method for Text Catego-
+rization by Using Information Gain, Principal Component Analysis
+[14] “DemystifyingtheIndustrialChainofFakeBaseStations,”http://news.
+andGeneticAlgorithm,”Knowledge-BasedSystems,vol.24,no.7,pp.
+sohu.com/20160412/n443925430.shtml.
+1024–1032,2011.
+[15] “BaiduPhoneGuard,”http://shoujiweishi.baidu.com.
+[43] J.YeandQ.Li,“ATwo-StageLinearDiscriminantAnalysisviaQR-
+[16] “IMSI-catcher,”http://en.wikipedia.org/wiki/IMSI-catcher. decomposition,” IEEE Transactions on Pattern Analysis and Machine
+[17] “Stingray phone tracker manufactured by Harris Corporation,” http:// Intelligence(TPAMI),vol.27,no.6,pp.929–941,2005.
+en.wikipedia.org/wiki/Stingray phone tracker. [44] Y.YangandJ.O.Pedersen,“AComparativeStudyonFeatureSelection
+[18] “Septier Law Enforcement Cellular Products,” http://septier.com/law- inTextCategorization,”inProc.ofICML,vol.97,1997,pp.412–420.
+enforcement. [45] “tf-idf: A Single-Page Tutorial - Information Retrieval and Text Min-
+[19] “Government Cellphone Surveillance Catalogue,” https: ing,”http://tfidf.com.
+//theintercept.com/document/2015/12/17/government-cellphone- [46] R.-E. Fan, K.-W. Chang, C.-J. Hsieh, X.-R. Wang, and C.-J. Lin,
+surveillance-catalogue. “LIBLINEAR:ALibraryforLargeLinearClassification,”TheJournal
+[20] K. Wang, “A Case Study of Fake Base Stations,” China Radio, pp. ofMachineLearningResearch,vol.9,pp.1871–1874,2008.
+34–36,2013. [47] “Wikipediapageforprecisionandrecall,”http://en.wikipedia.org/wiki/
+[21] “The 411: Feature phones vs. smartphones,” http://cnet.com/news/the- Precision and recall.
+411-feature-phones-vs-smartphones. [48] “The Google Maps Geocoding API,” http://developers.google.com/
+[22] “FBS-SignalDetectionCarsDoNotReallyWork,”http://txwh123.com/ maps/documentation/geocoding.
+html/2015/xgaj 1212/125.html. [49] “CSI: Channel state information,” http://en.wikipedia.org/wiki/
+[23] “12321 Warning: Be Cautious of the SMS Messages from Fake Base Channel state information.
+Stations,”http://12321.cn/12321/warn detail.php?id=9889. [50] “RSSI: Received signal strength indication,” http://en.wikipedia.org/
+[24] A. Dabrowski, N. Pianta, T. Klepp, M. Mulazzani, and E. Weippl, wiki/Received signal strength indication.
+“IMSI-Catch Me If You Can: IMSI-Catcher-Catchers,” in Proc. of [51] J. A. Hartigan and M. A. Wong, “Algorithm AS 136: A k-means
+ACSAC. ACM,2014,pp.246–255. Clustering Algorithm,” Journal of the Royal Statistical Society. Series
+[25] T.vanDo,H.T.Nguyen,N.Momchiletal.,“DetectingIMSI-Catcher C(AppliedStatistics),vol.28,no.1,pp.100–108,1979.
+UsingSoftComputing,”inSoftComputinginDataScience. Springer, [52] M. Ester, H.-P. Kriegel, J. Sander, and X. Xu, “A Density-Based
+2015,pp.129–140. Algorithm for Discovering Clusters in Large Spatial Databases with
+[26] F. van den Broek, R. Verdult, and J. de Ruiter, “Defeating IMSI Noise,”inProc.ofKDD,vol.96,no.34,1996,pp.226–231.
+Catchers,”inProc.ofCCS. ACM,2015,pp.340–351. [53] P. Sapiezynski, A. Stopczynski, R. Gatej, and S. Lehmann, “Tracking
+[27] “SnoopSnitchproject,”http://opensource.srlabs.de/projects/snoopsnitch. Human Mobility using WiFi Signals,” PLoS ONE, vol. 10, no. 7, p.
+e0130824,2015.
+[28] “CatcherCatcherprojectonOsmocomphones,”http://opensource.srlabs.
+de/projects/mobile-network-assessment-tools/wiki/CatcherCatcher. [54] Z. Zhang, X. Zhou, W. Zhang, Y. Zhang, G. Wang, B. Y. Zhao, and
+H. Zheng, “I am the Antenna: Accurate Outdoor AP Location using
+[29] “AIMSICD: Android IMSI-Catcher Detector,” https://cellularprivacy.
+Smartphones,”inProc.ofMobiCom. ACM,2011,pp.109–120.
+github.io/Android-IMSI-Catcher-Detector.
+[55] B. Stone-Gross, M. Cova, L. Cavallaro, B. Gilbert, M. Szydlowski,
+[30] “Counterterrorism funds and tools are seeping into local polic-
+R.Kemmerer,C.Kruegel,andG.Vigna,“YourBotnetisMyBotnet:
+ing,” http://www.equalfuture.us/2015/08/26/counterterrorism-stingrays-
+AnalysisofaBotnetTakeover,”inProc.ofCCS. ACM,2009.
+local-policing.
+[56] K. Levchenko, A. Pitsillidis, N. Chachra, B. Enright, M. Fe´legyha´zi,
+[31] “The body-worn “IMSI catcher” for all your covert phone snooping
+C. Grier, T. Halvorson, C. Kanich, C. Kreibich, H. Liu et al., “Click
+needs,” http://arstechnica.com/security/2013/09/the-body-worn-imsi-
+Trajectories:End-to-EndAnalysisoftheSpamValueChain,”inProc.
+catcher-for-all-your-covert-phone-snooping-needs.
+ofS&P. IEEE,2011,pp.431–446.
+[32] Y.Ding,Z.Tang,andY.Tang,“StudyofCountermeasuresTechnology
+[57] D. Y. Wang, M. Der, M. Karami, L. Saul, D. McCoy, S. Savage, and
+Based on Pseudo Base Station for CDMA Mobile Communication
+G. M. Voelker, “Search + Seizure: The Effectiveness of Interventions
+System,”CommunicationCountermeasures,vol.101,no.2,pp.41–43,
+onSEOCampaigns,”inProc.ofIMC. ACM,2014,pp.359–372.
+2008.
+15

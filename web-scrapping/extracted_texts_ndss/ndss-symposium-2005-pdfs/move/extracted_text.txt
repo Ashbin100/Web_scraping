@@ -1,0 +1,799 @@
+MOVE: An End-to-End Solution To Network Denial of Service
+AngelosStavrou AngelosD.Keromytis JasonNieh VishalMisra DanRubenstein
+ColumbiaUniversityintheCityofNewYork
+fangel,angelos,nieh,misra,danrg@cs.columbia.edu
+Abstract (DoS)attackstoafirst-ordersecuritythreat. Whilesev-
+eralmechanismstosuppressorcountertheireffectshave
+been proposed [16, 44, 47, 51, 38, 35, 21, 53], so far
+We present a solution to the denial of service (DoS) nonehasbeenwidelyadopted. Onecharacteristicthese
+problem that does not rely on network infrastructure mechanisms share is their dependence on elements of
+support,conformingtotheend-to-end(e2e)designprin- thenetworkinfrastructure. Furthermore,ithasbeenar-
+ciple. Ourapproachistocombineanoverlaynetwork, guedrecently[12]thatthenetworkDoSproblemisin-
+whichallowsustotreatauthorizedtrafficpreferentially, herentlyimpossibletosolvewithoutinfrastructuresup-
+with a lightweight process-migration environment that port. This may provide some insight as to the lack of
+allowsustomoveserviceseasilybetweendifferentparts deployment of any of these mechanisms. The question
+ofadistributedsystem. Functionalityresidingonapart weexamineinthispaperiswhetheritispossibletopro-
+ofthesystemthatissubjectedtoaDoSattackmigrates vide a practical solution to the network DoS problem
+toanunaffectedlocation. Theoverlaynetworkensures thatdoesnotrequiresignificant(orany)cooperationby
+thattrafficfromlegitimateusers,whoareauthenticated networkproviders(ISPs).
+before they are allowed to access the service, is routed We present Migrating OVErlay (MOVE), a system
+tothenewlocation. Wedemonstratethefeasibilityand thataimstoprovideane2e-compatibleanti-DoSmech-
+effectiveness of our approach by measuring the perfor- anism. Ourapproachistoseparate“good”trafficfrom
+mance of an experimental prototype against a series unknowntraffic, andtreattheformerpreferentially, us-
+of attacks using PlanetLab, a distributed experimental ing an overlay network in a manner similar to SOS
+testbed. Our preliminary results show that the end-to- [21,22,7,30]butwithoutusingpacketfiltering.MOVE
+endlatencyremainsatacceptablelevelsduringregular nodes are located at edge networks, requiring no in-
+operation,increasingonlybyafactorof2to3,evenfor frastructure support. Traffic is differentiated on a per-
+large overlays. When a process migrates due to a DoS sessionbasis,usingcryptographicauthenticationand/or
+attack, the disruption of service for the end user is in Graphic Turing Tests (GTTs) to determine valid users
+the order of a few seconds, depending on the network (which may simply mean “humans”). The overlay
+proximityoftheserversinvolvedinthemigration. routes traffic from legitimate users to the current net-
+worklocationoftheprotectedservice. Whenanattack
+againstthehostingsiteisdetected,weusealightweight
+1 Introduction process-migrationmechanismtore-locatetheserviceto
+anunaffectedsite. Legitimatetrafficisroutedtranspar-
+OneofthefundamentaltenetsofInternetdesignisthe entlytothenewlocation,whilemalicious(orsimplyun-
+end-to-end (e2e) principle [40], which states that func- known)trafficwillcontinueflowingtotheoldlocation.
+tionalityshouldbeplacedasclosetothenetworkedges OurdifferencefromSOS[21,22],WebSOS[7,30,48],
+as possible, keeping the network core focused on the and Mayday [1], is that MOVE does not require a fil-
+task of routing packets. While this has arguably con- teringperimetertobeconstructedaroundthetargetsite;
+tributed to the success of the Internet, it has created an instead,weuseprocessmigrationtomove(andobscure)
+ideology that resists mechanisms that require deploy- the current location of the attacked service, and “step-
+ment in the interior (core) of the network. Examples ping stone” hosts to maintain connectivity between the
+ofsuchtechnologiesincludesomeformsofQoS[4]and original site and the new location of the service. Ar-
+activenetworking[52]. chitecturally, SOS introduced the general idea of using
+Recenteventshaveelevatednetworkdenialofservicean overlay and filtering to protect against some classes describes our prototype implementation, and Section 4
+of DDoS attacks. WebSOS enhanced the front-end of presentssomepreliminaryexperimentalresults.Wedis-
+theoverlay(itsinterfacewiththeremoteclients)toen- cussothermechanismsthataddresstheDoSproblemin
+ablemoreadhocinteractionsthanSOSallowed.MOVE Section5,andconcludethepaperwithSection6.
+concernsitselfwiththeback-endof theoverlay(itsin-
+terface with the protected sites), removing the depen- 2 SystemArchitecture
+dency on network filtering. Our approach is similar to
+We first describe the threat and application models
+the concept of “hidden servers” in anonymity systems
+under which our system operates. We then present the
+such as Tor [37, 11], although our use of server migra-
+MOVEarchitecture,whichuseselementsofoverlaynet-
+tioninMOVEallowsustoprotectagainstalargerclass
+workingandprocessmigration.
+ofattackers.
+No aspect of MOVE depends on the network infras-
+2.1 ThreatandApplicationModel
+tructure itself, although it makes certain assumptions
+aboutthethreatmodel.Inparticular,(a)thereisanotion DoS attacks can take many forms, depending on the
+oflegitimateusers,(b)theattackerscannottakeoverar- resourcetheattackeristryingtoexhaust. Forexample,
+bitraryroutersoreavesdropatwillonarbitrarynetwork anattackercantrytocausethewebservertoperformex-
+links, and (c) there exists a relatively large number of cessivecomputation,orexhaustallavailablebandwidth
+potential hosting sites. We discuss these assumptions toandfromtheserver.Inallforms,theattacker’sgoalis
+furtherinSection2. todenyuseoftheservicetootherusers. Apartfromthe
+Wheretheseassumptionshold, webelieveMOVEto annoyance factor, such an attack can prove particularly
+be the first anti-DoS mechanism that does not require damaging for time- or life-critical services (e.g., track-
+anyadditionalfunctionalityfromthenetwork. Wehope ing the spread of an real-world epidemic), or when the
+todemonstratethatbymakingcarefulassumptionsand attack persists over several days. Of particular interest
+relaxingthethreatmodelinrealisticways,itispossible are link congestion attacks, whereby attackers identify
+to design efficient and effective protection mechanisms pinch-pointsinthecommunicationssubstrateandrender
+thatdonotviolateprevalentsystemandnetworkdesign theminoperablebyfloodingthemwithlargevolumesof
+principles. Tothateffect,wetestourexperimentalpro- traffic. An example of an obvious attack point is the
+totypeonPlanetLab[36],atestbedforexperimentation location (IP address) of the destination that is to be se-
+withnetworkoverlays. Asweshow,theoverlaymech- cured, or the routers in its immediate network vicinity;
+anism increases end-to-end latency by a factor of 2 to sendingenoughattacktrafficwillcausethelinkscloseto
+3. Migratingawebserveranditsassociatedstatecauses thedestinationtobecongestedanddropallothertraffic.
+less than 10 seconds of service disruption for the end Weassumethatattackersaresmartenoughtoexploit
+user, and connectivity resumes transparently to the end featuresofthearchitecturethataremadepubliclyavail-
+applications;inthecaseofaVNCserverwithsubstan- able. Wedonotspecificallyconsiderhowtoprotectthe
+tiallymorestate, theservicedisruptiontimerangesbe- architectureagainstattackerswhocaninfiltratethesecu-
+tween17and22seconds.Theattackerisleftwithnoin- ritymechanismthatdistinguisheslegitimatetrafficfrom
+dicationastothenewlocationoftheservice,thushaving (illegitimate)attacktraffic: weassumethatcommunica-
+to either distribute the attack traffic among various po- tionsbetweenoverlaynodesremainsecuresothatanat-
+tentialtargetsortrytoguessthecorrecthostingsite. An tacker cannot send illegitimate communications, mask-
+attacker that cannot guess the new location faster than ing them as legitimate. In addition, it is conceivable
+10seconds(forthewebservercase)cannotpermanently thatmoreintelligentattackerscouldmonitorcommuni-
+disruptaccesstotheservice.Similarresultsareobtained cationsbetweennodesintheoverlayand,basedonob-
+whenmigratingaremotedisplayapplication,VNC.Fur- servedtrafficstatistics,determineadditionalinformation
+thermore, clients need to use MOVE only when their about the current configuration. Such attackers would
+connectivitytoaserviceisdisrupted;underregularnet- havetheabilitytosubvertarbitraryroutersand/oreaves-
+workconditions,directaccesstotheserverswouldtyp- dropatwillonnetworklinks. Assuchattacksarecon-
+ically be used, minimizing the performance impact of siderably more difficult than denial of service, we con-
+MOVE. sider them outside our scope. In [56], the authors an-
+The remainder of this paper is organized as follows. alyze our overlay architecture under a model allowing
+Section 2 gives an overview of the MOVE system ar- forattackersthatcancompromisearbitrarynodesinthe
+chitecture after describing its components. Section 3 overlay, toward determining the identity of the beacon
+and/or secret servlets. They conclude that by layeringmultipleoverlaysontopofeachother,onecantradeoff 2.2.1 ServersInMOVE
+increased resistance to such attackers with end-to-end
+performance. Servers that are to be protected inform the overlay
+Our prototype implementation is focused on two ap- of their current location. Such servers are also au-
+plications(althoughnot limitedto these): a webserver thenticated using a standard security protocol such as
+andaremotedisplayaccessapplication(VNC)[39].We SSL/TLS [10] with client certificates, or IPsec [20].
+chosetheWebasanimplementationmechanismdueto Whenaservermigratestoanewlocation,itsimplyin-
+thefacilitiesthatcommonserversandbrowsersprovide formstheoverlayofitsnewlocation.Notethatmultiple
+and the ease with which we could develop a prototype servers,belongingtodifferentorganizations,maybeus-
+implementation. VNCisagoodexampleofanapplica- ingthesystematthesametime;thecertificatestheyhold
+tionthatmaintainsconsiderablestatethatcannotbeeas- allowthemtochangethelocationstatusonlyforthem-
+ily replicated, without being “storage-heavy”. In gen- selves,i.e.,theycannotcausetheoverlaytoredirectand
+eral,theapplicationswearemostinterestedinarereal- captureacompetitor’straffic. Weassumetheexistence
+time,server-assistedapplications,andotherapplications ofenoughlocationstochooseasthenewdestinationthat
+thatrequiresomestatetobemaintainedbytheserverbut it is impractical for an attacker to simply attack each
+are not fundamentally storage-oriented (i.e., their pro- site and determine (based on service response latency)
+cessing component dominates the system performance whichoneishostingaparticularservice; thatis,itwill
+costs).Oursystemsupportsapplicationsthatrequireac- take too long for an attacker to locate a service using
+cess to a storage back-end, by maintaining a “lifeline” that (or a similar) approach, compared to how quickly
+betweenthenewandtheoldlocationoftheservice.The the system can migrate to a new location. We experi-
+service can access the storage back-end over this life- mentallyquantifythisdelayinSection4.
+line,withsomelossofperformance,whichwemeasure However, notice that the process migration mecha-
+in Section 4. We discuss the lifeline in more detail in nism itself uses the network, which is presumed to be
+Section2.2.1. under a DoS attack. In keeping with the spirit of the
+Note that applications that do not require any state e2edesign,weprecludeuseofanyformofQoSprovi-
+to be maintained can simply be load-balanced across sioning(althoughsucharrangementscanbeveryeffec-
+several sites and contacted using Anycast, RR-DNS, tiveanddonotrequirealotofoverhead,sincetheend-
+etc.. Likewise, content-delivery applications can use pointsarefixedandknownapriori).Instead,weassume
+data replication services such as Akamai to increase that each hosting site has a secondary, potentially low-
+availability. bandwidthconnectiontotheInternetwithadifferentIP
+Finally,weassumethatthereexistsanumberofhost- address(eitherwiththesameor,betteryet,withanother
+ingsitesthatcanacceptthemigratingservice.Thesecan ISP),whichisnotadvertisedthroughBGP.Thus,attack
+be statically provisioned, e.g., through a co-operative traffic from outside the home ISP cannot reach that in-
+agreementamongvariousserviceproviders,orallocated terface,eveniftheattackerknowsthisalternateaddress.
+ondemandfromacommercialentityselling(orrenting) We also require “stepping stones” in the same home
+CPU time. In either case, we assume that there exist ISP (but not necessarily operated by the ISP, i.e., they
+enough such hosting sites that an attacker cannot sim- can be located in end-networks), which allow the mi-
+ply overwhelm all of them with a coordinated DoS at- grating process to reach a host that can communicate
+tack. Instead,theattackercansuccessfullyattacksome with other nodes outside the home ISP. During process
+(small)percentageofsuchsites. Notethatthesehosting migration, the server binary and state are saved (as we
+sites are not part of the overlay itself. They only host shall describe in Section 2.3), transfered to one of the
+migrated services, presumably under some contractual steppingstones, andthencetoa“random”hostingsite,
+agreementwiththeownersofsuchservices. wheretheserviceisrestarted. Theservicewillthenno-
+tifytheoverlayofitsnewlocation.Theoverlaywillthen
+redirect traffic from legitimate clients to this new loca-
+2.2 MOVEArchitecture
+tion. Thesteppingstonescanbepartoftheoverlay(ad-
+mitting new clients and routing their traffic), dedicated
+TheoverallarchitectureofoursystemisshowninFig- nodes,hostingsitesthatusethesamehomeISP,orany
+ure 1, and shares several similarities with the architec- combinationofthese. Theonlyimportantcharacteristic
+tureofWebSOS[30,7].Fortheremainderofthediscus- isthattheycancommunicatebeyondthelocalISP,and
+sion,wewillfocusonwebclientsandservers,although withtheISP-specificaddressoftheattackedsite.Forex-
+ourapproachcaneasilybegeneralizedtootherservices. ample,theISPmaybeusinginternallyanet-10addressFigure1.MigratingOverlaysystemarchitecture.
+(i.e.,anaddressintheprivate10.0.0.0/8prefix)for fectthelifeline. Toavoidaddinguptothelifelineover-
+the secondary address of stepping stones and protected heads when a server is migrated several times, we col-
+sites. Thesteppingstonenodealsousesatemporaryad- lapse the lifeline by instructing the previous (original)
+dress that belongs to the ISP, that is globally routable. steppingstonetoconnecttothenewlocation.
+This address is changed periodically, such that an at-
+tacker cannot target a stepping stone with attack traf-
+2.2.2 ClientsinMOVE
+fic. Thus, we have created an one-way communication
+channelthroughthesteppingstone(outsideconnections Whentheserviceisnotunderattack,clientscancontact
+throughitarepossible,incomingonesarenot). itdirectly. Onceanattackisdetectedorsuspected(e.g.,
+Finally,a“lifeline”connectionismaintainedbetween throughlossofconnectivity),trafficisdivertedthrough
+the new location and the old location via the stepping MOVE.Clientsthatwanttoaccesstheattackedservice,
+stone,suchthatthemigratedservicecanaccessanystor- contact any overlay node (an updated list of which can
+age that is attached to the old location. For example, bepublishedperiodically)andauthenticateusingoneof
+consider a typical web server such as the one shown severaltechniques. Themoststraightforwardapproach,
+in Figure 2. In MOVE, we will migrate the front-end usedintheinitialversionofMOVE,istouseSSLwith
+web server component, and use the lifeline connection clientcertificatesthataresignedbytheentityoperating
+tocommunicatetothebusinesslogicanddatabasecom- the overlay, and authorize the holders to access either
+ponents. Although the stepping stone’s address may specificoranyapplicationsorserversusingtheoverlay.
+changeovertime,wecanusetunnelingtomaintainthe The drawback of using an authentication protocol is
+connectionwiththenewlocation. Weeventuallyintend thatwemustknowinadvancewhothelegitimateusers
+touseSCTPforthisconnection,sincethisallowsusto are,sotheycanbeprovisionedwiththeappropriateau-
+easilydolive-connectionmigrationtoanewIPaddress. thenticationcredentials. Thisisnotaproblemforappli-
+SincethesecondarylinkconnectstoanotherISP(orwe cationssuchasVNC,whereweonlywanttheauthorized
+ensuredthatitusesadifferentsetoflinksthanthemain user(owner)toaccesstheservice.IncounteringDoSat-
+Internetattachmentpoint),theDDoSattackwillnotaf- tacks,however,weareoftenmoreinterestedinwhether
+a particular request (e.g., HTTP connection) originatednetwork
+(e.g.,
+Apache)
+Web
+Server
+Front−end
+Business
+Logic
+IPC is "stretched" over "lifeline" connection
+Requests
+from the
+Web Server
+Component that is migrated by MOVE
+(PHP,
+Tomcat,
+Java
+Beans,
+etc)
+Database
+Backend
+Figure3.Web-basedGraphicTuringTestusing
+GIMPY.Thechallengeinthiscaseis“wqyw”.
+Figure2.Typicalmodelofawebserver.
+from a human user or from a “DoS zombie” process, isthattheusersmustbeknownandprovisionedapriori.
+that is under the control of the attacker. Fortunately, it We believe that with these two authentication methods
+ispossibletodosousingGraphicTuringTests(GTTs) (certificate-only and GTT), we can cover the majority
+[54], an example of which is shown in Figure 3. For of usage scenarios. Although we are aware of social-
+vision-impairedusers, itispossibletouseaudibletests engineering attacks against CAPTCHAs, note that we
+of a similar nature (e.g., type the word spelled in this are not limited to these as the only form of authentica-
+audioclip);wedonotconsidersuchtestsfurtherinthis tion; as we already mentioned, we can use certificate
+paper. MOVEcansupportbothauthenticatedandGTT- (and even password-based) authentication. We can in-
+admittedclientssimultaneously, aswedescribeinSec- tegrate additional authentication mechanisms in the in-
+tion3.2. frastructureastheyaredeveloped.
+The particular GTT realization we use is GIMPY, Authenticated clients then route all their traffic over
+which concatenates an arbitrary sequence of letters to theoverlay, whichredirectsittothecurrentlocationof
+form a word and renders a distortedimage of the word the protected service. Note that the actual location of
+as shown in Figure 3. GIMPY relies on the fact that a server is no longer implied by the host-name compo-
+humans can read the words within the distorted image nentoftheURL,ortheIPaddressthisresolvesto. An
+andcurrentautomatedtoolscannot. Thehumanauthen- attacker that has no access to the overlay can try to at-
+ticates herself by entering as ASCII text the same se- tackahostingsiteatrandom,ortheIPaddresstheURL
+quenceoflettersaswhatappearsintheimage.Although resolves to. In that case, the server and all associated
+recent advances in visual pattern recognition [31] can state is migrated to a new location. Alternatively, the
+defeatGIMPY,thereisnosolutiontodatethatcanrec- attacker can target the overlay itself. However, as has
+ognize complicated images or relation between images been shown by other work on which we base our ap-
+likeAnimal-PIX.Althoughfordemonstrationpurposes proach[21,1],doingsoismoredifficultastheoverlay
+inourprototype,describedinSection3,weuseGIMPY, sizeincreases.
+we can easily substitute it with any other instance of a
+GTT. Once a client has passed the GTT, they are pro- 2.3 ProcessMigration
+videdwithashort-expirationcertificatethatcanbeused
+Process migration is the ability to transfer a process
+toaccesstheoverlaywithTLS.Wedescribetheimple-
+fromonemachinetoanother.Itisausefulfacilityindis-
+mentation details in Section 3. Note that it is possible
+tributedcomputingenvironments,especiallyascomput-
+to provision users with longer-lived credentials, or just
+ingdevicesbecomemorepervasiveandInternetaccess
+providethemwithlong-livedcertificates,skippingGTT
+becomes more ubiquitous. Although many approaches
+authenticationaltogether;thedrawbackofthatapproach
+have been proposed [27], achieving process migrationfunctionalityhasbeendifficultinpractice. 2.4 ExampleofSystemOperation
+Foroursystem,weuseanapproachbasedon[33],by
+Toillustratetheuseofourarchitecturebyserversand
+effectively providing a thin virtualization layer, called
+clients,wedescribethestepsbothsidesmustundertake
+a POD, on top of the operating system that provides
+toprotecttheircommunicationchannel:
+a group of processes with a private namespace. The
+sandboxed processgroupalwaysseesthesamevirtual- (cid:15) A server contacts any overlay node and informs
+ized view of the system, which associates virtual iden- it of its location. The connection is protected by
+tifiers with operating system resources such as process SSL/TLS,andtheserverpresentsacertificatethat
+identifiersandnetworkaddresses. Thisdecouplessand- provestotheoverlayitsrighttospecifyalocation
+boxed processes from dependencies on the host oper- for a particular hostname/URL. The overlay node
+ating system and from other processes in the system. confirmsthevalidityofthecertificateandinforms
+Thisvirtualizationisintegratedwithacheckpoint-restart other nodes in the overlay of the new location of
+mechanism that enables the sandboxed processes to be theservice.WewilldiscussinSection3themecha-
+migrated as a unit to another machine. These process nismusedinourprototype.Theserverperiodically
+groupsareindependentandself-contained,andcanthus re-affirmsitscurrentlocation.
+be migrated freely without leaving behind any residual
+(cid:15) Aclientthatwantstocommunicatewiththeservice
+stateaftermigration, evenwhenmigratingnetworkap-
+contactsarandomoverlaynode. Afterauthenticat-
+plications while preserving their network connections.
+ingandauthorizingtherequestviatheCAPTCHA
+Wecanthereforeallowapplicationstocontinueexecut-
+test, the overlay node securely proxies all traffic
+ing after migration even if the machine on which they
+fromthesourcetothetarget. Alternatively, a pre-
+previously executed is no longer available. To sup-
+authorized client that possesses a valid certificate
+port transparent network-connection migration, client-
+can connect to the overlay without requiring any
+sidesupportisrequired,whichisstraightforwardtoim-
+userinteraction.Asexplainedin[48],thisstepmay
+plementontheoverlaynodes(i.e.,nochangestoclient
+alsoinvolvesometypeofpayment(bytheenduser
+(user)softwarearenecessary). Forourprototypeimple-
+or the service owner) to the entity managing the
+mentation, this was not required, since the web model
+overlayinfrastructure. Followingthediscussionof
+allows for temporary TCP connection failures. For ap-
+[1],anumberofoverlaynodesmaybeinvolvedin
+plication domains where this is not an option, we can
+therouting,dependingontheprecisethreatmodel
+augment the overlay nodes accordingly. We do not ex-
+and performance requirements. For example, to
+plorethisoptionfurtherinthispaper.
+avoidthesituationwhereanattackercaneavesdrop
+The process migration system is designed to support
+on an overlay node and determine the location of
+migrationofunmodifiedlegacyapplicationswhilemin-
+theservice,wemaywanttouseatwo-hopoverlay
+imizing changes to existing operating systems. This is
+routingapproach; if this is not a concern, we may
+done by leveraging loadable kernel module functional-
+use one-hop redirection instead. Alternatively, we
+ity in commodity operating systems that allows us to
+canusefullChord-likerouting[50]asinSOS[21],
+intercept system calls as needed for virtualization and
+obscuringtrafficpatterns.
+save and restore kernel state as needed for migration.
+The system’s compatibility with existing applications
+(cid:15) When an attack is detected, the server process
+and operating systems makes it simple to deploy and
+is suspended and migrated, using the system de-
+use. Thesystemisimplementedasakernelmodule,al-
+scribed in Section 2.3. A random hosting site is
+lowingtransparentmigrationamongseparatemachines
+selected and, after querying its current status with
+runningindependentversionsofLinux(withunmodified
+respect to DoS attacks and other suspicious activ-
+kernels). Notethatthesesystemsdonotneedtosharea
+ity, the server is migrated there. To perform the
+single-systemimage.
+migration, a “stepping stone” host that resides in
+Inourwebserverexperiments,alltheserverprocesses
+the same ISP as the source hosting site is used,
+were contained in the same POD. When migrating the
+toachieveroutabilityfromanunpredictablesource
+VNCenvironment,anumberofdifferentprocesseswere
+address (one that cannot be attacked from outside
+contained inside the same POD: the VNC server itself,
+theISP).
+X11terminals,awebbrowser,andafewotherapplica-
+tions. We describe the configuration in more detail in Followingtheanalysesof[21]and[1],theschemeis
+Section4. robust against DoS attacks because there exists no de-
+pendency on any individual link, router, overlay node,orhostingsite. Ifanodewithintheoverlayisattacked, 3.1 Chord
+the node simply exits the overlay and clients switch to
+a new node. No node is more important or sensitive Chord can be viewed as a routing service that can
+than others. Given “enough” redundancy, an attacker be implemented atop the existing IP network fabric,
+isleftwiththeoptionsofsplittingtheirattackamongall i.e., as a network overlay. Consistent hashing [18] is
+possible hosting sites and stepping stones, or trying to used to map an arbitrary identifier to a unique destina-
+guessthecurrentlyusedlocationandfocustheirattack tion node that is an active member of the overlay. In
+there. How much constitutes “enough” depends on the Chord,eachnodeisassignedanumericalidentifier(ID)
+expected severity of attacks; we intend to quantify this via a hash function in the range [0;2m ] for some pre-
+in future work. Intuitively, and given the attacks that determined value of m. The nodes in the overlay are
+have been seen on the Internet so far, we expect 15 to orderedbytheseidentifiers. Theorderingiscyclic(i.e.,
+20distinctandwellconnectedhostingsitesplusasmall wrapsaround)andcanbeviewedconceptuallyasacir-
+number of stepping stones for each to be sufficient in cle,wherethenextnodeintheorderingisthenextnode
+making even large attacks infeasible. We intend to ex- alongthecircleintheclockwisedirection.
+tendourpreliminaryanalysisfrom[21]forthisscenario. Each overlay node maintains a table that stores the
+In [21], we performed a preliminary analysis using identities of m other overlay nodes. The ith entry in
+simplenetworkingmodelstoevaluatethelikelihoodthat thetableisthenodewhoseidentifierxequalsor,inre-
+an attacker is able to prevent communicationsto a par- lationtoallothernodesintheoverlay,mostimmediately
+ticulartarget. Thislikelihoodwasdeterminedasafunc- followsx+2i(cid:0)1 (mod 2m ).Whenoverlaynodexre-
+tionoftheaggregatebandwidthobtainedbyanattacker ceivesapacketdestinedforIDy,itforwardsthepacket
+through the exploitation of compromisedsystems. The to the overlay node in its table whose ID precedes y
+analysis included an examination of the capabilities of by the smallest amount. The Chord algorithm routes
+staticattackerswhofocusalltheirattackresourcesona packets around the overlay “circle”, progressively get-
+fixedsetofnodes, aswellasattackerswhoadjusttheir ting closer to the desired overlay node. O(m) overlay
+attacksto“chaseafter”therepairsthattheirsystemim- nodesarevisited. Typically, thehashfunctionsusedto
+plements when it detects an attack. We demonstrated mapnodestoidentifiersdonotattempttomaptwoge-
+that even attackers that are able to launch massive at- ographicallyclosenodestonearbyidentifiers. Hence,it
+tacksareveryunlikelytopreventsuccessfulcommuni- isoftenthecasethattwonodeswithconsecutiveidenti-
+cation. Forinstance,attackerscapableoflaunchingde- fiersaregeographicallydistantfromoneanotherwithin
+bilitatingattacksagainst50%ofthenodesintheoverlay thenetwork. TheChordserviceisrobusttochangesin
+haveroughlyonechanceinonethousandofstoppinga overlaymembership,andeachnode’slistisadjustedto
+given communicationfrom a client who can access the account for nodes leaving and joining the overlay such
+overlay through a small subset of overlay nodes. The thattheabovepropertiescontinuetohold.
+same security analysis applies to MOVE, by reducing MOVE uses the hostname of the target (i.e., web
+it to an instance of SOS: let the hosting site be equiv- server) as the identifier to which the hash function is
+alent to the SOS “secret servlet” nodes; in both SOS applied. Thus, Chord can direct traffic from any node
+and MOVE, an attacker must correctly guess the iden- in the overlay to the node that the identifier is mapped
+tityofthelocation/servlet,bothofwhichlieinthesame to, by applying the hash function to the target’s host
+namespace(IPaddress).Keepingthedetailsoftheover- name. This node is simply a unique node that will be
+lay itself the same between the two approaches, it is eventually be reached, after up to m = logN overlay
+easytoseetheequivalenceofthetwofromananalysis hops, regardless of the entry point. For any particular
+viewpoint. However, unlike SOS and Mayday, MOVE service,thisnodewillalwaysknowitscurrentlocation.
+achievesitspropertieswithoutanysupportfromthenet- If this node is for some reason dropped from the over-
+workinfrastructure. lay, a new node (the one with an address closest to the
+hash of the service’s hostname) will subsume its role,
+and provide location-resolution services for that target.
+3 Implementation The new node will learn of the service’s current loca-
+tionthroughtheperiodicre-confirmationmessagesent.
+Thus, locationinformationdoesnot needto be flooded
+SinceourMOVEprototypeusesChord[50]astheun- toallnodesoftheoverlaynetwork,whichwouldmake
+derlyingoverlaynetwork,wefirstbrieflydescribeChord itdifficulttosupportlargenumbersofservices,without
+andthenexpandontheimplementationofMOVE. compromisingreliabilityandrobustnesstoattack.3.2 MOVEImplementation complish this, we wrote a port forwarder that runs on
+the user’s system, accepts plain-text proxy requests lo-
+Our prototype system is based on WebSOS [30, 7]. cally, andforwardsthemusingSSLtotheaccesspoint
+Eachoverlaynodeisresponsibleforresolvingtheloca- node. This is implemented as a Java applet that runs
+tionoftherequestedserviceandcreatingasecuritycom- insidethebrowserthatauserusestoauthenticatehim-
+municationtunnelwithit. Tothatend,weuseChordto self. This Java appletis responsiblefor encryptingand
+distributethelocationinformationforeachsite: whena forward to the access point requests from any service
+service informs MOVE of its current location, its host- initiatedbytheclientandcanbeconfiguredtoaccepta
+nameishashedandthenodethusindicatedisinformed proxy. This last requirementcan be removed if we use
+of the location. In that sense, this node acts in a man- interceptionofthesocketcommunicationattheoperat-
+neranalogoustoSOSbeaconnodes. Similarly,whena ingsystemlevel.
+MOVEnodeneedstoforwardalegitimateuser’srequest Thus, to use MOVE, an authorized user simply has
+totheservice,ithashestheservicehostnameandsendsa to access any access point, successfully respond to the
+querytotheChordnodewhoseaddressisclosesttothe GraphicTuringTestchallenge,downloadtheapplet,and
+hashresult. Thus,incontrastto[7]and[21],ratherthan settheserviceproxysettingstothelocalhost,asshown
+transportingtherequestandresponsethroughtheChord inFigure4. Javaappletstypicallycannotcommunicate
+overlay,onlyroutinginformationtravelsthroughit;data withanyhostotherthantheonetheyweredownloaded
+connections are proxied directly to the protected ser- from, but this is not a problem in our case. If the user
+vice’s location. The information is cached and period- repliessuccessfully,thewebserverconnectstoaDBMS
+ically refreshed by consulting the authoritative MOVE system(localorremote)andassociatesanRSAkeyand
+nodeforthattarget. acertificatewiththehost.Thekey/certificateareunique
+Whenanewrequest(intheformofanewTCPcon- per IP and have an expiration time that can be config-
+nection)isreceived,theMOVEnodetowhichtheclient uredbythesystemadministrator. Theuserisprompted
+is connected (called an access point) first checks the todownloadasignedappletthatrunslocallyusingone
+local cache database for the current location of the re- browserwindowandcontactstheWebServerviaatem-
+questedservice.Ifthelookupsucceeds,theaccesspoint poraryHTTPSconnectiontofetchtheX.509certificate.
+opensanewSSLconnectiontoarandomoverlaynode Theappletthenstartslisteningforserviceconnections
+(to borrow from SOS terminology, a “secret servlet”), on a local ports (e.g., 8080) and establishes an SSL-
+whichallowsustoavoidsomeoftheeavesdroppingat- tunnelconnectionwiththeserverrunningontheaccess
+tacksidentifiedin[1]. Thus,atwo-waycommunication point(orelsewhere,sincethesignedapplethastheabil-
+channelisestablishedbetweentheclientandtheservice, itytoconnecttoanyserverbychangingtheJavaPolicy
+through the overlay. Authentication of the user by the filesontheusers’machine). Theproxyservermatches
+overlayisaccomplishedthroughSSL.Authorizedusers the X.509 certificate and the IP from client to the pri-
+are issued X.509 [5] certificates signed by the MOVE vate key obtained from the DBMS system and allows
+access point that administered the GTT. These certifi- the connection to be proxied. The only imposition on
+cates are only valid for a limited time (30 minutes), theuseristhathe/shemustchangetheProxysettingsof
+after which the user must pass another GTT. Further- the local browser to point to the socket that listens for
+more, the certificates are bound to the IP address from the applets. The same configuration is used when us-
+which the GTT authentication came, and can only be ing VNC, with the proxy forwarding VNC rather than
+usedwiththespecificMOVEaccesspoint. Thus,anat- HTTPtraffic.
+tacker cannot simply authenticateonce and redistribute Theaccesspointcachestheserver’slocationforusein
+the same certificate to a large number of attack zom- futurerequests.Thatinformationistimedoutafterape-
+bies. Each overlay node also communicates with other riodoftimetoallowchangestopropagatecorrectly.The
+MOVEnodesoverSSLconnections.Ifthelookupfails, samebasicmechanismisusedbyservicestoannounce
+theaccesspointqueriestheresolvingnode,asdescribed their presence to (and periodically update the informa-
+previously. tionstoredby)theircorrespondingresolvingnodes.
+When a request is issued by the client for a specific In a DoS attack, the target server migrates to a
+service,itistunneledthroughaseriesofSSL-encrypted randomly-chosen location and, once there, notifies the
+links to the target, allowing the entire transmission be- overlayofitsnewlocation. Themigrationisdoneusing
+tween the requester and target to be encrypted. The the process migrationmechanismwe describedin Sec-
+SSL connections between MOVE nodes are dynami- tion2.3. Systemmigrationislargelyimplementedasa
+cally established, as new requests are routed. To ac-Figure4.MOVEclientsessioninitiationdiagram.
+loadableLinuxkernelmodule.Inoursystem,thismech- (cid:15) AsetofPlanetLabnodesparticipatingintheover-
+anismwasusedtoloadandcheckpointtheApacheand lay network and providing the necessary traffic
+VNCserversrespectively,creatingthenecessaryimages redirectionfacilities.
+oftherunningprocesses. Theseprocessimages,which
+(cid:15) Amigrationserver,towhichtheserverismigrated
+includedthecurrentprocessstate, werethentransfered
+fromitsoriginallocationwhenattacked.
+totheremoteserverandrestarted.
+In our experiments, the legitimate client was located
+4 ExperimentalResults inside Columbia University’s network and the traffic
+wasredirectedfromvariousnodesinsidethePlanetLab
+To evaluate MOVE’s impact on performance and network toward the web and VNC servers, whichwere
+availability, we deployed the prototype implementation initially located on the local (Columbia) network. We
+onanumberofPlanetLabnodes[36],distributedacross deployed the MOVE implementation on 76 PlanetLab
+the Internet. We measured (1) the impact of using nodes,whichformedaChordring,perourdiscussionin
+MOVE to the client’s end-to-end latency, (2) the delay Section3.
+in making a server available again at a new site once To determine the end-to-end latency experienced by
+a DoS attack has been launched, and (3) the impact of a client using our system, we used the MOVE overlay
+the lifeline connection to the server’s performance. In tocontactvariouswebserversanddownloadtheinitial
+ourexperiments,weusedthefollowingentities(seeFig- page. TheresultsareshowninTable1. Thedifference
+ure4): in performance over previous work that used the same
+benchmark [7] is due to the fact that traffic in MOVE
+(cid:15) A node acting as the client, using an off-the-shelf only traverses two overlay nodes, as opposed to the
+webbrowser. fullChordoverlay,meaningfewerredirectionsbetween
+overlaynodes. Asshownin[28],theincreaseinlatency
+(cid:15) An http target server (Apache) and a VNC server, is typically dominated by the end-to-end communica-
+intwoseparateexperiments. tion overheads. An additional delay cost is the SSL-SHFS because of its ease of installation and use; other
+Table 1. Latency (in seconds) when contacting a filesystems,suchasLBFS[32]orCODA[41]canalso
+number of web servers directly and while using beusedinsteadSHFS.Forthelocal-migrationcase,we
+MOVE; in all cases, we download the initial web used NFS (over UDP) as a second way of transferring
+page. Thelastcolumnshowsthefactorincreasein state. We show the results in Table 2. The availability
+latencyThetestingwasperformedona76nodesub- delayvariesbetween1secondto6:6seconds,asround-
+setofthePlanetLabtestbedusingtheChordoverlay. trip times increase from 1ms (for the local-migration
+Thenumbersareaveragedover25requests. case) to 10ms. We believe that this level of disruption
+isacceptableinthepresenceofaDoSattack,whenthe
+Server Direct MOVE Ratio
+alternativeistotallossofservice. Onemayobservethat
+Yahoo! 1.32 3.67 2.78
+an attacker may be considered successful in some sce-
+VeriSign 3.41 6.77 1.98
+nariosiftheycancauseservicedowntimeof7seconds
+BBCNews 1.11 3.17 2.85
+evenfewminutes,ifonlybecausetheenduserswillbe
+Microsoft 1.51 4.01 2.65
+annoyed. One possibility we plan to examine in future
+Slashdot 3.66 7.21 1.96
+work is the use of “hot spares” that are kept synchro-
+FreeBSD 1.49 3.81 2.55 nized with the live service and to which we can divert
+trafficatsortnoticethroughMOVE.
+Tobetteranalyzethecontributionofthelifelinecon-
+Table 2. Delay in re-establishing availability after nectiontotheoveralllatencyforlargeinteractive, non-
+disruption (due to DDoS) for an httpd server, mi- caching applications like thin clients, we constructed
+gratedfromtheinitialsitetoaco-locatedserver(us- the following experiment: initially, a VNC [39] server
+ingNFS/UDPandSHFS/TCP),andtoaremotesite is located on the target server. The client connects
+(usingSHFS).Thesizeoftheserverstatewas9.8MB via MOVE and creates a VNC session consisting of
+onaverage. Wealsoincludetheround-triplatency Mozilla browser, Gaim Instant Messenger, Kword, a
+betweenthetargetandmigrationserversinallcases. PS/PDFviewerandtwoterminalsconnectedtothetar-
+get server. Upon detection of the attack, we check-
+Migration RTT Migration
+pointedthePODcontainingtheVNCsessionandserver,
+Server Latency Time
+transferedthestatetothemigrationserverandrestarted
+Co-located(NFS) 1.02ms 0.761s it. The state transfered to the migrate server amounted
+Co-located(SHFS) 1.02ms 1.162s to55.9MBytes.Forthemigration,weusedaco-located
+U.Penn(SHFS) 10.6ms 6.632s server, Site 1, and two remote servers, Site 2 and Site
+3,withdifferentnetworkproximitytothetargetserver.
+Figure 5 shows the average availability delay for this
+processingoverheadfromthegenerationoftheSSLtun- scenario,whichisdominatedbythetransferofthePOD
+nelandtheencryptionofthedatafromclienttotheover- state; the relatively small checkpoint and restart over-
+layandinsidetheoverlay;useofcryptographicacceler- headsremainconstantforallexperiments.
+atorsmayfurtherimproveperformanceinthatarea[23]. In addition, the underlying file-access mechanism
+To measure the delay in re-establishing the server’s seems to play a significant role, especially when we
+availability, whichisthetimeduringwhichaclientus- establish a low-bandwidth link between the target and
+ing MOVE experiences service disruption, we used an themigrationserver. Accessingthetarget’sdatabaseor
+Apachehttpdserverrunningunderthedefaultconfigu- filesystemviathelifelinecanalsoincreasetheend-to-
+ration. Theserver,initiallylocatedinsideourlocalnet- end latency. For servers that are either co-located or
+work, was moved to the migration server. The state of connected through a low-latency link (<5ms), we can
+the server processes amounted to 9.8 MBytes on aver- use NFS/UDP since it is fast and reliable. However, if
+age. We measured the migration time in the following the established connection is of high latency (and low
+cases: whenthemigrationserverwaslocatedinsideour bandwidth),NFS/UDPbecomesunresponsive. Tomea-
+local network, and when the migration server was lo- suretheperformanceofoursystemwhenusingahigh-
+cated at the University of Pennsylvania, approximately latency connection, we instead used SHFS. Figures 6
+11 hops or 10ms ping time away (over Internet2). In and7showtheaverageroundtriptime(RTT)andeffec-
+both scenarios, the state files were transfered using the tive throughput respectively for all the migration sites.
+(Secure)SHellFileSystem(SHFS)[46],whichoperates We can see that as we increase the distance between
+over the popular SSH/SCP protocol suite. We choseFigure5.Averagemigrationtime(inseconds)foraVNCservermigratestoaco-locatedserver(Site1)andtoremote
+servers(Site2andSite3)usingNFS/UDPandSHFS/TCPusingatunnelthroughthelifeline. Weobservethatthe
+totaltimeisdominatedbythetransfertime. PriortothemigrationtheVNCserverwasrunningMozillabrowser,
+Gaim,Kword,PS/PDFviewerandtwoterminalapplications.
+the target and the migration server, we have a propor- maliciousandignorantusersthatDoSattacksaresimply
+tionaldecreaseintheaveragedatathroughput. Figure7 not going to disappear on their own; indeed, although
+shows that when we use NFS to connect the target and the press has stopped reporting such incidents, recent
+migrationserversforSite1,weachievebetterthrough- studies have shown a surprisingly high number of DoS
+putcomparedtousingSHFS. attacksoccurringaroundtheclockthroughouttheInter-
+Choosingafile-accessmethodtoconnectthroughthe net[29]. Worse,theInternetisincreasinglybeingused
+lifeline depends both on the network proximity of the for time-critical applications. A further compounding
+migrating site and the maximum network latency al- factoristhesusceptibilityofthebasicprotocols(i.e.,IP
+lowed by the application we migrate. For thin-client andTCP)todenialofserviceattacks[45,14,42].
+applications like VNC, all the applications are already The need to protect against or mitigate the effects of
+loaded prior to migration and the user communicates DoS attacks has been recognized by both the commer-
+with the target server only to read or write data from cial and research world. Some work has been done
+within an application. Thus, the lifeline utilization is toward achieving these goals, e.g., [16, 8, 44, 43, 13,
+relatively low, allowing for relatively smooth operation 47, 51, 26]. These mechanisms focus on detecting the
+under conditions of high network latency. For applica- source of DoS attacks in progress and then countering
+tionsthataccessthefilesystemfrequently,suchasHTTP them, typically by “pushing” some filtering rules on
+servers,itisnecessarytouseanetworkfilesystemwith routers as far away from the target of the attack (and
+goodcachingcharacteristics. Fordatabaseapplications, closetothesources)aspossible. Themotivationbehind
+we need to ensure that the lifeline can sustain the load such approaches has been twofold: first, it is concep-
+from the migrated middleware server to the back-end tually simple to introduce a protocol that will be used
+databaseserver. byarelativelysmallsubsetofthenodesontheInternet
+(i.e.,ISProuters),asopposedtorequiringtheintroduc-
+tionofnewprotocolsthatmustbedeployedandusedby
+5 RelatedWork
+end-systems.Second,thesemechanismsarefairlytrans-
+Asaresultofitsincreasedpopularityandusefulness, parent to protocols, applications, and legitimate users.
+theInternetcontainsbothinterestingtargetsandenough Unfortunately,thesereactiveapproachesbythemselvesFigure 7. Average data throughput in MB/sec
+whenaccessingtargetserverfilesfromthemigra-
+Figure 6. RoundTripTime(RTT)betweenthe tionsitesusingthelifelinetunnel. Noticethatas
+targetserverandthemigrationsiteswhenusing weincreasethenetworkdistance,wehaveapro-
+thelifelinetunnel.NotethattheYaxisusesloga- portional decrease in the average data through-
+rithmicscale. put
+are not adequate, since large-scale coordination across (rather than simply switch them), and assumes that the
+multipleadministrativedomainsisnotalwayspractical. limited resource is the target’s CPU cycles, rather than
+The D-WARD system [38] monitors outgoing traffic theavailablebandwidth(i.e.,preventingtheDoSattack
+fromagivensourcenetworkandattemptstoidentifyat- is“simply”amatterofquicklydeterminingwhichpack-
+tack traffic by comparing against models of reasonable ets the server should ignore). In our work, we assume
+congestion control behavior. The amount of throttling that the scarce resource is bandwidth. Collins and Re-
+onsuspicioustrafficisproportionaltoitsdeviationfrom iter[6]presentanempiricalanalysisofseveraldifferent
+the expected behavior, as specified by the model. In anti-DoS techniques (including Pi [57] and Hop-Count
+COSSACK [34], participating agents at edge networks Filtering[17])thatusefiltersnearthetargetofanattack,
+exchange information about observed traffic and form usingtracesofrealDDoSattackstosimulatetheimpact
+multicast cliques to coordinate attack suppression. An ofthefiltersontheattacktraffic.
+interesting approach is that of [17], which proposes an [35]describesfilteringoutsource-spoofedpacketsin-
+IP hop-count-based filter to weed out spoofed packets. sidetheInternetcore,anddiscussestheeffectivenessof
+The rationale is that most such packets will not have a this approach. The authors suggest piggy-backing on
+hop-count (TTL) field consistent with the IP addresses BGPtopropagatethenecessaryinformation. DDoSat-
+beingspoofed. In[15],theauthorsuseacombinationof tacks using real IP addresses are not affected by this
+techniquesthatexaminepacketcontents,transientramp- scheme.
+upbehaviorandspectralanalysistodeterminewhether [19] proposes using Class-Based Queuing on a web
+anattackissingle-ormulti-sourced,whichwouldhelp load-balancertoidentifymisbehavingIPaddressesand
+focustheeffortsofahypotheticalanti-DoSmechanism. placetheminlowerpriorityqueues. However,manyof
+A variant of the packet marking approaches creates the DDoS attacks simply cause congestion to the web
+probabilistically unique path-marks on packets without server’saccesslink.
+requiringroutercoordination;end-hostsorfirewallscan Another approach to mitigating DoS attacks against
+then easily filter out packets belonging to a path that information carriers is to massively replicate the con-
+exhibits anomalous behavior [57]. Although this ap- tentbeingsecuredaroundtheentirenetwork,e.g.,[49].
+proachavoidsmanyofthelimitationsofthepuremark- To prevent access to the replicated information, an at-
+ingschemes,itrequiresthatcorerouters“touch”packets tacker must attack all replication points throughout theentirenetwork—ataskthatisconsiderablymorediffi- “capabilities”topacketsthattraversethem;thereceiver
+cultthanattackingasmallnumberof,oftenco-located, of these packets is then responsible for sending these
+servers.Replicationisapromisingmeanstopreservein- capabilities to its peers, which will allow them to send
+formationthatisrelativelystatic,suchasnewsarticles. traffic at higher rates (privileged traffic). Unprivileged
+However,thereareseveralreasonswhyreplicationisnot trafficislimitedtoafractionoftheavailablebandwidth;
+always an ideal solution. For instance, the information thus, although a DoS attack can prevent new connec-
+may require frequent updates complicating large-scale tionsfrombeingestablished(byoverloadingthecontrol
+coherency (especially during DoS attacks), or may be channel used to communicatethese capabilities), exist-
+dynamic by its very nature (e.g., a live web-cast). An- ingconnectionswillbeunharmed.
+other concern is the security of the stored information: [3]examinesseveraldifferentDDoSmitigationtech-
+engineeringahighly-replicatedsolutionwithoutleaksof nologies and their interactions. Among their conclu-
+informationisachallengingendeavor. sions,theymentionthatrequiringtheclientstodosome
+AnextensionoftheideasofSOS[21,7,30]appearsin work,e.g.,[9],canbeaneffectivecountermeasure,pro-
+[1]. There,thetwomainfacetsoftheSOSarchitecture, vided the attacker does not have too many resources
+filtering and overlay routing, are explored separately, compared to the defender. Wang and Reiter [55] intro-
+andseveralalternativemechanismsareconsidered. Itis ducedtheideaofapuzzleauctionasawaytoeasesome
+observedthatinsomecases,thevarioussecurityproper- of the practical deployment difficulties, e.g., selecting
+tiesofferedbySOScanstillbemaintainedusingmech- theappropriatehardnessforthepuzzles. Theirintuition
+anisms that are simpler and more predictable. How- istoletclientsbidfortheresourcesbytuningthediffi-
+ever, some second-order properties, such as the ability culty of the puzzles they solve. When the server is at-
+torapidlyreconfigurethearchitectureinanticipationof tacked, legitimate clients gradually increase their bids
+or in reaction to a breach of the filtering identity (e.g., (puzzle difficulty), eventually bringing the cost outside
+identifyingthesecretservlet)arecompromised.Inmost theadversary’scapabilities. Theauthorsenvisioncom-
+otherrespects,thetwoapproachesareverysimilar. biningtheirschemewithsomeanti-DoSmechanismthat
+AsystemsimilartoMOVEisproposedin[24],where counteractsvolume-basedattacks[16,57,21].
+serversarehiddenamongalargenumberofhonepots.A
+continuouslychangingsubsetoftheserversisactiveand 6 Conclusions
+providingservice,switchingtohoneypotmodewhenan
+attackisdetected. Anoverlayisresponsibleforrouting We described MOVE, an architecture for protecting
+legitimateclientstothecurrentlyactiveservers,andthe specific classes of software services, such as a web
+systemisevaluatedviaasetofsimulations. server, from network-based denial of service (DoS) at-
+Gligor [12] proposes the use of a server that can tacks, without requiring any additional functionality to
+produce tickets at line speeds. Clients must obtain a be placed inside the network. We believe our work to
+ticket from this server before they are allowed to ac- be the first to demonstrate that it is possible to counter
+cess a protected service. The approach is geared to- networkDoSattackswithoutrequiringsupportfromthe
+wardsapplication-levelDoSprotection,withsomeother infrastructureitself.
+mechanism, such as SOS or Pushback, used to address MOVE combines a network overlay with a
+network-level DoS attacks. Anderson et. al [2] sub- lightweight process-migration mechanism. The
+sequently proposed a similar system for use at the net- overlaynodesacceptconnectionsfromlegitimateusers,
+worklayerofanInternet-likearchitecturedesignedwith and route their traffic to the current location of the
+acleanslate,assumingadistributedtokenserverarchi- service. Our definition of legitimate is flexible, and
+tectureandrate-limiting/filteringtrafficonroutersbased can vary from users authenticated with cryptographic
+onthesetokens. Anothersimilarideaappearsin[25]. credentials to Graphic Turing Tests, which simply
+The NetBouncer project [53] considers the use of distinguishbetweenhumansandautomatedzombies. If
+client-legitimacy tests for filtering attack traffic. Such a service is attacked, it is migrated to a new, randomly
+tests include packet-validity tests (e.g., source address selected location. An attacker is left with the option
+validation), flow-behavior analysis, and application- of splitting the attack traffic to all potential targets, or
+specifictests,includingGraphicTuringTests. However, tryingtoguessthecurrentactivelocation.
+sincetheirsolutionisend-pointbased,itissusceptibleto We use our prototype implementation on the Planet-
+largelink-congestionattacks. [58]isthefirstsystemto Lab testbed, which allows us to distribute the MOVE
+createstatelessflowfilteringbyhavingeachrouteradd nodesacrosstheInternet. Inaseriesofexperiments,we
+showthattheend-to-endlatencyimposedbyMOVEcanbeaslowasafactorof2to3higherthandirectcommu- [8] D. Dean, M. Franklin, and A. Stubblefield. An Alge-
+nicationbetweenclientandserver, whichwebelieveis braicApproachtoIPTraceback. InProceedingsofthe
+anacceptablecostwhendealingwithDoSattacks. The SymposiumonNetworkandDistributedSystemSecurity
+servicedisruptiontotheenduser,thatisthetimetomi- (SNDSS),pages3–12,February2001.
+[9] D.DeanandA.Stubblefield. UsingClientPuzzlesTo
+grateanattackedservice,rangesfrom10to25seconds,
+ProtectTLS. InProceedingsofthe10thUSENIXSecu-
+dependingon the location of the migration server. Our
+ritySymposium,August2001.
+plans for future work include eliminating (or minimiz-
+[10] T.DierksandC.Allen. TheTLSprotocolversion1.0.
+ing)theneedforsteppingstones,andanalyzingthese-
+RFC2246,January1999.
+curityofthesystemagainstdifferentadversarialmodels [11] R. Dingledine, N. Mathewson, and P. Syverson. Tor:
+[56]. TheSecond-GenerationOnionRouter. InProceedings
+of the 13th USENIX Security Symposium, pages 303–
+Acknowledgements 319,August2004.
+[12] V. D. Gligor. Guaranteeing Access in Spite of Dis-
+Wewouldliketothanktheanonymousreviewersfor tributedService-FloodingAttacks.InProceedingsofthe
+theircommentsandsuggestionsthathelpedimprovethis SecurityProtocolsWorkshop,April2003.
+paper. [13] M. T. Goodrich. Efficient Packet Marking for Large-
+This work is supported in part by DARPA contract Scale IP Traceback. In Proceedings of the 9th ACM
+No. F30602-02-2-0125(FTNprogram)andbytheNa- ConferenceonComputerandCommunicationsSecurity
+(CCS),pages117–126,November2002.
+tional Science Foundation under grants ANI-0117738
+[14] L. Heberlein and M. Bishop. Attack Class: Address
+and ITR CNS-0426623, and CAREER Award ANI-
+Spoofing. InProceedingsofthe19thNationalInforma-
+0133829, with additional support from Cisco and Intel
+tionSystemsSecurityConference,pages371–377,Octo-
+Corporation. Any opinions, findings, and conclusions
+ber1996.
+orrecommendationsexpressedinthismaterialarethose [15] A. Hussain, J. Heidemann, and C. Papadopoulos. A
+oftheauthorsanddonotnecessarilyreflecttheviewsof FrameworkforClassifyingDenialofServiceAttacks.In
+theNationalScienceFoundation. ProceedingsofACMSIGCOMM,pages99–110,August
+2003.
+References [16] J. Ioannidis and S. M. Bellovin. Implementing Push-
+back:Router-BasedDefenseAgainstDDoSAttacks. In
+[1] D.G.Andersen. Mayday: DistributedFilteringforIn- Proceedings of the ISOC Symposium on Network and
+ternetServices. In4thUSENIXSymposiumonInternet DistributedSystemSecurity(SNDSS),February2002.
+TechnologiesandSystemsUSITS,March2003. [17] C. Jin, H. Wang, and K. G. Shin. Hop-Count Filter-
+[2] T. Anderson, T. Roscoe, andD.Wetherall. Preventing ing:AnEffectiveDefenseAgainstSpoofedDoSTraffic.
+Internet Denial-of-Service with Capabilities. In Pro- InProceedingsofthe10th ACMInternationalConfer-
+ceedingsofthe2ndWorkshoponHotTopicsinNetworks
+enceonComputerandCommunicationsSecurity(CCS),
+(HotNets-II),November2003. pages30–41,October2003.
+[3] W.J.Blackert,D.M.Gregg,A.K.Castner,E.M.Kyle, [18] D. Karger, E. Lehman, F. Leighton, R. Panigrahy,
+R. L. Hom, and R. M. Jokerst. Analyzing Interaction M.Levine,andD.Lewin. ConsistentHashingandRan-
+BetweenDistributedDenialofServiceAttacksandMit- domTrees:DistributedCachingProtocolsforRelieving
+igation Technologies. In Proceedings of DISCEX III, HotSpotsontheWorldWideWeb. InProceedingsof
+pages26–36,April2003. theACMSymposiumonTheoryofComputing(STOC),
+[4] R. Braden, L. Zhang, S. Berson, S. Herzog, and
+pages654–663,May1997.
+S. Jamin. Resource ReSerVation Protocol (RSVP) –
+[19] F. Kargl, J. Maier, and M. Weber. Protecting Web
+Version1FunctionalSpecification. InternetRFC2208,
+ServersFromDistributedDenialofServiceAttacks. In
+1997.
+Proceedings of the W3C World Wide Web Conference
+[5] CCITT. X.509: The Directory Authentication
+(WWW),pages514–524,2001.
+Framework. International Telecommunications Union,
+[20] S.KentandR.Atkinson. SecurityArchitectureforthe
+Geneva,1989.
+InternetProtocol. RFC2401,November1998.
+[6] M. Collins and M. Reiter. An empirical analysis of
+[21] A. D. Keromytis, V. Misra, and D. Rubenstein. SOS:
+target-residentDoSfilters. InProceedingsoftheIEEE
+SecureOverlayServices. InProceedingsofACMSIG-
+SymposiumonSecurityandPrivacy,May2004.
+COMM,pages61–72,August2002.
+[7] D.L.Cook,W.G.Morein,A.D.Keromytis,V.Misra,
+[22] A. D. Keromytis, V. Misra, and D. Rubenstein. SOS:
+and D. Rubenstein. WebSOS: Protecting Web Servers
+An Architecture For Mitigating DDoS Attacks. IEEE
+FromDDoSAttacks. InProceedingsofthe11th IEEE
+Journal on Selected Areas of Communications(JSAC),
+International Conference on Networks (ICON), pages
+33(3):413–426,January2004.
+455–460,September2003.[23] A. D. Keromytis, J. L. Wright, and T. de Raadt. The [37] M. Reed, P. Syverson, and D. Goldschlag. Anony-
+DesignoftheOpenBSDCryptographicFramework. In mousConnectionsandOnionRouting.IEEEJournalon
+Proceedings of the USENIX Annual Technical Confer- SelectedAreas in Communications(JSAC), 16(4):482–
+ence,pages181–196,June2003. 494,May1998.
+[24] S.M.Khattab,C.Sangpachatanaruk,D.Moss,R.Mel- [38] P. Reiher, J. Mirkovic, and G. Prier. Attacking DDoS
+hem, and T. Znati. Roaming Honeypots for Mitigat- at the source. In Proceedings of the 10th IEEE Inter-
+ing Service-Level Denial-of-Service Attacks. In Pro- national Conference on Network Protocols, November
+ceedings of the 24th International Conference on Dis- 2002.
+tributed Computing Systems (ICDCS), pages 238–337, [39] T. Richardson, Q. Stafford-Fraser, K. R. Wood, and
+March2004. A. Hopper. Virtual Network Computing. In Pro-
+[25] K.Lakshminarayanan,D.Adkins,A.Perrig,andI.Sto- ceedings of IEEE Internet Computing, volume 2, Jan-
+ica. Taming IP Packet Flooding Attacks. In Proceed- uary/February1998.
+ings of the 2nd Workshop on Hot Topics in Networks [40] J.H.Saltzer,D.P.Reed,andD.D.Clark.End-to-endar-
+(HotNets-II),November2003. gumentsinSystemDesign.ACMTransactionsonCom-
+[26] J.Li,M.Sung,J.Xu,andL.Li. Large-ScaleIPTrace- puterSystems,2(4):277–288,November1984.
+backinHigh-SpeedInternet: PracticalTechniquesand [41] M. Satyanarayanan, J. Kistler, P. Kumar, M. Okasaki,
+Theoretical Foundation. In Proceedings of the IEEE E. Siegel, and D. Streere. Coda: A Highly Available
+SymposiumonSecurityandPrivacy,May2004. FileSystemforDistributedWorkstationEnvironments.
+[27] D.Milojicic,F.Douglis,andR.Wheeler.Mobility:Pro-
+IEEETransactionsonComputers,39(4),April1990.
+cesses,Computers,andAgents. AddisonWesleyLong-
+[42] S.Savage,N.Cardwell,D.Wetherall,andT.Anderson.
+man,February1999.
+TCPCongestionControlwithaMisbehavingReceiver.
+[28] S.Miltchev,S.Ioannidis,andA.D.Keromytis.AStudy
+ACMComputerCommunicationsReview,29(5):71–78,
+oftheRelativeCostsofNetworkSecurityProtocols. In
+October1999.
+Proceedings of the USENIX Annual Technical Confer-
+[43] S. Savage, D. Wetherall, A. Karlin, and T. Anderson.
+ence,FreenixTrack),pages41–48,June2002.
+Practical Network Support for IP Traceback. In Pro-
+[29] D.Moore,G.Voelker,andS.Savage. InferringInternet
+Denial-of-ServiceActivity. InProceedingsofthe10th ceedings of ACM SIGCOMM, pages 295–306, August
+2000.
+USENIXSecuritySymposium,pages9–22,August2001.
+[44] S. Savage, D. Wetherall, A. Karlin, and T. Anderson.
+[30] W.G.Morein,A.Stavrou,D.L.Cook,A.D.Keromytis,
+NetworkSupportforIPTraceback. ACM/IEEETrans-
+V. Misra, and D. Rubenstein. Using Graphic Turing
+actionsonNetworking,9(3):226–237,June2001.
+TeststoCounterAutomatedDDoSAttacksAgainstWeb
+Servers. InProceedingsofthe10th ACMInternational [45] C.Schuba,I.Krsul,M.Kuhn,E.Spafford,A.Sundaram,
+andD.Zamboni.AnalysisofaDenialofServiceAttack
+ConferenceonComputerandCommunicationsSecurity
+onTCP. InProceedingsoftheIEEESymposiumonSe-
+(CCS),pages8–19,October2003.
+curityandPrivacy,pages208–223,May1997.
+[31] G.MoriandJ.Malik.RecognizingObjectsinAdversar-
+[46] SHFS Development Team. SHell File System, SHFS.
+ialClutter:BreakingaVisualCAPTCHA. InComputer
+http://shfs.sourceforge.net/.
+VisionandPatternRecognition(CVPR.
+[47] A. Snoeren, C. Partridge, L. Sanchez, C. Jones,
+[32] A.Muthitacharoen,B.Chen,andD.Mazie`res. Alow-
+F.Tchakountio,S.Kent,andW.Strayer. Hash-BasedIP
+bandwidth network file system. In Proceedings of the
+18thACMSymposiumonOperatingSystemsPrinciples Traceback. InProceedingsofACMSIGCOMM,August
+2001.
+(SOSP), pages 174–187, Chateau Lake Louise, Banff,
+[48] A.Stavrou,J.Ioannidis,A.D.Keromytis,V.Misra,and
+Canada,October2001.
+[33] S.Osman,D.Subhraveti,G.Su,andJ.Nieh. TheDe- D. Rubenstein. A Pay-per-Use DoS Protection Mech-
+signandImplementationofZap: ASystemforMigrat- anism For The Web. In Proceedings of the Applied
+ing Computing Environments. In Proceedings of the Cryptography and Network Security (ACNS) Confer-
+5th Symposium on Operating Systems Design and Im- ence,pages120–134,June2004.
+plementation(OSDI),pages361–376,December2002. [49] A.Stavrou,D.Rubenstein,andS.Sahu. ALightweight,
+[34] C.Papadopoulos,R.Lindell,J.Mehringer,A.Hussain, Robust P2P System to Handle Flash Crowds. IEEE
+andR.Govindan.COSSACK:CoordinatedSuppression Journal on Selected Areas in Communications(JSAC),
+ofSimultaneousAttacks.InProceedingsofDISCEXIII, 22(1):6–17,January2004.
+pages2–13,April2003. [50] I.Stoica,R.Morris,D.Karger,F.Kaashoek,andH.Bal-
+[35] K.ParkandH.Lee.OntheEffectivenessofRoute-based akrishnan.Chord:AScalablePeer-To-PeerLookupSer-
+PAcketFilteringforDistributedDoSAttackPrevention vice for Internet Application. In Proceedings of ACM
+in Power-law Internets. In Proceedings of ACM SIG- SIGCOMM,August2001.
+COMM,pages15–26,August2001. [51] R. Stone. CenterTrack: An IP Overlay Network for
+[36] L.Peterson,D.Culler,T.Anderson,andT.Roscoe. A Tracking DoS Floods. In Proceedings of the USENIX
+BlueprintforIntroducingDisruptiveTechnologyintothe SecuritySymposium,August2000.
+Internet. In Proceedings of the 1st Workshop on Hot
+TopicsinNetworks(HotNets-I),October2002.[52] D.L.Tennenhouse,J.M.Smith,W.D.Sincoskie,D.J. [56] D. Xuan, S. Chellappan, and X. Wang. Analyzingthe
+Wetherall,andG.J.Minden. ASurveyofActiveNet- Secure Overlay Services Architecture under Intelligent
+workResearch.IEEECommunicationsMagazine,pages DDoS Attacks. In Proceedings of the 24th Interna-
+80–86,January1997. tional Conference on Distributed Computing Systems
+[53] R. Thomas, B. Mark, T. Johnson, and J. Croall. Net- (ICDCS),pages408–417,March2004.
+Bouncer: Client-legitimacy-based High-performance [57] A.Yaar,A.Perrig,andD.Song.Pi:APathIdentification
+DDoS Filtering. In Proceedingsof DISCEX III, pages Mechanism to Defend against DDoS Attacks. In Pro-
+14–25,April2003. ceedings of the IEEE Symposium on Security and Pri-
+[54] L. von Ahn, M. Blum, N. J. Hopper, and J. Langford. vacy,May2003.
+CAPTCHA:UsingHardAIProblemsForSecurity. In [58] A.Yaar,A.Perrig,andD.Song. SIFF:AStatelessIn-
+ProceedingsofEUROCRYPT,2003. ternet Flow Filter to Mitigate DDoS FloodingAttacks.
+[55] X.WangandM.K.Reiter. DefendingAgainstDenial-
+InProceedingsoftheIEEESymposiumonSecurityand
+of-ServiceAttackswithPuzzleAuctions(ExtendedAb-
+Privacy,May2004.
+stract).InProceedingsoftheIEEESymposiumonSecu-
+rityandPrivacy,May2003.

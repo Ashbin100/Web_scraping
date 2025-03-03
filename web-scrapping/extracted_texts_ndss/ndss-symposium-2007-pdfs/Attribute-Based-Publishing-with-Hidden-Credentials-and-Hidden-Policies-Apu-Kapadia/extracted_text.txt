@@ -1,0 +1,1003 @@
+Attribute-Based Publishing with Hidden Credentials and Hidden Policies∗
+ApuKapadia†‡,PatrickP.Tsang†,SeanW.Smith†
+†DepartmentofComputerScience ‡InstituteforSecurityTechnologyStudies
+DartmouthCollege DartmouthCollege
+Hanover,NH,USA Hanover,NH,USA
+{akapadia,patrick,sws}@cs.dartmouth.edu
+Abstract message with different subsets of credentials. (4) Lastly,
+since recipients are forced to use all their credentials for
+With Hidden Credentials Alice can send policy- decryption, PEAPOD efficiently supports non-monotonic
+encrypteddatatoBobinsuchawaythathecandecryptthe boolean policies by allowing senders to include negations
+data only with the right combination of credentials. Alice intheirpolicies.
+gainsnoknowledgeofBob’scredentialsintheprocess,and
+hencethename“HiddenCredentials.”ResearchonHidden
+Credentialsystemshasfocusedonmessagessenttosingle
+1.Introduction
+recipients, where the sender needs to know the recipient’s
+pseudonymbeforehand,andonHiddenPolicies,whereBob
+learns as little information as possible about Alice’s pol- HiddenCredentials[20,9]werefirstproposedtofacil-
+icy for decrypting the message. Current schemes provide itatetrustworthyinteractionbetweenstrangersinopenen-
+weak policy privacy — with non-interactive schemes, the vironments. Usingtheseschemes,Aliceencryptsdatatoa
+recipient can learn parts of the policy, and with interac- specificindividualBobusinganattribute-basedpolicysuch
+tive schemes based on secure multiparty computation, a as “Bob is a Student or Professor.” Bob can
+user can try different sets of credentials as input to gain thendecryptthisdataifandonlyifhehasthecorrectcom-
+knowledgeofthepolicyafterrepeateddecryptionattempts. binationofcredentialstosatisfyAlice’spolicy. SinceBob
+Furthermore,existingschemesdonotsupportpolicieswith decryptsthemessagewithoutrevealingtheresulttoAlice,
+negations efficiently. For example, a policy stating “Bob Alice gains no knowledge of Bob’s credentials (hence the
+is not a student” is hard to enforce since Bob can simply name“HiddenCredentials”). HiddenCredentialspreserve
+withhold,ornotuse,hisstudentcredential. Bob’sprivacysincehemayconsidermanyofhisattributes
+We propose a system called PEAPOD (Privacy- to be sensitive information and would like to hide them
+Enhanced Attribute-based Publishing Of Data) that pro- fromAlice. Currentschemes[9,15]alsotrytolimitwhat
+videsthefollowingproperties: (1)Userscansecurelypub- Bob can learn about Alice’s policy. There could be sev-
+lish data protected by attribute-based policies to multiple eral reasons for this — Alice may want to prevent users
+possible recipients without requiring interaction between from“gaming”thesystem,i.e.,changingtheirbehaviorto
+senders and receivers. This is achieved by using a semi- gainaccesstoamessage, orinferringwhichmessagesare
+trusted server. (2) The plaintext message and the policy important based on their policies. For example, attackers
+are completely hidden from the server. (3) Any recipient, mightfocustheirenergyontryingtodecryptmessagesfor
+intended or not, learns no other information about a mes- CIAagentsifthepolicyispublicknowledge. Insomesitu-
+sage’s policy beyond the number of clauses in policy that ationsAlice’spolicymayrevealprivateinformation about
+were satisfied. Furthermore the recipient is forced to use herself, in which case she would like to protect her pri-
+allofhisorherissuedcredentialsfordecryption,andthere- vacy against both intended and non-intended recipients of
+forecannotmountinferenceattacksbytryingtodecryptthe themessage.Ideally,evenifBobisabletodecryptthemes-
+sage(i.e.,heisan“intendedrecipient”),heshouldnotlearn
+∗ThisresearchwassupportedinpartbytheNSF,undergrantCNS-
+anything about the structure of the policy or which of his
+0524695,andtheBureauofJusticeAssistance,undergrant2005-DD-BX-
+credentials were necessary for decryption. Providing pol-
+1091. Theviewsandconclusionsdonotnecessarilyreflecttheviewsof
+thesponsors. icyprivacyagainstintendedrecipients,however,hasprovento be difficult. Current non-interactive schemes [20, 9] It is not obvious how current Hidden Credential sys-
+achievepartialpolicyprivacysinceBobcanlearninforma- tems can be modified to support multiple possible recipi-
+tion about sub-expressions of the policy that he satisfies. ents. For example, previous research [20, 9, 15] has fo-
+Bob is able to learn all the “satisfying sets” (where each cusedonsinglerecipientsbyrelyingonIdentity-BasedEn-
+satisfyingsetisasetofcredentialsthatsatisfiesthepolicy) cryption(IBE)[8]. AtrustedPrivateKeyGenerator(PKG)
+thataresubsetsofhiscredentials.Toclosethisgap,Frikken canissueaprivatekey(credential)toBobthatcorresponds
+etal.[15]proposeaninteractiveschemewhereeachparty to the public key (attribute) “Bob is a student.” If
+learnsonlywhetherBobsatisfiedthepolicy,andwhatever AliceencryptsdatatoBobusingthispublickey,thenBob
+canbeinferredfromthat.IfBobdecryptsamessagebytry- will be able to decrypt it if and only if he is a student. If
+ing different combinations of credentials, however, he can Alicewouldlikethedatatobedecryptablebyanystudent,
+still infer which credentials were necessary for decryption more sophisticated group-key management is needed. For
+overseveralrepeateddecryptionattempts. Similarly,other example, an IBE-based scheme could require Alice to use
+approachesintrustnegotiation[37,35,38,36,39]suchas the public key “Student” for encryption, and a shared
+oblivious attribute certificates (OACerts) [24] suffer from private key among all students. This is undesirable be-
+the same drawbacks. Ideally, a system with Hidden Poli- cause the compromise of a shared group key requires a
+cies should prevent Bob from inferring information about new private key to be deployed to all students.2 Other re-
+thepolicyoverrepeateddecryptionattempts. latedapproachesinclude“Key-PolicyAttribute-BasedEn-
+Another drawback of previous approaches is that the cryption (KP-ABE)” [17, 31], where attributes are asso-
+senderAliceneedstoknowtheidentity(orpseudonym)of ciated with ciphertexts and keys encode decryption poli-
+therecipientbeforesendingthemessage,i.e.,eachmessage cies based on the data’s attributes. For example, Alice
+has a single intended recipient. In this paper, we propose can supply Bob with a key to decrypt only her data with
+a new problem in Hidden Credential systems — securely the attributes “music video AND Metallica.” Following
+publishing policy-encrypted data to multiple possible re- the terminology in [17], we focus on “Ciphertext-Policy
+cipientsusingHiddenCredentialsandHiddenPolicies,i.e., Attribute-Based Encryption (CP-ABE),” where attributes
+Aliceshouldbeabletosecurelypublishmessagesthatcan are associated with users, and policies are encoded in the
+bedecryptedbyanybodywiththecorrectsetofattributes. ciphertexts based on users’ attributes. Since KP-ABE and
+Consider the following motivating example in the context CP-ABEaddressdifferentproblems,wedonotdiscussKP-
+ofabulletin-boardservice. ABEintheremainderofthepaper.
+Matchmakingexample: Alicemaintainsapublicpro- We provide a non-interactive solution that avoids
+fileonthebulletin-boardservice. Shealsomaintainsapro- sharedprivatekeysandcalloursystemPrivacy-Enhanced
+tectedprofilecontainingmorepersonalinformationsuchas Attribute-based Publishing Of Data (PEAPOD). As a
+herphotograph,birthdate,etc. Shewouldliketosharethis building-block,PEAPODusesamodifiedversionofKhu-
+informationonlywithpeoplewhosatisfyhercriteriafora ranaetal.’sSecureE-mailListService(SELS)[23],which
+perfectpartnerandthereforeencryptsitwithhercriteriaas is a proxy encryption scheme [6] for encrypting messages
+the policy. Alice, however, would like to keep her criteria to the subscribers of an email list. Briefly, when a mes-
+secret. There are a couple of good reasons for this. The sageissenttothelist, SELSallowsthe“listserver”tore-
+criteria may be embarrassing to Alice, e.g., she might be encryptmessagestothelist’ssubscriberswithoutaccessto
+lookingforapartnerthatalsohasaparticulardiseaseordis- theplaintext. Re-encryptionensuresthateachrecipientcan
+order, or maybe she simply does not want suitors to game use his or her unique decryption key, thereby eliminating
+thesystembylookingatherpreferencesandpretendingto theneedforsharedkeys. WeshowhowAlicecanencrypt
+fit the description. If Bob is interested in Alice based on data with attribute-based policies to multiple possible re-
+her public profile, he can attempt to decrypt her protected cipients by building a system on top of SELS, where the
+profile. Bob is able to view this information if only if he possessionofaparticularattributecorrespondstotheuser’s
+satisfies her policy, and in the process does not learn Al- membershipinaSELSlistforthatattribute. Eachattribute
+ice’scriteria(i.e.,herpolicyremainshidden)beyondwhat isassociatedwithapublicencryptionkey,anduserspossess
+he can infer from the fact that he satisfies her policy. Al- uniquedecryptionkeys(“credentials”)fortheircorrespond-
+ice,ontheotherhand,doesnotlearnwhetherBobtriedto
+access her profile or not, let alone whether the decryption 2Furthermore, in an IBE-based scheme a compromised key would
+wassuccessful.Bob’scredentials,therefore,remainhidden require rekeying all attribute keys since all private keys are generated
+fromAlice.1 from a unique secret. This is because the public-key for “Student”
+remains unchanged, and generating a new private key for “Student”
+amountstochangingtheuniquesecret. Alessdrasticalternativewould
+1IfBobchoosestoinformAlicethathewasabletoviewherprotected be to append version numbers to attributes (e.g., “Student.v1” and
+profile,thenAlicecaninferthathepossessescredentialsthatsatisfyher “Student.v2”). However, thiswouldrequireamechanismforusers
+policy. Suchattacksareoutsidethescopeofthispaper, andhavebeen toacquirethecurrentversionnumbersofattributes,whichcouldbecum-
+addressedinthecontextoftrustnegotiation[20]. bersome.ingattributes. theirpseudonymsbeforehand. Usersareableto pub-
+Whilesuchanapproachsolvestheproblemofencrypt- lish information tomultiple recipients and shared de-
+ing messages to multiple possible recipients without the cryptionkeysarenotused,whichsimplifieskeyman-
+need for shared private keys, it is not clear how the pri- agement. Unlike other Hidden Credential systems,
+vacy of the policies can be maintained against the proxy PEAPOD makes use of a semi-trusted server as an
+encryptionserverandtherecipients. PEAPODmakesuse intermediarytoachievethisproperty.
+of homomorphic encryption [30] to contribute several in-
+2. Message confidentiality and policy privacy:
+terestingpropertiesthatareabsentfrompreviousschemes.
+PEAPOD provides message confidentiality based on
+Oursystemprovides“clausalpolicyprivacy”againstallre-
+thesender’spolicy,andclausalpolicyprivacyagainst
+cipients, intended or not. That is, assuming a disjunctive
+recipients. Furthermore, the plaintext and the policy
+normal form policy (a disjunction of conjunctive clauses),
+are completely hidden from the server, even though
+Boblearnsnoinformationotherthanthenumberofclauses
+in Alice’s policy that he satisfies.3 Even for the clauses the server performs essential transformations on the
+ciphertextforeachrecipient.
+thathedoessatisfy,hegainsnoknowledgeofwhichofhis
+attributeswereusedtosatisfythoseclauses. Thisispossi-
+3. Non-monotonic boolean policies: Unlike other ap-
+ble because our system forces the recipient Bob to use all
+proaches,PEAPODsupportspoliciesbasedonnega-
+his credentials for decrypting a message. We contrast this
+tions of attributes without the need for creating ex-
+withthebestknownnon-interactivescheme[9],whereBob
+plicit attributes to represent negations. Our approach
+learnstheentiresetofattributesforaclausethathesatisfies.
+leverages the server to ensure that users must use all
+Furthermore, in PEAPOD, Bob cannot try to decrypt the
+oftheircredentialsfordecryption,therebypreventing
+messagewithdifferentsubsetsofhiscredentials. Wecon-
+usersfromwithholdingcredentials.
+trastthiswiththebestknowninteractivescheme[15]where
+Bob can still mount inference attacks with subsets of his
+2.Privacy-EnhancedAttribute-basedPublish-
+credentialsbymakingrepeatedattempts.Finally,unlikeex-
+istinghiddencredentialandtrustnegotiationschemes,our ingofData
+system efficiently supports non-monotonic boolean poli-
+cies,i.e.,negationsofattributescanbeincludedinpolicies, DepartingfrompreviousIBE-basedapproachesforHid-
+and policies can check for the absence of an issued cre- den Credential systems, PEAPOD uses proxy encryption
+dential. Bob, therefore, cannot withhold a credential that and splits the trusted duties of key-management between
+hehasbeenissued. Existingapproachessuggestthatusers a Server and a Certification Authority (CA). Messages
+canbeissuedexplicitattributessuchasnot a student, are“proxy-encrypted”underattribute-basedpoliciesusing
+thereby supporting negations in policies. This approach, public attribute-keys that are set up by these entities, and
+however, comes at the cost of doubling the number of at- arethendepositedattheServerforlaterretrieval. Wenow
+tributes in the system. Furthermore, users in the system provideabriefoverviewofthecryptographictoolsusedin
+must now be issued “negative credentials” for all the at- PEAPOD, and formalize various notions of security that
+tributesthattheydonotpossess, leadingtoamuchhigher oursystemmustsatisfy.
+computational burden for issuing and revoking attributes.
+For example, in a university setting, if a new attribute is 2.1.Preliminaries
+a provost is added to the system, the negative creden-
+tialis not a provostwillhavetobeissuedtomany
+Proxy encryption As mentioned earlier, we use
+thousandsofusers.Incontrast,ourschemedoesnotrequire
+SELS [23] as a building block for our system. In SELS,
+anyextraattributes,andusersmaintaincredentialsforonly
+the sender encrypts an email message and sends it to the
+theattributesthattheypossess.
+list server. The list server plays the role of the proxy and
+re-encrypts the encrypted email (without access to the
+Contributions We motivate the need for a system that plaintext) for every subscriber in the list so that each sub-
+supports attribute-based encryption of messages to multi- scribercandecryptthemessagewithhisorherownunique
+ple possible recipients using Hidden Credentials and Hid- private decryption key. Conventional proxy encryption
+denPolicies. WepresentoursystemPEAPODthatmakes allowsonlysinglerecipientsbecausethedecryptionkeyis
+thefollowingspecificcontributions: knownonlytoasingleparty.4 SELSgetsaroundthislimi-
+tationbyrequiringthesumK oftheproxy’sre-encryption
+1. Offline publishing to multiple recipients: PEAPOD
+secret-key s for a subscriber u and that subscriber’s
+u
+decouplesthesendingandreceivingphases,andpub-
+lishersdonotneedtointeractwithrecipientsorknow 4Ofcourse,onecouldsharethatdecryptionkeytoallowgroupdecryp-
+tion.However,thedifficultyofkeymanagementmakesthisapproachvery
+3andwhatevercanbeinferredfromthatfact unfavorable.c
+!1!
+m
+Alice
+R D
+c c
+m ! s 1 x 1
+E T c
+y s
+!2!
+m Bob
+R D
+encryption public-key transformation secret-key
+s x
+2 2
+re-encryption secret-keys decryption private-keys
+Sender List Server Subscribers
+Figure1.AblockdiagramillustratingthebasicoperationsofSELS[23]thatweuseinourprotocol
+decryptionprivate-keyx tobethesameintheunderlying Theorem 1 in [23] states that if Elgamal is secure
+u
+Elgamalproxyencryption[21]forallsubscribers. Thatis, against chosen-plaintext attacks by any probabilistic poly-
+for all subscribers u, x +s = K. This property allows time (PPT) adversary, then so is SELS. As we will see,
+u u
+individual subscribers to decrypt messages with their own SELS can be adapted to construct PEAPOD for policies
+decryption private keys for messages encrypted with the that contain only a single attribute. It is not immediately
+list’spublickey. Moreover,SELSsplitstheencryptionstep clear, however, how SELS can be used to support com-
+of Elgamal proxy encryption into two operations, which plex policies based on boolean combinations of attributes,
+wedenoteasE andT respectively,asexplainedbelow. and how to support policy privacy. To achieve its goals,
+Figure 1 illustrates how SELS works under our termi- PEAPOD therefore also makes use of other tools such as
+nology. ThesenderElgamal-encrypts(E)amessagemun- homomorphicencryption.
+derencryptionpublic-keyy,wherey = gx forsomegroup
+generator g and secret key x, and sends the resulting ci-
+Homomorphicencryption Anencryptionscheme(K,E,
+phertextc = (A,B) = (gr,myr)tothelistserver, where D)5 is homomorphic if there exists an operation ⊗ on ci-
+r is the randomness used. The list server transforms (T)
+phertexts such that for any key pair (x,y) generated by K
+cintoanotherciphertextc0 = (A0,B0) = (A,BAs)using
+and any messages m ,m in the message space M, we
+1 2
+its transformation secret-key s, where s = K −x. Note
+have that D (E (m )⊗E (m )) = m ⊕m , where ⊕
+x y 1 y 2 1 2
+that c0 is equivalent to the Elgamal encryption of m un-
+is an operation on messages. In other words, ciphertexts
+der another encryption public key y˜, where y˜ = ygs =
+for m and m can be combined to obtain a ciphertext
+1 2
+gx+s = gK. The list server re-encrypts (R) ciphertext
+for m ⊕ m without access to m and m . More gen-
+1 2 1 2
+c0 using its re-encryption secret-keys s and s for sub-
+1 2 erally, the homomorphic property allows meaningful ma-
+scribers Alice and Bob into c00 and c00 respectively, where
+1 2 nipulationofciphertextswithouttheknowledgeoftheun-
+c0 i0 = (A0 i0,B i00) = (A0,B0/A0si). The server then sends
+derlyingplaintexts. Applicationsofhomomorphicencryp-
+theresultingre-encryptedciphertextsc00 andc00 tothecor-
+1 2 tion include electronic voting [19, 18, 2], electronic auc-
+respondingusers. Finallyeachofthemdecrypts(D)using
+tions [1, 34, 25, 11], Mix-nets [12, 16], and verifiable en-
+his or her decryption private-key (x for Alice and x for
+1 2 cryption[28].
+Bob) to recover message m as B00/A00xi. As mentioned
+i i Elgamal encryption is one example of homomorphic
+earlier, the two steps R and D amount to the Elgamal de- encryption. Consider c
+i
+= E y(m i) = (gri,m iyri) =
+cryptionunderprivatekeyK.
+(A ,B ) for i = 1,2. Define ⊗ as (A ,B ) ⊗
+i i 1 1
+To subscribe users to a list, SELS describes a protocol
+(A ,B ) 7→ (A · A ,B · B ). Then D (c ⊗ c ) =
+2 2 1 2 1 2 x 1 2
+wherethelistmanagerinteractswiththelistserverinsuch D x(gr1+r2,m 1m 2yr1+r2)=m 1·m 2. Paillier’scryptosys-
+awaythatK isnotknowntoanysingleparty. Therefore,
+tem[27]isanotherexample.
+ifthelistmanagerorasubscribeduserdonotcolludemali-
+ciouslywiththelistserver,thelistserverisunabletoobtain
+Policies and attributes In PEAPOD, policies are non-
+K and thereby decrypt messages sent to the list. Further-
+monotonic boolean formulae in disjunctive normal form
+more,thelistservercannotsubscribeuserstothelistwith-
+out interacting with the list manager, which is responsible 5K,E,Darethekeygeneration,encryption,anddecryptionalgorithms
+formanaginglistmembership. respectively(DNF), i.e. disjunctions (“ORs”) of one or more clauses, cept perhaps its size). Such a guarantee should hold even
+which are in turn conjunctions (“ANDs”) of one or more ifuserswhoarenotintendedrecipientscolludearbitrarily.
+literals,wherealiteraliseitheranattributeoritsnegation. Moreover,whenattemptingtobreaktheconfidentiality,an
+We argue that most policies are naturally DNF in form as adversary should be given the chance to study the decryp-
+sendersusuallyhaveafewclassesofintendedrecipientsin tion of arbitrary retrieved ciphertexts. Formally speaking,
+mind(adisjunctionofclauses),whereeachclassisdefined wedefinetheconfidentialityofPEAPODasfollows.
+byasetofattributes(aclause).
+To simplify the description of our system, we repre- Definition1(C-IND-CCA2-UCA) A PEAPOD system
+sent a clause within a policy using the symbols X, × has Ciphertext Indistinguishability against Adaptive Cho-
+and ∗, which denote respectively attributes in the system sen Ciphertext Attack and User Coalition Attack (C-IND-
+that are “required” (the X-attributes), “forbidden” (the ×- CCA2-UCA) if no PPT adversary A can win the follow-
+attributes) and “irrelevant” (the ∗-attributes). For exam- ing game against the challenger C with probability non-
+ple,ifwereconsiderthematchmakingexamplementioned negligiblygreaterthan1/2.
+earlier and imagine the scenario in which there are alto-
+1. (Setup Phase.) C sets up the PEAPOD system and
+gether five attributes in the system: {male, college
+makes all public parameters such as the attributes in
+graduate, age in 30’s, smoker, pet lover},
+thesystemavailabletoA.
+then the clause “male ∧ age in 30’s ∧ ¬smoker”
+is represented by hX,∗,X,×,∗i. Any clause in a non- 2. (ProbingPhaseI.)AmaycorrupttheServerifnouser
+monotonic boolean expression can be represented by such has been corrupted, thereby learning its secrets and
+a tuple, which indicates the nature of each attribute in actingonbehalfofit. IftheServerhasnotbeencor-
+the clause (required, forbidden, or irrelevant). Recall that rupted, then A has the ability to arbitrarily and adap-
+policies are a disjunction of multiple clauses. For ex- tively: (a)registeranewhonestuserintothesystem,6
+ample, the policy “(male ∧ age in 30’s) ∨ (male (b)corruptanhonestuser,therebylearninghisorher
+∧ ¬smoker)” would be represented by a set of the two secretsandactingonbehalfofhimorher,(c)makede-
+clauses: {hX,∗,X,∗,∗i,hX,∗,∗,×,∗i}. posit and retrieval requests to the Server, and (d) ask
+We say that an attribute set A satisfies a policy P = honestusersfordecryptinganyretrievedciphertexts.
+{C ,C ,...,C },ifthereexistsaclauseC ∈P forwhich
+1 2 n i
+AcontainsalltheX-attributesanddoesnotcontainanyof 3. (Challenge Phase.) At some point, A outputs two
+the×-attributesinC i. WhenwesayauserBobsatisfiesa messagesM 0,M 1 ofequallengthandapolicyP∗ of
+policy,wemeantheattributesetpossessedbyBobsatisfies hischoiceunderthefollowingrestriction:
+thepolicy. Restriction 1: None of the corrupted users satisfies
+thepolicyP∗throughoutthegame.
+2.2.SecurityNotions
+ThenCflipsafaircoinb∈ {0,1}andencryptsmes-
+R
+sage M under policy P∗ according to the sender’s
+b
+AshintedinSection1,designingasystemforpublishing encryption algorithm. The resulting ciphertext C∗ is
+datawithbothpolicyprivacyandcredentialprivacyfacesa
+returnedtoA.
+numberofsecuritychallenges. Torigorouslyreasonabout
+thesecurityofPEAPOD,weneedtoformalizevariousse- 4. (ProbingPhaseII.)Amaydowhateverheisallowed
+curity notions. Definitions 1 and 3 provide ideal security toinProbingPhaseI,exceptthat(a)Restriction1ap-
+models for confidentiality and policy privacy under which plies, and (b) A may not ask any honest user for de-
+PEAPODisimmunetoadaptivechosenciphertextattacks cryptingC∗.
+andusercoalitionattacks(whereuserscolludeby“pooling
+5. (End-Game Phase.) Eventually A outputs his guess
+in”theircredentials).OurconstructionisbasedonElgamal
+˜b∈{0,1}onb. Awinsifandonlyif˜b=b.
+encryption, and therefore is not immune to adaptive cho-
+senciphertextattacks. Moreover, ourschemeprovidesse- (cid:3)
+curity against only restricted versions of coalition attacks.
+Definitions 2 and 5 describe the models under which our The above definition of confidentiality is based on the
+constructionofPEAPODissecure. well-known IND-CCA2 security model for conventional
+encryption schemes. It captures coalition resistance be-
+Confidentiality Ideally, when given a ciphertext de- causetheadversaryisallowedtocorruptanarbitrarysetof
+posited at or retrieved from the server, individual entities usersaslongasnoneofthemsatisfiesthechallengepolicy.
+(including the Server) other than the intended recipients
+6Aalsogetstodecidesthesetofattributespossessedbytheuserbeing
+specified by the associated policy should not be able to
+registered. Forsimplicity,weassumeauserimmediatelyacquiresallthe
+learnanythingabouttheunderlyingplaintextmessage(ex- credentialsforhisorherattributesuponregistration.Thismodelsthereal-worldattackscenariowhenacoalition Restriction2: Eitherallcorrupteduserssatisfynone
+of users who individually do not satisfy the policy tries to ofthepoliciesP andP ortheyallsatisfybothpoli-
+0 1
+“pool in” their credentials and gain knowledge about the ciesthroughoutthegame.
+message.
+ThenC flipsafaircoinb ∈ {0,1}andencryptsthe
+R
+ThePEAPODsystemweproposehasaweakerformof messageM∗underpolicyP accordingtothesender’s
+b
+coalition-resistance,sincesomecoalitionsofuserscanpool encryption algorithm. The resulting ciphertext C∗ is
+intheircredentialsanddecryptthemessage. Wesaythata returnedtoA.
+coalition of users “collectively satisfies policy P” if there
+existsasubsetofusersinthecoalitionsuchthattheunion 4. (ProbingPhaseII.)Amaydowhateverheisallowed
+Aoftheirattributessatisfiesthepolicy.Inourconstruction, to in Probing Phase I, except that (a) the Restriction
+a coalition of users can decrypt a message with policy P 2 applies, and (b) A may not ask any honest user for
+onlyif theycollectivelysatisfythepolicyP.Thefollowing
+decryptingC∗.
+definitioncapturestheconfidentialityoursystemprovides,
+5. (EndGame.) SameasthatinDefinition1.
+whichissecureagainstchosenplaintextattackandthere-
+(cid:3)
+strictedformofcoalitionattackjustmentioned.
+We now introduce a weaker form of policy privacy,
+Definition2(C-IND-CPA-RUCA) PEAPOD has Ci-
+whichwecallclausalpolicyprivacy. Webelievethatother
+phertext Indistinguishability against Chosen Plaintext
+constructionsofPEAPOD,maybeabletoprovideclausal
+AttackandRestrictedUserCoalitionAttack(C-IND-CPA-
+policyprivacyatbest,andthereforeemphasizethisweaker
+RUCA)ifnoPPTadversaryAcanwinthefollowinggame
+intermediate model before we describe the security model
+against the challenger C with probability non-negligibly
+for our construction in Definition 5. It is weaker because
+greaterthan1/2.
+anintendedrecipientisabletoinferinformationmorethan
+ThegameisthesameasthatinDefinition1,exceptthat
+merelywhetherheorshesatisfiesthepolicy.Precisely,that
+(1)Ability2(d)isremoved,i.e.,Amaynotaskanyhonest
+piece of extra information is the number of clauses a re-
+users for decrypting any retrieved ciphertext, and (2) Re-
+cipient satisfies. This makes two policies with a different
+striction1ismodifiedas:
+numberofsatisfyingclausesdistinguishablebyanintended
+Restriction 10: None of the coalitions of corrupted users
+recipient. Hencepolicyindistinguishabilityisonlyamong
+collectivelysatisfiesthepolicyP∗throughoutthegame.
+those policies with the same number of satisfying clauses.
+(cid:3)
+Thefollowingisaformaldefinitionofthisnotion.
+Definition4(C-P-IND-CCA2-UCA) APEAPODsystem
+Policy-privacy Policy privacy hides the policies under
+has Clausal Policy Indistinguishability against Adaptive
+whichmessagesareencryptedfromboththeserverandthe
+Chosen Ciphertext Attack and User Coalition Attack (C-
+recipients.Ideally,theserveroranyrecipientBob(intended
+P-IND-CCA2-UCA) if no PPT adversary can win the fol-
+or not) should not be able to gain any knowledge of the
+lowinggameagainstthechallengerCwithprobabilitynon-
+policyexceptthatBobknowswhetherhesatisfiesthepol-
+negligiblygreaterthan1/2.
+icy. As with confidentiality, ideally no coalition of users
+ThegameisthesameasthatinDefinition3,exceptthat
+(whoindividuallydonotsatisfythepolicy)shouldbeable
+Restriction2ismodifiedas:
+togainanyknowledgeaboutthepolicy(exceptperhapsits
+Restriction20:Allcorrupteduserssatisfythesamenumber
+maximum size). This notion of policy privacy is captured
+ofclausesinbothpoliciesP andP throughoutthegame.
+formallybythefollowingdefinition. 0 1
+(cid:3)
+Definition3(P-IND-CCA2-UCA) A PEAPOD system Inourconstruction,anindividualrecipientofamessage
+hasPolicyIndistinguishabilityagainstAdaptiveChosenCi-
+cannotgainanyknowledgeaboutthepolicyotherthanthe
+phertextAttackandUserCoalitionAttack(P-IND-CCA2- numberofclausesthatheorshesatisfiesandwhatevercan
+UCA) if no PPT adversary can win the following game beinferredfromthatfact. Thereforeourconstructionpro-
+against the challenger C with probability non-negligibly
+videsclausalpolicyprivacyiftheusersdonotcollude. We
+greaterthan1/2.
+donot,however,providecoalitionresistanceforpolicypri-
+vacy. Thisisbecausewetrytoprovidepolicyprivacyeven
+1. (GameSetup.) SameasthatinDefinition1.
+when the message can be decrypted. Recall that in some
+2. (ProbingPhaseI.)SameasthatinDefinition1. casescoalitionsofuserscanpoolintheircredentialstode-
+cryptciphertexts. Inthatcase,thecoalitionwillbeableto
+3. (Challenge Phase.) At some point, A sends to C gain knowledge about the policy. Our construction, there-
+a message M∗ and two valid policies P ,P of his fore, is secure under the following (non-CCA2 and non-
+0 1
+choiceunderthefollowingrestriction: coalition-resistant)model.Definition5(C-P-IND-CPA) A PEAPOD system has we will use the terms “conjunctive clauses” and “clauses”
+Clausal Policy Indistinguishability against Chosen Plain- interchangeably.
+text Attack (C-P-IND-CPA) if no PPT adversary can win
+thefollowinggameagainstthechallengerC withprobabil- 3.1.PEAPODforsingle-attributepolicies
+itynon-negligiblygreaterthan1/2.
+ThegameisthesameasthatinDefinition4,exceptthat Earlier in this paper we reviewed how SELS achieves
+the adversary A (1) may not ask any honest users for de- itsgoalofsecurelysendingemailmessagestoalistofsub-
+crypting any retrieved ciphertext, and (2) may corrupt at scribers.Ifwethinkofamailinglistasthelistofuserswho
+most1honestuser. (cid:3) possess a certain attribute, then SELS can immediately be
+usedtosecurelydisseminatedatatouserswhopossessthat
+We discuss the implications of coalition and inference attribute. Therefore, ifallpolicescontainonlyasingleat-
+attacksonconfidentialityandpolicyprivacyinSection4. tribute,thenallweneedtodotoconstructPEAPODisto
+instantiateaSELSlistforeachoftheattributesinthesys-
+tem.
+Credential privacy Credential privacy protects the pri-
+Thelistmanagerswhomanagelistmembershipinthese
+vacyoftherecipientfromthesender. Specifically,creden-
+SELS lists now collectively act like the Certification Au-
+tial privacy hides from the sender the credentials that the
+thority (CA) in PEAPOD, which is the entity responsible
+recipient possesses and thus uses when attempting to de-
+forauthenticatingusersaccordingtotheirattributesbefore
+cryptthesender’sencryptedmessages,evenifthesenderis
+giving out credentials to them. The list servers become
+abletoobservethesystem. Moreformally,whatcanbeob-
+thePEAPODServerwhichhandlesdepositsofencrypted
+servedbyasender(oracoalitionofsenders)constitutesto
+messages. However, instead of actively broadcasting the
+theprotocolviewofthesender(orthecoalition),whichin-
+encryptedmessagestotheintendedrecipientsasinSELS,
+cludessecrets,inputsandrandomnessofthesender(orthe
+thePEAPODServerwaitsforindividualretrievalrequests
+coalition)duringtheexecutionsoftheencryptionalgorithm
+fromusersinthesystem.
+andthedepositprotocol,protocoltranscriptsofalldeposit
+Now theSELSinstantiation inFigure 1can be thought
+and retrieval protocol runs. A PEAPOD system has cre-
+ofasbeingassociatedwithanattributeaandre-interpreted
+dentialprivacyifgivenanyprotocolviewofthesystem,an
+as follows. Key y is the encryption public key for en-
+adversarycannotdecidenon-negligiblybetterthanrandom
+crypting data under attribute a for deposit. Secret s is the
+guessingifarecipienthasacertainattributeforanyrecipi-
+server’stransformationsecretwithrespecttoattributeafor
+entandattributeinthesystem.
+transformingciphertextsbeforestorage. Secretss ,s are
+Achievingcredentialprivacyisgenerallyabigchallenge A B
+there-encryptionsecretstheserverkeepsforre-encrypting
+forinteractiveschemessuchaspolicy-basedaccesscontrol.
+storedciphertextstoAliceandBob,thetwouserswhopos-
+Trustnegotiationallowsuserstospecify“releasepolicies”
+sess attribute a, respectively. Secrets x and x are re-
+thatexplicitlyallowcertaincredentialstobe“leaked”[15]. A B
+spectivelythedecryptionsecretsofAliceandBobthaten-
+Nevertheless,credentialprivacycomesasanaturalguaran-
+able them to decrypt retrieved ciphertexts and recover the
+tee in PEAPOD due to the existence of a server as an in-
+plaintextmessageencryptedundertheattributea.
+termediary. Inparticular,theofflinenatureofmessagede-
+We call the above construction Simple-PEAPOD,
+liveryfromthesendertotherecipientthroughaninterme-
+which supports only single-attribute policies by adapting
+diateserverensuresthatthesenderneverdirectlyinteracts
+SELS in a rather straightforward fashion. We do not an-
+with recipients. In fact, the sender of an encrypted mes-
+alyzethesecurityofSimple-PEAPODasitisonlyanin-
+sage might never know who has attempted to decrypt the
+termediatesteptowardsourfullconstruction.However,itis
+message.
+easytoseethatSimple-PEAPODisconfidentialasthese-
+curityofSELSimpliesanadversarywhodoesnotpossess
+3.OurConstruction anattributecannotdecryptaciphertextencryptedunderthat
+attribute’spublickey.
+For simplicity, we describe the construction of
+PEAPOD in stages. First we show that it is straightfor- 3.2.PEAPODforsingle-clausepolicies
+ward to construct PEAPOD using an adapted version of
+SELS as a building block if only single-attribute policies WenowdemonstratehowtoconstructaPEAPODsys-
+areallowed. Then,wedemonstrateaconstructionthatsup- temthatsupportspoliciesthatareconjunctionsofattributes
+portspoliciesbasedonaconjunctionofattributesandtheir and their negations (a single “conjunctive clause”). We
+negations(aconjunctiveclause). Finally,wedescribehow present the construction by walking through an example.
+complexpoliciesintheformofadisjunctionofconjunctive Thisexampleisgenericenoughtoillustratetheactualcon-
+clausescanalsobesupported.Intheremainderofthepaper struction,whichwerefertoasClausal-PEAPOD.The example We continue with the matchmaking sce- TheserverstoresinitsdatabasethetupleinEqn.(4)along
+nario we have been using. Recall that there are five at- withψ.
+tributes: {males, college graduates, in their
+30’s, smokers, pet lovers} in the system. Let us Retrieval NowBobcomestotheserverandasksforthe
+assumethecriteriauserAlicehasforherperfectpartneris ciphertextAlicejustdeposited.Theserverreadsthetuplein
+a“maleinhis30’swhodoesnotsmoke.” Herpolicyisthus Eqn.(4)fromitsdatabaseandthenoperatesonitasfollows.
+hX,∗,X,×,∗i. (1) Itfirststripsofftheentriesthatcorrespondtotheattributes
+Bob does not have (the second and fourth in this case),8
+Bob is a 32 year-old non-smoking gentleman who loves resultinginthetuple
+pets and has no college degree. Bob thus satisfies Alice’s
+criteriaandhenceherpolicy. Inthefollowingsteps,Alice h{k 1}E y˜1,{k 3}E y˜3,{1}E y˜5i. (5)
+encryptsanddepositsattheserverherprotectedprofile(in
+For each of the entries in Eqn. (5), the server randomly
+form of a message string) under her policy, which is then
+picks a blinding factor from Z , such that the product
+retrievedanddecryptedbyBob. p
+of these factors equals 1 (mod p), i.e. b ,b ,b ∈ Z
+1 3 5 p
+such that b b b ≡ 1(mod p). The server then ap-
+1 3 5
+Encryption ToleaveamessageM forherpotentialper-
+plies Elgamal encryption E on these blinding factors un-
+fect partners, Alice encrypts M with a secure symmetric
+der the corresponding public keys y˜’s, resulting in the tu-
+encryption under key k ∈ Z p generated uniformly at ran- ple h{b }E ,{b }E ,{b }E i, whichi is then “homomorphi-
+dom.Lettheresultingciphertextbeψ.Alicethenrandomly 1 y˜1 3 y˜3 5 y˜5
+cally”multipliedintoEqn.(5)inapairwisefashion,giving
+picks a “sub-key” for each X-attribute in Eqn. (1) such
+riseto:
+that the sub-keys multiply to k (mod p), i.e. k ,k ∈ Z
+1 3 p
+s thu ech ×t -h aa ttt rik b1 uk t3 eu≡ nifk o( rm mo lyd ap t) r. anS dh oe ma .ls Fo op ri tc hk es rr e4 m∈ ainZ inp gf ∗o -r h{k 1}E y˜1⊗{b 1} yE ˜1, {k 3}E y˜3⊗{b 3}E y˜3, {1}E y˜5⊗{b 5}E y˜5i, (6)
+attributes,shepickstheidentityelement1. Theseresultin whichisequivalentto:
+thetuple:
+h{k b }E , {k b }E ,{b }E i. (7)
+hk 1,1,k 3,r 4,1i. (2) 1 1 y˜1 3 3 y˜3 5 y˜5
+The basic idea behind these values is that Bob will even- Theseblindingfactorsensurethatthereceiverisforcedto
+tually receive the subset of values that correspond to his multiplyallvalues, anddoesnothaveaccesstoanyofthe
+attributes. As long as Bob does not possess any of the ×- individualvalues. Finally,theserverusesitsre-encryption
+attributes,thesevaluescanbemultipliedtogethertoretrieve secret-keys for Bob (s , s and s ) and re-encrypts
+1,B 3,B 5,B
+thekey–the1’scorrespondingtothe∗-attributesdonotaf- the ciphertexts into the tuple below, which is sent9 to Bob
+fecttheoverallproducttherebypreservingthekey,andthe alongwiththeciphertextψ:
+randomnumbersforthe×-attributewill“destroy”thekey
+ifused. WhatremainstobeshownishowBobisforcedto h{{k 1b 1}E y˜1}R s1,B, {{k 3b 3} yE ˜3}R s3,B, {{b 5}E y˜5}R s5,Bi. (8)
+multiply all these values to maintain the requisite security
+andprivacypropertiesofthemessageandthepolicy. Decryption Now Bob uses his decryption secret-keys
+ToeachentryinEqn.(2),AliceappliestheElgamalen- (x , x andx )todecrypttheentriesinEqn.(8)in
+1,B 3,B 5,B
+cryptionalgorithmE underthepublickeyy forthecorre- ordertogetthetuple:
+i
+spondingattribute,resultingintuplebelow,7 whichisthen
+sentalongwiththeciphertextψtotheserverfordeposit. hk 1b 1,k 3b 3,b 5i (9)
+h{k }E , {1}E , {k }E ,{r }E , {1}E i. (3) Bob multiplies all the entries in Eqn. (9) together, which
+1 y1 y2 3 y3 4 y4 y5
+giveshimbackk,thesymmetrickeyfordecryptingtheci-
+Deposit Upon receiving the tuple in Eqn. (3) and ψ phertextψ, thusenablinghimtorecovertheoriginalmes-
+from Alice, the server applies the transformation func- sage M. Note that if Bob was actually a smoker and thus
+tion T on the entries in Eqn. (3) using the transforma- possessed a forbidden attribute, Eqn (9) would look like
+tion secrets for the corresponding attributes, thereby ob- hk 1b0 1,k 3b0 3,r 4b0 4,b0 5i. The existence of r 4 would make it
+taining h{{k }E }T , {{1}E }T , {{k }E }T , {{r }E }T , impossibleforBobtorecoverk.
+1 y1 s1 y2 s2 3 y3 s3 4 y4 s4
+{{1}E y5}T s5i,which,asexplainedearlier,isequivalenttothe 8Theserverknowsthesetofattributeseveryuserinthesystemhasas
+ElgamalencryptionsofentriesinEqn.(2)undery˜ i’s,i.e. itisinvolvedintheprocedureduringwhichauserobtainsacredentialfor
+anattributefromtheCA.Fordetails,consult[23].
+h{k 1}E y˜1, {1}E y˜2, {k 3}E y˜3, {r 4}E y˜4, {1}E y˜5i. (4) 9Thesizeoftheoverallciphertextleaksinformationonthenumberof
+attributesBobpossesses. Tocopewiththis, weassumethattheServer
+7We adopt the notation of {x}A to mean the output of a (possibly packstheoverallciphertextintoafixedsizewithbogussub-ciphertextsof
+k
+randomized)algorithmAunderkeykwhengiventheinputx. whichthebogusnessisonlyidentifiablebyBob.We assume the existence of a mechanism for the users Theorem1(Confidentiality) If the DDH assumption
+in the system to tell if they satisfy the policies associated holdsforZ∗, thenFull-PEAPODhasCiphertextIndistin-
+p
+withtheciphertextsandthushavecorrectlydecryptedthose guishabilityagainstChosenPlaintextAttackandRestricted
+ciphertexts.10 UserCoalitionAttack(C-IND-CPA-RUCA).
+We state without proof that Clausal-PEAPOD is con-
+fidential in the C-IND-CPA-RUCA model, enjoys policy Theorem2(Policyprivacy) IftheDDHassumptionholds
+privacy in the C-P-IND-CPA model, and also guarantees for Z∗, then Full-PEAPOD has Clausal Policy Indistin-
+p
+credentialprivacy. Theproofscaneasilybeinferredasspe- guishability against Chosen Plaintext Attack (C-P-IND-
+cial cases from the theorems for our full construction of CPA).
+PEAPOD,whichsupportscomplexpolicies.
+Theorem3(Credentialprivacy) If the DDH assumption
+holds for Z∗, then PEAPOD has Credential Indistin-
+3.3.CompleteversionofPEAPOD p
+guishability.
+PEAPOD for a single conjunctive clause can be gen-
+4.Discussion
+eralizedtosupportcomplexpoliciesthatcontainmorethan
+oneclause(interpretedasadisjunctionofmultipleconjunc-
+tiveclauses). Torecoveranencryptedmessage, itsuffices Trustrelationships InPEAPOD,theprocedurefordis-
+toreconstructtheassociatedsymmetrickeyk. Thesender tributingcredentialsissplitbetweentheCAandtheServer,
+can encrypt the message for each of the clauses in a com- and each credential for a user is generated with the hon-
+plex policy, such that the same k is used for each clause. est cooperation between these two entities. This trust as-
+Note that for each clause, new sub-keys are generated for sumptionissimilartothatofSELSsinceoursystemusesa
+k. Inthisway,anyonewhosatisfiesatleastoneclausewill modifiedversionofSELSasabuildingblock. Neitherthe
+beabletorecoverk,andthustheencryptedmessage. ServernortheCAcandecryptmessagesintendedforapar-
+However, care must be taken in order not to leak (too ticular recipient. If they collude, however, the credentials
+much) information about the policy. First, if a ciphertext of each recipient can be computed and the Server can de-
+containsonlythoselegitimateclausesinthepolicy,anyone cryptallmessagesinthesystemandinfertheirpolicies.We
+wouldbeabletotellhowmanyclausesarethereinthepol- observe that in current approaches for Hidden Credentials
+icythatwasusedintheencryption. Tokeeptheactualsize based on IBE, the PKG already has the ability to decrypt
+ofthepolicysecret,onecouldpadthepolicywith“bogus” allthemessagesinthesystem. PEAPODsplitsthistrusted
+clausessothatciphertextswillalwaysbeofthesamesize, functionalitybetweentheCAandtheServerandtherefore
+irrespective of the actual size of the policy. This can eas- thesecurityofpublishedmessages(e.g.,atabulletin-board)
+ily be done by assuming a random symmetric key k0 6= k withrespecttothetrustedentitiesisatleastasgoodasthat
+in the bogus clauses. We assume that the system picks a inpreviousschemes. Wenowexaminewhatdamageacor-
+parametern,whichisthemaximumnumberofclausesfor ruptCAorServercandoindividually.
+eachpolicy,andrequiresthatallciphertextsdepositedhave A corrupt CA by itself cannot decrypt messages in the
+policiespaddedtonclauses. systemwithouthavingthecorrectcredentials. Therefore,a
+The sender should also compute a random permutation CA can simply issue unlimited credentials to itself. How-
+oftheoriginalclausesandthebogusones(callthisa“shuf- ever, we assume that the Server does not collude with the
+fle”). This makes the recipients learn only the number of CAandwillonlyallowlegitimateusersinthesystem(ver-
+clausestheysatisfy. Alltheremainingclausesmayormay ified using, e.g., PKI [3]) to obtain the credential for an
+notbelegitimateclauses. Forexample,iftheclauseswere attribute. Therefore, the CA cannot pose as a user in the
+not shuffled and Bob satisfied only the third clause, then system. ThepolicyprivacywithrespecttotheCAismain-
+Bob would know for sure that the first and second clauses tainedunderthesecircumstances,whichcanonlybebroken
+arenotbogusclausesandhencethepolicycontainsatleast withthehelpofamaliciousServer.
+threeclauses.Iftheclausesareshuffled,however,Bobcan- AnalogoustoacorruptCA,acorruptServercannotde-
+notinferwhetherthefirstandsecondclausesarebogusand cryptanymessageswithouthavingthecorrectcredentials.
+onlyknowsthatthereisatleastoneclauseinthepolicy. TheServercannotissueitselfanycredentialssincethisre-
+WecallsuchaconstructionFull-PEAPOD. quires the cooperation of the CA, which we assume does
+not collude with the Server. Nonetheless, the server can
+bemaliciouswhenservingretrievalrequestsbynotfollow-
+Securitytheorems Wenowlistthesecuritytheoremsfor
+ingthealgorithm,causingciphertextstobedecryptedinto
+Full-PEAPOD.TheirproofscanbefoundintheAppendix.
+“garbage” even by intended recipients. In this kind of de-
+10Forexample,wecanrequirethesenderstofirstencodetheplaintext nialofserviceattack(DoS),arecipientwhocannotdecrypt
+messages,suchaspaddingthemwithastringofzerosatthefront. aciphertexthasnowaytotellifheorshedoesnotsatisfytheassociatedpolicy,theserverismalicious,orthesender cover k . They can collude to expose k. Therefore, even
+2
+encrypted garbage. An interesting area for future work is thoughcoalitionattacksarenotstraightforward,PEAPOD
+to devise a protocol that will detect a misbehaving Server is not secure against coalition attacks in general. Further-
+and let the receiver determine whether he or she satisfied more, different recipients can compute the intersection of
+thepolicy. theirinferencesetsforaparticularmessageandtrytonar-
+Our system provides policy privacy with respect to the rowdownthesetofpossiblepoliciesforthatmessage.
+Serverandclausalpolicy-indistinguishabilityforallrecip-
+ients. If the Server and recipient collude, however, both Senderandreceiveranonymity InPEAPOD,anyparty
+the recipient and the Server can learn the policy of the can retrieve from the Server ciphertexts for any user, say,
+sender. Therefore, some amount of trust must be placed Bob. ConfidentialityguaranteesthatonlyBobcandecrypt
+in the Server to not collude with users. One option is to theciphertextsandthereforeitdoesnotmatteriftheServer
+involvetheCAintheprotocolsothatcooperationwiththe gives away the re-encrypted ciphertexts to anyone unau-
+CAwouldalsobeneededtobreakpolicyprivacy.Involving thenticated or even anonymous. As a consequence, any-
+theCA,however,raisesissuessuchasperformance,offline onecouldhaveretrievedBob’sciphertextsandthisallows
+vs. onlineCAs,andsoon. Bob to deny that he requested the ciphertext. Therefore
+PEAPODsupportsaweakformofanonymityforreceivers
+Inference attacks on policy privacy We now examine called plausible deniability, which means that no user can
+the implications of the information that a recipient Bob be implicated with overwhelming probability. A detailed
+learnsaboutthepolicy.Asdiscussedearlier,ifBobsatisfies discussiononhowreceiverscanprotecttheiranonymityis
+‘≥0clauses,hecaninferonlythatthepolicyisoneamong outside the scope of this paper, but in general users can
+asetofpoliciesforwhichhesatisfies‘clauses.Wecallthis access the server using an anonymizing network such as
+set Bob’s “inference set,” within which all policies are in- Tor[13]. Thisapproach,however,opensupthepossibility
+distinguishabletoBob. SinceBob’sgoalistofigureoutthe of DoS attacks where malicious users can bog the Server
+exact nature of the ‘ clauses that he does satisfy, Bob can down with repeated requests for ciphertexts. Authentica-
+focus on policies with ‘ clauses and try to infer what they tion of receivers can alleviate this problem, but most au-
+maybe. WewillrefertothissetofpoliciesasBob’s“infer- thenticationschemeswilldestroythepropertyofplausible
+ence set restricted to ‘ clauses.” The size of the inference deniability. The system can employ deniable authentica-
+setwillvaryfordifferentreceivers. Insystemsthatsupport tion[14,22,29,26]toprovideplausibledeniability,11while
+only monotonic boolean formulae for policies, consider maintainingDoSresistance. Theservermayalsochooseto
+the trivial example: Bob has only one credential “is a employ authentication only when it is under DoS attack,
+smoker.” Ifheisabletodecryptthemessage,hecaninfer andforegoauthenticationundernormaloperation.
+thatthepolicycontainstheclause“is a smoker.” The Senders can post messages anonymously to the Server,
+size of the inference set (restricted to the satisfied clause) andthereforetheauthenticity(theidentityofthesender)of
+is 1. PEAPOD, however, provides much better guaran- messages cannot be guaranteed unless the sender digitally
+teessinceitsupportsnon-monotonicbooleanpolicies. For signs the message. If the sender desires anonymity, he or
+example, the inference set in PEAPOD would also in- shemaychoosetouseagroupsignaturescheme[10,4,5]to
+cludeavastnumberofotherpossibilitiessuchas“not in maintainanonymity(withinthegroup)whileguaranteeing
+their 30’s,”“not a college graduate ∧ is tothereceiverthatthemessagewassignedbysomebodyin
+a smoker,”andsoon. thegroup.
+Coalitionattacks Wenowdiscusssomeofthecoalition Dynamism We assume a static set of attributes that re-
+attackswhereseveralrecipients“poolin”theircredentials. mainsunchangedthroughoutthelifetimeofthesystem. It
+As a first line of defense, users cannot simply share the would be useful, however, to support the addition and re-
+piecesoftheirkeysharestogethersincetheyareforcedto movalofattributes,bothtothesystem,andtotheindividual
+compute the product of shares over their entire set of at- users’attributesets. Whileitisquitepossibletoadaptour
+tributes. Thereforethesimplepoolinginofcredentialswill systemtosupportdynamismwithoutlosingconfidentiality,
+not succeed in general. Consider the case when two col- maintainingpolicyprivacyinadynamicenvironmentisnot
+ludingreceiversobtaink k andk k respectively,andlet straightforward. Forexample,auserwhodoesnotsatisfya
+1 2 2 3
+k =k k k . Insuchascasekcannotberetrievedsincethe policywithrespecttoattributesetAmightsatisfythesame
+1 2 3
+individualpiecesk ,k andk arenotknowntothecollud- policyafterAhasbeenupdatedtosomedifferentattribute
+1 2 3
+ingusers. Incertaincases,however,theseproductscanbe set A0. By studying the difference between A and A0, the
+combinedmeaningfully. Sayk = k k . Bobmaypossess
+1 2 11Withsuchanauthenticationscheme,theServercannotprovetoany
+attributea butnota andCharliemaypossessattributea
+1 2 2 third party that Bob requested the ciphertext, even though the Server
+but not a 1. Bob will thus recover k 1 and Charlie will re- knowsthatBobrequestedit.usercanpossiblyinferthenatureofsomeattributesinthe architecture due to Blum and Paar [7] in Xilinx’s Virtex-5
+policy. One simple countermeasure would be to prevent XC5VLX330.14
+users from retrieving two versions of the same ciphertext In future work we plan to address various tradeoffs be-
+underdifferentattributesets. Weplantoaddresstheeffects tweenpolicyprivacyandthesystemparameterstoimprove
+of dynamism on policy privacy and suitable countermea- scalabilitywithrespecttothenumberofattributesninthe
+suresinfuturework. system. For example, users can pick a subset of attributes
+within which the policies are private. This would reduce
+theoverhead,andyetstillprovidesufficientpolicyprivacy
+Efficiency It is worth looking at the message expansion
+insystemswithalargenumberofattributes.
+imposedbyFull-PEAPODasaconsequenceofachieving
+thevariousdesirablepropertiesontopofsoleconfidential-
+ity. Let m be the number of established attributes and n 5.Conclusions
+be the maximum number of clauses in a policy. Also let
+λbethesecurityparameter,whichequalsthebit-lengthof
+We present PEAPOD, a system where publishers can
+the size of the group Z∗. Observe that a ciphertext has a
+p disseminate information securely to multiple possible re-
+(2λmn)-bit space overhead in addition to the symmetric
+cipientsusingattribute-basedpolicies. Unlikepreviousap-
+encryption of the plaintext message. When the size of the
+proaches that require online interaction or knowledge of
+plaintextmessageisbigenough,theexpansionisinsignif-
+the recipient’s identity or pseudonym beforehand, in our
+icant. Forexample, inthecasewhenn = 8, m = 50and
+approach messages are securely deposited at a server for
+λ = 1024, the overhead is 100 kilobytes. Both deposit-
+offline retrieval by multiple possible recipients unknown
+ingaciphertextandretrievingaciphertexthavespaceand
+to the sender. Users can decrypt these messages if and
+timecomplexitiesofO(mn)ifweignorethesymmetricen-
+only if their credentials satisfy the publisher’s policy, and
+cryptionanddecryption. Inparticular, whenBobretrieves
+the publisher does not gain any knowledge of the users
+a message, the Server must perform O(m n) operations,
+B “Hidden Credentials.” Our system uses SELS as a build-
+where m is the number of attributes that Bob has been
+B ing block to solve the problem of shared decryption keys
+issued credentials for. In the worst case, m = m and
+B between users with the same attribute and extends this
+theServerhastoperformmnre-encryptionandhomomor-
+technique with homomorphic encryption to provide mes-
+phicencryptionsteps.WestressthatFull-PEAPODisvery
+sage confidentiality and clausal policy-indistinguishability
+scalableintermsofnumberofusersinthesystembecause
+againstallrecipients,intendedornot,andcompletepolicy-
+thetimeandspacecomplexitiesofallalgorithmsareinde-
+indistinguishabilityagainsttheserver. Inthecontextofthe
+pendentofthenumberofusers.
+problem of securely publishing messages to multiple pos-
+Themaincomputationalbottleneckistheciphertextre-
+sible recipients, the policy privacy properties provided by
+trievalstepattheServer. Tohandlearetrievalrequest,the
+PEAPODsurpassthoseprovidedbyallpreviouslyknown
+Serverhastodo3modularexponentiationsand4modular
+Hidden Credential schemes. Unlike previous approaches,
+multiplicationsperattributeforeachclause.12 Onareason-
+PEAPODisalsoabletoefficientlysupportnon-monotonic
+ablyfastservermachinesuchasSunFireT2000[33],this
+booleanpolicies, i.e., policiesthatcontainnegationsofat-
+steptakeslessthan0.1sifn=8andm=50.13 Therefore,
+tributes.
+the system can handle at least 600 message retrieval per
+minute, which would be sufficient for organizational net-
+works. Forexample,acollegeorauniversitycouldbeeas- 6.Acknowledgments
+ilyservicedwithoutnoticeabledelays. Furthermore, since
+theretrievaloperationisnaturallyparallelizable,FieldPro- WewouldliketothankAlexanderIliev, ChrisMasone,
+grammable Gate Arrays (FPGAs) can be used to signifi- Peter Johnson, Nikos Triandopoulos, and Nihal D’Cunha
+cantly reduce the amount of time for retrieving messages. fortheirhelpfulcomments.
+AsFPGAsgetfasterandcheaper, onecouldfitseveralre-
+encryption engines onto a single FPGA. For example, us-
+References
+ing current technology, one could fit seven 1024-bit exp.
+12Specifically,1modularexponentiation(exp.) and1modularmulti- [1] M.AbeandK.Suzuki. M+1-stpriceauctionusinghomo-
+plication(mul.) forre-encryption,2exp. and1mul. forencryptingthe
+morphicencryption. InD.NaccacheandP.Paillier,editors,
+blindingfactorand2mul.forhomomorphicoperation.
+13Thismachinecando17,0231024-bitDSA-signingpersecond[32]. PublicKeyCryptography,volume2274ofLectureNotesin
+The0.1sestimateisbasedontwoassumptions: oneDSA-signingtakes ComputerScience,pages115–124.Springer,2002.
+thesametimeasoneexp.;andfourmul. takethesametimeasoneexp.
+Theseareconservativeassumptionsandthereforetheestimateisaloose 14Blum and Paar’s architecture occupies 6633 Configurable Logic
+upperbound. Inpractice,oneshouldbeabletoachievemuchbetterper- Blocks(CLBS)andcandooneexp.in11.95ms.XC5VLX330has51840
+formance. slices.[2] A.Acquisti.Receipt-freehomomorphicelectionsandwrite- [19] M. Hirt and K. Sako. Efficient receipt-free voting based
+in ballots. Cryptology ePrint Archive, Report 2004/105, onhomomorphicencryption. InEUROCRYPT,pages539–
+2004. http://eprint.iacr.org/. 556,2000.
+[3] C.AdamsandS.Farrell. InternetX.509PublicKeyInfras- [20] J.E.Holt,R.W.Bradshaw,K.E.Seamons,andH.Orman.
+tructure CertificateManagement Protocols. Internet Engi- Hiddencredentials.In2ndACMWorkshoponPrivacyinthe
+neeringTaskForce:RFC2510,1999. ElectronicSociety,Washington,DC,pages1–8,oct2003.
+[4] G. Ateniese, J. Camenisch, M. Joye, and G. Tsudik. A [21] A. Ivan and Y. Dodis. Proxy cryptography revisited. In
+practicalandprovablysecurecoalition-resistantgroupsig- NDSS.TheInternetSociety,2003.
+nature scheme. In M. Bellare, editor, CRYPTO, volume [22] J. Katz. Efficient and non-malleable proofs of plaintext
+1880ofLectureNotesinComputerScience,pages255–270. knowledge and applications. In E. Biham, editor, EURO-
+Springer,2000. CRYPT, volume 2656 of Lecture Notes in Computer Sci-
+[5] M. Bellare, H. Shi, and C. Zhang. Foundations of group ence,pages211–228.Springer,2003.
+signatures: The case of dynamic groups. In A. Menezes, [23] H.Khurana,A.J.Slagell,andR.Bonilla. Sels: asecuree-
+editor,CT-RSA,volume3376ofLectureNotesinComputer maillistservice.InH.Haddad,L.M.Liebrock,A.Omicini,
+Science,pages136–153.Springer,2005. andR.L.Wainwright,editors,SAC,pages306–313.ACM,
+[6] M.Blaze,G.Bleumer,andM.Strauss. Divertibleprotocols 2005.
+[24] J.LiandN.Li. Policy-hidingaccesscontrolinopenenvi-
+and atomic proxy cryptography. In EUROCRYPT, pages
+ronment. InProceedingsofACMSymposiumonPrinciples
+127–144,1998.
+ofDistributedComputing(PODC),pages29–38,jul2005.
+[7] T.BlumandC.Paar. High-radixmontgomerymodularex-
+[25] H.Lipmaa. Verifiablehomomorphicoblivioustransferand
+ponentiationonreconfigurablehardware.IEEETrans.Com-
+private equality test. In C.-S. Laih, editor, ASIACRYPT,
+put.,50(7):759–764,2001.
+volume2894ofLectureNotesinComputerScience,pages
+[8] D.BonehandM.Franklin. Identity-basedencryptionfrom
+416–433.Springer,2003.
+the Weil pairing. Lecture Notes in Computer Science,
+[26] M.Naor. Deniableringauthentication. InCRYPTO2002,
+2139:213–229,2001.
+volume 2442 of LNCS, pages 481–498. Springer-Verlag,
+[9] R.W.Bradshaw,J.E.Holt,andK.E.Seamons. Conceal-
+2002.
+ingcomplexpolicieswithhiddencredentials. InEleventh
+[27] P. Paillier. Public-key cryptosystems based on composite
+ACMConferenceonComputerandCommunicationsSecu-
+degree residuosity classes. In EUROCRYPT, pages 223–
+rity,Washington,DC,pages146–157,oct2004.
+238,1999.
+[10] D.ChaumandE.vanHeyst. Groupsignatures. InEURO-
+[28] G. Poupard and J. Stern. Fair encryption of rsa keys. In
+CRYPT,pages257–265,1991.
+EUROCRYPT,pages172–189,2000.
+[11] X.Chen,B.Lee,andK.Kim. Receipt-freeelectronicauc-
+[29] M.D.RaimondoandR.Gennaro.Newapproachesfordeni-
+tionschemesusinghomomorphicencryption. InJ.I.Lim
+ableauthentication.InV.Atluri,C.Meadows,andA.Juels,
+and D. H. Lee, editors, ICISC, volume 2971 of Lecture
+editors, ACM Conference on Computer and Communica-
+NotesinComputerScience,pages259–273.Springer,2003.
+tionsSecurity,pages112–121.ACM,2005.
+[12] I.Damga˚rdandM.Jurik. Alength-flexiblethresholdcryp-
+[30] R. L. Rivest, L. Adleman, and M. L. Dertouzos. On
+tosystem with applications. In R. Safavi-Naini and J. Se-
+data banks and privacy homomorphisms. In R. DeMillo,
+berry, editors, ACISP, volume 2727 of Lecture Notes in
+D. Dobkin, A. Jones, and R. Lipton, editors, Foundations
+ComputerScience,pages350–364.Springer,2003.
+of Secure Computation, pages 169–180. Academic Press,
+[13] R.Dingledine, N.Mathewson, andP.Syverson. Tor: The
+1978.
+Second-GenerationOnionRouter. InUsenixSecurity,aug
+[31] A.SahaiandB.Waters.Fuzzyidentitybasedencryption.in
+2004. advances. InAdvancesinCryptology–Eurocryptvolume
+[14] C. Dwork, M. Naor, and A. Sahai. Concurrent zero-
+3494ofLNCS,pages457–473,2005.
+knowledge. J.ACM,51(6):851–898,2004. [32] SunMicrosystems. Sun fire T1000 and T2000 Servers
+[15] K. Frikken, J. Li, and M. Atallah. Trust negotiation with Benchmarks, 2006. http://www.sun.com/
+hidden credentials, hidden policies, and policy cycles. In servers/coolthreads/t1000/benchmarks.
+13thAnnualNetworkandDistributedSystemSecuritySym- jsp#j.
+posium,pages157–172,feb2006. [33] SunMicrosystems.SunFireT2000Server,2006.http://
+[16] P.Golle,M.Jakobsson,A.Juels,andP.F.Syverson. Uni- www.sun.com/servers/coolthreads/t2000/.
+versalre-encryptionformixnets.InT.Okamoto,editor,CT- [34] K.SuzukiandM.Yokoo. Securegeneralizedvickreyauc-
+RSA,volume2964ofLectureNotesinComputerScience, tionusinghomomorphicencryption.InR.N.Wright,editor,
+pages163–178.Springer,2004. FinancialCryptography, volume2742ofLectureNotesin
+[17] V. Goyal, O. Pandey, A. Sahai, and B. Waters. Attribute- ComputerScience,pages239–249.Springer,2003.
+based encryption for fine-grained access control of en- [35] W.H.WinsboroughandN.Li.Towardspracticalautomated
+crypted data. In CCS ’06: Proceedings of the 13th trust negotiation. In Proceedings of the IEEE 3rd Inter-
+ACM conference on Computer and communications secu- nationalWorkshoponPoliciesforDistributedSystemsand
+rity,pages89–98,NewYork,NY,USA,2006.ACMPress. Networks,pages92–103,June2002.
+[18] J. Groth. A verifiable secret shuffle of homomorphic en- [36] W. H. Winsborough and N. Li. Safety in automated trust
+cryptions. InY.Desmedt,editor,PublicKeyCryptography, negotiation.InProceedingsofthe2004IEEESymposiumon
+volume2567ofLectureNotesinComputerScience,pages Security and Privacy, pages 147–160, Oakland, CA, May
+145–160.Springer,2003. 2004.IEEEPress.[37] W.H.Winsborough,K.E.Seamons,andV.E.Jones.Auto- in Full-PEAPOD consists of the symmetric encryption ψ
+matedtrustnegotiation. InDARPAInformationSurvivabil- of the plaintext message M under a randomly chosen key
+ity Conference and Exposition (DISCEX), pages 88–102, k and an array of Elgamal encryption of either a sub-key,
+Jan.2000. a random value or the identity element. The Elgamal ci-
+[38] T.YuandM.Winslett. Aunifiedschemeforresourcepro-
+phertext at the i-th row and j-th column in the array is an
+tectioninautomatedtrustnegotiation.InProceedingsofthe
+encryption under the public key of attribute j. The under-
+IEEESymposiumonSecurityandprivacy,pages110–122,
+lyingplaintextisasub-key,arandomvalueortheidentity
+May2003.
+element if the j-th attribute is respectively a required, for-
+[39] T.Yu,M.Winslett,andK.E.Seamons. Supportingstruc-
+turedcredentialsandsensitivepoliciesthroughinteropera- biddenorirrelevantattributeforthei-thclauseinthepolicy.
+blestrategiesforautomatedtrustnegotiation. ACMTrans. Now, assume there exists a PPT adversary A who can
+Inf.Syst.Secur.,6(1):1–42,2003. tellwhichmessageamongM andM wasusedintheen-
+0 1
+cryption that resulted in the challenge ciphertext C∗ with
+A.SecurityProofs probability non-negligibly greater than 1/2. The semantic
+securityofthesymmetricencryptionimpliesthatAknows
+thesymmetrickeyk.Theknowledgeofkimpliesthatthere
+A.1.Lemmas
+is at least one clause in the challenge policy P∗ such that
+Aknowstheproductofallthesub-keysforthatclause. We
+We need the following lemmas for the proof of
+claimthatthisimpliesthatAknowsalltheindividualsub-
+Full-PEAPOD’s confidentiality and policy privacy. The
+keysintheproductforthatclause. Suchknowledgemeans
+implication of Lemma 1 with respect to Full-PEAPOD is
+thatAknowsthesetK∗ ofElgamaldecryptionkeystothe
+that if a randomness is added to the set of sub-keys of the
+encryptionofallthosesub-keys,asotherwiseElgamalen-
+symmetrickeyandthenthewholesetisblinded,theknowl-
+cryption would not be IND-CPA secure, contradicting to
+edge of such a set is useless in recovering the symmetric
+theassumptionthattheDDHproblemishardinZ∗.
+key. The lemma can easily be generalized so that there p
+We need to consider both cases when A corrupted the
+couldbemorethanonerandomnessandtheycanbeatar-
+ServerandwhenAdidnot. Intheformercase,themodel
+bitrarypositions. Lemma2saystheblindingoperationon
+requiresthatAdidnotcorruptanyoftheusers. TheServer
+atupleretainsonlytheproductoftheentries,butindividual
+itself does not know any of the Elgamal decryption keys.
+blindedvaluesrevealnothingabouttheunderlyingvalues.
+The Server knows all the transformation secret keys, but
+RecallthatinFull-PEAPOD,theplaintextbehindeachof
+without the help of the CA or any user in the system, the
+theElgamalciphertextsiseitherasub-key,arandomvalue
+transformation secret keys have statistical zero-knowledge
+ortheidentityelement. Withthislemma,thesethreetypes
+onanyoftheElgamaldecryptionkeys. Thiscontradictsto
+ofvaluesarenolongerdistinguishableafterblinding.
+thefactthatAknowsK∗.
+$
+We write a ← S to mean that a is drawn from set S
+In the latter case, A might have corrupted some sub-
+usingfreshcoin-flipsaccordingtoauniformdistribution.
+set of users. However, Restriction 10 guarantees that any
+Lemma1 ∀m ∈ N, ∀x ,x ,...,x ∈ Z∗, the random coalitionofcorruptedusersdoesnotcollectivelysatisfythe
+1 2 m p
+variables X = (b x , b x , ..., b x , (Πm b )−1r), challengepolicyP∗,whichmeansthatforanyunionofcor-
+where b ,b
+,...,b1 ,r1 ←$2 Z2
+∗, and
+Rm =m
+(r
+ri= ,1 .i
+.., r ,
+rupted users’ attribute set and any clause in P∗, the union
+1 2 m p 1 2 m does not satisfy the clause, which is so either because at
+r m+1), where r 1,r 2,...,r m+1 ←$ Z∗ p, have the same dis- least one required attribute is missing from the union, or
+tribution. oneforbiddenattributeispresentintheunion. Theformer
+possibility contradicts to the fact that A knows K∗. The
+Lemma2 ∀m ∈ N,∀x ,x ,...,x ∈ Z∗,therandom
+1 2 m+1 p latterpossibilityalsocontradictstotheverysamefact,due
+variablesX =(b x ,b x ,...,b x ,(Πm b )−1x ),
+1 1 2 2 m m i=1 i m+1 toLemma1.
+where b 1,b 2,...,b m ←$ Z∗ p, and R = (r 1, r 2, ..., r m, Therefore, theredoesnotexistaPPTadversaryAwho
+Πm+1x ·(Πm )−1r ), wherer ,r ,...,r ←$ Z∗, have can win the game with probability non-negligibly greater
+i=1 i i=1 i 1 2 m p
+than 1/2. Finally, we note that the above is only a proof
+thesamedistribution.
+sketch. Inafullproof,onewouldhavetosimulatethede-
+Theproofsforbothlemmasarestraightforwardandare positandretrievalqueries,whichcouldbeachievedbyfol-
+thusomitted. lowingtheprotocolspecification. Thecontradictioncould
+bederivedbyembeddingaDDHprobleminstanceintoone
+A.2.Proofs ofthearrayentriesofElgamalciphertextsinthechallenge
+ciphertext. Such a challenge ciphertext can be simulated
+Proof1(Theorem1) (Sketch.) Recallthataciphertextre- correctlywithouttheknowledgeofsub-keybehindthatpar-
+turned by the encryption algorithm executed by a sender ticularElgamalciphertext. (cid:3)Proof2(Theorem2) (Sketch.) Observe that during en- domshufflingexecutedattheencryptionstep, twopolices
+cryption,thepolicyaffectsonlythearrayofplaintextsthat with the same number of satisfying clauses have the same
+aretobeElgamal-encrypted. Thesymmetricencryptionof statisticaldistributionoftheplaintextproducts. Therefore,
+the message is totally independent of the policy. To prove the two challenge policies are indistinguishable to A and
+that Full-PEAPOD has Clausal Policy Indistinguishabil- thusAcouldnothavewonthegamewithprobabilitynon-
+ity, it suffices to show the two ciphertexts resulted from negligiblygreaterthan1/2inthiscase.
+anymessageencryptedwithtwodifferentpolicieswiththe Combining all cases leads to the conclusion that there
+samenumberofsatisfyingclauseswithrespecttoanadver- does not exist a PPT adversary A who can win the game
+sary are statistically indistinguishable, thereby leaving the withprobabilitynon-negligiblygreaterthan1/2. (cid:3)
+adversary no chance in making a correct guess on which
+policywasusedanybetterthanpureguessing,i.e. itcan’t Proof3(Theorem3) (Sketch.) As discussed,
+winwithprobabilitynon-negligiblygreaterthan1/2. Full-PEAPOD is an offline system in which a sender
+only interacts once with the Server during a deposit and
+Assume there exists a PPT adversary A who can win
+the receiver only interacts once with the Server during
+the game with probability non-negligibly greater than 1/2.
+a retrieval. Receivers never contact with senders during
+Let’s first consider the possibility that A corrupted the
+retrieval or decryption. The transcripts for retrieval
+Server during the game. In such a case, A did not cor-
+protocol runs consist of retrieved ciphertexts. The size
+rupt any of the users or otherwise could not have won the
+of the ciphertext retrieved by any user is independent of
+game.Sincetheserverdoesnotpossessthedecryptionkeys
+the attribute set possessed by the user. Furthermore, by
+ofanyoftheattributes,alltheElgamalciphertextswithina
+arguments similar to the proof sketch for policy privacy,
+depositedciphertexthavecomputationalzeroknowledgein
+the IND-CPA security of Elgamal encryption implies that
+their underlying plaintexts, the knowledge of which is re-
+the sender who does not have any credentials to decrypt
+quiredtotellwhetheranattributeisrequired,forbiddenor
+a retrieved ciphertext is unable to learn non-negligible
+irrelevant for each clause. Thus, a ciphertext deposited at
+information from the Elgamal ciphertexts about their
+theserverhaszeroknowledgeinthepolicyunderwhichit
+underlyingplaintexts. Theresultfollows. (cid:3)
+wascreated, meaningthatanadversarywhocorruptedthe
+server in order to attack policy privacy of Full-PEAPOD
+cannot do any better then pure guessing which one of the
+twochallengepolicieswasused.
+Therefore, A must have won without corrupting the
+Server, in which case A might have corrupted up to one
+honest user. If A did not corrupt any user, then by argu-
+ments similar to the above, a ciphertext deposited at the
+serverhaszeroknowledgeinthepolicyunderwhichitwas
+created and thus A could only win with probability negli-
+giblygreaterthan1/2. Theonlypossibilityleftisthusthat
+A corrupted exactly one honest user. Note that the game
+specificationimpliesthatthissinglecorruptedusersatisfies
+thesamenumberofclausesinbothchallengepolicies. The
+followingderivesacontradiction.
+The ciphertexts the adversary retrieves from the server
+haveallgonethroughtheblindingstepthroughthehomo-
+morphic operation on the individual Elgamal ciphertexts.
+Lemma2impliesthatthedecryptionofanyoftheseElga-
+malciphertextscouldhavebeenasub-key,arandomvalue
+or the identity element before blinding and the adversary
+has statistically zero knowledge to tell which is the case.
+This means any attribute in any clause in the policy could
+be a X-attribute, ×-attribute, or ∗-attribute. The only in-
+formationaretrievedciphertextcarryisthustheproductof
+the plaintexts for each clause, which is either equal to the
+symmetrickeyiftheclauseissatisfiedbytheadversary,or
+agroupelementdistributedoverZ∗uniformlyatrandomif
+p
+theclauseisnotsatisfiedbytheadversaryorifitisabogus
+one, due to Lemma 1. Finally, due to the uniformly ran-

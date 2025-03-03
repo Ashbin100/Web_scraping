@@ -1,0 +1,664 @@
+Distributed Policy Management for JDK 1.2
+Pekka Nikander Jonna Partanen
+pekka.nikander@ericsson.com jonna.partanen@hut.fi
+Ericsson Telecom Research1 Helsinki University of Technology
+Abstract1 1. Introduction
+InJDK1.2,thesecurityarchitecturesupportsfinegrained The Java runtime environment (JRE) seems to be the first
+access control. In the default implementation, Java run- widely accepted architecture for mobile code. From the
+time modules (classes) are signed, and permissions are very beginning, Java has addressed the security concerns
+configured through a configuration file using the signer’s arisingfromexecutingcodeloadedfromtheuntrustednet-
+identityandtheloadinglocation(URL)ofthemodule.Ina work on a local computer, mainly assuring that malicious
+largenetwork,thenumberofappletsandthefrequencyof code cannot tamper with the local machine or network.
+changes to the security policy will eventually grow very Inthefirsttworeleases(1.0and1.1)theapproachwas
+large.Inalargeorganization,changingtheconfiguration simple:anyuntrustedcodewasplacedinaconfinedenvi-
+file in all Java enabled workstations and devices every ronment,thesandbox,whereitsattemptstocommunicate
+time a need arises may be very hard. with the external world were monitored and restricted. In
+In this paper, we describe a better scaling solution. We JDK 1.0, all code loaded from the network was regarded
+use authorization certificates to delegate permissions to as untrusted, and prohibited from performing any opera-
+Javamodules.InJDK1.2,thepermissionsareattachedto tions considered dangerous. These included, for example,
+the runtime modules through protection domains. In our accessing the local file system, opening network connec-
+implementation,eachprotectiondomainmaybedecorated tions (to other machines but the one the code was loaded
+with one or more SPKI certificates. These certificates di- from), and accessing environment variables or Java prop-
+rectly describe the possible permissions of the domain. ertiesthatmightrevealinformationaboutthelocalsystem
+Theactualpermissionsdependonthecurrentlyvalidcer- oruser.Java1.1enhancedthisapproachslightlybyadding
+tificate chains leading to these certificates. thenotionofsignedapplets.Basically,intheJava1.1en-
+In addition to the certificates distributed with the mod- vironment the local user could configure whether signed
+ules, certificates for the chains may be retrieved from a appletswereconsideredtrustedoruntrusted.Alluntrusted
+distributed directory service. This approach makes it pos- code was still executed in the sandbox, equally restricted
+sible to fully distribute Java security policy management, as before.
+allowing, among other things, security policy to be Fromanaccesscontrolpointofview,JDK1.2isahuge
+changedandnewpermissionstypestobeintroducedwith- improvement. Aswe describein more detail in Section2,
+out any modifications to the local configuration. Further- JDK 1.2 allows fine grained access control in the form of
+more, the permissions need not be statically assigned but permissions.WheneveraJavaclassisloaded,itisassoci-
+can be dynamically derived from the SPKI certificates as ated with a number of permissions that represent the ac-
+needed. cessrightstheclasshas.Wheneveracontrolledresourceis
+Our approach also enables further extensions. In par- accessed,theruntimeverifiesthatallclassesinthemethod
+ticular, we propose how permissions could be delegated callstackhavesufficientpermissionsforaccessingthatre-
+from a domain in one JVM to a domain in another JVM. source.
+This could eventually lead to a fully distributed secure Unfortunately, the JDK 1.2 default implementation
+Java execution environment. does not address the administrative needs of distributed
+systems. A configuration file is used to describe how per-
+missions are granted to each class, based on the signa-
+1 Pekka Nikander was at Helsinki University of Technology ture(s) the class file has and the location the class was
+when most of this work was accomplished. loadedfrom.Inpracticalterms,thismeansthattheadmin-
+1of11istratorof alocal,distributed Java environmenthas toan- • I istheIssuer’s(signers)publickey,orasecurehashof
+ticipate beforehand all possibly needed permission the public key,
+combinations, and to create corresponding signature keys • S istheSubjectofthecertificate,typicallyapublickey,
+and security configurations for them. If need arises to asecurehashofapublickey,orasecurehashofsome
+change these, the configuration files must be updated on other object such as a Java class,
+all affected machines. • D is a Delegation bit,
+If we think about the suggested idea of using Java in • A istheAuthorizationfield,describingthepermissions
+various kinds of equipment, including embedded devices orotherinformationthatthecertificate’sIssuergrantsto
+such as cell phones, PDAs and network routers, the con- or attests of the Subject,
+ceptoflocallymanagingtheJavasecurityconfigurationin • V is a Validation field, describing the conditions (such
+alldeviceswillclearlycreateanadministrativenightmare. asatimerange)underwhichthecertificatecanbecon-
+Of course, it is possible, at least in theory, to remotely sidered valid.
+manage the security configurations in the same way as The meaning of an SPKI certificate can be stated as fol-
+otherconfigurationfilesaremanaged.InJDK1.2,thereis lows:
+thepossibilityofdefiningthelocationoftheconfiguration BasedontheassumptionthatIhasthecontroloverthe
+file as an URL, so the file could be fetched from a Web rights or other information described in A, I grants S the
+server. Remote management, however, requires secure rights/property A whenever V is valid. Furthermore, if D
+management connections, which in a pure Java environ- istrueandSisapublickey(orahashofapublickey),S
+mentwillprobablybecontrolledbythelocalsecuritycon- may further delegate the rightsA or any subset of them.
+figuration files, i.e., the very files the manager wants to [6]
+modify.
+Example.Letusconsiderasimplesituation,whereAlice
+wants to allowall applets signedbyBob tobeable toac-
+The rest of this paper is organized as follows. In the re-
+cessthelocaltemporarydirectory,/tmp,onherlocalma-
+mainderofthissection,webrieflyintroducetheconceptof
+chine. Conceptually, this allowance could be represented
+authorization certificates in general, and SPKI in particu-
+by an SPKI certificate (K , K , Yes, (Java-Permis-
+lar.Inthenextsection,wedescribetherelevantdetailsof Alice Bob
+sion(File-Access“/tmp/*”)),Always).Basically,thiscer-
+thebasicJDK1.2securityarchitectureinordertobeable
+tificate states that Alice delegates Bob the right to
+toshowwhereourmodificationsplugin.Amorecomplete
+authorize applets to access files in /tmp. To complete a
+description is available in [8]. In Section3, we discuss
+certificate loop, two other certificates are needed. First,
+someweaknessesofthebasicarchitectureandimplemen-
+Bob must create a certificate for the applet in question:
+tation, mainly from the management point of view, and
+(K ,hash(applet),No,(Java-Permission(File-Access“/
+outlineourmodificationandcustomizationsinconceptual Bob
+tmp/*”)),Always).Second,thelocalmachinemusthavea
+terms.Section4describesourarchitectureindetail.Next,
+local certificate that delegates a right to administer local
+in Section5, we describe the prototype implementation,
+Java permissions to Alice: (K , K , Yes,
+and give initial performance measurements. In Section6, local-machine Alice
+(Java-Permission (All-Permission)), Always).
+we suggest a way of extending JDK 1.2 security domains
+across distributed Java Virtual Machine (JVM) environ-
+2. Basic security architecture in JDK 1.2
+ments with the help of SPKI certificates. Finally, in
+Section7, we present our conclusions from this research.
+The JDK 1.2 security architecture contains two parts: an
+1.1. Authorization certificates access control architecture and a number of cryptography
+related classes. Their integration is relatively loose. The
+componentsoftheaccesscontrolarchitectureareenumer-
+Authorizationcertificates,orsignedcredentials,aresigned
+ated in Table1 and discussed in more detail in
+statements of authorization, first independently described
+Sections2.1–2.4. Section2.5 describes the relevant cryp-
+in the SDSI [16] and PolicyMaker [4] prototype systems
+tographic classes.
+andtheSPKIinitiative[5].SomeoftheSDSIandPolicy-
+Maker ideas are being merged to SPKI, which in turn is
+2.1. Permissions
+being standardized by the IETF as an alternative to the
+rigid X.509 based identity certificate hierarchy.
+Thebasicideaofanauthorizationcertificateissimple. JDK 1.2 introduces a new type of classes, called Permis-
+InSPKIterms,acertificateisbasicallyasignedfivetuple sions,thatareusedinsidetheJavaruntimeenvironmentto
+(I,S,D,A,V) where represent access rights to protected resources. Each pro-
+tectedresourceinthesystemhasacorrespondingPermis-
+2of11Table 1: The parts of the JDK 1.2 access control Architecture
+Class or classes The role of the class or classes
+Permission and its subclasses Represent different “tickets” or access rights, i.e., permissions.
+ProtectionDomain Connects the Permission objects to executing classes.
+SecureClassLoader and its subclasses Load classes and create protection domains.
+Policy and its subclasses Decide what Permission objects each class gets.
+AccessController The reference monitor.
+sion object. The Permission object can be seen as a cryptographic certificates that indicate the signatures the
+capability or a “ticket” that grants access to the resource. classhas.Theclassesareplacedintheprotectiondomains
+Typically,therearemanyinstancesofagivenPermission, corresponding to their CodeSources. If a class is not
+possessed by and thus granting access to different classes. signed, or if the signature cannot be verified, the class is
+Permissions are divided into several subtypes that ex- placedinaprotectiondomainthathasanemptysetofcer-
+tendthePermissionclass.Eachresourcetypeorcate- tificates.
+gory, such as files or network connections, has its own Allclassesinthesameprotectiondomaingetthesame
+Permission subclass. Inside the category, different in- permission objects. However, classes with identical per-
+stancesoftheclasscorrespondtodifferentinstancesofthe missions may belong to different protection domains, be-
+resource. In addition, the programmers may provide their causemanyprotectiondomainsmayhappentohavebeen
+own Permission subclasses if they create protected re- grantedasimilarsetofpermissionsbythecurrentsecurity
+sources of their own. policy.
+Somepermissionsaremoregenericthanothers.Forex-
+ample, a single permission object may grant access to 2.3. AccessController
+more than one instance of the controlled resource. Such a
+more generic permission instance implies a number of
+The AccessController is the JDK 1.2 incarnation of the
+more restricted permissions. Thus, for example, the File–
+reference monitor concept [1]. That is, when a thread re-
+Permission(“/tmp/*”,“read,write”)objectimpliestheFile-
+questsaccesstoaprotectedresourcesuchasafile,theAc-
+Permission(“/tmp/foo.txt”, “read”) permission. Instances
+cessController object is asked whether the access is
+of the class AllPermission imply all other permissions.
+granted or not. To determine this, the AccessController
+checks the execution context to see if the caller has the
+2.2. ProtectionDomains Permission object corresponding to the resource. For ex-
+ample,ifaclasstriestoreadthefile/home/jhp/myfile,its
+Just as in any capability-based access control system, the protection domain must have the FilePermission(“/home/
+Java classes must be prevented from creating permissions jhp/myfile”, “read”), or some other permission that im-
+forthemselvesandthusgainingunauthorizedaccess.This plies this permission.
+is the task of ProtectionDomains. Askingforanaccessthatrequiresaspecificpermission
+Each class belongs to one and only one ProtectionDo- may be made by a method that was called from another
+main.EachProtectionDomainhasaPermissionCollection
+object that holds the permissions of that domain (see
+Figure1). Only these permissions can be used to gain ac- Class 1
+cesstoresources.TheclassescannotchangetheirProtec-
+Class 2
+tionDomain nor the PermissionCollection of the domain. Domain A Permissions
+Class 3
+Thus,theclassesarefreetocreateanypermissionobjects
+they like, but they cannot affect the access control deci- Class 4
+sions and gain unauthorized access. Domain B Permissions
+In the current JDK 1.2 implementation the protection Class 5
+domain of a class is uniquely identified by the Code–
+Source of the class. A CodeSource consists of the code-
+base or URL that the class was loaded from, and a set of Figure 1: Classes, domains and permissions
+3of11class. This class may belong to a different protection do- inganinconsistentstateincasethepermissionsofaclass
+main.Sinceitisimportantthataclassdoesnotbypassthe changeinmid-actionanditisnotabletocompletethetask
+access control simply by calling another class with more it has begun.
+permissions,theAccessControlleralsochecksallthepre- The security policy in the current JDK 1.2 implemen-
+vious classes in the call chain. The general algorithm is tation is semi-static. That is, it does have a refresh()
+thatifclassAcallsclassB,whichinturncallsclassCand method,butitmustbecalledexplicitlyanditonlyaffects
+soon,andfinallyclassMtriestoreadafile,thentheAc- the permissions granted after the method was called. The
+cessController checks each class from M to A to see if protection domains that have been granted their permis-
+theyallhavetherequiredpermission.Ifsomeclassinthe sions prior to the refresh still have the same permissions
+callchaindoesnothavethepermission,AccessController after it.
+throwsanexception.Otherwiseitreturnsquietly,implicat- The class Policy is an abstract class. The actual im-
+ing that the request has been accepted. plementation, which can be changed, defines how the se-
+There is one irregularity to the general access control curity policy is managed. The default policy
+algorithm. A class may ask the AccessController to mark implementationofJDK1.2usesasetofconfigurationfiles
+it as “privileged” while performing a task. This marking to define the security policy.
+createsanartificialbottomtothecallstack.WhentheAc- There is one configuration file for defining a system-
+cessControllerreachesaclassmarkedprivileged,itchecks wide security policy. Each user may additionally have
+whetherthisclasshasthepermissioninquestionandthen their own policy file. All the definitions are additive, so
+stops. The preceding callers are not checked. permissions can only be granted, not taken away. If the
+To further ensure that the access control cannot be by- policy files do not exist or their format is incorrect, the
+passed,anythreadinheritsitsparent’saccesscontrolcon- classes end up in the sandbox.
+text. The AccessControlContext object contains all Thepolicyconfigurationfileisclearlyakindofanac-
+information relevant to making access control decisions. cess control list (ACL). As all ACLs, it has the disadvan-
+tagethatitmustbemaintainedlocally,i.e.,theaccessright
+2.4. Policy management cannot be easily distributed while still pre-
+servingsecurity.Ifwewanttomakethismanagementeas-
+Asecuritypolicydefinestherulesthatmandatewhichac- ier to distribute, changing the configuration files with a
+tionstheactorsinthesystemareallowedordisallowedto capability-based policy definition looks like a promising
+do [1]. Java security policy, implemented as a subclass of approach.
+theclassPolicy,defineswhatpermissionseachprotection
+domaingets.Thereisaclearseparationofdutiesbetween 2.5. Keys, certificates and certificate
+the AccessController and a Policy object: the Policy de- management
+finestherulesandtheAccessControllerenforcesthem.In
+other words, the Policy gives you the tickets and Access- As mentioned above, the classes are placed in the protec-
+Controllerchecksthematthegate.Thismeansthatwecan tion domains according to where they have been loaded
+change the policy according to which we distribute the from, and what keys they have been signed with. To be
+permissions, without having to touch the AccessControl- able to sign classes and verify the resulting signatures,
+ler. Java includes a basic set of cryptographic functionality.
+Asecuritypolicycanbestaticordynamic.Astaticse- Theconceptsofcryptographickeys,digitalsignaturesand
+curity policy is fixed: the permissions of a class cannot certificatesareacentralpartofthisfunctionality.Thekeys
+changeonceitisloadedtotheJRE.However,thepermis- areusedasinputtothesignaturefunctions,andthecertifi-
+sions can be different in the next time the class is loaded, cates are used for telling the verifier the key that can be
+during another run of the JRE. Having a static security used to verify the signature, and whom the key belongs to.
+policy has some performance advantages. On the other TheCertificateinterface,whichistheJavarepre-
+hand,iftheruntimesessionislong,thecircumstancesmay sentation of certificates, has the following methods:
+change so much that a change in the security policy is equals, getEncoded, getPublicKey, getType, hashValue,
+needed. Further more, even if the sessions are short, a toStringandverify.Althoughtheinterfacewasdesignedto
+changeinthepolicymaybesoimportantthatitmusttake beasuperclassforidentitycertificates,withlittleimagina-
+effectimmediately.Thus,dynamicsecuritypolicythatcan tionitisgeneralizabletoauthorizationcertificatesaswell
+bechanged“onthefly”isthepreferredsolutionbecauseit [14].
+provides better security. However, a dynamic policy re- JDK 1.2 has general interfaces for public key cryptog-
+quires some means for performing a set of actions in an raphy,includingKey,PublicKey,PrivateKey,KeyPairand
+atomic manner in order to prevent the system from enter- KeyPairGenerator. The KeyFactory takes care of convert-
+4of11ing keys to raw key material, called KeySpec, and vice As already described in Sections 2.2 and 2.4, the de-
+versa.TherearealsomorespecificinterfacesforRSAand fault implementation of the Policy object in JDK 1.2 run-
+DSA keys and their handling. The runtime can have sev- time environment reads the permissions from a (usually
+eral providers of classes that implement the interfaces. local)securityconfigurationfile.Thismeans,amongother
+Key and certificate management in Java is handled by a things, that whenever the user wants to create a new per-
+KeyStoreclassthatstoreskeysandthecorrespondingcer- mission, to create a new combination of existing permis-
+tificates. sions,toassignpermissionstoanewlycreateddomain,or
+toremovepermissionsfromadomainoverwhichthelocal
+3. Shortcomings and remedies organization has no direct control, the user has to edit the
+security configuration file.
+If we think about large scale Java deployment, such as
+While the JDK 1.2 access control system provides fine
+using large numbers of Java terminals within a multina-
+granularity and flexible configuration facilities, its default
+tional enterprise, or using Java in embedded devices such
+implementationhasanumberofweaknessesthatdiminish
+as cell phones or PDAs, changing the configuration sepa-
+its power in practical deployment in a distributed system.
+ratelyineachdeviceiseitherimpracticalortooexpensive
+First, the permissions associated with each domain must
+in practice. Clearly, alternative means are needed.
+bedefinedthrougha(usuallylocal)configurationfileprior
+An obvious, but less-than-optimal solution is to place
+toloadingtheclassestotheruntimeenvironment.Second,
+the configuration file in a directory that is shared, e.g.,
+the way classes are divided in security domains is some-
+through NFS, or to use some kind of distributed database
+whatrigidandarbitrary.Theformerpropertyismoresig-
+or a remote configuration mechanism such as Sun Micro-
+nificant, as it prohibits, among other things, dynamic
+systems Network Information Service (NIS). Optimally,
+creation of new permission types. Furthermore, when the
+suchamechanismprovidesadequateprotectionforthese-
+numberofkeyscontrollingdomainsgrowslarge,thecom-
+curityconfigurationdatathrough,e.g.,preassignedshared
+plexityoftheconfigurationfilemaybecomehardtoman-
+keys and shared key cryptography. In such a case it is
+age. And finally, as mentioned in Section2.4, the current
+enoughtoconfiguretheadministrativesecuritykeystothe
+default implementation is static in the sense that the per-
+device when it is taken into use. Thereafter the security
+missionsofadomaindonotnecessarilyreflectchangesin
+configurationfilesofthedevicecanberemotelyadminis-
+the policy file.
+teredinasecureway,providedthatthesecurityofthead-
+Fortunately, these problems are mainly due to the de-
+ministration system persists.
+fault, one-machine oriented implementation, not the ac-
+The default implementation of JDK 1.2 proposes solv-
+cess control architecture itself. This has allowed us to
+ingthisproblembyspecifyingthefilelocationasanURL,
+make our customizations with almost no changes to the
+and thus fetching the file from a suitable Web server. As
+JDK 1.2 source code.
+HTTPandFTPprotocolsdonotprovideanysecurity,TLS
+We will next discuss the above mentioned shortcom-
+orsomeothermethodforsecuringtheconnectionbetween
+ings in detail, and show how they can be solved by using
+the host and the server would be necessary to ensure the
+authorization certificates.
+integrity of the configuration information.
+However, even this scheme has a number of problems:
+3.1. Alternatives to local configuration
+• The security of the Java runtime inherently depends on
+the security of another, external mechanism. Thus, ef-
+ThebasicideabehindJDK1.2accesscontrolcanbesum- fectively,thecorrectnessofaccesspermissionsassigned
+marized as follows: to a class depend on two cryptosystems: the signature
+1.Allexecutablecode,i.e.,classes,isdividedintosecurity systemusedtosigntheclasses,andtheremoteadminis-
+domains. Each class belongs to one, and only one do- trationsystemusedtomanagethesecurityfiles.Ifeither
+main. of these is broken, Java security breaks.
+2.Each security domain is assigned permissions. • KeepingtheconfigurationfilesofallJavadevicesupto
+3.The intersection of permissions present in the current datewouldbehardorimpossible.Ifanyofthedevices
+method call stack (down to and including the permis- are off-line while a change is made, arrangements
+sionsofthecurrentthreadwithitsinheritedaccesscon- would be needed to take care of the devices immedi-
+trol context, or the upmost privileged class) define the atelywhentheycomebackon-line.Thiswouldbediffi-
+operations this method is allowed to perform. cult or impossible in Ad-Hoc networks.
+The problem of local configuration pertains mainly to Inoursystem,eachcollectionofexecutableclasses(i.e.a
+step2(andtosomeextentalsotostep1;thisissueisdis- jarfile)isaselfcontaineddomainthatcarriesitsown(po-
+cussed in Section3.2). tential) permissions. That is, each class is placed in a jar
+5of11file, and the jar file is decorated with one or more SPKI 3.3. Scalability
+certificates1. Each SPKI certificate denotes a number of
+permissions that the issuer of the certificate wants to as- Recent history has shown on many occasions that local
+sign to the domain. The local security system checks the configurationscalesbadlytotheglobalInternet.Instead,a
+validity of these certificates, and based on the certificate system that has been designed to be fully distributed, i.e.,
+sequences leading to them, decides which of the permis- both deployed and managed in a distributed way, scales
+sions are actually assigned to the domain (see Section4 extremely well. A prime example of this is the Domain
+for details). NameSystem(DNS):itwastakenintousewhenthestatic
+hostsfilegrewtoolargetomanage,andtechnicallyithas
+3.2. Protection domains not needed any major modifications ever since.
+Fromthispointofview,theJDK1.2localsecuritycon-
+Currently,themainpurposeoftheprotectiondomainsisto figurationfileresemblesthestatichostsfile.Itwillproba-
+divide the classes into groups so that each group can be bly serve well in a small network where there are only
+given distinct permissions. From the access control point relatively few trusted applets. However, as the need and
+of view, this is fine. However, as we will show in usageofsomewhattrustedJavacodegrows,asystemthat
+Section6,itwouldbeniceifprotectiondomainscouldbe scales better is required.
+used for other purposes as well. According to our initial analysis, the suggested SPKI
+In the current JDK 1.2 implementation, classes are di- basedsystemofsignedcapabilitiesscalesextremelywell.
+vided into protection domains somewhat arbitrarily based SPKI allows rights to be delegated, allowing administra-
+on the URL they were loaded from and the X.509 certifi- tiontobedistributedwithinorganizationsandbetweenor-
+cates they carry. To us, using URLs seems like a bad ganizations. [10]
+choicefromasecuritypointofview.AnURLconsistsofa
+DNSnameandanarbitrarystring.UntilsecureDNSisde- 3.4. Pseudostatic vs.dynamic permissions
+ployed(ifever),DNSnamescannotbetrustedforsecurity
+purposes. Therefore, from a security point of view, the In the current JDK 1.2 implementation, the permissions
+URLmustberegardedasanarbitrarystringthathasnose- assigned to a class are not amended unless the Policy.re-
+curity relevance. Nevertheless, from a practical point of fresh() method is explicitly called. Furthermore, once as-
+view, the usage of URLs may be a reasonable temporary signed, permissions cannot be revoked from a domain in
+solution until widely deployed PKIs exist. anypracticalway.WhenJavaisbeingusedinservers,and
+Signing the code, and using signatures as basis of do- especiallyifthearchitectureisextendedsothatJavaserv-
+maincreation,isdefinitelyabetteridea.However,thecur- lets can be delegated more permissions by clients (see
+rently used X.509 certificates do not carry any explicit Section6),therearisesaneedtobeabletorevisetheper-
+informationaboutwhytheclasswassigned,orwhatkind missions dynamically.
+ofpermissionstheclasswouldindeedneedinordertoper- Independentlyoftheothermodifications,wehavealso
+form its function. The local configurator must get this in- madethepermissionevaluationmoredynamic.Thisisex-
+formation through some external channel in order to be plained in Section5. As mentioned in Section2.4, a dy-
+abletosetupthelocalpolicycorrectly.Thatis,thecurrent namic policy may create problems if the permissions of a
+system leaves two decisions to the local administrator: class change while it is performing a set of actions that
+• Guessingwhatpermissionsaclasswouldneedinorder should be considered as a whole, i.e., that should be per-
+to function correctly, and formedcompletelyornotatall.Forthesakeofthisstudy
+• Deciding whether the signer is trustworthy enough so we have assumed that a mechanism for allowing atomic
+that the class can indeed be given the alluded permis- actions can be added to the AccessController in a rela-
+sions. tively straightforward manner, following the example set
+Again, as we shall see, using SPKI simplifies this situa- bythedoPrivileged-method.Wehavenot,however,imple-
+tion.First,thecertificateissuedbytheclasswriterclearly mented this functionality in our prototype.
+denotes what permissions the class would desire. Second,
+SPKI certificates can be used to represent trust and dele-
+4. Assigning Java permissions with SPKI
+gate trust decisions, lifting most of the burden of making
+certificates
+trust decisions from the local administrator.
+In JDK 1.2, the actual implementation of the access con-
+1 At least in theory, we could use X.509v3 certificates or some
+trol mechanism is divided between the class loader, the
+other form of authorization certificates instead of SPKI certif-
+icates, but we have chosen to limit our research to the latter. policymanager,andthereferencemonitor.Thepurposeof
+6of11theclassloaderistomakesuretheclassesareintegral,at class java.security.Permission. If the constructor of the
+least in some sense, and to divide them into security do- permissionspecifiedbythetypetakesatargetasanargu-
+mains.Thepolicymanager,inturn,assignspermissionsto ment,thatstringisgiveninthetargetfieldofthetag.Like-
+the domains, while the reference monitor checks that an wise,iftheconstructorofthepermissiontakesanactionas
+attempt to access a resource is indeed authorized. an argument, it is given in the action field of the tag. The
+Inourmodel,thetasksoftheclassloaderaresimple.It targetandactionstringsarepassedtotheconstructoras-is,
+loadsclassesfromajarfile,andcreatesadomainfromit. becausewecannotexpectthepolicymanagertobeableto
+If there are any SPKI certificates present in the jar file, parse the arguments of all kinds of permissions, as any
+theyareassociatedwiththenewdomain.Thepolicyman- programmer can define her own types of permissions.
+ager and the dynamic permission evaluation are more The tag-set can be used to pass several permissions in
+complex. one certificate. This possibility is important, as creating a
+newcertificateforeachpermissionthatonewantstodele-
+4.1. Policy manager gate would be all too tedious and rapidly explode the
+number of certificates.
+The main task of the policy manager is to attempt to re-
+duceasetofcertificatestoformavalidchainfromitsown 4.2. Dynamic policy
+key, called the Self key, to the hash of the protection do-
+main,andtointerprettheauthorizationgivenbythechain To make the security policy dynamic instead of static or
+into Java Permission objects. This chain reduction in- semi-static, our implementation of protection domains no
+cludes checking the validity of the certificates, checking longerhasastaticsetofpermissions.Whenaclasstriesto
+that all but the last certificate have the delegation bit set, accessaprotectedresourcethereferencemonitorasksthe
+andintersectingtheauthorizationfieldstogetthefinalau- protection domain whether it implies the specific permis-
+thorizationgivenbythechain.Furthermore,usuallymore sion required, and the protection domain in turn asks the
+certificatesmustbefetchedfromacertificatestoreinorder Policy for the permission. The Policy tries to produce a
+togetcompletechains[13].Ifthecertificatescannotbere- certificatechainreductionthatwouldimplythepermission
+ducedortheauthorizationsreducetonull,nopermissions in question. If it fails, the access is not granted.
+are granted to the class. [10] TheSPKIdraftsproposethattheProver(i.e.theclass)
+The authorization field, or the tag, of an SPKI certifi- isresponsibleofpresentingavalidcertificatechaintothe
+cate can be described as an s-expression: [5] Verifier(i.e.thePolicy)atthetimeofaccessrequestorau-
+thentication [5]. This approach effectively moves the bur-
+auth::(tag (*)) |(tag tag-expr) den of certificate storage, retrieval and part of the chain
+tag-expr::simple-tag |tag-set |tag-string reductionfromtheservertotheclientsoftware.Theserver
+tag-set::(* set tag-expr*) isonlylefttoverifythatthechainpresentedisavalidone.
+This approach may be suitable to controlling user access,
+The form (tag (*)) means unlimited authorization, since the user is likely to know which certificates it has
+i.e.,allpermissions.WhentranslatedtoJavapermissions, beenissuedandmayevenbeabletostorethesecertificates
+it becomes java.security.AllPermission. on a smart card or in some other practical way.
+We have extended the SPKI tag definition to express However, mobile code downloaded from the Web can-
+Java permissions as follows: [15] notknowifithasbeenissuedlocalcertificatesornot,and
+it certainly cannot possess all these certificates from each
+simple-tag::java-tag site that might want to use it. Thus, this approach is
+java-tag:: doomedtofailinourarchitectureandwedonotpursueit
+(java-permission type target?action?) any further. Instead, we think that the Policy needs to lo-
+type:: (typebytes) catetherelevantcertificatesaswellastoreducethecertif-
+target::(targetbytes) icate chains.
+action::(actionbytes) Manydifferentsolutionshavebeenproposedtothecer-
+tificatestorage.Wehavepresentedonepossibilityin[13],
+That is, the tag specifies that it consists of a Java Permis- suggesting storing the certificates in the DNS directory.
+sion. The type gives the full class name of the permission Furthermore, Aura has analysed several different algo-
+classinquestion.Thismaybeapermissiontypeincluded rithms for chain reduction [3].
+inJDKoranyotherclass,aslongasitisasubclassofthe
+7of11Certificate Certificate
+Policy
+{abstract} Repository
+{abstract}
+{abstract}
+SPKICertificate
+SPKICertificate
+SPKIPolicy
+Repository
+{abstract}
+1 1
+Cert Signature
+LocalSPKI
+KeyStore
+Repository
+{abstract}
+1
+Figure 3: The Policy and certificate repositories
+Issuer
+1 0..1
+the number of certificates in our database is relatively
+Subject Comment small.Thechainreductionissimple:twocertificatesform
+avalidpieceofachainiftheyarebothvalid,thefirstcer-
+0..1 1
+tificatehasdelegationsettotrueandthesubjectofthefirst
+Deleg Tag certificate is the same as the issuer of the second certifi-
+cate.Theauthorizationthatresultsfromsuchachainisthe
+0..1
+intersectionofthetwoauthorizationfields.Theauthoriza-
+Valid tion fields are converted into Permission objects, and
+imply() method is used to intersect the authorization
+Figure 2: SPKI certificate object structure fields.Thesubsetisfoundbycheckingifeitheroneofthe
+permissions implies the other. This is sufficient for now,
+but a more generic method is clearly needed. However,
+5. Implementation
+thiswouldrequiresignificantmodificationstotheJDK1.2
+library.
+AnumberofchangestotheJavaclassesarerequiredinor- The SPKIPolicy uses the Java KeyStore to store its
+der to allow the administrator to define the Java security publickey,i.e.,theSelfkeyfortheSPKIcertificatechain
+policyusingSPKIcertificatesinsteadoftheconfiguration validation.Aseparatecertificaterepositoryisusedtostore
+file.Morespecifically,weneedtochangethewaythePol- the certificates. In the prototype, the certificate repository
+icyobjectandtheprotectiondomainsbehave.Inaddition, was implemented using a local file (see Figure3). How-
+weneedtocreateaJavaimplementationoftheSPKIcer- ever, in the future we expect it to use DNS or some other
+tificates, and a way to store them so that they can be re- dynamic, distributed directory service.
+trieved easily. To implement a dynamic security policy instead of a
+The way we implemented the SPKI certificates is de- staticoneweneededtochangethewaytheprotectiondo-
+picted in Figure2. The in-memory representation of the mainsbehave.Inthedefaultimplementationtheprotection
+certificateconsistsofthecertificatedataandthesignature, domains get their permissions when they are initialized.
+represented as Java objects. The data in turn includes the We created a subclass of the class PermissionCollection,
+issuer,subjectandauthorization(tag)objects,andmayin- calledDynamicPermissions,thatdoesnothaveastaticset
+clude delegation, validity and comment objects. of permission objects at all. An instance of this class is
+Our implementation of the Java Policy object is called giventothedomaininsteadofaregularPermissionCollec-
+SPKIPolicy. It gives the protection domains exactly tion object (see Figure4). Now, every time the Access-
+those permissions that are delegated to the domains Controller checks whether the protection domain’s
+through valid SPKI certificate chains. A valid chain must PermissionCollection implies a certain permission, the
+start from the Self key. The authorizations given by the collectionasksthePolicyobjecttogiveitthepermission.
+certificatesaretransformedtoJavapermissionsaccording ThechecksucceedsorfailsdependingonwhatthePolicy
+to the principles given in Section4.1. returns.
+The prototype uses a simple depth first algorithm to To make the Java Runtime read SPKI certificates from
+findvalidcertificatechains.Althoughnotoptimalforper- thejarfilesandputthemtotheprotectiondomainswehad
+formance,thisalgorithmisgoodenoughforourprototype; tocreateaclassofourownthathandlestheSPKIfileveri-
+8of11Table 2: Preliminary performance measurements
+PermissionCollection ProtectionDomain
+Our Proto-
+JDK
+type
+Time to load 10 classes 1690 ms 4990 ms
+DynamicPermissions SPKIPolicy (in 10 different domains)
+Time to resolve 10000 38900 ms 39200 ms
+access rights
+Figure 4: The ProtectionDomain and
+PermissionCollections
+Ourprototypeisnotoptimisedinanymeans;itdoessome
+fication. In addition, we had to slightly modify the unnecessarywork.AtthemomentithandlestheSPKIcer-
+java.util.jar.JarVerifier to make it invoke tificatesoftheclassestobeloadedinadditiontotheregu-
+our SPKI verifier. larsignaturesandnotinsteadofthem,althoughtheregular
+The system security properties file lib/security/ signaturesarenotusedforanythinginoursystem.There-
+java.security contains several configuration varia- sults show that our system is about three times slower in
+blesforthesecurityarchitecture,includingthepolicycon- class loading and only slightly slower in access checking.
+figuration file locations. A property called Whenanalysing inmoredetail wherethetime isspent
+policy.provider can be used to change the default during the class loading, about 80% of the JDK loading
+Policy implementation. This is done by specifying the timeseemstobespentoncheckingtheX.509certificates.
+fully qualified class name of the new implementation in In our prototype, the time used in checking SPKI certifi-
+the property: catesisroughlyequaltothetimespentinX.509certificate
+policy.provider=fi.hut.tcm.\ checking. Thus, this explains only 40% of the increased
+spki.policy.SPKIPolicy loading time. Currently we cannot fully explain the other
+part of the increase; it seems to be spent at the Sun pro-
+5.1. Performance measurements vided JAR file handling routines. Unfortunately, the JDK
+distribution does not include source code for these.
+As noted in Section 4, a static security policy obviously Thus, when the time spent on checking X.509 certifi-
+has some performance advantages when compared to dy- cates is substracted from the total time, our prototype is
+namically resolving the permissions. We measured the about2.2timesslowerthanthedefaultimplementationin
+performance of our prototype and compared it to the per- classloading.Lessthanhalfofthistimeisspentchecking
+formance of the default JDK implementation to see if the the SPKI certificates. Once we understand better the rea-
+difference was unacceptable. Since the main performance sons for the degradation, it should be possible to get per-
+changestothedefaultJDKimplementationoccurinclass formance quite close to the default implementation.
+loading and permission checking, these two functions are
+the ones we measured. 6. Creatingdistributedprotectiondomains
+Originally,weexpectedtheclassloadingtogetslightly
+slowerorstaythesame,aswewouldnotneedtofigureout The dynamic and distributed nature of SPKI based Java
+what permissions new protection domains would get, but protection domains opens up new possibilities for their
+would instead need to resolve the certificates from the jar use.Inparticular,wewouldliketobeabletoperformthe
+files. Since class loading is fairly well optimised in the following functions:
+JDK, it was also possible that no change in the perform- • Dynamically delegate a permission from one domain,
+ancewouldbenoticed.Astothepermissionchecking,we executing in one Java virtual machine, to another do-
+expectedtheaccessrightchecktobeslower,sincewenot main,executinginanotherJavavirtualmachine.Forex-
+only verify whether the class’ permissions imply the per- ample,whenadistributedapplicationrequestsaservice
+mission needed, but also resolve what permissions the fromaserver,itmightwanttoallowacertainclass,an
+class has at the moment. agent,intheserver,toexecuteasifitweretheuserthat
+TheactualmeasurementsweremadewithJDK1.2beta started the application in the first hand.
+4 in Solaris 2.6 running on Ultra 1 hardware. The results • Create a secure connection between domains executing
+areaveragesfrom10testruns.Weexpressedthesamese- in distinct Java virtual machines. For example, a bank-
+curity policy in the form of a configuration file and SPKI ing applet might want to create a secure connection
+certificates. The average length of an SPKI certificate back to the bank, using a proprietary security protocol.
+chain was 3. The results are given in Table2.
+9of11Inordertobeabletoperformthesekindsoffunctions,the From Bob’s point of view, on the other hand, the re-
+domains involved must have local access to some private quirements are the following:
+keys, and a number of trust conditions must be met. The • Bob must trust S to perform X on Alice’ (or every-
+requirement of access to a private key can be easily ac- body’s) behalf.
+complished by creating a temporary pair of keys for each Again, using SPKI certificates this can be expressed as
+policydomain.Thisisacceptablefromasecuritypointof Cert : (K , K , Yes, X, always)
+Alice Bob Alice
+view, because the underlying JVM must be trusted any-
+way,andsoitcanbetrustedtoprovidetemporarykeysas Now,giventhecertificatescreated,BobcancheckthatSis
+well. The temporary key can be signed by the local ma- permitted to perform X:
+chinekey,denotingittoasbelongingthedomaininvolved. K
+S
+hash(S)
+Delegation.Letusnowconsiderthetrustrequirementsof
+the delegation. The situation here is that Alice has loaded K
+some Java code C to perform a function X that she wants K Bob hash(C) C
+to be performed. However, X cannot be accomplished lo-
+cally,butitmustbeperformedonaserveradministeredby K Alice
+Bob using Java code S.
+Secure connection.Inthecaseofasecureconnection,Al-
+FromAlice’pointofviewthetrustrequirementsarethe
+icewantstoallowaclassCtoopenasecureconnectionto
+following:
+aclassS,beingrunbyBob.Respectively,Bobwantstoal-
+• AlicemusttrustCandStobeabletoperformXonher
+lowtheclassC,beingrunbyAlice,toopenasecurecon-
+behalf, independent on their execution location.
+nection to the class S, running locally.
+• Alice must trust Bob to execute S on her behalf.
+From Alice’ point of view, the trust requirements can
+• Finally,asaresult,AlicemusttrustS,whenrunbyBob,
+be stated as follows:
+to perform X.
+• Alice must trust C to open secure connections to S.
+UsingSPKIcertificates,thesecanbeexpressedroughlyas
+• Alice must trust Bob to be trustworthy to run S.
+follows:
+Similarly, from Bob’s point of view,
+Cert : (K , hash(C), Yes, X, always)
+C Alice • Bob must trust S to accept secure connections from C.
+Cert : (K , hash(S), Yes, X, always)
+S Alice • Bob must trust Alice to be trustworthy to run C.
+Cert : (K , K , Yes, execute S, always)
+Bob Alice Bob Inawayanalogoustothedelegationcase,temporarykeys
+Now,thefactthatChasalocal,temporarykeyK andthat
+C can be created for the classes C and S, and using suitable
+S has a local, temporary key K can be expressed as
+S SPKIcertificatesthesekeyscanbeseenasproperkeysto
+Name : (K , K , Yes, hash(C) at K , now)
+C Alice C Alice be used in a key agreement protocol.
+Name : (K , K , Yes, hash(S) at K , now)
+S Bob S Bob
+These certificates can be considered as name certificates,
+7. Conclusions
+effectivelylatebindingthehashesofCandS,asnamesin
+thelocalnamespacesofAliceandBob,respectively,tothe
+temporary keys K and K . WehaveshownhowJDK1.2accesscontrolmanagement
+C S
+canbeeffectivelyandsecurelydistributedusingSPKIcer-
+Giventhese,CcancheckCert andName ,andthereaf- tificates.Thenewsystemsallowsnewpermissiontypesto
+Bob S
+ter authorize S to perform X betakenintousedynamically,allowsthecreatorofanap-
+Auth: (K , K , Yes, X, now) plicationtocontrolthedivisionofJavaclassesintodistinct
+C S
+ThefactthatAliceauthorizesSonBobtoperformXcan securitydomainsinanaturalway,providesworldwidein-
+be depicted through the following sequence: terorganizationalscalability,andallowsthepermissionsof
+a domain to be dynamically extended.
+X hash(C) X InSection3weanalysedthedefaultimplementationof
+K K K
+Alice C S the JDK 1.2 access control architecture and suggested
+Similarly, the checks performed by C before creating some improvements. In Section4 we described the func-
+Auth can be described as the sequence: tional details and modifications needed to implement the
+improvements. Only one change was needed in the actual
+K
+Alice X library in order to load SPKI certificates in addition to
+X.509 certificates. The rest of the system consists of the
+hash(S)
+policy manager and a new type of PermissionCollection.
+K K
+Bob S
+TheresultisadynamicsecuritypolicydefinedwithSPKI
+10of11certificates.Adistributeddirectoryservice,suchastheone [6] C.M.Ellison,B.Frantz,B.Lampson,R.Rivest,B.M.Tho-
+proposed in [13], is needed for storing the certificates. masandT.Ylönen,SPKICertificateTheory,Internet-Draft
+The actual prototype implementation, described in draft-ietf-spki-cert-theory-02.txt,workin
+Section5, consists of a generic SPKI certificate package progress, Internet Engineering Task Force, March 1998.
+[7] C.M.Ellison,B.Frantz,B.Lampson,R.Rivest,B.M.Tho-
+that extends the java.security.cert.Certif-
+mas and T. Ylönen, SPKI Examples, Internet-Draft
+icateinterface,thecustompolicymanager,andthemi-
+draft-ietf-spki-cert-examples-01.txt,
+nor modifications needed in the library proper. For the
+work in progress, Internet Engineering Task Force, March
+purpose of this prototype we only implemented a local
+1998.
+certificate repository. Although the prototype is not opti-
+[8] Li Gong, Java™ Security Architecture (JDK 1.2), DRAFT
+mised in any way, its performance was clearly adequate, DOCUMENT (Revision 0.8), http://
+especially in the permission checking. java.sun.com/products/jdk/1.2/docs/
+Furthermore, we sketched how the new system can be guide/security/spec/security-
+used to delegate permissions dynamically from one Java spec.doc.html, Sun Microsystems, March 1998.
+virtualmachinetoanother,andhowSPKIcertificatescan [9] Li Gong and R. Schemers, “Implementing Protection Do-
+be used to control the creation of secure connections be- mainsintheJavaDevelopmentKit1.2”,Proceedingsofthe
+1998NetworkandDistributedSystemSecuritySymposium,
+tween classes in separate virtual machines. These can be
+San Diego, CA, March 11–13 1998, Internet Society, Res-
+seenasinitialstepstowardsasecuredistributedJavaenvi-
+ton, VA, March 1998.
+ronment. Currently we are building an ISAKMP [11]
+[10] I.LehtiandP.Nikander,“Certifyingtrust”,Proceedingsof
+framework in Java. That will be used to implement the
+thePracticeandTheoryinPublicKeyCryptography(PKC)
+sketched delegation systems. One further possibility
+’98, Yokohama, Japan, Springer-Verlag, February 1998.
+would be to design CORBA like security services for in- [11] D.Maughan,M.Schertler,M.SchneiderandJ.Turner,In-
+teroperatingJavavirtualmachinesonthetopoftheresult- ternet Security Association and Key Management Protocol
+ing system. (ISAKMP), Internet-Draft draft-ietf-ipsec-
+isakmp-10.txt,workinprogress,InternetEngineering
+References Task Force, July 1998.
+[12] P.Nikander and A.Karila, “A Java Beans Component Ar-
+chitectureforCryptographicProtocols”,Proceedingsofthe
+[1] E.Amoroso, Fundamentals of Computer Security Technol- 7thUSENIXSecuritySymposium,SanAntonio,Texas,Use-
+ogy, Prentice Hall, Englewood Cliffs, New Jersey, 1994. nix Association, 26-29 January 1998.
+[2] K. Arnold and J. Gosling, The Java Programming Lan- [13] P.NikanderandL.Viljanen,“StoringandRetrievingInter-
+guage, Addison-Wesley, 1996. net Certificates”, Proceedings of the 3rd Nordic Workshop
+[3] T.Aura,“ComparisonofGraph-SearchAlgorithmsforAu- onSecureComputerSystems,Trondheim,Norway,Novem-
+thorization Verification in Delegation”, Proceedings of the ber 1998.
+2nd Nordic Workshop on Secure Computer Systems, Hel- [14] J. Partanen and P. Nikander, “Adding SPKI certificates to
+sinki, 1997. JDK1.2",Proceedingsofthe3rdNordicWorkshoponSe-
+[4] M.Blaze, J.Feigmenbaum, and J.Lacy, “Decentralized cure Computer Systems, Trondheim, Norway, November
+trustmanagement”,Proceedingsofthe1996IEEECompu- 1998.
+terSocietySymposiumonResearchinSecurityandPrivacy, [15] J. Partanen, Using SPKI certificates for Access Control in
+Oakland, CA, May 1996. Java 1.2, Master’s Thesis, Helsinki University of Technol-
+[5] C.M.Ellison,B.Frantz,B.Lampson,R.Rivest,B.M.Tho- ogy, August 1998.
+masandT.Ylönen,SimplePublicKeyCertificate,Internet- [16] R.L.RivestandB.Lampson,“SDSI—asimpledistributed
+Draft draft-ietf-spki-cert-structure- securityinfrastructure”,Proceedingsofthe1996UsenixSe-
+05.txt, work in progress, Internet Engineering Task curity Symposium, 1996.
+Force, March 1998. [17] ITU-TRecommendationX.509(1997E):InformationTech-
+nology-OpenSystemsInterconnection-TheDirectory:Au-
+thentication Framework, ITU-T, June 1997.
+11of11

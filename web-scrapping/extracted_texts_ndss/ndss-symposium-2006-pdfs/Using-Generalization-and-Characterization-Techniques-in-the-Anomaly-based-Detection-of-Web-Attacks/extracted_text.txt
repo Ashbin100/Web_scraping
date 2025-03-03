@@ -1,0 +1,914 @@
+Using Generalization and Characterization Techniques in the
+Anomaly-based Detection of Web Attacks
+WilliamRobertson,GiovanniVigna, ChristopherKruegel,and Richard A. Kemmerer
+ReliableSoftware Group
+DepartmentofComputerScience
+UniversityofCalifornia, SantaBarbara
+{wkr,vigna,chris,kemm}@cs.ucsb.edu
+Abstract tructure. Web-based applicationshavebecomea popu-
+lar way to provideaccess to servicesand dynamically-
+Thecustom,adhocnatureofwebapplicationsmakes generatedinformation.Thepopularityofweb-basedap-
+learning-based anomaly detection systems a suitable plications, such as online shopping catalogs and web-
+approach to provide early warning about the exploita- based discussion forums, is a result of the ease of de-
+tion of novel vulnerabilities. However, anomaly-based velopment, deployment, and access of this class of ap-
+systemsareknownforproducingalargenumberoffalse plications. Even networkdevicesand traditionalappli-
+positives and for providing poor or non-existent infor- cations(such as mail servers) often provideweb-based
+mation about the type of attack that is associated with interfacesthatareusedforadministrationaswellascon-
+ananomaly. figuration.
+This paper presents a novel approach to anomaly- Unfortunately, while the developers of the software
+based detection of web-based attacks. The approach infrastructure(thatis,thedevelopersofwebserversand
+usesananomalygeneralizationtechniquethatautomat- databaseengines)usuallyhaveadeepunderstandingof
+ically translates suspicious web requests into anomaly the security issues associated with the development of
+signatures. Thesesignaturesarethenusedtogroupre- critical software, the developersof web-based applica-
+currentorsimilaranomalousrequestssothatanadmin- tionsoftenhavelittleornosecurityskills. Thesedevel-
+istrator can easily deal with a large numberof similar opersmostlyfocusonthefunctionalityfortheend-user
+alerts. andoftenworkunderstringenttimeconstraints,without
+In addition, the approach uses a heuristics-based theresources(ortheknowledge)necessarytoperforma
+techniquetoinferthetypeofattacksthatgeneratedthe thoroughsecurityanalysisoftheapplicationcode. The
+anomalies. This enables the prioritization of the at- resultisthatpoorly-developedcode, riddledwith secu-
+tacks and provides better information to the adminis- rityflaws,isdeployedandmadeaccessibletothewhole
+trator. Our approach has been implemented and eval- Internet.
+uatedexperimentallyonreal-world datagatheredfrom Web-related security flaws represent a substantial
+webserversattwouniversities. portionofthetotalnumberofvulnerabilities.Thisclaim
+is supported by an analysis of the vulnerabilities that
+havebeenmadepublicinthepastfewyears. Forexam-
+ple, by analyzingthe Common Vulnerabilitiesand Ex-
+1. Introduction
+posures(CVE)entriesfrom1999to2005[5], weiden-
+tified that web-based vulnerabilities account for more
+In the past ten years, the World-Wide Web has than 25% of the total number of security flaws. Note
+evolvedfromasystemtoprovideaccesstostaticinfor- thatthisisonlyapartialaccountoftheactualnumberof
+mation into a full-fledged distributed execution infras- web-based vulnerabilities, since there are a number ofadhocweb-basedapplicationsthathavebeendeveloped behavior of an application by observing the usage pat-
+internallybycompaniestoprovidecustomizedservices, terns of the application during a training period. Once
+andmanyofthesecurityflawsintheseapplicationshave the model of normal behavior is established, the IDS
+notyetbeendiscoveredormadepublic. switchesto“detectionmode”andcomparesthebehavior
+Because of theirimmediate accessibility, poorsecu- oftheapplicationwithrespecttothemodellearneddur-
+rity,andlargeinstallationbase, web-basedapplications ing the training period, with the assumption being that
+havebecomepopularattacktargetsandoneofthemain anomalous behavior is likely to be associated with an
+venuesto compromisethe security of systemsand net- intrusion(andthatanintrusionwillresultinanomalous
+works. Preventing attacks against web-based applica- behavior).
+tions is not always possible, and, even when suitable Learning-based techniques are particularly suitable
+mechanismsareprovided,developerswithlittlesecurity forthedetectionofwebattacks,becausetheycandetect
+training (or simply with little time) sometimes disable attacks against custom-developedcode for which there
+security mechanisms “to get the job done.” Therefore, are no known signatures or attack models. These sys-
+preventionmechanismsshouldbecomplementedbyef- temscanalso operateinunsupervisedmode,with little
+fectiveintrusiondetectionsystems(IDSs). orno inputfromsystem administratorsandapplication
+Todetectweb-basedattacks,intrusiondetectionsys- developers. Therefore,theycanbeusedbyadministra-
+temsareconfiguredwitha numberof“signatures”that torsthathavelittlesecuritytraining.
+supportthe detectionof knownattacks. These systems For example, consider a custom-developed web-
+matchpatternsthatare associated with the exploitation based application called purchase, where the iden-
+ofknownweb-relatedflawsagainstoneormorestreams tifier of the item to be purchased (itemid parame-
+of events obtained by monitoring web-based applica- ter)andthecreditcardtype(ccparameter)areinserted
+tions[1,14,16,21].Forexample,atthetimeofwriting, by the user in a client-side form and then validated by
+Snort 2.3.3 [16] devotes1064 of its 3111 signatures to a server-side applicationinvokedthroughthe Common
+detecting web-related attacks. Unfortunately, it is hard Gateway Interface [4]. A set of sample invocations
+to keep intrusion detection signature sets updated with of the purchase application, as logged by the web
+respect to the new vulnerabilitiesthat are continuously server, is shown in Figure 1. In this case, a learning-
+beingdiscovered.Inaddition,vulnerabilitiesmaybein- based anomaly detection system can build a model of
+troduced by custom web-based applications developed the itemid and cc parameters that are passed to the
+in-house. Developing ad hoc signatures to detect at- application by analyzing a number of normal purchase
+tacks against these applications is a time-intensive and transactions. The modelscould characterizethe length
+error-proneactivitythatrequiressubstantialsecurityex- of the parameters, their character distribution, or their
+pertise. structure. Oncethese modelshavebeenlearnedbyan-
+Anomalydetection[6,8,9,12]isanapproachtoin- alyzing a number of samples, each subsequent invoca-
+trusion detection that is complementary to the use of tion of the purchase application is compared to the
+signatures. Anomaly detection relies on models of the establishedmodels,andanomaliesintheparametersare
+normal behavior of users and applications to identify identified.Forexample,thelastentryinFigure1would
+anomalous activity that may be associated with intru- beidentifiedasan attack,becausetheitemidparam-
+sions.Themainadvantageofanomaly-basedtechniques eterhasastructure(andlength)thatisanomalouswith
+is thattheyare able to identifypreviouslyunknownat- respecttotheestablishedmodels.
+tacks. By defining the expected, normal behavior, any Even though anomaly-baseddetection systems have
+abnormality can be detected, whether it is part of a the potential to provide effective protection, there are
+knownattackornot. two main problems that need to be addressed. First,
+Anomaly detection can be performed by applying learning-basedanomaly detectionsystems are proneto
+differenttechniquestocharacterizethenormalbehavior producing a large number of false positives. Second,
+ofatargetsystem.Ofparticularinterestforthedetection anomaly detection systems, unlike misuse-based sys-
+of attacks against web-based applications are learning- tems, only report that there is an anomaly without any
+based techniques, which build a model of the normal supporting description of the attack that has been de-128.111.41.15 "GET /cgi-bin/purchase?itemid=1a6f62e612&cc=mastercard" 200
+128.111.43.24 "GET /cgi-bin/purchase?itemid=61d2b836c0&cc=visa" 200
+128.111.48.69 "GET /cgi-bin/purchase?itemid=a625f27110&cc=mastercard" 200
+131.175.5.35 "GET /cgi-bin/purchase?itemid=7e2877b177&cc=amex" 200
+161.10.27.112 "GET /cgi-bin/purchase?itemid=80d2988812&cc=visa" 200
+...
+128.111.11.45 "GET /cgi-bin/purchase?itemid=109agfe111;ypcat%20passwd|mail%20wily@evil.com" 200
+Figure1.Samplelogentriesassociatedwithinvocationsofthepurchaseapplication. Thelast
+entryrepresentsanattackagainsttheapplication.
+tected. causedtheanomaly(e.g.,thevalueofaspecificparam-
+eter). Therefore,ifthereareotherpartsofthedatathat
+Thegoaloftheworkreportedinthispaperistoover-
+could appear as an attack but that are actually benign
+comebothoftheseproblems.Wehavedevelopedasys-
+(thatis,theyarenormalaccordingtotheestablishedpro-
+temthatisbasedonan“anomalygeneralization”mech-
+file), then our characterizationwill notgeneratea false
+anism that derives a generalized representation of the
+positive, while a misuse detection signature probably
+anomaliesdetectedbyalearning-basedintrusiondetec-
+would.
+tionsystem. Theresultisan“anomalysignature”thatis
+Insummary,ouranomalydetectionsystemcanbede-
+used to identify further occurrences of similar anoma-
+ployedonan existingweb-basedsystem, andin anun-
+lies. Similar anomalies are grouped together and are
+supervisedfashioncancharacterizethenormalbehavior
+thenanalyzedbytheadministratortodetermineifeach
+ofserver-sidecomponents. Itcanthendetectdeviations
+group,asawhole,iscomposedoffalsepositivesorac-
+from the established profile, group similar anomalies,
+tual attacks. If the alerts in a group are identified as
+and, in some cases, give an explanation of the type of
+being false positives, then they can be dismissed with
+attackdetected.
+a single decision, saving a considerable amount of the
+This paper is structured as follows. Section 2 dis-
+administrator’stime. Also,theanomalysignaturechar-
+cusses related work and the limitations of current in-
+acterizing the group can be used as a suppression fil-
+trusiondetectionsystemsin theirabilityto detectweb-
+tertopreventfurtherfalsepositivesorasanewtraining
+basedattacks.Section3presentsthearchitectureforour
+datasettoimprovetheanomalydetectionmodels.Ifthe
+systemandbrieflydescribesitsmaincomponents. Sec-
+alertsinagroupareidentifiedasinstancesofanactual
+tion4presentstheanomalymodelsusedbytheanomaly
+attack,thenthesealertscanbeusedasthebasistoeither
+detector. Section 5 describes our approachto anomaly
+identify and fix a security flaw or to develop a “tradi-
+generalization. Section6discussesthecharacterization
+tional”attacksignature.
+ofcertaintypesofanomaliesandtheheuristicsthatwe
+To address the problem of poor attack explanatory use. Section 7 provides an evaluation of the approach
+information, our system uses a heuristics-based tech- intermsoftheoverheadintroduced,thereductioninthe
+nique to infer the type of attack that generated the number of false positives, and the ability to appropri-
+anomaly. Ourpreviousexperiencewiththedetectionof atelycharacterizeattacks. Finally,Section8drawscon-
+web-basedattacksshowedthatwhilecustom-developed clusionsandoutlinesfuturework.
+server-side code might be exploited using unpredicted
+attribute values, the type of exploitation often follows
+2.Related Work
+specific rules. Therefore, we developed heuristics that
+can identify common classes of attacks, such as buffer
+overflows, cross-site scripting, SQL injection, and di- The workpresentedhereisrelatedto threedifferent
+rectorytraversals. Notethatthischaracterizationisdif- areasofintrusiondetection:learning-basedanomalyde-
+ferent from a misuse detection signature, because our tection,application-levelintrusiondetection,andthede-
+heuristicsareappliedonlytotheportionofaneventthat tectionofattacksagainstwebservers. Inthefollowing,wediscusshowpreviousworkinthesethreeareasrelate Adifferenttypeofanalysisisperformedin[2]wherethe
+toourresearch. detectionprocessisintegratedwiththewebserverappli-
+Differenttypesof learning-basedanomalydetection cation itself. In [21], a misuse-basedsystem thatoper-
+techniqueshavebeenproposedtoanalyzedifferentdata atesonmultipleeventstreams(i.e.,networktraffic,sys-
+streams. A common approach is to use data-mining temcalllogs,andwebserverlogs)wasproposed. Sys-
+techniques to characterize network traffic. For exam- temsthatfocusonweb-basedattackshavedemonstrated
+ple, in [15], the authors apply clustering techniques to thatbytakingadvantageofthespecificityofaparticular
+unlabeled network traces to identify intrusion patterns. applicationdomainitispossibletoachievebetterdetec-
+Statistical techniqueshave also been used to character- tionresults. However,thesesystemsaremostlymisuse-
+ize user behavior. For example, the seminal work by basedandthereforesufferfromtheproblemofnotbeing
+Denning [6] builds user profiles using login times and abletodetectattacksthathavenotbeenpreviouslymod-
+theactionsthatusersperform. eled.
+A particular class of learning-based anomaly detec- In [19], the authors propose a serial architecture
+tion approaches focuses on the characteristics of spe- where web-related events are first passed through an
+cific applications and the protocols they use. For ex- anomalydetectioncomponent.Then,theeventsthatare
+ample,in[7]andin[3],sequenceanalysisisappliedto identifiedas neithernormalnor intrusiveare passed on
+system calls producedby specific applicationsin order toamisusedetectioncomponent. Thesystemproposed
+toidentify“normal”systemcallsequencesforacertain in[19]isdifferentfromourapproachbecauseitrequires
+application. Theseapplication-specificprofilesarethen extensivemanualanalysistoevaluatethecharacteristics
+used to identifyattacksthatproducepreviouslyunseen oftheeventsbeinganalyzed. Ourgoalistorequirethe
+sequences. Asanotherexample,in[13],theauthorsuse minimum amountof manual inspection and human in-
+statistical analysis of network traffic to learn the nor- terventionpossible. Therefore,we focusontechniques
+mal behavior of network-based applications. This is toperformunsupervised,learning-basedanomalydetec-
+donebyanalyzingbothpacketheaderinformation(e.g., tion.
+source/destinationports,packetsize)andthecontentsof
+application-specificprotocols. 3.Architecture
+Our approachis similar to these techniquesbecause
+it characterizesthe benign, normal use of specific pro- The goal of detecting unknown attacks against
+grams(i.e., server-side web-based applications). How- custom-developed software as well as characterizing
+ever,ourapproachisdifferentfromthesetechniquesin and grouping these attacks in a meaningful way ne-
+two ways. First, we use a number of different mod- cessitated the development of a novel approach to in-
+elstocharacterizetheparametersusedintheinvocation trusion detection. In this approach, an event collector
+of the server-side programs. By using multiplemodels andanomalydetectioncomponentarecomposedtopro-
+it is possible to reduce the vulnerability of the detec- videthe abilityto detectunknownattacks. Inaddition,
+tion process with respect to mimicry attacks [18, 23]. threenewcomponents,ananomalyaggregationcompo-
+Second,themodelstargetspecifictypesofapplications, nent,ananomalysignaturegenerationcomponent,and
+and, therefore,they allow formore focusedanalysisof anattackclassinferencecomponent,areintroducedinto
+thedatatransferredbetweentheclient(theattacker)and the architecture. The integration of these components
+the server-sideprogram(the victim). Thisis anadvan- into the design allows the resulting system to harness
+tage of application-specific intrusion detection in gen- the strengths of anomaly detection while mitigating its
+eral[10]andofweb-basedintrusiondetectioninpartic- negativeaspects. Anoverviewofthearchitectureisde-
+ular[11]. pictedinFigure2.
+The detection of web-based attacks has recently re- The event collector first creates and normalizes the
+ceived considerable attention because of the increas- events. The normalized events are then passed to the
+inglycriticalrolethatweb-basedapplicationsareplay- anomaly detector, which determines whether the event
+ing.Forexample,in[1]theauthorspresentasystemthat is anomalous or not. If an event is normal, no alert is
+analyzesweblogslookingforpatternsofknownattacks. generated. Iftheeventisanomalous,ontheotherhand,(cid:5)
+(cid:0) (cid:1) (cid:2) (cid:3) (cid:4)
+(cid:6) (cid:7)(cid:7) (cid:6)(cid:2) (cid:8) (cid:4)(cid:9)
+(cid:10) (cid:8) (cid:8) (cid:2) (cid:11) (cid:11)
+(cid:6) (cid:13)(cid:12) (cid:11)
+(cid:3)
+(cid:0) (cid:1) (cid:2) (cid:3) (cid:4) (cid:6) (cid:14) (cid:15) (cid:7)(cid:16)(cid:10) (cid:3)
+(cid:6)(cid:17) (cid:2) (cid:4)(cid:2) (cid:8) (cid:4)(cid:9) (cid:3)
+(cid:6) (cid:18)(cid:14) (cid:15) (cid:7)(cid:27)
+(cid:0) (cid:1) (cid:2) (cid:3) (cid:4)(cid:11)
+(cid:10) (cid:3) (cid:6)
+(cid:0)
+(cid:14)
+(cid:1)
+(cid:15) (cid:7)(cid:6)
+(cid:2) (cid:3) (cid:4)
+(cid:20) (cid:11)
+(cid:30) (cid:15)
+(cid:0)
+(cid:6) (cid:14) (cid:15) (cid:7)(cid:16)(cid:10) (cid:3)
+(cid:13) (cid:13) (cid:18) (cid:13) (cid:15) (cid:6)(cid:10) (cid:2) (cid:4)(cid:9)
+(cid:4)(cid:8) (cid:29) (cid:2) (cid:26)
+(cid:1) (cid:2) (cid:3) (cid:4)
+(cid:21) (cid:18)(cid:6) (cid:20) (cid:25) (cid:2) (cid:26)
+(cid:7) (cid:18)(cid:10) (cid:2) (cid:4)(cid:11)
+(cid:3)
+(cid:28) (cid:3) (cid:14) (cid:15) (cid:4)(cid:8) (cid:29) (cid:2) (cid:26)
+(cid:0) (cid:1) (cid:2) (cid:3) (cid:4)
+(cid:5) (cid:7)(cid:15) (cid:11) (cid:11) (cid:9)(cid:31) (cid:2) (cid:26)
+(cid:19) (cid:13) (cid:15) (cid:18)(cid:9) (cid:3) (cid:4)(cid:20) (cid:2)
+(cid:15) (cid:7)(cid:23)(cid:3) (cid:9)(cid:4)(cid:9)
+(cid:21) (cid:18)(cid:6) (cid:20) (cid:25)
+(cid:0) (cid:1) (cid:2) (cid:3) (cid:4)
+(cid:6) (cid:14) (cid:15) (cid:7)(cid:16)(cid:10) (cid:3)
+(cid:19) (cid:13) (cid:15) (cid:18)(cid:9) (cid:3) (cid:4)(cid:20) (cid:2)
+(cid:21) (cid:18)(cid:15) (cid:6)(cid:2) (cid:3) (cid:2) (cid:4)(cid:9) (cid:3)
+(cid:6)(cid:10) (cid:3)
+(cid:15)(cid:10) (cid:4)(cid:4) (cid:8) (cid:22)
+(cid:5) (cid:7)(cid:15) (cid:11) (cid:11)
+(cid:18)(cid:23)(cid:3) (cid:24)(cid:2) (cid:2) (cid:3) (cid:8) (cid:2)
+(cid:14)
+(cid:15)
+(cid:15)
+(cid:3)
+(cid:7)(cid:16)
+(cid:26)
+(cid:19)
+(cid:0)
+(cid:13)(cid:9)
+(cid:1) (cid:2)
+(cid:3)
+(cid:3)
+(cid:15)
+(cid:4)
+(cid:4)(cid:20) (cid:18)(cid:2)
+Figure2.Architectureofwebintrusiondetectionsystem.
+itispassedtotheanomalyaggregationcomponent.This 3.2. Anomaly Detection
+componentmatchestheeventagainstasetof“anomaly
+signatures.” The idea is to determinewhether an event
+Theanomalydetectioncomponentexaminesthesub-
+issimilartoapreviouslydetectedanomaly. Ifanevent
+set of web server access log entries that represent pa-
+can be matched with an anomaly signature, an alert is
+rameterizedwebrequests.Theserequestsspecifyaweb
+generated immediately and grouped with instances of
+applicationandasetofattributenamesandcorrespond-
+previous similar alerts. Otherwise, the event is passed
+ingvaluestobepassedasparameterstotheapplication.
+to the anomaly signature generation process. The task
+During an initial learning phase, the anomaly detector
+of this component is to generalize the anomaly and to
+constructs a characterization of normal invocations of
+construct an appropriate “anomaly signature.” Finally,
+server-side applications by analyzing the observed at-
+the attack class inferencecomponentattemptsto deter-
+tribute values. This processis performedusing several
+minetheclassoftheanomaly,usingasetofheuristics.
+different models, each of which focuses on a specific
+The resulting, classified anomaly signature is added to
+featureofanattribute(e.g.,itslengthoritscharacterdis-
+thesetofexisting“anomalysignatures,”andanalertis
+tribution). These models are used to construct profiles
+generatedfortheanomalousevent.Theindividualcom-
+specific to each attribute for each server-side resource.
+ponentsofthearchitecturearediscussedinmoredetail
+For example, an attribute length model could be used
+inthefollowingsections.
+tobuildaprofilethatspecifiesthenormallengthofthe
+valuefortheattributeitemidwhenusedintheinvoca-
+3.1. Event Collection tionofthepurchasewebapplicationinFigure1. The
+detailsofthisprocessarediscussedinSection4.
+The event collection component is responsible for Once a profile for an attribute of a web application
+capturingand preparingindividualeventsfrom the op- hasbeenconstructed,theanomalydetectioncomponent
+eratingenvironment,foranalysisbytheintrusiondetec- switchesfromthelearningphasetothedetectionphase
+tioncomponents. Eventsmaybecollectedfromseveral for that attribute. In this phase, the anomaly detector
+sources(e.g.,anetworklink,asystemcallauditingfacil- evaluatestheobservedvaluesoftheattributeforagiven
+ityembeddedintoawebserver’shostoperatingsystem, requestwithrespecttotheestablishedprofile. Thispro-
+or the access logs generated by a web server). For the cess outputs an anomaly score associated with the re-
+work presentedin this paper, the eventswere collected quest,andiftheanomalyscoreexceedsamodel-specific
+from web server access logs, but the approach itself is detectionthreshold,an alertisgenerated. Theassump-
+agnosticastothesourceoftheevents. tion is that highly anomalous queries (e.g., a requestwhere the value of the itemid attribute of the afore- known attacks against web-based applications. In our
+mentioned purchase application is unusually long) system,theseclassescurrentlyincludebufferoverflows,
+couldrepresentevidenceofanattempttoexploitavul- cross-sitescripting,SQLinjection,anddirectorytraver-
+nerability of a web-based application. By utilizing an sal. Thetaskoftheattackclassinferencecomponentis
+anomalydetectioncomponentthatautomaticallybuilds to use a set of heuristicsto assign an attack class to an
+profilesforwebapplicationsinthismanner,itispossible anomalysignature.
+todetectpreviouslyunknownattackswithoutrequiring The classification of attacks can result in semanti-
+thedevelopmentofadhocsignatures. cally rich anomaly alerts that are more informative to
+security administrators, as well as to web application
+3.3. Anomaly Aggregation developers. These alerts not only pinpoint the vector
+throughwhichtheapplicationisbeingattacked(i.e.,the
+The anomaly aggregation component processes the specific attribute), but the nature of the attack as well.
+streamofanomalouseventsfromtheanomalydetector, Thiscanassistthesecurityadministratororapplication
+matchingthemagainstasetofanomalysignaturesmain- developerinquicklymitigatingthevulnerability,asthe
+tainedwithinthecomponent.Thissignaturesetismod- natureoftheattackitselfgenerallysuggeststherequired
+ifiedatrun-time;inparticular,newsignaturesproduced courseofaction.
+bytheanomalysignaturegenerationandattackclassin- The following sections examine the details of how
+ferencecomponentscanbedynamicallyintegratedinto eachofthesecomponentsareimplemented.
+the existing set in the midst of event processing. If an
+event(orseriesofevents,inthecaseofastateful,multi- 4.Anomaly Detection
+step anomaly signature) matches an anomaly signature
+inthisset,analertisgeneratedandgroupedwithprevi-
+Theanomalydetectioncomponentutilizesanumber
+ousinstancesofsimilaralerts.
+of statistical models to identify anomalous events of a
+set of web requests that use parameters to pass values
+3.4. Anomaly Signature Generation
+toanassociatedwebapplication.Theoriginalprototype
+and the models used to characterize the requests were
+Anomalous events that are not matched by any introduced in [11] and are summarized here to give to
+anomaly signature in the anomaly aggregation compo- the reader the background necessary to understand the
+nentareforwardedtotheanomalysignaturegeneration generalizationtechniquespresentedinSection5.
+component.Thetaskofthiscomponentistoconstructa The anomaly detection component operates on the
+generalizedanomalysignaturethatisbasedonthepar- URLs extracted from successful web requests, as pro-
+ticular anomaly and the web application and attribute vided by the event collector. The set of URLs is fur-
+that was the target of the request. The generated sig- therpartitionedintosubsetscorrespondingtoeachweb
+nature is used to match further manifestations of the application (that is, each server-side component). The
+same, orsimilar,anomaly. Notethata distinctionmust anomalydetectorprocesseseachsubsetofqueriesinde-
+be made between misuse signatures and anomaly sig- pendently,associatingmodelswitheachoftheattributes
+natures. In our nomenclature, a misuse signature de- usedtopassinputvaluestoaspecificserver-sideappli-
+scribes a specific instance of a known attack, whereas cation.
+an anomaly signature is a set of statistical models of Theanomalydetectionmodelsareasetofprocedures
+suspected malicious behavior for a specific target that usedtoevaluateacertainfeatureofaqueryattribute,and
+hasbeenderivedfromanalertgeneratedbyananomaly operate in one of two modes, learning or detection. In
+detector. the learning phase, models build a profile of the “nor-
+mal” characteristics of a given feature of an attribute
+3.5. Attack Class Inference (e.g., the normallength of values for an attribute), set-
+tingadynamicdetectionthresholdfortheattribute.Dur-
+Incertaincases, asignaturecanbefurtherclassified ingthedetectionphase,modelsreturnananomalyscore
+asbelongingtooneofseveralbroad,genericclassesof foreachobservedexampleofanattributevalue. Thisissimplyaprobabilityontheinterval[0,1]indicatinghow 4.2. Character Distribution
+probable the observed value is in relation to the estab-
+lishedprofileforthatattribute(notethatascorecloseto Thecharacterdistributionmodelismotivatedbythe
+zeroindicatesahighlyanomalousvalue). observationthat attribute values generally have a regu-
+Sincetherearegenerallymultiplemodelsassociated lar structure, are usually human-readable, and usually
+witheachattributeofawebapplication,afinalanomaly only contain printable characters. In particular, values
+score for an observed attribute value during the detec- for a given attribute can be expected to have similar
+tion phase is calculated as the weighted sum of the in- characterdistributions,whereacharacterdistributionis
+dividualmodelscores. Iftheweightedanomalyscoreis composedoftherelativefrequenciesofeachofthe256
+greater than the detection threshold determined during ASCIIcharactervaluessortedindescendingorder. For
+thelearningphaseforthatattribute,theanomalydetec- legitimate inputs, the relative character frequenciesare
+torconsiderstheentirerequestanomalousandraisesan expected to slowly decrease in value. Malicious input,
+alert. however, can exhibit either an extreme drop-offdue to
+The following sections briefly describe the imple- largeoccurrencesofasinglecharacter,orlittledrop-off
+mentationofthemodelsutilizedbytheanomalydetector duetorandomcharactervalues.
+component. Formoreinformationonthemodelsthem- During the learning phase, the idealized character
+selvesaswellastheanomalydetectorasawholeandits distribution,orICD,ofanattributeiscalculatedbyfirst
+evaluationonreal-worlddata,pleasereferto[11]. recording the character distribution for each observed
+example. Before switching to the detection phase, the
+4.1. Attribute Length average of all recorded character distributions for that
+attributearecomputed. Duringthedetectionphase,the
+probabilitythatthecharacterdistributionofanobserved
+Theattributelengthmodelisbasedontheassumption
+attribute value is drawn from the calculated ICD for
+thatmanyattributevaluesdonotvarygreatlyinlength,
+thatattributeisdeterminedusingavariantofthePearson
+beingeitherfixedinsizeorofashortlength. Malicious
+χ2-test.
+input,however,oftenviolatesthisassumption,suchasin
+the case of a buffer overflowwhich must pass a string,
+4.3. Structural Inference
+oftencontainingshellcode,thatislongenoughtoover-
+flow the targetbuffer in order to assume controlof the
+vulnerableprocess. Thus,theattributelengthmodelat- Thestructuralinferencemodelderivesitspowerfrom
+temptstoapproximatetheactual,yetunknown,distribu- the observation that legitimate attribute values can of-
+tionoftheattributelengths.Thisisaccomplishedduring ten be considered as strings generated from a regu-
+thelearningphasebycalculatingthesamplemeanµand lar grammar. For instance, a subset of legal path-
+variance σ2 for each attribute value observed. During names could be generated from the regular expression
+thedetectionphase,theprobabilitythatagivenattribute (/|[a-zA-Z0-9])+, i.e., a series of alphanumeric
+lengthlisdrawnfromtheactualdistributionofattribute characters interspersed with path separators. The gen-
+lengthsiscalculatedusingtheformulationbasedonthe eratinggrammarforanattribute,however,isunknown,
+Chebyshevinequality,where l is the observedattribute andthusitisnecessarytoconstructareasonableapprox-
+length,µisthesamplemean,andσ2 isthesamplevari- imationforthetruegrammar.Thisisaccomplisheddur-
+ance. ing the learning phase by considering the observed at-
+tributevaluesastheoutputofaprobabilisticgrammar,
+2
+σ whichisagrammarthatassignsprobabilitiestoeachof
+p(|x−µ|>|l−µ|)<p(l)=
+(l−µ)2 itsproductions. Theprobabilisticgrammarcapturesthe
+notionthatsomestringsaremorelikelytobeproduced
+TheweakboundenforcedbytheChebyshevinequal- than others, and should correspondto the set of exam-
+ity resultsin a highdegreeof toleranceto variationsin plesgatheredduringthelearningphase.
+attributelength,flaggingonlyobviousoutliersassuspi- Theconstructionofsuchagrammarisaccomplished
+cious. by the application of the algorithm described in [17].Thisalgorithmfirst constructsa nondeterministicfinite 5.Anomaly Generalization
+automaton(NFA)thatexactlyreflectstheinputdata,and
+then gradually merges states until a reasonable gener-
+Anomalygeneralizationis the processof transform-
+alization from the starting grammar is found, at which
+ing the parameters of a detected anomaly into an ab-
+pointstatemergingterminates.Thegoalistofindamid-
+stract modelthat will be used to match similar anoma-
+dle ground between the over-simplified starting gram-
+lies,wherethesimilaritymetricismodel-dependent.
+mar,whichisonlyabletoderivethelearnedinput,and
+Moreprecisely,whenoneormoreoftheattributeval-
+an over-generalized grammar which is capable of pro-
+uesofawebrequestaredetectedasanomalousbyoneor
+ducing all possible strings (in which case all structural
+moremodels,thedetectionparametersfortheattributes
+information has been lost). The resulting NFA asso-
+andmodelsinvolvedare“relaxed”andcomposedinan
+ciatesprobabilityvalueswitheachofthesymbolsemit-
+anomaly signature that identifies possible variations of
+ted and the transitions taken between states, with the
+an attack. For example, if the attribute itemid of the
+probability of a single path through the automaton be-
+purchase web application shown in Figure 1 is de-
+ingtheproductofthoseprobabilities.
+tected as anomalous because of its character distribu-
+During the detection phase, the probability that an tion, then the generalization process will create an ab-
+observed attribute value has been generated from the stractmodelthatmatchescharacterdistributionsforthe
+true generatinggrammar for that attribute is calculated itemidattribute thatare somewhatsimilar to the one
+astheproductoftheprobabilitiesforthesymbolsemit- thattriggeredtheanomaly.
+tedandtransitionstakenalongapaththroughtheNFA. Note that the generalizationprocessand the genera-
+Ifnopathispossible,theobservedvaluecannotbede- tionofanomalysignaturesisnotdrivenbyexamplesof
+rivedfromtheprobabilisticgrammar,anda probability known attacks, but by the relaxation of the parameters
+of0isreturned. usedbytheanomalymodels. Therefore,theseanomaly
+signatures are not derived from (or associated with) a
+specificexploitationtechnique.
+The following sections describe the details of how
+4.4. Token Finder our system generalizes anomalies detected by each of
+themodelsdiscussedinSection4,andhowthesegener-
+alizedanomalysignaturesare usedduringthe anomaly
+aggregationphase.
+The token finder model depends on the observation
+that some attributes expect values drawn from a lim-
+5.1. Attribute Length
+itedsetofconstants,suchasflagsorindices. Thus,this
+modeldetectswhenanattackerattemptstousetheseat-
+The attribute length model stores the approximate
+tributestopassvaluesnotcontainedinthelegalsettothe
+length distribution of an attribute derived during the
+application.Duringthelearningphase,thesetofunique
+learning phase as a sample mean µ and variance σ2.
+values for a given attribute are recorded. If the size of
+When the length of a given attribute value is detected
+thissetgrowsproportionallytothetotalnumberofob-
+as anomalous, the values of µ and σ2 for that attribute
+servedinstancesoftheattribute,theexpectedvaluesfor
+areextractedfromthemodel.Theseparametersarethen
+theattributeareassumedtoberandom. Otherwise, the
+used to create an anomalysignature, which determines
+modelassumesthattheattributeexpectsanenumeration
+whetherlengthsforthesameattributevaluearesimilarly
+ofvalues.Duringthedetectionphase,iftheattributehas
+anomalous.
+beendeterminedtoacceptanenumerationofvalues,ob-
+To this end, we introduce a similarity operator
+servedattributevaluesaretestedformembershipinthe
+ψ (l ,l )where
+set recordedduringthe learningphase. If the observed attrlen obsv orig
+valueispresent,thenthemodelassumesthatthevalueis
+(cid:12) (cid:12)
+innocuous. Otherwise,theobservedvalueisconsidered (cid:12) σ2 σ2 (cid:12)
+ψ ≡(cid:12) − (cid:12)<d
+attrlen (cid:12) 2 2(cid:12) attr
+anomalous. (cid:12)(l obsv−µ) (l orig−µ) (cid:12)ThisoperatorisadaptedfromtheChebyshevinequal- Here, d is a configurable distance threshold.
+cdist
+itytestandisusedduringtheanomalyaggregationphase Thus, two dominating character sets are consid-
+todeterminewhethertheanomalyscoreofanobserved eredsimilarifatleastonecharactervalueispresent
+attributelengthl fallswithinsomeconfigurabledis- intheirintersectionandthecorrespondingrelative
+obsv
+tance d from the anomaly score of the anomalous frequenciesarewithinaconfigurabledistancefrom
+attr
+attributelengthl thatwasoriginallyusedtogenerate eachother.
+orig
+theanomalysignature.
+2. If the character distribution of the anomalous at-
+5.2. Character Distribution tributeisclosetotheuniformdistribution,thesim-
+ilarityoperatorbecomesatestforanearlyrandom
+The character distribution model stores the ideal- characterdistribution. Thisisimplementedbycal-
+ized character distribution (ICD) of an application’s culating the maximum distance between any pair
+attribute, and then, during the detection phase, it ap- offrequencyvaluesfromthesetsC obsv andC orig,
+plies the Pearson χ2-test to determine the normalityof and by testing whether this distance is less than a
+an attribute’s character distribution. If the distribution configurablethresholdd. Formally,∀0≤i,j ≤m
+is flaggedas anomalous,theparametersthatareneces-
+ψ ≡max(|f −f |)<d
+sarytocreatethegeneralizedanomalysignatureareex- cdist obsv,i orig,j cdist
+tractedin one oftwo ways, dependingonthe natureof
+theanomaly. Note that these two different techniques are neces-
+sarytoaccommodatecommonattacks(suchasinjection
+1. If the observed character distribution exhibits a
+of binary code and directory traversal attacks), which
+sharp drop-off, which indicates the dominance
+manifestthemselvesasacharacterdistributionanomaly
+of a small number of characters, a configurable
+butwithverydifferentcharacteristics.
+number of the character values that dominate
+the distribution are used to construct the gener-
+5.3. Structural Inference
+alized signature. More formally, the set C =
+{(c1,f1),(c2,f2),...,(c m,f m)} is constructed,
+Thestructuralinferencemodelusestheexamplesob-
+where c is the ith dominating character value, f
+i i
+servedin the trainingphase to constructa probabilistic
+is the corresponding relative frequency, and C is
+grammarthat approximatesthe actual grammarfor the
+the set of m dominating character values and fre-
+valuesofanapplication’sattribute.
+quency pairs extracted from the model. During
+If an attribute value observed during the detection
+the anomalyaggregationphase phase, the similar-
+phaseisdeterminedtobeanomalousbythemodel,the
+ity of an observed character distribution with re-
+generalization process extracts the prefix of the violat-
+spectto the originalanomalouscharacterdistribu-
+ingstringuptoandincludingthefirstcharacterthatvi-
+tionistestedbyanalyzingtheintersectionbetween
+olatestheattribute’sgrammar. Theuseoftheoffending
+C and C , where C is the set of domi-
+obsv orig obsv
+string’sprefixasabaseforgeneralizingtheattackismo-
+natingcharactersfromtheobservedattributevalue
+tivated by the observation that repeated attacks against
+andC isthecorrespondingsetfromtheoriginal
+orig
+the same web application often exhibitsimilar prefixes
+anomalousvalue. IfC ∩C 6= ∅,weintro-
+obsv orig
+in the URLs or pathsused as valuesin thatattribute of
+duce a similarity operator ψ (f ,f )
+cdist obsv,i orig,j
+theapplication.
+where
+The prefix string is translated into a string of char-
+ψ ≡|f −f |<d acter classes. More precisely, all lowercase alphabetic
+cdist obsv,i orig,j cdist
+charactersaremappedinto“a,”alluppercasealphabetic
+and
+characters are mapped into “A,” all numeric characters
+mapto“0,”andallothercharactersremainunchanged.
+(c ,f ),(c ,f )∈C ∩C ,
+obsv,i obsv,i orig,j orig,j obsv orig
+Then, to test the similarity of a subsequent observed
+c =c value with respect to the translated anomalous string,
+obsv,i orig,jcalleds ,asimilartranslationisperformedontheob- In the degeneratecase, lex always returnstrue and the
+orig
+servedvalue,whichbecomess .Thetwonormalized resultinganomalysignaturewouldsimplygroupanoma-
+obsv
+valuesarethencomparedforequality. Formally,wein- lies that represent attribute values not contained in the
+troduce the similarity operator ψ (s ,s ) original enumeration. In the current implementation,
+structure obsv orig
+suchthat∀0≤i≤mwherem=|s |, however,lexisasimplestringequalitytest.
+orig
+For example, in the web application shown in Fig-
+ψ structure(s obsv,s orig)≡s obsv,i =s orig,i ure1,theccattributealwayshasvaluesdrawnfromthe
+setofcreditcardtypes{mastercard,visa,amex}.
+For example, consider the value of the attribute
+Ifanexploitusesananomalousvalueforthisattribute,
+itemid in the last line of Figure 1. In this case,
+thecorrespondinganomalysignaturewillidentifyiden-
+thestructuralinferencemodeldetectsaviolationinthe
+ticalviolationsoftheattributevalue.
+structureoftheattributevaluebecause,duringthetrain-
+ing phase, the model learned that an item identifier is
+6.Attack ClassInference
+composedof alphanumericcharactersonly. Therefore,
+thegeneralizationprocesscreatesananomalysignature
+based on the grammar [a|0]+;, because the charac- Anomalydetectionisabletodetectunknownattacks
+ter “;” is the first character that violated the attribute but it is not able to provide a concrete explanation of
+grammarderivedduringthetrainingphase. Furtherat- whattheattackrepresentswithrespecttothetargetap-
+temptstousethe“;”charactertoperformanattackwill plication. This is a general limitation of anomaly de-
+beclassifiedassimilaranomalies. tection approachesandoften confusessystem adminis-
+trators when they have to analyze alerts that state only
+5.4. Token Finder that some attribute of a web requestdid notmatch one
+or more of the previously established profiles. We ob-
+servedthatcertainwell-knownclassesofattacksviolate
+Duringthedetectionphase,the tokenfindertests an
+anomalymodelsin a consistentway. Therefore,when-
+observedattributevaluel formembershipintheset
+orig
+eversuchviolationsaredetected,heuristicscanbeused
+T,whereT isthesetoftokensrecordedduringthelearn-
+toattempttoinferthetypeofanattackandprovideuse-
+ingphaseforthatattribute(ifthesetofallvaluesforthat
+fulhintstothesystemadministrator.
+attributewasdeterminedtobeanenumeration).
+Oursystemincludesanattackclassinferencecompo-
+Duringthedetectionphase,ifthetokenfindermodel
+nentthatutilizesadhocheuristicstodeterminetheclass
+determinesthatan attribute valueis anomalous, the set
+of an attack when certain types of anomalies are de-
+ofallowablevaluesT forthatattributeisextractedfrom
+tected.Theselectionofwhichheuristicstoapplyaswell
+themodel.Then,duringtheaggregationphase,asubse-
+ashoweachisappliedisinfluencedbythetypeandpa-
+quentobservedattributevaluel isdetectedassimi-
+obsv
+rametersoftheanomalydetected. Oursystemcurrently
+lartotheoriginalanomalousvaluel ,iftheobserved
+orig
+incorporates heuristics for four major classes of web-
+valueisnotamemberoftheenumerationT anditislex-
+based attacks: directory traversals, cross-site scripting,
+icographicallysimilartotheoriginalanomalousvalue.
+SQLinjection,andbufferoverflows.
+Formally, given a function lex that determineslexi-
+AsnotedinSection1,theattackclassinferencepro-
+cographicsimilarity, we introducethe similarityopera-
+cessisdifferentfromthematchingof“traditional”intru-
+torψ (l )where
+token obsv
+siondetectionsignatures(e.g.,aSnortsignaturethatde-
+ψ ≡lex(l ,l ) tectsbufferoverflowattacks). Thereasonisthattheat-
+token orig obsv
+tackclassinferenceprocessisappliedonlytoattributes
+Note that the function lex can be tuned to achieve that have already been identified as anomalous, while
+differentlevelsof sensitivity to variationsin the values “traditional” signatures are applied to the entire event
+of anomaloustokens. For instance, lex may use Ham- being analyzed. As a consequence, the attack class in-
+mingorLevenshteindistancestodeterminestringequal- ferencetechniquecanbemoreabstract(andlessprecise)
+ity. Additionally, type inference may be performedon withoutincurringtheriskofclassifyingbenignportions
+thecollectionandanappropriatelexfunctionselected. of an eventas malicious. Note thatthe attack class in-ferenceisperformedinadditionto(andindependentof) injecting malicious code, such as a JavaScript script,
+the derivation of a generalized anomaly signature, and into a web document (e.g., storing JavaScript code in
+doesnotalwaysproduceavalidclassification. adatabasefield)suchthatthecodeisunwittinglyserved
+Inthefollowing,we describehowattackclasses are tootherclients. Theseattacksgenerallyconsistoffrag-
+identified for the four classes of attacks currently sup- ments of client-side browser scripting languages. Be-
+ported. causeoftheinsertionofspecificHTMLtagsandtheuse
+ofcode-likecontent,thistypeofattackoftenresultsina
+6.1. Directory Traversal violation of the structural inference, character distribu-
+tion,andtokenfindermodels.
+Directorytraversalattacksareessentiallyattemptsto Consequently, the cross-site scripting heuristics are
+gain unauthorized access to files that are not intended applied to an anomalousattribute value if any of these
+to be accessed by a web application or web server by models are involved in the initial detection step. The
+traversingacrossthe directorytree using.. and / es- heuristics currently used for this class include a set of
+capes. These attacks are somewhat unique in that a scans for commonsyntactic elements of the JavaScript
+small set of characters is involved in their execution, languageorHTML fragments(e.g., scriptor leftor
+namely “.” and “/”. Accordingly, the heuristics for rightanglebracketsusedtodelimitHTMLtags).
+detectingdirectorytraversalsareonlyactivatedifeither
+the character distribution returns a dominating charac- 6.3. SQL Injection
+ter set C where C ∩{.,/} 6= ∅, or if the structuralin-
+ferencemodelreturnsaviolatingcharacter-compressed SQL injection attacks consist of unauthorized mod-
+string with a finalunderivablecharacterof“.” or “/.” ificationsto SQL queries, usually by escapingan input
+Toinferthepresenceofadirectorytraversalattack,the toaqueryparameterthatallowstheattackertoexecute
+heuristicscanstheanomalousattributevaluefora sub- arbitrary SQL commands. Because of the insertion of
+string derivablebythe regulargrammarrepresentedby theseescapecharacters,SQLinjectionattacksgenerally
+(/|\.\.)+. resultintheviolationofthestructureofanattribute.
+For example, suppose that the purchase web ap- Thus, the heuristics specific to SQL injection are
+plication of Figure 1 is invoked with an itemid activated if the structural inference model detects an
+value of “cat ../../../../../etc/shadow”. anomaly. The heuristics themselves perform a set of
+In this case, the character distribution model identifies scans over the attribute value for common SQL lan-
+an anomalousnumberof “.” and “/” characters, and, guagekeywordsandsyntacticelements(e.g.,SELECT,
+in addition, the structural model detects a violation of INSERT,UPDATE,DELETE,’,or--).
+the attribute structure. As a consequence, the direc-
+tory traversal attack class inference heuristics are ap- 6.4. Buffer Overflows
+plied to the anomalous attribute value. The heuristics
+determinethattheattributematchesthe regularexpres- Buffer overflow attacks, which encompass attacks
+sion(/|\.\.)+,andtheattackisidentifiedasadirec- such as stack smashing, heap smashing, data modifi-
+torytraversalattack. cation, and others, typically involve sending a large
+This information is added to the generalized sig- amount of data that overflows the allocated buffer, al-
+nature associated with the anomalous event, and this lowingtheattackertooverwritereturnaddresses,dataor
+anomalous event, as well as further similar anomalous functionpointers,orotherwiseoverwritesensitivevari-
+events, are presented to the system administrator as a ableswith attacker-controlleddata. Bufferoverflowat-
+groupofanomalieslabeledasdirectorytraversalattacks. tacksagainstwebapplicationstypicallymanifestthem-
+selvesasattributevaluesthatdeviatedramaticallyfrom
+6.2. Cross-site Scripting establishedprofilesofnormalcy.Thus,theheuristicsfor
+inferring the presence of a buffer overflow attack will
+Cross-site scripting attacks allow a malicious user be activated if any of the character distribution, struc-
+to execute arbitrary code on a client-side machine by tural inference, or attribute length models reportan at-tributeasanomalous. Theheuristicsinthecurrentsys- of the anomaly generalization and aggregationcompo-
+tem perform a simple scan over the attribute string for nents, however, improved this even further by allow-
+binary values (i.e., ASCII values greater than 0x80), ingthesystemtocollapsethose14alertsinto2groups.
+whicharetypicalofbasicbufferoverflowattacks.More Whenthesegroupswereexamined,wefoundthateach
+sophisticated classification techniques could be substi- of the groups indeed comprised related alerts. For the
+tutedorusedtosupplementthebasicheuristic,suchas first,anIMAPmailboxwasrepeatedlyaccessedthrough
+abstractexecution[20],withassociatedtradeoffsinper- the imp webmail application, which had not been ob-
+formance. servedduringthelearningphase. Inresponse,thetoken
+findergeneratedanalert,andtheresultinganomalysig-
+7. Evaluation natureallowedthesystemtogroupthealertstogetherin
+alogicalmanner.1 Forthesecondgroup,developersof
+acustomwebapplicationpassedinvalidvaluestoanat-
+Thesystemwasevaluatedintermsofitsfalsepositive
+tributeduringtest invocationsof theirprogram. In this
+rate,itsabilitytocorrectlygroupandclassifyanomalies,
+case, the attribute length model detected an anomaly,
+anditsabilitytoperformdetectiononwebrequestlogs
+and the resulting anomaly signature correctly grouped
+inreal-time. AllexperimentswereconductedonaPen-
+subsequent variations on the input errors with the first
+tiumIV1.8GHzmachinewith1GBofRDRAM.
+instance.
+7.1. False Positive Rate The results of the generalization and aggregation
+componentsduringanalysisoftheUCSBdatasetwere
+evenmoredramatic. Thedetectionsystemreported513
+In order to evaluate the false positive rate of the
+alerts over 35,261 queries, resulting in a false positive
+anomaly detector, data sets from two universities, TU
+rateseveralordersofmagnitudegreaterthantheTUVi-
+Vienna and UCSB, were analyzed by the system. To
+enna data set. However, due to generalization and ag-
+this end, a client was written to replay the requests to
+gregation,the513alertswerepartitionedinto3groups.
+ahoneypotwebserverwhileamisusedetectionsystem
+Manualinspectionoftheaggregatedalertsdemonstrated
+sniffedalinkbetweentheclientandserver.Allrequests
+that,asinthecaseoftheTUViennadataset,thegroups
+correspondingtoreportedattackswerestrippedfromthe
+were againcomprisedof related alerts. The first group
+dataset. Also,sincemanyoftheattackswereintended
+was composed of a series of anomalous queries to the
+forMicrosoftIISwhile the datasets were producedby
+whois.pl user lookup script, which expects a name
+theApachewebserver,manyattackswerestrippedout
+attribute with a valid username as the value. In this
+simplybyremovingrequestsfordocumentsthatdidnot
+case,thegroupedalertsallpossessedthenameattribute
+exist.
+value teacher+assistant++advisor, possibly
+The detection system itself was configured with an
+as the result of a bad hyperlink reference to the script
+initiallyemptyanomalysignatureset,anddefaultlearn-
+fromelsewhereonthedepartmentwebsite. Inthiscase,
+ing,detection,andsimilaritythresholdswereused. The
+thecharacterdistributionmodeldetectedananomalous
+learning phase was performed over the first 1,000 ex-
+numberof“a”characters. Thesecondgroupwasiden-
+amplesofaspecificwebapplicationattribute,atwhich
+ticalinnaturetothefirstgroup,exceptthatthenamear-
+point the attached profile was switched into detection
+gument value was dean+of+computer+science.
+mode. During detection mode, any alerts reported by
+For this group, the character distribution detected an
+thesystemwereflaggedasfalsepositives,duetotheas-
+anomalous number of “e” characters. The final group
+sumptionthatthedatasetwasattack-free.Theresultsof
+wascomposedofseveralalertsonanoptionalargument
+theexperimentareshowninTable1.
+to the whois.pl script named showphone, which
+During analysis of the TU Vienna data set, the de-
+takeseither a yes or no valueas an argument. In this
+tectionsystemproduced14alertsover737,626queries,
+case, the alerts were attributed to an uppercase YES,
+resulting in a quite low false positive rate. We believe
+thisatteststotheabilityoftheanomalydetectionmod-
+1Incidentally,thiswouldbeareasonablecasetoputtheassociated
+els to accurately capture the “normal” behavior of at-
+modelsbackintothelearningphase,inordertoincorporatethechar-
+tribute values during the learning phase. The addition acteristicsofthelegitimatevalueintotheattributeprofile.Table1.Falsepositiveresults.
+Dataset Queries Falsepositives FalsePositiveRate Groups GroupedFalsePositiveRate
+TUVienna 737,626 14 1.90×10−5 2 3.00×10−6
+UCSB 35,261 513 1.45×10−2 3 8.50×10−5
+Table2.Attackclassificationresults.
+Attack Detected? Variations Groups AlertingModels Characterization
+csSearch Yes 10 1 Length,Char. Distribution Cross-sitescripting
+htmlscript Yes 10 1 Length,Structure Directorytraversal
+imp Yes 10 1 Length,Char. Distribution Cross-sitescripting
+phorum Yes 10 1 Length,Char. Distribution,Token Bufferoverflow
+phpnuke Yes 10 1 Length,Structure SQLinjection
+webwho Yes 10 1 Length None
+whichthetokenfindercorrectlydetectedasanomalous. idation error for which the system includes no charac-
+terization heuristics. It is important to note, however,
+To evaluate the effectiveness of the attack inference
+that the anomaly was still detected, and further varia-
+heuristics,anumberofattackscomprisingthedifferent
+tionsweregroupedcorrectly.Indeed,althoughavariety
+attackclassesthatthesystemclaimstodetect,werein-
+of models providedthe initial decision that the request
+jected into the TU Vienna data set. This data set was
+wasanomalous,ineachcasetheanomalysignaturegen-
+chosen because legitimate invocations of the vulnera-
+eration procedure was able to match subsequent varia-
+ble applications were previously present in the access
+tions of the same attack. We believe that this demon-
+log. Tenvariationsofeachdistinctattackwereinjected
+stratesthepowerouranomalygeneralizationtechnique,
+throughout the data set, utilizing mutation techniques
+specifically with respect to its ability to group similar
+from the Sploit framework[22]. The detection system
+anomalies.
+was configured with exactly the same parametersas in
+the previousexperiment. Theresultsofthe experiment
+7.2. Performance
+areshowninTable2.
+From the experimentalresults, we first note that all Theperformanceofthedetectionsystemwasevalu-
+instancesof each attack were determinedto be anoma- atedintermsofbothelapsedprocessingtimeandmem-
+lous by the anomaly detector. This is to be expected, ory usage when run on both attack-free data sets from
+as the main focus of this work is on the effectiveness TU Vienna and UCSB. Both metrics are important for
+ofgroupingandcharacterizingrelatedanomalousalerts, the real-world applicability of this system, since in the
+andnotonimprovingtheabilityofthesystemtodetect idealcaseitwouldberuninreal-timeonhardwareavail-
+rawanomalies. Ineachcase,allinstancesofagivenat- able to most web site operators. The same parameters
+tack were classified into one group. In addition, each usedforthefalsepositiveevaluationwereusedforthis
+of the groupswas correctly characterized as belonging experiment. Tenrunswereperformedforeachdataset,
+totheproperattackclass. Theonlyattackthatwasnot andtheelapsedtimeswereaveraged. Theresultsofthe
+characterizedbythe attackinferenceheuristicswasthe timerequiredforanalysisbythesystemaredisplayedin
+webwhoattack.This,however,iscorrectbehaviorfrom Table3.
+thesystem,asthewebwhoattackexploitedaninputval- For both data sets, the detection system was able toTable3.Detectionperformanceresults(time).
+Dataset Requests RequestRate ElapsedAnalysisTime AnalysisRate
+TUVienna 737,626 0.107095req/sec 934sec 788.06req/sec
+UCSB 35,261 0.001360req/sec 64sec 550.95req/sec
+maintain a processing rate orders of magnitude above testeditonreal-worlddatacollectedattwouniversities.
+the rate of client requests logged by the web server. Theresultsshowsthattheproposedtechniquesareable
+For instance, in the case of the TU Vienna data set, tocorrectlygeneralizeandcharacterizeattacks,consid-
+therequestanalysiswasperformedapproximately7,000 erablyreducingthe effortneededto analyzethe output
+times as quickly as actual requests were being logged. oftheintrusiondetectionsystem.
+Fromthis,weconcludethatformanysites,thedetection Thepromisingresultsofourinitialexperimentssug-
+systemiscapableofperformingitsanalysisinreal-time. gest that the generalization and characterization tech-
+InadditiontoCPUusage,ananalysisofthememory niques can be extended to other domains, such as the
+utilizationofthesystemwasperformed. Theresultsof argumentsofsystemcallsissuedbycriticalapplications.
+this evaluation showed that the system did not require Futureresearchwillexplorethesenewdomainsandthe
+substantialmemoryresourcesoncetheprofileswerees- generalapplicabilityofourtechniques.
+tablished. The details of the memory usage evaluation Wewillalsoinvestigatewhethertheattackinference
+arenotprovidedforthesakeofspace. technique can be improved, either by using more so-
+phisticatedheuristicsorbyrelyingondifferentdecision
+8. Conclusionsand Future Work models.Forexample,weplantoexplorewhetherattack
+characterizationcanbeexpressedasaBayesiannetwork
+wherethemodeloutputsareusedasevidencenodes.
+Thispaperpresentedan approachthataddressesthe
+Finally, we also plan to investigate whether evalua-
+limitations of anomaly-based intrusion detection sys-
+tionofthesystemusingalternativemetricsincreasesthe
+tems by using both generalization and characterization
+precision of our characterization of the system’s effec-
+techniques. Generalization is used to create a more
+tivenessinreducingtheeffectivefalsepositiverate.
+abstract description of an anomaly that enables one to
+group similar attacks. Characterization is used to in-
+fertheclassofattackthatisassociatedwithagroupof Acknowledgments
+anomalies. Usingthesetwotechniques,itispossibleto
+reducethetimerequiredbyanadministratortomakede-
+This research was supported by the Army Research
+cisionsaboutthenatureoftheanomalies(actualattacks
+Office, under agreement DAAD19-01-1-0484, and by
+versusfalsepositives)andtheircriticality.Furthermore,
+the National Science Foundation, under grants CCR-
+thegeneralizationandcharacterizationpresentedcanas-
+0238492andCCR-0524853.
+sist application developers in pinpointing the location
+andnatureofpreviouslyunknownvulnerabilities.
+References
+One possible drawback of the architecture occurs if
+anattackthathasbeensuccessfullydetectedisgrouped
+withattacksthatwillbeconsideredfalsepositives.Ifthe [1] M. Almgren, H. Debar, andM. Dacier. A Lightweight
+groupofattacksisdroppedbythesystemadministrator, ToolforDetectingWebServerAttacks. InProceedings
+thentherealattackisnotidentifiedassuchandbecomes oftheISOCSymposiumonNetworkandDistributedSys-
+afalsenegative. temsSecurity,SanDiego,CA,February2000.
+Wedevelopedasystemthatimplementsanomalysig- [2] M. Almgren and U. Lindqvist. Application-Integrated
+nature generation and attack class inference, and we Data Collection for Security Monitoring. In Proceed-ingsofRecentAdvancesinIntrusionDetection(RAID), [15] L.Portnoy,E.Eskin,andS.Stolfo. IntrusionDetection
+LNCS,pages22–36,Davis,CA,October2001.Springer. withUnlabeledDataUsingClustering.InProceedingsof
+ACMCSSWorkshoponDataMiningAppliedtoSecurity,
+[3] C.WarrenderandS.ForrestandB.A.Pearlmutter. De-
+Philadelphia,PA,November2001.
+tectingIntrusionsusing SystemCalls: AlternativeData
+Models. In IEEESymposium on Security and Privacy, [16] M.Roesch. Snort-LightweightIntrusionDetectionfor
+pages133–145,1999. Networks.InProceedingsoftheUSENIXLISA’99Con-
+ference,Seattle,WA,November1999.
+[4] K.CoarandD.Robinson.TheWWWCommonGateway
+Interface,Version1.1. InternetDraft,June1999. [17] A. Stolcke and S. Omohundro. Inducing Probabilistic
+GrammarsbyBayesianModelMerging. InConference
+[5] Common Vulnerabilities and Exposures. http://
+onGrammaticalInference,1994.
+www.cve.mitre.org/,2005.
+[18] K.M.C.Tan, K.S.Killourhy, andR.A.Maxion. Under-
+[6] D.E. Denning. An Intrusion Detection Model. IEEE
+mining an Anomaly-Based Intrusion Detection System
+Transactions on Software Engineering, 13(2):222–232,
+UsingCommonExploits. InProceedingsofthe5th In-
+February1987.
+ternationalSymposiumonRecentAdvancesinIntrusion
+[7] S.Forrest. ASenseofSelfforUNIXProcesses. InPro- Detection, pages 54–73, Zurich, Switzerland, October
+ceedings of the IEEE Symposium on Security and Pri- 2002.
+vacy,pages120–128,Oakland,CA,May1996.
+[19] E. Tombini, H. Debar, L. Me, and M. Ducasse. A Se-
+[8] A.K. Ghosh, J. Wanken, and F. Charron. Detecting rialCombinationofAnomalyandMisuseIDSesApplied
+AnomalousandUnknownIntrusionsAgainstPrograms. to HTTP Traffic. In Proceedings of the Twentieth An-
+InProceedingsoftheAnnualComputerSecurityAppli- nual Computer Security Applications Conference, Tuc-
+cationConference(ACSAC’98),pages259–267, Scotts- son,Arizona,December2004.
+dale,AZ,December1998.
+[20] ThomasTothandChristopherKruegel. AccurateBuffer
+[9] C.Ko, M.Ruschitzka, andK.Levitt. ExecutionMoni- OverflowDetectionviaAbstractPayloadExecution. In
+toringofSecurity-CriticalProgramsinDistributedSys- 5thSymposiumonRecentAdvancesinIntrusionDetec-
+tems: ASpecification-basedApproach. InProceedings tion(RAID),2002.
+of the 1997 IEEE Symposium on Security and Privacy,
+[21] G.Vigna, W. Robertson, V. Kher, and R.A.Kemmerer.
+pages175–187,Oakland,CA,May1997.
+A Stateful Intrusion Detection System for World-Wide
+[10] C. Kruegel, T. Toth, and E. Kirda. Service Specific Web Servers. In Proceedings of the Annual Computer
+AnomalyDetectionforNetworkIntrusionDetection. In SecurityApplicationsConference(ACSAC2003), pages
+Symposium on Applied Computing (SAC). ACMScien- 34–43,LasVegas,NV,December2003.
+tificPress,March2002.
+[22] Giovanni Vigna, William Robertson, and Davide
+[11] C.Kruegeland G.Vigna. AnomalyDetectionofWeb- Balzarotti. Testing Network-based Intrusion Detection
+based Attacks. In Proceedings of the 10th ACM Con- SignaturesUsingMutantExploits.In11thACMConfer-
+ferenceonComputerandCommunicationSecurity(CCS enceonComputerandCommunicationsSecurity(CCS),
+’03), pages 251–261, Washington, DC, October 2003. 2004.
+ACMPress.
+[23] D.WagnerandP.Soto. MimicryAttacksonHost-Based
+[12] W.Lee,S.Stolfo,andP.Chan. LearningPatternsfrom IntrusionDetectionSystems. InProceedingsofthe9th
+UnixProcessExecution Tracesfor IntrusionDetection. ACMConferenceonComputerandCommunicationsSe-
+InProceedingsoftheAAAIWorkshop:AIApproachesto curity,pages255–264,WashingtonDC,USA,November
+FraudDetectionandRiskManagement,July1997. 2002.
+[13] M.MahoneyandP.Chan.LearningNonstationaryMod-
+elsof Normal Network Trafficfor DetectingNovel At-
+tacks. In Proceedings of the 8th International Confer-
+ence onKnowledge Discovery and DataMining, pages
+376–385,2002.
+[14] V. Paxson. Bro: A System for Detecting Network In-
+trudersinReal-Time. InProceedingsofthe7thUSENIX
+SecuritySymposium,SanAntonio,TX,January1998.

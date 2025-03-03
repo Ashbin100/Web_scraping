@@ -1,0 +1,1396 @@
+The Effect of DNS on Tor’s Anonymity
+Benjamin Greschbach∗ Tobias Pulls∗ Laura M. Roberts∗ Philipp Winter∗ Nick Feamster
+KTH Royal Institute of Technology Karlstad University Princeton University Princeton University Princeton University
+bgre@kth.se tobias.pulls@kau.se laurar@cs.princeton.edu pwinter@cs.princeton.edu feamster@cs.princeton.edu
+Adversary
+Abstract—Previousattacksthatlinkthesenderandreceiverof
+traffic in the Tor network (“correlation attacks”) have generally
+relied on analyzing traffic from TCP connections. The TCP DNS server
+connections of a typical client application, however, are often
+Exit relay
+accompanied by DNS requests and responses. This additional DNS
+traffic presents more opportunities for correlation attacks. This
+paper quantifies how DNS traffic can make Tor users more vul-
+User Tor network
+HTTP
+nerable to correlation attacks. We investigate how incorporating
+Web server
+DNStrafficcanmakeexistingcorrelationattacksmorepowerful
+and how DNS lookups can leak information to third parties
+Fig.1. PasttrafficcorrelationstudieshavefocusedonlinkingtheTCPstream
+about anonymous communication. We (i) develop a method to
+enteringtheTornetworktotheone(s)exitingthenetwork.Weshowthatan
+identify the DNS resolvers of Tor exit relays; (ii) develop a new adversarycanalsolinktheassociatedDNStraffic,whichcanbeexposedto
+setofcorrelationattacks(DefecTorattacks)thatincorporateDNS manymoreASesthantheTCPstream.
+traffictoimproveprecision;(iii)analyzetheInternet-scaleeffects
+of these new attacks on Tor users; and (iv) develop improved
+methods to evaluate correlation attacks. First, we find that there forextendedperiodsoftimeinmultiplenetworklocations(i.e.,
+exist adversaries that can mount DefecTor attacks: for example, “semi-global”adversaries)arearealconcern[15,24];weneed
+Google’s DNS resolver observes almost 40% of all DNS requests tobetterunderstandthenaturetowhichtheseadversariesexist
+exiting the Tor network. We also find that DNS requests often
+inoperationalnetworksandtheirabilitytodeanonymizeusers.
+traverse ASes that the corresponding TCP connections do not
+transit, enabling additional ASes to gain information about Tor Past work has quantified the extent to which an adversary
+users’ traffic. We then show that an adversary that can mount a that observes TCP flows between clients and servers (e.g.,
+DefecTor attack can often determine the website that a Tor user HTTPrequests,BitTorrentconnections,andIRCsessions)can
+is visiting with perfect precision, particularly for less popular
+correlate traffic flows between the client and the entry to the
+websiteswherethesetofDNSnamesassociatedwiththatwebsite
+anonymity network and between the exit of the anonymity
+may be unique to the site. We also use the Tor Path Simulator
+network and its ultimate destination [24, 33]. The ability to
+(TorPS)incombinationwithtraceroutedatafromvantagepoints
+correlate these two flows—a so-called correlation attack—
+co-located with Tor exit relays to estimate the power of AS-level
+adversaries that might mount DefecTor attacks in practice. can link the sender and receiver of a traffic flow, thus com-
+promising the anonymity of both endpoints. Although TCP
+connections are an important part of communications, the
+I. INTRODUCTION
+DomainNameSystem(DNS)trafficisalsoquiterevealing:for
+example,evenloadingasinglewebpagecangeneratehundreds
+Wehaveyettolearnhowtobuildanonymitynetworksthat
+of DNS requests to many different domains. No previous
+resist global adversaries, provide low latency, and scale well.
+analysis of correlation attacks has studied how DNS traffic
+RemailersystemssuchasMixmaster[32]andMixminion[12]
+can exacerbate these attacks.
+eschew low latency in favor of strong anonymity. In contrast,
+Tor [14] trades off strong anonymity to achieve low latency; DNS traffic is highly relevant for correlation attacks be-
+Tor therefore enables latency-sensitive applications such as cause it often traverses completely different paths and au-
+webbrowsingbutisvulnerabletoadversariesthatcanobserve tonomous systems (ASes) than the subsequent corresponding
+traffic both entering and exiting its network, thus enabling TCP connections. An attacker that can observe occasional
+deanonymization. Although Tor does not consider global ad- DNS requests may still be able to link both ends of the
+versariesinitsthreatmodel,adversariesthatcanobservetraffic communication, even if the attacker cannot observe TCP
+traffic between the exit of the anonymity network and the
+∗Allfourauthorscontributedsubstantially,andsharefirstauthorship.The
+server. Figure 1 illustrates how an adversary may monitor the
+namesareorderedalphabetically.
+connection between a user and the guard relay, and between
+theexitrelayanditsDNSresolversorservers.Thisterritory—
+Permission to freely reproduce all or part of this paper for noncommercial to-date, completely unexplored—is the focus of this work.
+purposes is granted provided that copies bear this notice and the full citation
+We first explore how Tor exit relays resolve DNS names.
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author By developing a new method to identify all exit relays’ DNS
+(for reproduction of an entire paper only), and the author’s employer if the resolvers, we learn that Google currently sees almost 40%
+paper was prepared within the scope of employment. of all DNS requests exiting the Tor network. Second, we
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+investigatewhichorganizationscanobserveDNSrequeststhat
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23311 originate from Tor exit relays. To answer this question, weemulateDNSresolutionfortheAlexatop1,000domainsfrom II. BACKGROUND
+several ASes. We find that DNS resolution for half of these
+We now provide an introduction to the Tor network,
+domainstraversesnumerousASesthatarenottraversedforthe
+website fingerprinting attacks, as well as how the Tor network
+subsequent HTTP connection to the web site. Next, we show
+implements DNS resolution.
+how the ability to observe DNS traffic from Tor exit relays
+can augment existing website fingerprinting attacks, yielding a)The Tor network: The Tor network is an overlay
+perfectlypreciseDefecTor1attacksforunpopularwebsites.We
+network that anonymizes TCP streams such as web traffic.
+further introduce a new method to perform traceroutes from As of August 2016, it comprises approximately 7,000 relays
+the networks where exit relays are located, making our results and about two million users. The hourly published network
+significantly more accurate and comprehensive than previous consensus summarizes all relays that are currently online.
+work. Finally, we use the Tor Path Simulator (TorPS) [23] to Clients send data over the Tor network by randomly selecting
+investigate the effects of Internet-scale DefecTor attacks. three relays—typically called the guard, middle, and exit
+relay—that then form a virtual tunnel called a circuit. The
+We demonstrate that DNS requests significantly increase
+guard relay learns the client’s IP address, but not its web
+the opportunity for adversaries to perform correlation attacks.
+activity, while the exit relay gets to learn the client’s web
+This finding should encourage future work on correlation
+activity, but not its IP address. Relays and clients talk to each
+attacks to consider both TCP traffic and the corresponding
+otherusingtheTorprotocol,whichuses512-bytecells.Finally,
+DNS traffic; future design decisions should also be cognizant
+eachrelayisuniquelyidentifiedbyitsfingerprint—ahashover
+of this threat. Our work (i) serves as guidance to Tor exit
+its public key.
+relayoperatorsandTornetworkdevelopers,(ii)improvesstate-
+of-the-art measurement techniques for analysis of correlation b)Website fingerprinting attacks: The Tor network
+attacks, and (iii) provides even stronger justification for in- encrypts relayed traffic as it travels from the client to the
+troducing website fingerprinting defenses in Tor. To foster exit relay. Therefore, intermediate parties such as the user’s
+future work and facilitate the replication of our results, we Internetserviceprovider(ISP)cannotreadthecontentsofany
+publish both our code and datasets.2 In summary, we make packet.Tordoesnot,however,protectotherstatisticsaboutthe
+the following contributions: network traffic, such as packet inter-arrival timing, directions,
+and frequency. The ISP can analyze these properties to infer
+• We show how existing website fingerprinting attacks
+the destinations that a user is visiting. The literature calls this
+can be augmented with observed DNS requests by an
+attack website fingerprinting.
+AS-leveladversarytoyieldperfectlypreciseDefecTor
+attacks for unpopular websites. Past work evaluated website fingerprinting attacks in two
+settings:aclosed-worldsettingconsistsofasetofnmonitored
+• We develop a method to identify the DNS resolver of websites,andtheattackertriestolearnwhichamongallnsites
+exit relays. We find that Tor exit relays comprising theuserisvisitingwiththenotablerestrictionthattheusercan
+40% of Tor’s exit bandwidth rely on Google’s public only browse to one of the n websites. The open-world setting
+DNS servers to resolve DNS queries. is more realistic: the user can browse to unmonitored sites
+in addition to the monitored sites. Unmonitored sites are, per
+• We quantify the extent to which DNS resolution
+definition,notknowntotheattacker;thus,theattacker’straffic
+exposes Tor users to additional AS-level adversaries
+classifier cannot train on unmonitored sites the user visits.
+who are not on the path between the sender and
+The attacker’s classifier can train on whatever unmonitored
+receiver. We find that for the Alexa top 1,000 most
+sites it chooses, as long as the classifier has not trained on an
+popular websites, many ASes that are on the paths
+unmonitored site used for testing. Two relevant metrics in the
+between the exit relay and the DNS servers required
+open-world setting are recall and precision. Recall measures
+toresolvethesites’domainnamesarenotonthepath
+theprobabilitythatavisittoamonitoredsitewillbedetected,
+between the exit relay and the website.
+while precision measures the probability that a classification
+• We develop a new measurement method to evaluate by the classifier of a visit to a monitored site (positive test
+the extent to which ASes are on-path between exit outcome) is the correct one. Consider a classifier with 0.25
+relaysandDNSresolvers.WeusetheRIPEAtlas[39] recall and 0.5 precision: on average, every fourth visit by
+platform to achieve previously unprecedented path the user to a monitored site will be detected, and half of the
+coverage and accuracy for evaluating the capabilities classificationsbytheclassifierwillbewrong.Errorscaneither
+of AS-level adversaries. classify a monitored site as unmonitored (lowering recall)
+or vice versa (lowering precision). Mistaking one monitored
+The rest of this paper is organized as follows. Section II website for another is less likely [44].
+presents background, and Section III relates our study to
+Wa-kNN is a website fingerprinting attack by Wang et
+previouswork.InSectionIV,weshedlightonthelandscapeof
+al. [45] that uses a k-nearest neighbor classifier with a custom
+DNS in Tor. Section V discusses our DefecTor attacks, which
+weight-learningalgorithm,WLLCC[44,§3.2.5].Frompacket
+we evaluate in Section VI. We then model the Internet-scale
+traces between a Tor client and its guard, Wa-kNN extracts a
+effect of our attacks in Section VII. Finally, we discuss our
+number of features to classify each website. Useful features
+work in Section VIII and conclude the paper in Section IX.
+include the number of outgoing packets and bursts of packets
+in the same direction. In the training phase, WLLCC adjusts
+1The acronym is short for DNS-enhanced fingerprinting and egress
+correlationonTor. weights of features extracted from sites of known classes
+2Ourprojectpageisavailableathttps://nymity.ch/tor-dns/. such that the distance between instances of the same site
+2(class) are minimized (collapsed). In the testing phase, Wa- on answering. In 2004, when the Tor network comprised
+kNN determines the distance of a testing traffic trace to all only 33 relays, Feamster and Dingledine investigated the
+known training traces. The distance calculation results in the practical threat that AS-level adversaries pose to anonymity
+k nearest classes: if all classes are the same, then the testing networks[16].Theauthorsconsideredanattackerthatcontrols
+trace is classified as that class, otherwise it is classified as an AS that is traversed both for ingress and egress traffic,
+unmonitored. In the open-world setting, one class represents allowingtheattackertocorrelatebothstreams.UsingASpath
+all unmonitored sites both during training and testing. By prediction [19], Feamster and Dingledine found that powerful
+increasingk,Wa-kNNcantradedecreasedrecallforincreased tier-1 ISPs reduce location diversity of anonymity networks.
+precision. We set k=2 when using Wa-kNN for higher recall In 2007, Murdoch and Zielin´ski drew attention to IXP-level
+since DefecTor is a highly precise attack. adversaries,aclassofadversariesthatwasmissinginFeamster
+and Dingledine’s work [33]. Murdoch and Zielin´ski showed
+Tor could eliminate website fingerprinting attacks with en-
+that IXP adversaries are able to correlate traffic streams, even
+crypted, constant-bitrate channels between a Tor client and its
+inthepresenceofpacketsamplingratesaslowasonein2,000.
+guard;otheranonymitynetworkscoulduseasimilartechnique.
+Unfortunately, the Tor network’s limited spare capacity does In 2013, Johnson et al. [24] presented the first large-scale
+not allow for such a throughput-intensive defense, but some study on the risk of Tor users facing relay-level and AS-level
+research has worked on making this type of defense more adversaries. The authors developed TorPS [23] that simulates
+efficient [8, 26, 38, 44]. Tor circuits for a number of user models. By combining
+TorPS with AS path prediction, Johnson et al. could answer
+c) How Tor resolves DNS requests: Tor clients must
+questions such as the average time until a Tor user’s circuit
+send DNS requests over Tor to prevent DNS leakage (e.g.,
+is deanonymized by an AS or IXP. Most recently in 2016,
+having a DNS request travel over an unencrypted channel as
+Nithyanand et al. [35] used AS path prediction to evaluate the
+opposedtooverToritself).TordoesnottransportUDPtraffic,
+practical threat faced by users in the top ten countries using
+butitimplementsaworkaroundtowrapDNSrequestsintoTor
+Tor. In 2015, Juen et al. [27] examined the accuracy of path
+cells.UsingtheSOCKSprotocol,applicationscaninstructthe
+predictionalgorithmsthatpriorwork[16,24]usedtoestimate
+Tor client to establish a circuit to a given domain and port.3
+thethreatofcorrelationattacks.TheauthorscomparedASpath
+After the user types in a domain, say example.com, the Tor
+predictionstomillionsoftraceroutes,initiatedfrom25%ofTor
+browserestablishesaconnectiontotheSOCKSproxyexposed
+relays by bandwidth at the AS level, and found that only 20%
+by the local Tor client. The Tor client then selects an exit
+of predicted paths matched the paths observed in traceroutes.
+relay whose exit policy supports example.com and port 443.
+Juen et al. could not consider the reverse path in traceroutes.
+Next,theclientsendsaRELAY_BEGINTorcelltotheexitrelay,
+In 2015, Sun et al. [40] addressed this shortcoming; although
+instructing it to first resolve example.com, and then establish
+past work treated routing as static, Sun et al. showed that the
+a TCP connection to the resolved address at port 443 [13,
+dynamicnatureofInternetroutingmakesAS-leveladversaries
+§ 6.2]. After successfully establishing a connection, the exit
+stronger than previous work had considered.
+relay responds with a RELAY_CONNECTED cell. The client can
+thenexchangedatawithitsintendeddestination.Anothertype We improve on previous work in two significant ways: (i)
+ofcell,RELAY_RESOLVE,supportspurenameresolution,without wearethefirsttoevaluatehowDNStrafficexacerbatestraffic
+establishingasubsequentTCPconnection[13,§6.4].Theexit correlation attacks, both in concept and in practice; and (ii)
+relay responds with a RELAY_RESOLVED cell. we develop and deploy a scalable, sustainable version of the
+measurementmethodproposedbyJuenetal.[27].Ourmethod
+ExitrelayssendtheirDNSrequeststothesystemresolver,
+usesthevolunteer-runRIPEAtlasmeasurementplatform[39],
+which Linux systems read from /etc/resolv.conf. Tor does
+as opposed to relying on relay operators to run third-party
+not modify the system resolver and uses whatever the exit
+scripts. This approach allows us to fully automate our method
+relayoperatorconfigured,suchastheISP’sresolver,orpublic
+and achieve previously unprecedented scale.
+resolvers such as Google’s public DNS resolver 8.8.8.8. As
+of August 2016, exit relays cache DNS responses to speed up
+B. Website fingerprinting
+repeated lookups. The caching layer for Tor clients, however,
+is off by default to prevent tracking attacks due to modified In2009,Herrmannetal.[21]demonstratedthefirstwebsite
+DNS responses [31].
+fingerprinting attack against anonymity systems—including
+Tor—in a closed-world setting. In 2011, Panchenko et al. [37]
+III. RELATEDWORK greatly improved on Herrmann et al.’s detection rate and
+provided insight into an open-world setting. In 2012, Cai et
+This paper combines traffic analysis methods for corre-
+al. [10] improved on previous work by proposing an attack
+lation attacks with website fingerprinting attacks; we discuss
+that used Hidden Markov Models to determine whether a
+related work in each of these two areas.
+sequence of page requests all come from the same site. The
+authors used an open-world setting for their evaluation. Wang
+A. Traffic analysis and correlation attacks andGoldberg[46]proposedanimprovedattackthatemployed
+a new method for data gathering. In 2014, Wang et al. [45]
+Tor’sthreatmodelexcludesglobaladversaries[14],butthe
+further improved on their results with a k-nearest neighbor
+practical threat of such adversaries is an important question
+classifier Wa-kNN and a custom weight-learning algorithm
+that the research community has spent considerable effort
+(WLLCC [44, § 3.2.5]) that in several rounds determine the
+3TheSOCKSversions4aand5supportconnectioninitiationusingdomain optimal weights for features extracted from traffic traces.
+namesinadditiontoIPaddresses. Cai et al. [9] determined which traffic features provide the
+3most predictive power to detect websites, proved a lower
+AS 99 (US)
+bound of any defense that achieves a certain level of security,
+and provided a framework to investigate the performance of AS 7922 (US)
+website fingerprinting attacks. Juarez et al. [25] showed that AS 29169 (FR)
+allpreviousattacksmadeseveralsimplifyingassumptions;the
+AS 16276 (FR)
+work suggested that attacks are still difficult to run outside
+a lab setting as an attacker will have to consider operating AS 1653 (SE)
+system differences, page changes, and background traffic. Re-
+0.00 0.25 0.50 0.75
+cently, in 2016, Wang and Goldberg addressed many practical
+Exposure metrics λ
+roadblocks to website fingerprinting, such as noisy data and
+maintaining a training set, further highlighting the need for
+website fingerprinting defenses in Tor [47].
+Panchenko et al. [36] showed that webpage fingerprinting
+(i.e.,fingerprintingofanypageonasite)issignificantlyharder
+thanwebsitefingerprinting(i.e.,fingerprintingofonlythestart
+page of a site). Hayes and Danezis proposed k-fingerprinting,
+an attack with notably better performance than Wa-kNN even
+inthefaceofdefenses[20].Theirattackretains30%accuracy
+in a closed-world setting against the WTF-PAD defense by
+Juarez et al. [26]—a prime candidate for deployment in
+Tor [38]—at the cost of 50% bandwidth overhead. Juarez et
+al. used Wa-kNN to evaluate WTF-PAD and set k = 5, as
+recommendedbyWangetal.foranoptimaltrade-offbetween
+recall and the false positive rate.
+In our work, we show how to correlate and use observed
+DNS requests in concert with website fingerprinting attacks,
+whichsignificantlyimprovesprecisionforwebsitefingerprint-
+ing. In scenarios where precision is paramount, DefecTor
+attacks pose an even bigger threat than website fingerprinting
+attacks from attackers that can observe even a modest fraction
+of DNS traffic from the Tor network. Mitigating the two De-
+fecTor attacks that we present has implications for the design
+of website fingerprinting defenses: open-world evaluations of
+thewebsitefingerprintingdefenseshouldminimizerecalleven
+when the website fingerprinting attack is tuned to sacrifice
+precision for recall. In the case of Wa-kNN, this means a low
+k: our results are based on k=2.
+IV. UNDERSTANDINGTHELANDSCAPE
+Before explaining our attack, we need to better understand
+how Tor performs DNS resolution. We begin by investigating
+how common it is for adversaries to be able to observe DNS
+requests but not subsequent TCP connections of Tor users
+(Section IV-A). We then seek to understand how these results
+connect to the Tor network by determining the DNS resolvers
+used by exit relays (Section IV-B).
+A. Quantifying the additional AS exposure of DNS queries
+Adversaries that can observe both DNS and subsequent
+TCP traffic (e.g., the ISP of an exit relay) gain no benefit
+from seeing the client’s DNS traffic, since TCP traffic is
+sufficient to mount correlation attacks [33]. In this work, we
+consider adversaries that can observe traffic entering the Tor
+networkandsomeDNSrequestsexitingthenetwork—suchas
+requests addressed to DNS root servers—but not subsequent
+TCPtrafficfromexitrelays.Wefirstdeterminetheprevalence
+of these adversaries by measuring the number of ASes that
+DNS queries traverse versus the number of ASes subsequent
+web traffic traverses.
+tniop
+egatnaV
+Fig.2. FiveboxplotscapturingtheASexposuremetricλ forAlexa’stop
+1,000 web sites. The box plots represent five autonomous systems in three
+countries.
+WequantifytheexposureofDNStrafficversusTCPtraffic
+as follows. We begin with Alexa’s top 1,000 [4], a list of
+the 1,000 most popular web sites as estimated by Alexa. For
+each site, we conducted two experiments. First, we ran a
+TCP traceroute to the site, targeting port 80 to mimic web
+traffic.Second,wedeterminedtheDNSdelegationpathforthe
+website’sDNSnameusingthedigcommand’s+tracefeature.
+Thedelegationpathofadomainname,saywww.example.com,
+is a hierarchy of authoritative DNS servers, such as the
+authoritativeserverfor.compointingtotheauthoritativeserver
+for example.com, which in turn points to the authoritative
+server responsible for www.example.com. We also ran UDP
+traceroutestoeachserverinthedelegationpath,targetingport
+53 to mimic DNS resolution.4 For both experiments, we then
+mappedallIPaddressesinthetraceroutestoASnumbers[41],
+generating both a set of traversed ASes for DNS traceroutes
+(D)andasetoftraversedASesforwebtraceroutes(W).Given
+these two sets for each of Alexa’s top 1,000, we compute the
+fraction of ASes that are only traversed for DNS traffic, but
+not for web traffic (λ):
+|D\W|
+λ ∈[0,1]= . (1)
+|D∪W|
+The metric approaches 1 as the number of ASes that are only
+traversedforDNSincreases.Forexample,ifD={1,2,3}and
+W ={2,3,4}, then λ = |{1,2,3}\{2,3,4}| = |{1}| = 1 =0.25. |{1,2,3}∪{2,3,4}| |{1,2,3,4}| 4
+Wedeterminedλ foreachsiteintheAlexatop1,000fromfive
+autonomous systems in three countries.5 One of our vantage
+points, the French OVH, is the most popular AS by exit
+bandwidth as of August 2016. It sees 10.98% of exit traffic,
+closely followed by AS 12876 (owned by the French Online)
+that sees 9.33% of exit traffic. Our experiment consisted of
+5,000 traceroute runs, 4,773 (95.5%) of which succeeded, and
+227 (4.5%) failed.
+The result is illustrated in Figure 2, which shows five
+box plots capturing λ values for Alexa’s top 1,000 sites. The
+median of all 4,773 λ values is 0.571, so for half of all runs,
+DNS-only ASes account for 57% or more of all traversed
+ASes. This result only applies to exit relays that do their
+own DNS resolution; for relays that use a third-party resolver,
+the ASes that are traversed between the exit relay and its
+4Thetoolwedevelopedforthispurposeisavailableonlineathttps://github.
+com/NullHypothesis/ddptr.
+5TheASesare:OVH(France),Gandi(France),KarlstadUniversity(Swe-
+den),PrincetonUniversity(U.S.),andComcast(U.S.).
+4Ma oc uh ri n ce os n tu rn od ler G reu laa yrd Tor traffic
+WF attack
+DNS requests DNS server
+DNS Tor
+query
+network Guard Exit D N S
+exitmap
+Exit
+relays HTTP
+User The Tor network Web server
+DNS server
+Third-party
+Fig.5. AnoverviewoftheDefecTorattack.Anadversarymustmonitorboth
+DNS resolver
+ingress (encrypted Tor traffic) and egress (DNS request) traffic. A AS-level
+adversarybetweentheclientanditsguardmonitorsingresstraffic.Thesame
+Fig.3. OurmethodtoidentifytheDNSresolversofexitrelays.Overeach adversary monitors egress traffic between the exit and a DNS server, or the
+exitrelay,weresolverelay-specificdomainnamesthatareunderourcontrol. DNS server itself. Both ingress and egress traffic then serve as input to the
+ByinspectingourDNSserverlogs,wecanthenidentifytheIPaddressofall DefecTorattack.
+exitrelayresolvers.
+we expect to receive a request from an unrelated IP address.
+DNS resolver is the metric of interest. We further believe Havingencodedrelay-specificfingerprintsinthequerynames,
+that relays in regions other than Western Europe or North weareabletomapqueriestoexitrelaysinsuchcases.Weran
+America are likely to witness significantly different exposure this experiment from September 2015 to May 2016, at least
+of DNS queries because many websites outsource their DNS once a day.
+setuptoproviderssuchasCloudflarewhosepointsofpresence
+On Linux relays, DNS resolution is controlled by the file
+are centered around Western Europe and North America. We
+concludethatadversariesthatareunabletoobserveaToruser’s
+/etc/resolv.conf, which contains up to three DNS resolvers
+that are queried in order. If the primary resolver does not
+TCP connection still have many opportunities to see a TCP
+respond in time, the system falls back to the second, and
+connection’s corresponding DNS request. Such adversaries
+include (i) popular open DNS resolvers such as Google and finally the third resolver. Our data suggests that several exit
+OpenDNS,(ii)DNSrootservers,and(iii)networkadversaries relays used different resolvers in subsequent exitmap scans—
+one relay, for example, used both Google’s DNS resolver and
+located on the path to the previous two entities.
+oneprovidedbyitsISP.Forourvisualization,weonlyconsider
+the first resolver we observed for an exit relay, which is likely
+B. Determining how Tor exit relays resolve DNS queries
+but not guaranteed to be the primary resolver.
+HavingshownthattheInternetprovidesampleopportunity
+Figure4illustratesthefractionofDNSrequeststhatfourof
+for AS-level adversaries to snoop on DNS traffic from exit
+themostpopularorganizationscouldobserve.Googleaverages
+relays, we now investigate how the exit relays in the Tor
+at 33%, but at times saw more than 40% of all DNS requests
+networkresolveDNSqueriesinpractice.Beforethisstudy,we
+exiting the Tor network—an alarming number for a single
+only had anecdotal evidence (e.g., from OpenDNS-powered
+organization. Second to Google is “Local”—exit relays that
+error messages [49, § 4.1]) that some exit relays would
+runtheirownresolver,averagingat12%.NextisOVH,which
+occasionally show.
+used to be as popular as local resolvers, but slowly lost its
+We identify the DNS resolver of all exit relays by using share over time. Note that in contrast to Google, OVH does
+exitmap[48],ascannerforTorexitrelays.Thetoolautomates notrunapublicDNSserver;thecompany’sresolversareonly
+running a task such as fetching a webpage over all one accessible to its customers. Finally, there is OpenDNS, which
+thousand exit relays, making it possible to see the Internet also runs public DNS resolvers. OpenDNS saw occasional
+through the “eyes” of every single exit relay. Using exitmap, spikes in popularity but always remained in the single digits.
+weresolveunique,relay-specificdomainsovereachexitrelay, Apart from the illustrated top resolver setups, the distribution
+to a DNS server under our control. Figure 3 illustrates this has a long tail, presumably consisting of many ISP resolvers.
+experiment. To improve reliability, we configured exitmap to
+usetwo-hopcircuitsinsteadofthestandardthree-hopcircuits. V. DEFECTORATTACKS
+The first hop was a guard relay under our control. Over each
+exitrelay,weresolvedauniquedomainPREFIX.tor.nymity.ch. As with conventional correlation attacks, an attacker must
+The prefix consisted of the relay’s unique 160-bit fingerprint, observe traffic that is both entering and exiting the Tor
+concatenated to a random 40-bit string whose purpose is to network; in contrast to threat models from previous work,
+prevent caching, so exit relays indeed resolve each query we incorporate DNS instead of only TCP traffic. Figure 5
+insteadofrespondingwithacachedelement.Wecontrolledthe illustrates our correlation attack; it requires the following
+authoritativeDNSserveroftor.nymity.ch,sowecouldcapture building blocks:
+both the IP address and packet content of every single query
+• Ingress sniffing: An attacker must observe traffic that
+for tor.nymity.ch.
+is entering the Tor network. The attacker can operate
+An exit relay can either run its own resolver, as shown in on the network level, as a malicious ISP or an intelli-
+theleftexitrelayinFigure3;orrelyonathird-partyresolver, gence agency. In addition, the attacker can operate on
+such as the one provided by its ISP, as shown in the right therelaylevelbyrunningamaliciousTorguardrelay.
+exit relay in Figure 3. If an exit relay runs its own resolver, Inbothcases,theattackercanonlyobserveencrypted
+we expect to receive a DNS request from the exit relay’s data, so packet lengths and directions are the main
+IP address, but if an exit relay uses a third-party resolver, inputs for website fingerprinting [36].
+50.4
+0.3
+0.2
+0.1
+0.0
+Oct 2015 Nov 2015 Dec 2015 Jan 2016 Feb 2016 Mar 2016 Apr 2016 May 2016
+Time
+fo
+noitcarF
+htdiwdnab
+tixe
+Resolver
+Google
+Local
+OVH
+OpenDNS
+Fig.4. ThepopularityofsomeofthemostpopularDNSresolversofexitrelaysovertime.Theyaxisdepictsthefractionofexitbandwidththattherespective
+resolver is responsible for. Google’s DNS resolver is by far the most popular, at times serving more than 40% of all DNS requests coming out of the Tor
+network.Googleisfollowedbylocalresolvers,whichaverageataround12%.Onceservingafairamountoftraffic,OVHdroppedinpopularity,andisnow
+closetoOpenDNS,anorganizationthatrunsanopenresolver.
+• Egress sniffing: To observe both ends of the commu- value the power-law behavior should hold in the provided
+nication, an attacker must also observe egress DNS data, we can get different α values. We made a conservative
+traffic. We expect the adversary either to be on the choiceofpickingthissmallerα valueasitunderestimatesthe
+path between exit relay and a DNS server or to run a popularity of popular websites and therefore performs worse
+malicious DNS resolver or server. We do not expect for the attacker.7 Thus, we use a power-law distribution to
+an attacker to run an exit relay because in this case model what websites Tor users visit. On the one hand, this
+conventionalend-to-endcorrelationattacksareatleast might overestimate the popularity of higher-ranked websites
+as effective as those we describe here [33]. such as Facebook and YouTube because we believe that Tor
+users—who tend to be privacy-conscious—are more likely to
+We combine a conventional website fingerprinting attack seekoutalternativesthanthetypicalInternetuser.Ontheother
+operating on traffic from ingress sniffing with DNS traffic hand,highlysensitivesitestendtobeofferedasonionservices.
+observed by egress sniffing, creating DefecTor attacks. Our We will discuss the implications of our model for browsing
+attacks correlate the websites observed by the website finger- behavior later.
+printing attack in ingress traffic with the websites identified
+from DNS traffic.6 Next, we describe how we simulate the 2)Modeling how often Tor users visit each site: Next, we
+determine how many websites Tor users visit in a certain time
+DNS traffic from Tor exits, how we map DNS requests to
+span.Weapproximatedthisnumberbysettingupanexitrelay
+websites, and finally present our two DefecTor attacks.
+whose exit policy included only the ports 80 and 443, so our
+relay would only forward web traffic. We then used the tool
+A. Approximating DNS traffic from Tor exits
+tshark to capture the timestamps of DNS requests—but no
+WefirstinvestigatethetypeandvolumeofDNStrafficthat DNS responses. We made sure that our tshark filter did not
+capture packet payloads or headers, so we were unable to
+Tor’s exit relays send. There are no logs of outgoing traffic
+learn what websites Tor users were visiting. In addition, we
+from Tor exit relays available to us, and ethical considerations
+kept us from trying to collect them (e.g., by operating exit patchedtsharktologtimestampsatafive-minutegranularity.
+The coarse timing granularity allows us to publish this dataset
+relays and recording all the outgoing traffic). We therefore opt
+with minimal privacy implications; Section VIII-A discusses
+to approximate the DNS traffic emerging from Tor exit relays
+by (i) building a model of typical Tor users’ website browsing the ethical implications of this experiment in more detail. We
+patterns, (ii) collecting a minimally invasive dataset of DNS rantheexperimentfortwoweeks,fromMay15,2016toMay
+traffic, and (iii) accounting for the effects of DNS caching. 31, 2016, which allowed us to determine the number of DNS
+requests for 4,832 five-minute intervals. Figure 6 shows this
+1)Modeling which sites Tor users visit: We first build a time series, but for clarity we only plot May 25, 2016. The
+model to approximate which websites Tor users visit. As of distribution’s median is 105. The time series features several
+July 2016, there are about 173 million active websites [34]; spikes; the most significant one counts 1,410 DNS requests.
+theAlexaranking[4]givesinsightsintotheirpopularitybased We repeated the same experiment with the so-called reduced
+onthebrowsingbehaviorofasampleofallInternetusers.The exitpolicy8 becauseitcontainsseveraldozenmoreportsandit
+distribution of the popularity of these websites has previously ismorepopularamongTorrelayoperators;asofAugust2016,
+been fit to a power-law distribution based on the rank of it is used by 7.8% of exit relays by capacity. In comparison,
+the website [2, 11, 30]. For the pageview numbers of the the exit policy containing only port 80 and 443 only accounts
+Alexa top 10,000 websites, we found a power-law distribution for 1.5%. The reduced exit policy resulted in a median of 102
+to be a good fit as neither a log-normal nor a power-law DNSrequestsperfiveminutes,sothedifferencebetweenboth
+distribution with exponential cutoff (i.e., a truncated power- policies is only three DNS requests.
+law distribution) offered significantly better fits. We used the
+We then interpolate these numbers to all Tor exit relays
+Python powerlaw package [3] for fitting and picked a power-
+lawdistributionwithanα parameterof1.13.Whenvaryingthe
+7Alexa’spage-viewnumbersignoremultiplevisitsbythesameuseronthe
+fitting parameter x that determines beyond which minimum
+min same day (see https://support.alexa.com/hc/en-us/articles/200449744), so the
+rankingmightbeslightlyoffwhenmodelingwebsitevisitpatterns.
+6Our work can be understood as DNS-enhanced traffic correlation attack, 8The reduced exit policy is available online at https://trac.torproject.org/
+orasDNS-enhancedwebsitefingerprintingattack. projects/tor/wiki/doc/ReducedExitPolicy.
+6750
+500
+250
+0
+00:00 06:00 12:00 18:00 00:00
+May 25 May 25 May 25 May 25 May 26
+Time
+rep
+stseuqer
+SND
+setunim
+evfi
+Tor user—and therefore reduces the information an attacker
+can gain from observed DNS traffic. Later, we revisit the
+implications of our choice by both scaling the Tor network
+up to ten times its estimated size, and scaling it down to the
+sizeof288,000websitevisitspertenminutesthatwegotfrom
+our own interpolation described above.
+3)Modeling the effects of DNS caching at Tor exits: To
+learn what DNS requests the adversary can see, we need to
+takeintoaccountcachingofDNSresponses.Weignoreclient-
+Fig. 6. The number of DNS requests per five-minute interval on our exit side DNS caching since it is disabled by default, as described
+relayforMay25,2016.Usingaprivacy-preservingmeasurementmethod,we in Section II. Exit relays, however, do cache DNS requests
+onlydeterminedapproximatetimestampsandnocontent.
+and we take it into account because all Tor clients using the
+same exit relay share its cache. In addition to their resolver’s
+cache, exit relays maintain their own DNS cache9 and enforce
+based on their published bandwidth statistics. While we mea-
+a minimum TTL of 60 seconds and a maximum TTL of 30
+sured a median of 105, the mean of the distribution was 119.3 minutes.10 We refer to this as Tor’s TTL clipping. However,
+per five minutes during a two-week period. From DNS statis- duetoabugthatweidentified,11theTTLofallDNSresponses
+ticsoftheAlexatoponemillionwebsites(seeSectionV-B)we
+is set to 60 seconds.
+know that one website visit causes outgoing DNS requests for
+10.3 domains on average (assuming a power-law distribution If a Tor client attempts to resolve a domain that an exit
+of site popularity as described above, and taking into account relay has cached, the adversary will be unable to observe this
+Tor’scachingofpendingDNSrequests,ensuringthatmultiple request. However, the adversary can record all observed DNS
+requests sent by clients for the same domain name only result requestsoverthepastxseconds,wherexisthemaximumTTL
+in one outgoing request by the exit). This means that our exit value (i.e., maintain a sliding window of length x). If a Tor
+relay saw an average of 23.2 website visits per ten minutes. client is attempting to resolve a domain name, the request is
+Assuming that the two main factors influencing the volume either cached or not. If it is not cached, the adversary will see
+of DNS requests are a relay’s bandwidth and its exit policy, it as a new, outgoing DNS request from the exit relay. If it
+and having shown that the exit policy does not significantly is cached, it must have been resolved by the exit relay in the
+impactthenumberofDNSrequests,wecanscalethisnumber last x seconds, and will therefore be in the sliding window.
+uptothewholeTornetworkusingtheself-reportedbandwidth The sliding window technique allows the attacker to capture
+statistics of exit relays. In particular, we use the bandwidth all relevant DNS requests, regardless of if they are cached or
+information reported in the extra-info descriptors that are not. We assume that an adversary applies this sliding window
+availableonCollecTor[42]andestimatethenumberofwebsite technique and models the observable DNS traffic accordingly.
+visitsoneachoftheabout1,200exitrelaysactiveatthattime. The attacker observes a fraction of Tor’s exit bandwidth for
+The resulting average number of websites visited through the a specific window length, and together with our website visit
+Tornetworkis288,000pertenminutes.However,thisnumber frequency estimation, this triggers a number of website visits
+is merely an estimate because the interpolation is based on a in our simulation. For each visit event, we randomly draw a
+single exit relay, and the bandwidth data of exit relays is self- website using the power-law website popularity distribution
+reported and might therefore be incorrect. described above and put its DNS requests into the window.
+As we will see next, we do not need to simulate or consider
+Recently, Jansen and Johnson measured that the average the fact that the observed fraction of Tor exit bandwidth
+number of active web (port 80 and 443) circuits in Tor corresponds to many different exits with individual caches.
+amounts to about 700,000 per ten minutes [22, § 5.3]. Tor
+Browser, The Tor Project’s fork of Firefox, builds one circuit B. Inferring website visits from DNS requests
+per website entered in the URL bar. How long the circuit
+remains active depends on Tor Browser settings (primarily Given a sliding window full of DNS requests, we in-
+MaxCircuitDirtiness currently set to ten minutes) and how vestigate how this information can help determine whether
+long TCP streams in the circuit are active: as long as at least a user has visited a website of interest. In April 2016, we
+one stream is active, the circuit remains active. Each time visited the Alexa top one million websites five times, and
+a new stream is attached to a circuit, the circuit’s dirtiness collected all DNS requests that each visit of a website’s
+timeout is reset. The number of active circuits serves as an frontpage generated. We refer to the data collected for one
+upper bound for the number of websites visited over Tor: visit as a sample. We performed these measurements in five
+visiting different pages of a website will use the same circuit, rounds from Karlstad University. Each round browsed all one
+and visiting a new website will construct a new circuit. Users million websites in random order before visiting the same
+visiting several pages of a website and websites with long- website again. We used Tor Browser 5.5.4 and configured it
+lived reoccuring connections, like Twitter and Facebook with not to browse over Tor: Tor Browser ensures that the browser
+continuously updating feeds, all lower the number of websites behavior is identical to a Tor Browser user over Tor. By
+visited in Tor relative to the number of active circuits. For
+9Thecodeisavailableonlineathttps://gitweb.torproject.org/tor.git/tree/src/
+our model we consider the upper bound of 700,000 to be the
+or/dns.c?id=tor-0.2.9.1-alpha.
+number of websites visited through the Tor network per ten
+10Thecodeisavailableonlineathttps://gitweb.torproject.org/tor.git/tree/src/
+minutes. This is a conservative choice as more website visits or/dns.c?id=tor-0.2.9.1-alpha#n209.
+increase the anonymity set of websites possibly visited by a 11Thebugreportisavailableonlineathttps://bugs.torproject.org/19025.
+7Tab. 1. The percentage of websites in Alexa’s top 1 million that use
+providersthatrestrictaccessfromTor[28].
+Description Percentage
+WebsitebehindCloudflareIPaddress 6.44
+DomainonwebsiteusesCloudflare 25.81
+DomainonwebsiteusesAkamai 33.86
+DomainonwebsiteusesGoogle 77.43
+1.00
+0.95
+0.90
+0.85
+0.80
+Top 1,000 sites
+0 250,000 500,000 750,000 1,000,000
+Alexa top one million in bins of 1,000
+setis
+bew
+fo
+noitcarF
+sniamod
+euqinu
+htiw
+Tab.2. Summarystatisticsforthenumberofdomainsperwebsiteinthe
+Alexatop1million.Morethanhalfofthesitesembedtwodomainsthatare
+uniquetothatsite.
+Domains Median Mean±Stddev Min. Max.
+Persite 10 12.2±11.2 1 397
+Uniquepersite 2 2.3± 1.8 0 363
+sitesareunmonitoredandthereforeunknown(asperthefold).
+The closed-world evaluation yields 0.955 recall. In the open-
+world evaluation, we monitor the Alexa top 500,000 with five
+samples each and consider 433,000 unmonitored sites. The
+number of unmonitored sites is determined by our power-law
+distribution to represent a realistic base rate (for the entire Tor
+network) for evaluating our classifier: on average, for sites
+in the Alexa top 500,000 to be visited 2.5 million times,
+there will be about 433,000 visits to sites outside of Alexa’s
+top 500,000. Our classifier does not take into account the
+Fig. 7. The fraction of websites in Alexa’s top one million that have at popularity of websites. The open-world evaluation yields a
+least one unique domain. We grouped all domains into 1,000 consecutive, recall of 0.947 for a precision of 0.984. By accounting for
+non-overlapping bins of size 1,000. The vast majority of sites (96.8%) have request order, per-exit partitioning of DNS requests, TTLs,
+uniquedomains.
+and website popularity, we expect that classifying website
+visits from DNS requests can be made even more accurate.
+Further, a closed world is realistic in our setting: determining
+not using Tor, we can bypass IP blacklists and CAPTCHAs
+the DNS requests made by all 173 million active websites on
+that Tor users are frequently struggling with. Table 1 shows
+the Internet is practical, even with modest resources. We use
+the percentage of websites in our dataset that are hosted by
+the conservative open world results when simulating the Tor
+Cloudflare or Akamai. We might not be able to access these
+network and the attacker’s success in mapping DNS requests
+websites programatically over Tor because they block or filter
+to websites. We conclude that for the purpose of identifying
+exitrelays,asidentifiedbyKhattaketal.[28].Wealsoinclude
+websites,observingDNSrequestscomingoutofTorisalmost
+Google, which is prevalent in our dataset and restricts access
+as effective as observing the web traffic itself.
+to Tor users for Google’s search.
+We collected 2,540,941 unique domain names from a total
+C. Classifiers for DefecTor attacks
+of 60,828,453 DNS requests. The dataset contains 2,260,534
+domains that are unique to a particular website, i.e., are not
+We extend Wa-kNN from Wang et al. [45] (described in
+embeddedonanyothertopmillionsite;wecallthesedomains
+Section II) by having it take as input a list of sites derived
+unique domains. Unique domains are particularly interesting
+fromobservingDNSrequests.Inparticular,weimplementtwo
+because they reveal to the adversary what sites among the top
+DefecTor attacks:
+million the user has visited. This is not possible for domains
+such as youtube.com, simply because many websites embed ctw We “close the world” on a Wa-kNN classifier
+YouTube videos. Figure 7 shows the fraction of sites with that we modified to consider only the distance
+uniquedomainsforwebsitesuptoAlexa’stoponemillion.We to observed sites when calculating the k-nearest
+grouped all domains into 1,000 consecutive, non-overlapping neighbors. The classifier still considers the dis-
+binsofsize1,000.For96.8%ofallsitesontheAlexatopone tance to all unmonitored sites.
+million there exists at least one unique domain. Interestingly, hp When Wa-kNN classifies a trace as a monitored
+morepopularwebsitesarelesslikelytohaveauniquedomain site, confirm that we observed the same site in
+associated with them: only 77% of the first bin—the most the DNS traffic (ensuring high precision). If not,
+popular 1,000 domains—contain at least one unique domain. make the final classification unmonitored.
+Table 2 shows summary statistics for the number of do-
+These approaches apply to any website fingerprinting attack.
+mains per website. At least half of the sites have ten domains
+The ctw attack increases the effectiveness of conventional
+per website, two of them are unique, suggesting that an
+website fingerprinting attacks by making them more akin to a
+adversary can identify many website visits by observing a
+closed-world setting, where websites have known fingerprints
+single unique DNS request.
+andtheworldisoftenoflimitedsize.Conceptually,theattack
+To evaluate the feasibility of mapping DNS requests to couldalsoincludeacustomweight-learningrun—trainingonly
+websites, we construct a naïve website classifier that maps the on observed sites—but our initial results showed little to no
+unique domains in a set of DNS requests to the corresponding gain, despite significant increases in testing time. We assume
+website that contains a matching set of domains. With five- thatthisisduetothefactthatsomefeaturesoftraffictracesare
+fold cross-validation on our Alexa top one million dataset more useful than others, regardless of the training data [20].
+(with five samples per site), we consider a closed world and The hp attack only produces a positive classification if both
+an open world. In the closed world, the attacker can use ingress and egress traffic are consistent, resulting in a simple
+samples from all sites in training; in the open world, some but effective classifier.
+8VI. EVALUATINGDEFECTORATTACKS
+A. Attack precision and recall 0.4
+ToevaluateourDefecTorattacks,wecollectedtraffictraces
+in May 2016 using Tor Browser 5.5.4. We modified Tor 0.2
+Browser to not generate network traffic on launch (i.e., check
+for updates, extensions, etc.), and we modified Tor (bundled 0.0
+withTorBrowser)tologincomingandoutgoingcells.Wethen 0 25 50 75 100
+performed 100 downloads for each site in the Alexa top 1,000 Percentage of exit bandwidth
+and one download for each site in the Alexa top (1k,101k].
+WerandomlydistributedthesemeasurementtaskstoaDocker
+fleet; each download used a fresh circuit without guard relay,
+and a fresh copy of Tor Browser for up to 60 seconds, in
+line with the recommendations by Wang and Goldberg [46,
+§4].WecachedTor’snetworkconsensustominimizeloadon
+the network. We labeled a measurement as successful if we
+managedtoresolvethedomainofthesite;wedidnotpruneour
+dataset further, neglecting issues like Cloudflare CAPTCHAs,
+outliers,controlcells,andlocalizeddomains[25].Presumably,
+this means that we will underestimate the effectiveness of our
+attack, but we are primarily interested in the difference be-
+tweenwebsitefingerprintingattacksandDefecTorattacks[46].
+We perform ten-fold cross-validation for all of our ex-
+periments in the open world setting, monitoring 1,000 sites
+with 100 instances each, and 100,000 unmonitored sites. The
+1:1 ratio between monitored traces and unmonitored traces is
+to ensure that for the classifier there is equal probability in
+the testing phase that a trace is a monitored or unmonitored
+site. In other words, the base rate is 0.5 in our experiments.
+Furthermore,forallexperimentswespecifythestartingAlexa
+rank of the monitored sites when simulating sites visited over
+the Tor network. We always use the same sample data for
+website fingerprinting. The popularity of monitored sites is a
+key factor in the effectiveness of our attacks.
+Figure 8 shows the recall and precision of our DefecTor
+attacks as a function of the percentage of observed Tor exit
+bandwidth by the attacker monitoring Alexa sites for sites
+whose ranks is 10,000 or less. For recall, both ctw and hp
+are bound by the percentage of exit bandwidth observed by
+the attacker (the percentage is an upper bound). It is simply
+notpossibletoidentifyamonitoredsiteintheDNStrafficthat
+theattackerdoesnotsee.At100%ofexitbandwidth,ctwsees
+better recall than wf. For hp the results suggest that:
+recall =recall ∗pct. (2)
+hp wf
+This relationship only holds when observing DNS requests
+gives a clear advantage to hp in terms of precision over wf
+(see the following paragraph). For precision, the hp attack has
+animmediategainoverwfassoonastheattackercanobserve
+any exit bandwidth. Although the hp attack has near-perfect
+precision, the ctw attack benefits from observing increasingly
+moreexittraffic,nearlyreachingthesamelevelsashpat100%
+of the exit bandwidth.
+Figure 9 shows recall and precision at 100% of observed
+Tor exit bandwidth as a function of the starting Alexa rank
+of monitored sites (we still monitor 1,000 sites). For popular
+websites (i.e., websites with a high Alexa ranking), there is
+no difference between our attacks and the wf attack. This
+is because even with a window of only 60 seconds, it is
+almost certain that at least one user visited any of the most
+llaceR
+1.00
+0.75
+0.50
+Attack ctw 0.25
+hp
+wf
+0.00
+0 25 50 75 100
+Percentage of exit bandwidth
+noisicerP
+Attack ctw
+hp
+wf
+Fig.8. Recallandprecisionforanopen-worlddatasetwithmonitoredsites
+atAlexarank10kandlower.WecompareourDefecTorattacks(ctw and hp)
+to a conventional website fingerprinting attack (wf) for different percentages
+ofobservedexitbandwidth.
+0.65
+0.60
+0.55
+100 102 104 106 108
+Alexa site rank (log)
+llaceR
+1.00
+Attack
+ctw
+hp 0.95 wf
+0.90
+100 102 104 106 108
+Alexa site rank (log)
+noisicerP
+Attack
+ctw
+hp
+wf
+Fig. 9. The recall and precision when varying the starting Alexa rank of
+monitoredsitesfor100percentageofexitbandwidth.
+popular sites over Tor. For sites that rank 1,000 or lower
+(i.e., less popular sites), both DefecTor attacks show a clear
+improvement in precision while ctw also shows improved
+recall—but only at 100% observed exit bandwidth, as shown
+in Figure 8. These results paint a bleak picture: an attacker
+that observes the vast majority of exit bandwidth can use the
+ctw attack as a perfectly precise attack with increased recall
+overatraditionalwfattack.Ontheotherhand,anattackerthat
+can observe a small fraction of exit bandwidth can use the hp
+attackasaperfectlypreciseattackonrelativelyunpopularsites
+such as wikileaks.org, which had Alexa rank 10,808 on April
+15,2016.However,Equation2suggeststhatrecallwillbelow.
+B. Sensitivity analysis
+To better understand the extent and limitations of our
+attacks, we now study the sensitivity of our DefecTor attacks
+to website fingerprinting defenses, TTL clipping, the growth
+oftheTornetwork,andwebsitepopularitydistribution.Inthis
+section, we assume that an adversary can observe Tor exit
+relays representing 33% of exit bandwidth (as observed on
+average by Google) and consider only precision (where we
+see clear gain from both our attacks). Note that the following
+results largely also apply to weaker attackers that observe a
+smallerfractionofexitbandwidthforthehpattack,butthatthe
+ctw attack is more sensitive in terms of precision to different
+bandwidth fractions, as shown above. Unless stated otherwise,
+we (i) perform our evaluation on websites starting from Alexa
+rank 10,000 upwards, (ii) use 2,500 weight-learning rounds,
+(iii) have a 60-second window size, (iv) a Tor network scale
+of1.0,and(v)usetheconservativepower-lawdistributionfrom
+Section V-A1.
+1)Effect of website fingerprinting defenses: The Tor
+Project is working on a website fingerprinting defense [38].
+91.0
+0.8
+0.6
+0.4
+0.2
+0 1,000 2,000 3,000
+Weight learning rounds
+noisicerP
+1.0
+0.9
+Attack 0.8
+ctw
+hp
+wf 0.7
+0 10 20 30
+Window size (minutes)
+(a) Estimating the effect of website
+fingerprintingdefenses.
+noisicerP
+Attack
+ctw-10k ctw-100k
+hp-10k hp-100k wf-10k wf-100k
+(b) Effect of increasing the analysis
+timewindowduetoTTLclipping.
+1.0
+0.9
+0.8
+0.7
+0 1 2 4 6 8 10
+Tor network scale
+noisicerP
+1.00
+0.95
+Attack 0.90
+ctw-10k ctw-100k
+hp-10k hp-100k
+wf-10k wf-100k
+102 104 106 108
+Alexa site rank (log)
+(c) Effect of Tor network scale for
+Alexaranks10kand100k.
+noisicerP
+Tab.3. MedianandmeanDNSTTLvaluesacrossAlexatoponemillion
+sites.RawTTLsareunprocessed,astheyappearinDNSlookuptraces.Tor
+TTLs adhere to Tor’s TTL clipping. Unique refers to the TTLs for unique
+domains; min unique only considers the unique domains with the minimum
+TTLforeachwebsite.
+TTLs MedianTTL(sec) MeanTTL(sec)±Stddev
+Raw 9,780.0±42,930.5
+255 Tor 701.5± 755.3
+Uniqueraw 13,022.2±35,054.4
+900
+UniqueTor 1,005.3± 789.6
+Minuniqueraw 3,833.9±11,073.6
+60
+MinuniqueTor 644.2± 763.8
+one million dataset from Section V-B both for the TTL as-is
+(raw)andwhenclipped(Tor).Wecalculatetheintendedvalues
+Attack for TTL clipping, assuming that The Tor Project will fix the
+wf aforementionedbug.Foreachofthesecases,wealsoconsider
+pc-hp
+uc-hp TTLs for all unique domains, and for only the unique domain
+pr-hp for each website with the lowest TTL. About half of all sites
+ur-hp on Alexa’s top one million have a unique domain with a TTL
+of 60 seconds or less; 48% of the raw unique TTLs are below
+60 seconds and only 26% above 30 minutes. Fixing the Tor
+clipping bug is therefore not sufficient; to mitigate DefecTor
+(d) Effect of different website popu-
+attacks, the minimum TTL should be significantly increased.
+laritydistributions.
+In this case, we find that Tor’s TTL clipping has no effect on
+Fig. 10. The effect on attack precision. The defaults are: Alexa from top the median TTL, but significantly reduces the mean TTL.
+10,000, 2,500 weight-learning rounds, 60-second window size, Tor network
+scale1.0,andtheconservativepower-lawdistribution(pc)withα=1.13. Suppose that Tor eventually fixes the DNS TTL bug,
+requiring the attacker to monitor DNS lookups for a time
+interval equal to the maximum TTL of all unique domains for
+Most defenses produce bandwidth and/or latency overhead, any monitored site. Figure 10(b) shows the effect on precision
+withasignificantincreaseinoverheadasthedefensebecomes for different time intervals from 60 seconds to 30 minutes
+stronger. For example, Juarez et al. observe an exponential (Tor’s MAX_DNS_ENTRY_AGE for keeping entries in an exit’s
+increase in bandwidth overhead as the protection of the WTF- DNS resolver cache), and for Alexa starting rank 10,000 and
+PAD defense increases [26, § 4.3]. The goal is to find an 100,000. For ctw, the time interval has a significant effect on
+optimum that provides strong protection while keeping the both Alexa starting ranks, while hp is only affected for sites
+overhead tolerable for Tor users. To approximate the effect ranked10,000orhigher;forlesspopularsites,theDNSlookup
+of fingerprinting defenses on DefecTor attacks, we use Wa- data still significantly improves fingerprinting precision, even
+kNN with random weights and no weight-learning, which with the larger window size.
+significantlyreducestheeffectivenessoftheattacksincesome
+3)Effect of Tor network growth: Figure 10(c) scales the
+features (like indices of outgoing packets) are several orders
+size of the Tor network with respect to site visits from the
+of magnitude more useful than others [26].
+estimated status quo to ten times its size, for Alexa starting
+Figure10(a)showstheeffectofweight-learningbetween0 rank 10,000 and 100,000. At twice its current size, the impact
+and3,000rounds.Atfewtonorounds,theprecisionforthewf on DefecTor attacks is smaller than increasing the minimum
+attackisbelow50%—apositiveclassificationismorelikelyto TTL for DNS caching to three minutes, as shown in Fig-
+be wrong than right—while there is a relatively small impact ure 10(b). These results indicate that DefecTor attacks will
+on the hp and ctw attacks. For recall, which is not shown in remain practical for many sites in the Alexa top one million,
+the figure, the bound and relationship is as in Equation 2: for evenastheTornetworkgrows.Ifweoverestimatedthecurrent
+wf,atzerorounds,recallis0.055;forhpatzerorounds,recall TornetworksizeintheanalysisinSectionV-A2,ourDefecTor
+is 0.019. These results suggest that for website fingerprinting attackswouldhaveevenhigherprecision,asshownbythedata
+defenses to be effective against DefecTor attacks, the defense points to the left of the gray line in Figure 10(c).
+must be tuned to cause low recall even if the parameters of
+4)Sensitivitytowebsitepopularitydistribution: Toexplore
+website fingerprinting attacks are optimized for high recall.
+the sensitivity of our results to different distributions in how
+2)Effect of Tor’s TTL clipping: As discussed in Sec- users visit websites, we now evaluate the effectiveness of
+tion V-A, due to a bug in Tor, all exit relays cache DNS DefecTor attacks with four different website distributions:
+responses for 60 seconds, regardless of the DNS response’s
+pc A conservative power-law distribution (with α =
+TTL.Therefore,aslidingwindowcoveringthelast60seconds
+1.13) that we manually fitted to the Alexa top
+of observed DNS requests suffices to capture all monitored
+10,000 data, slightly underrepresenting the pop-
+sites through Tor (subject to the fraction of observed Tor exit
+ularity of top Alexa sites. We described this
+bandwidth, and mapping DNS requests to sites).
+distribution in Section V-A1.
+Table 3 shows the TTL of DNS records in our Alexa top pr Arealisticpower-lawdistribution(withα=1.98)
+10Destination addresses and ports
+tocommunicatewithtoresolveadomain.Thesenameservers
+Ingress &
+Destination Guard & exit egress hops include the full DNS delegation path, i.e., a root name server
+addresses addresses
+Usage RIPE Atlas Analysis plus subsequent name servers in the DNS hierarchy. All ASes
+models TorPS traceroutes along the path from the exit relay to the name servers will be
+Source able to see the domain names that the exit relay is querying.
+ASes For exit relays that rely on third-party resolvers, the adversary
+Client instead has to be on the path between the exit relay and its
+models DNS resolver.
+Fig. 11. The relation among our simulation components. Our goal is to 2)Simulating Tor user activity with TorPS: To measure
+determine the ASes a Tor user’s traffic traverses into and out of the Tor
+the likelihood that an AS can be in a position to perform
+network.DuplicateASesonbothsidescandeanonymizestreams.
+a DefecTor attack, we use TorPS [23]—short for Tor Path
+Simulator—which mimics how a Tor client constructs circuits
+that is the best fit according to the Python (see “TorPS” in Figure 11). TorPS takes as input archived
+powerlawlibrarybyAlstottetal.[3]fortheAlexa Tor network data [42] and usage models, which are sets of
+top 10,000 data. IP addresses that Tor clients talk to—e.g. web servers. Given
+uc A conservative uniformly random distribution this input, TorPS then simulates for a configurable number of
+that only considers one million active websites “virtual” Tor clients the way they would select guard and exit
+browsed over Tor. relays. TorPS is based on the Tor stable release in version
+ur A realistic uniformly random distribution that 0.2.4.23. For each simulated client, TorPS uses one guard;
+considers 173 million active websites, as reported this guard selection expires after 270 days. We use TorPS to
+by Netcraft in July 2016 for the Internet [34]. simulate the behavior of 100,000 Tor clients for the entire
+month of March 2016.
+Figure 10(d) shows the effect on the precision of the hp
+We need to place our simulated Tor clients into an AS
+attack for the different distributions as we vary the starting
+(see “Client models” in Figure 11). We selected clients in
+Alexa rank. The uniform distributions always have nearly
+major ISPs in the top-five most popular countries of Tor
+perfect precision. The difference between the two power-law
+usage according to Tor Metrics [43]. As of August 2016,
+distributions is about one order of magnitude in terms of
+the top five countries are the U.S., Russia, Germany, France,
+starting Alexa rank: the realistic distribution gets near perfect
+and the U.K. For the U.S., we chose Comcast (AS 7922);
+at 1,000 and the conservative at 10,000. We conclude that
+for Russia, Rostelecom (AS 42610); for Germany, Deutsche
+DefecTor attacks are perfectly precise for unpopular sites
+Telekom (AS 3320); for France, Orange (AS 3215); and for
+because it is unlikely that more than one person is browsing a
+the U.K., British Telecom (AS 2856).
+monitoredsitewithinthetimeframedeterminedbythewindow
+length. Having placed simulated Tor clients into ASes, we now
+model their activity over Tor (see “Usage models” in Fig-
+VII. INTERNET-SCALEANALYSIS ure 11). We model each client to have visited several websites
+every day in March 2016.12 At 9 a.m. EST, the client vis-
+In the preceding sections we have presented our DefecTor its mail.google.com and www.twitter.com. At 12 p.m. EST,
+attacks and evaluated their effectiveness, but we have yet to the client visits calendar.google.com and docs.google.com.
+understand what entities can mount them. In this section, we At 3 p.m. EST, the client visits www.facebook.com and
+aim to quantify the likelihood that any AS is in a position to www.instagram.com. Finally, at 6 p.m. EST, the client visits
+mount DefecTor attacks. www.google.com,www.startpage.com,andwww.ixquick.com,
+and at 6:20 p.m. EST, the client visits www.google.com,
+A. Approach www.startpage.com, and www.ixquick.com again. Each of
+the 100,000 simulated Tor clients thus had 12·31 = 372
+Figure 11 summarizes our simulation approach, which we
+opportunities to be compromised given 31 days and 12 site
+detailinthenextsection.Inshort,wemodeltheactivityofTor
+visitsperday.TorPSprovidedanewcircuiteverytenminutes,
+usersandsimulatetheirpathselectionusingTorPS[23].TorPS
+regardless of how many distinct connections the client made
+returns guard and exit relays, which we then feed as input—
+to different sites; it did not provide a new circuit for different
+togetherwithsourceASesanddestinationaddresses—intoour
+websitesiftheclientvisitedthegroupofsiteswithinthesame
+framework that runs traceroutes from RIPE Atlas nodes. The
+ten-minute window.
+rest of this section describes our approach in detail.
+For simplicity, we assume that only one DNS request oc-
+1)Attackmodel: WeassumethatanAScanmountDefec-
+curseverytimeaclientvisitsasite.Forexample,inourmodel,
+Tor attacks if it can see both traffic entering the Tor network
+at9a.m.oneDNSrequestwilloccurformail.google.comand
+and DNS traffic exiting the Tor network. Recall that an exit
+one DNS request will occur for www.twitter.com. At 6 p.m.
+relay can perform DNS resolution in two ways; by running
+three DNS requests will occur, and at 6:20 p.m. those same
+a local resolver, or by relying on a third-party resolver, such
+three DNS requests will occur again. For now, we do not take
+as its ISP’s or Google’s public resolver. In the case of exit
+embedded requests (i.e. for embedded website content such as
+relays that perform local resolution, an effective position for
+YouTube videos) or caching into account.
+an attacker is both (i) anywhere on the AS path between a
+Tor client and its guard relay; and (ii) anywhere on the path 12Wemodeledourclientbehavioroffofthe“Typical”modelthatJohnson
+betweenanexitrelayandanyofthenameserverstheexithas etal.[24,§5.1.2]used.
+11Tab. 4. The coverage of RIPE Atlas nodes that are co-located with Tor
+resolver (e.g., the popular service unbound), we used
+guardandexitrelaysasofMay2016.
+the command line tool dig with the +trace option to
+determine the iterative resolution process. We tracked
+Atlasprobecoverage TorguardASes(%) TorexitASes(%)
+all name server IP addresses from referrals at each
+Bybandwidth 73.59 57.53
+Bynumber 50.69 52.25 levelofthedelegationpath,andperformedtraceroutes
+to those IP addresses.
+• Status quo: This scenario represents the state of the
+3)Inferring AS-level paths using traceroutes and pyasn:
+Tor network as of March 2016, a combination of
+Our Internet-scale analysis also requires learning the AS-level
+the above three configurations. Recall that in Sec-
+paths from each client to its guard, and from its exit to
+tion IV-B, we determined the IP addresses of the
+the destination (see “RIPE Atlas traceroutes” in Figure 11).
+resolvers that exit relays use. We ran traceroutes to
+We decided against the commonly applied AS path inference
+these very IP addresses. For the exit relays that used
+becauseJuenetal.showedthatitcanbequiteinaccurate[27].
+severalresolversduringMarch,werandomlyassigned
+Traceroutes, in contrast, yield significantly more accurate
+one to the relay. We ended up having data for 73% of
+paths, but are difficult to run from Tor relays: Past work the exit relays that TorPS ended up picking.13
+involved asking relay operators to run traceroutes on behalf
+of the researchers [27, § 4]. This approach yielded traceroutes We then mapped each IP address in every traceroute to its
+from relays representing 26% of exit bandwidth, but does not corresponding AS (see “Analysis” in Figure 11). The Python
+scale well. Instead of running traceroutes from Tor relays, we modulepyasn[5]reliesonBGProutingtablestoperformthese
+leveragetheRIPEAtlas[39]platform,avolunteer-runnetwork mappings;byusingaroutingtablethatcoincideswiththetime
+measurement platform consisting of thousands of lightweight when we performed our traceroutes, we can obtain accurate
+and geographically spread probes that can be used as vantage AS-levelmappings.Thismethodissubjecttoinaccuraciesdue
+points for traceroutes. Our key observation is that RIPE Atlas to BGP route hijacks or leaks, but we expect those events to
+hasprobesinmanyASesthatalsohaveTorrelays.Weleverage be relatively unlikely for the time period and IP prefixes that
+this observationby designingmeasurements to runtraceroutes we are concerned with.
+from Atlas probes that are located in the same AS as exit
+4)Putting it all together: We consider the same two
+relays, to each of the destinations in question.
+security metrics that Johnson et al. [24, § 4.2] originally
+Table 4 shows that for a day in May 2016, we found proposed; we aim to estimate (i) the fraction of compromised
+that RIPE Atlas had probes in 52% of ASes that contain exit streams per simulated Tor user, and (ii) the amount of time it
+relays, and in 51% of ASes that contain Tor guard relays. wouldtakeforthefirstcompromisetooccur.Forbothmetrics,
+More importantly, we found that Atlas ASes cover 58% of we consider the four DNS configurations outlined above. Our
+exit bandwidth and 74% of guard bandwidth. This statistic is simulationcanrevealtherespectiveaveragethreatthatagiven
+importantgiventhatTorclientsselectrelaysweightedbytheir DNS configuration poses for Tor users.
+bandwidth, and the bandwidth of Tor relays is not uniformly
+Each traceroutes run yielded two sets of ASes, one from
+distributed.GiventhegrowthofbothTorandAtlas,weexpect
+the Tor clients’ ASes to their guard relays, and one from
+thesenumberstoincreaseinthefuture.InadditiontoAtlas,we
+approximately half of the exit relays’ ASes to the different
+also considered using PlanetLab [1] to initiate traceroutes, but
+destinations, which depend on the exit relays’ DNS configu-
+unfortunatelymostPlanetLabnodesarelocatedinresearchand
+rations. We intersect both AS sets (the “ingress” and “egress”
+educationnetworks[6],andarethusnotsuitedforperforming
+hopsofFigure11)andclassifyawebsitevisitascompromised
+our measurements.
+if the intersection is non-empty. As stated earlier, for some
+We performed traceroutes from the five Tor client ASes exit relays we did not have associated AS-level paths to a
+outlined above to all their respective guard relay IP addresses particular destination, either due to a lack of co-located RIPE
+that TorPS determined. To measure the paths from exit relays Atlas probes, or because of missing traceroute information. In
+to their DNS resolvers, we performed the following tracer- these cases, we checked if the exit AS had the potential to
+outes, simulating four different DNS configurations: launch an attack by itself, and if not, we labelled the stream
+as uncompromised to err on the conservative side.
+• ISP DNS: To investigate the scenario in which an exit
+To compute the fraction of compromised streams, we
+relay uses its ISP’s resolver, we chose to represent
+counted the streams that were compromised for every sim-
+this as the resolver being in the same AS as the
+ulated user out of a possible maximum of 372. To compute
+exit relay. Thus, no traceroutes were necessary for
+thetimeuntilfirstcompromise,wedeterminedthefirststream
+this experiment. We acknowledge that this is not
+in which the user was compromised, took its timestamp, and
+necessarily the case, but assume that it holds for the
+calculated the offset from the beginning of March 1, 2016.
+majority of exit relays.
+For users that were not compromised during the month of
+• Google DNS: This scenario represents an exit relay March,weassignedthemaximumvalueof31daysasthetime
+using Google’s public resolver. To measure the AS until first compromise, which is reflected in the plots in our
+path, we perform traceroutes from a RIPE Atlas node nextsection.Userswhowerecompromisedimmediatelywould
+in the AS of the exit relay to Google’s public DNS have a value of 0, signifying that they were compromised at
+resolver, i.e., 8.8.8.8. the very beginning of March 1.
+• Local DNS: To measure the paths that would be 13Themissing27%areduetothechurninexitrelays.Sincewedidnotrun
+traversed if an exit relay were running its own, local ourexitmapexperimenteachhour,wewereboundtomisssomeexitrelays.
+12Google DNS only ISP DNS only Local DNS only Status quo
+US
+UK
+RU
+FR
+DE
+0 0.1 0.2 0.3 0.40 0.1 0.2 0.3 0.40 0.1 0.2 0.3 0.40 0.1 0.2 0.3 0.4
+Fraction of compromised streams
+PSI
+tneilc
+roT
+(a) ThefractionofcompromisedstreamsofsimulatedTorclients.
+Google DNS only ISP DNS only Local DNS only Status quo
+US
+UK
+RU
+FR
+DE
+0 10 20 300 10 20 300 10 20 300 10 20 30
+Days until first compromise
+PSI
+tneilc
+roT
+days between DE and FR. For “ISP DNS only,” the median
+time until compromise differs by around six days between US
+and DE, and around five days between US and FR. Also, we
+noticethatDEfaresworsethantheothersinthe“GoogleDNS
+only”scenarioandbetterthantheothersinthe“ISPDNSonly”
+scenario. We conclude that the location of Tor clients matters
+and should be considered in future traffic correlation studies.
+VIII. DISCUSSION
+Inthissection,webrieflydiscusstheethicsofourresearch
+and ways to defend against DefecTor attacks.
+A. Ethical considerations
+In Section V-A2, we discussed setting up an exit relay to
+determinethenumberofDNSrequestsperfiveminuteinterval.
+(b) ThetimeuntilsimulatedTorclientsgotfirstcompromised. Since our exit relay was forwarding traffic of Tor users,
+we contacted Princeton University’s institutional review board
+Fig. 12. The fraction of compromised streams and the time until first (IRB) before running the experiment. Our IRB deemed that
+compromise for our simulated Tor clients. We placed these clients in five this research did not fall within the realm of human subjects
+popular client ASes in the U.S., the U.K., Russia, France, and Germany.
+research.InadditiontocontactingourIRB,weadheredtoThe
+For exit relays, we consider the status quo (on the very right) plus three
+hypothetical DNS configurations for all exit relays. We do not plot outliers TorProject’sethicsguidelines[29].Specifically,(i)weensured
+beyondtheboxplots’whiskers.Inbothexperiments,thesafestconfiguration that we only collected data that is safe to publish, (ii) we only
+is“ISPDNSonly,”i.e.haveallexitrelaysusetheirISP’sDNSresolver. collected data we needed, and (iii) we limited the granularity
+of the data to minimize the likelihood of reidentification. The
+risk to Tor users of this experiment is negligible. As for the
+B. Results
+benefits, by conducting this experiment, we can improve our
+Figures 12(a) and 12(b) illustrate our results as box plots. understanding of the risks that DNS poses to the anonymity
+Each figure contains four subfigures, one for each DNS con- of Tor users and use this understanding to improve protection
+figuration. Each box plot contains five rows, one for each Tor for Tor users in the future. Thus, we believe that the benefits
+client AS. For clarity, we did not plot any outliers beyond of our experiment outweigh the risks.
+the box whiskers. For the fraction of compromised streams,
+an ideal setup has its median at 0. For the time until first B. Defending against DefecTor attacks
+compromise,anidealmedianis31.Bothfiguresshowthatthe
+We now discuss ways to defend against DefecTor attacks.
+“ISPDNSonly”setupisthesafestforTorusers,i.e.,itexhibits
+We distinguish between short-term solutions that can be im-
+on average the least number of compromised streams while
+plemented quickly (Section VIII-B1), and long-term solutions
+also on average counting the most days until compromise.
+that need significantly more work (Section VIII-B2). Our
+This setup is closely followed by “Google DNS only,” the
+discussion of countermeasures is not comprehensive, and we
+status quo, and finally “Local DNS only,” which fares worse
+defer a more detailed analysis to future work.
+than all other setups. We expected “ISP DNS only” to do best
+becauseifallexitrelaysusetheirISP’sresolvers,thereisonly 1)Short-term solutions: Exit relay operators face a
+one AS to contend with on the egress side—the exit relay’s. dilemma: they must either operate their own resolver, which
+The Google setup fares similarly well; most likely because of exposes DNS queries to network adversaries; or, they must
+Google’s heavily anycast infrastructure which minimizes the use a third-party DNS resolver, which exposes DNS queries
+number of AS hops. The status quo does significantly better to a third party. Clearly, the goal is to minimize exposure of
+thanthe“LocalDNS”results,presumablybecauseonlyaround DNS requests, but there are several dimensions to this. In lieu
+12% of Tor exit relays actually do their own resolution. The of substantial DNS protocol improvements, we envision three
+large variance observed in Figure 12(b) for “ISP DNS” and extremedesignpoints,inwhichallexitrelaysuse(i)Google’s
+“Google DNS” is due to using 31 days as a placeholder for DNSresolver;(ii)theirown,localresolver;or(iii)theresolver
+simulated clients who were never compromised. However, a provided by their ISP.
+safe configuration against AS-level adversaries, which our fig-
+If all exit relays were to use Google’s public resolver, the
+urescapture,isnotnecessarilythebestsetupforTorusers.For
+company would obtain metadata about the activity of all Tor
+example, ISP-provided DNS resolvers can be misconfigured,
+users, which runs counter to Tor’s design goal of distributing
+subject to censorship, or simply be a forwarder to Google’s
+trust.Weclearlyshouldavoidthisscenario.Fifieldetal.’s[18]
+resolver,whichalreadyservesnumerousexitrelaysandwhose
+censorship circumvention system meek used to use Google’s
+centralizationposesathreattotheanonymityofTorusers.We
+cloud infrastructure to tunnel the traffic of censored users
+will explore this trade-off in greater detail in Section VIII.
+up until May 2016 [17]. While the system was operational,
+Interestingly, we find differences in our five client ASes. thousandsofmeekclientsselectedexitrelaysthatuseGoogle’s
+These differences are particularly striking in Figure 12(b). For public resolver, which means that Google saw both traffic
+“GoogleDNSonly,”themediantimeuntilcompromisediffers entering and, partially, exiting the Tor network, allowing the
+by around seven days between DE and UK, and around eight company to mount DefecTor attacks. Next, consider a Tor
+13network that only uses local resolvers. In this case, Tor is Tor users are visiting. Mapping DNS traffic to websites is
+fully independent of third-party resolvers, at the cost of each highly accurate even with simple techniques, and improves
+iterative DNS query being exposed to a diverse set of ASes in the precision when monitoring relatively unpopular websites.
+the network, allowing several parties to learn the DNS queries We further developed a method to identify the DNS resolver
+ofTorusers.Finally,allexitrelayscouldsimplyusetheirISP- for each Tor exit relay, and found that a set of exit relays
+provided resolver. This would minimize the network exposure comprising40%ofallTorexitrelaybandwidthusetheGoogle
+of DNS requests as resolvers are frequently in the same AS public DNS servers. Although this concentration of DNS
+as exit relays, and AS-level adversaries would be unable query traffic reduces the expanse of ASes that can see DNS
+to distinguish between DNS requests from exit relays and query traffic emanating from exit nodes, this configuration
+unrelated ISP customers. However, this setup introduces the nonetheless gives a single administrative entity considerable
+possibility of misconfigured and censored DNS resolvers [49, visibility into the traffic that is exiting the Tor network. Tor
+§ 4.1]. Besides, just a few ASes—OVH, for example—host a relay operators should take steps to ensure that the network
+disproportionate amount of exit relays, turning them into the maintains more diversity into how exit relays resolve DNS
+very centralized data sinks that Tor aims to avoid. domains. To mitigate the risk of website fingerprinting attacks
+in light of our work, we suggest that local DNS resolvers on
+Considering the above, we believe that exit relay operators
+Tor exit relays implement privacy-preserving techniques such
+should avoid public resolvers such as Google and OpenDNS.
+as DNS QNAME minimization, which minimizes the amount
+Instead, they should either use the resolvers provided by
+of information about the domain name that each iterative
+their ISP, or run their own, particularly if the operator’s
+query contains. We publish all our code, data, and replication
+ISP already hosts many other exit relays. Local resolvers
+instructions on our project page, which is available online at
+can further be configured to minimize information leakage,
+https://nymity.ch/tor-dns/.
+by enabling QNAME minimization [7]. There likely is a
+measurable performance difference between a local resolver
+ACKNOWLEDGMENTS
+andGoogle’sresolver,butwebelievethatthisdifferencepales
+incomparisontootherperformanceissuesinTorsuchashead- We want to thank Jedidiah R. Crandall for providing
+of-line blocking. infrastructure for our measurements, Aaron Johnson for help
+withTorPS,RobayetNasimforrunningDefecTorexperiments,
+Finally, Tor can fix the Tor clipping bug we discovered
+and Tom Ritter and the anonymous reviewers for providing
+and consider significantly increasing the minimum TTL for
+helpful feedback. This research was supported in part by the
+the DNS cache at exit relays to make DefecTor attacks less
+Swedish Foundation for Strategic Research grant SSF FFL09-
+precise.Thisadjustmentrequiresfindingthelongestacceptable
+0086;theSwedishResearchCouncilgrantVR2009-3793;the
+TTL that does not have a notable negative detriment to user
+Swedish Internet Fund grant “Hoppet till Tor”; the National
+experience. Further, as soon as the clipping bug is fixed,
+ScienceFoundationAwardsCNS-1540055andCNS-1602399;
+website operators of sensitive websites can opt to increase the
+andtheCenterforInformationTechnologyPolicyatPrinceton
+TTL of their DNS records.
+University.
+2)Long-term solutions: Additional practical defenses are
+on the horizon. Zhu et al. [50] proposed T-DNS, which em- REFERENCES
+ploysseveralTCPoptimizationstotransporttheDNSprotocol
+[1] “PlanetLab – an open platform for developing, deploying, and
+over TLS and TCP. The TLS layer provides confidentiality
+accessing planetary-scale services.” URL: https://www.planet-lab.org
+between exit relays and their resolvers. Finally, site operators (Citedonp.12)
+whose users are particularly concerned about safety should [2] K. Ali and M. Scarr, “Robust methodologies for modeling web click
+offer an onion service as an alternative. Facebook, for exam- distributions,” in WWW. ACM, 2007. URL: https://nymity.ch/tor-dns/
+ple, set up facebookcorewwwi.onion. When connecting to the pdf/Ali2007a.pdf (Citedonp.6)
+onionservice,TorusersneverleavetheTornetwork,andhence [3] J. Alstott, E. Bullmore, and D. Plenz, “powerlaw: A Python package
+donotneedDNS—aslongastheonionservicedoesnotembed for analysis of heavy-tailed distributions,” PLoS ONE, vol. 9, no. 1,
+2014. URL: https://nymity.ch/tor-dns/pdf/Alstott2014a.pdf (Cited on
+non-onion service content.
+pp.6and11)
+Deploying defenses against website fingerprinting attacks [4] Amazon Web Services, “Alexa top sites.” URL: https://aws.amazon.
+com/alexa-top-sites/ (Citedonpp.4and6)
+in Tor should be an important long-term goal, as well. Al-
+though growing the Tor network will help defend against [5] H.Asghari,“pyasn–PythonIPaddresstoautonomoussystemnumber
+lookupmodule.”URL:https://github.com/hadiasghari/pyasn (Citedon
+DefecTor attacks to some degree, the most important change
+p.12)
+is to deploy defenses against these attacks. Since DefecTor at-
+[6] S. Banerjee, T. G. Griffin, and M. Pias, “The interdomain
+tacks significantly increase precision of website fingerprinting connectivity of PlanetLab nodes,” in PAM. Springer, 2004. URL:
+attacks,defensesshouldbedesignedtosignificantlyreducethe https://nymity.ch/tor-dns/pdf/Banerjee2004a.pdf (Citedonp.12)
+recallofwebsitefingerprintingattacks,evenwhenthewebsite [7] S. Bortzmeyer, “RFC 7816 – DNS query name minimisation to
+fingerprinting attack is configured to sacrifice precision for improve privacy,” Mar. 2016. URL: https://tools.ietf.org/html/rfc7816
+recall. (Citedonp.14)
+[8] X. Cai, R. Nithyanand, and R. Johnson, “CS-BuFLO: A congestion
+sensitivewebsitefingerprintingdefense,”inWPES. ACM,2014.URL:
+IX. CONCLUSION https://nymity.ch/tor-dns/pdf/Cai2014a.pdf (Citedonp.3)
+[9] X. Cai, R. Nithyanand, T. Wang, R. Johnson, and I. Goldberg, “A
+In this paper, we have demonstrated how AS-level adver-
+systematicapproachtodevelopingandevaluatingwebsitefingerprinting
+sariescanuseDNStrafficfromTorexitrelaystolaunchmore
+defenses,” in CCS. ACM, 2014. URL: https://nymity.ch/tor-dns/pdf/
+effective website fingerprinting attacks, to learn what websites Cai2014b.pdf (Citedonp.3)
+14[10] X. Cai, X. C. Zhang, B. Joshi, and R. Johnson, “Touching from a [30] A.Mahanti,N.Carlsson,A.Mahanti,M.Arlitt,andC.Williamson,“A
+distance:Websitefingerprintingattacksanddefenses,”inCCS. ACM, taleofthetails:Power-lawsinInternetmeasurements,”IEEENetwork,
+2012.URL:https://nymity.ch/tor-dns/pdf/Cai2012a.pdf (Citedonp.3) vol.27,no.1,2013.URL:https://nymity.ch/tor-dns/pdf/Mahanti2013a.
+pdf (Citedonp.6)
+[11] A. Clauset, C. R. Shalizi, and M. E. J. Newman, “Power-law
+distributions in empirical data,” SIAM Review, vol. 51, no. 4, 2009. [31] N. Mathewson, “Remove global client-side DNS caching,”
+URL:https://arxiv.org/pdf/0706.1062 (Citedonp.6) Jul. 2012. URL: https://gitweb.torproject.org/torspec.git/tree/proposals/
+205-local-dnscache.txt (Citedonp.3)
+[12] G.Danezis,R.Dingledine,andN.Mathewson,“Mixminion:Designof
+atypeIIIanonymousremailerprotocol,”inSecurity&Privacy. IEEE, [32] “Mixmaster.”URL:http://mixmaster.sourceforge.net (Citedonp.1)
+2003. URL: https://nymity.ch/tor-dns/pdf/Danezis2003a.pdf (Citedon [33] S. J. Murdoch and P. Zielin´ski, “Sampled traffic analysis by
+p.1) Internet-exchange-level adversaries,” in PET. Springer, 2007. URL:
+[13] R. Dingledine and N. Mathewson, “Tor protocol specification.” URL: https://nymity.ch/tor-dns/pdf/Murdoch2007a.pdf (Citedonpp.1,3,4,
+https://spec.torproject.org/tor-spec (Citedonp.3) and6)
+[14] R. Dingledine, N. Mathewson, and P. Syverson, “Tor: The second- [34] Netcraft, “July 2016 web server survey,”
+generation onion router,” in USENIX Security. USENIX, 2004. Jul. 2016. URL: https://news.netcraft.com/archives/2016/07/19/
+URL: https://nymity.ch/tor-dns/pdf/Dingledine2004a.pdf (Cited on july-2016-web-server-survey.html (Citedonpp.6and11)
+pp.1and3) [35] R.Nithyanand,O.Starov,A.Zair,P.Gill,andM.Schapira,“Measuring
+[15] S.FarrellandH.Tschofenig,“RFC7258–pervasivemonitoringisan andmitigatingAS-leveladversariesagainstTor,”inNDSS. TheInternet
+attack,” May 2014. URL: https://tools.ietf.org/html/rfc7258 (Citedon Society,2016.URL:https://nymity.ch/tor-dns/pdf/Nithyanand2016a.pdf
+p.1) (Citedonp.3)
+[16] N. Feamster and R. Dingledine, “Location diversity in anonymity [36] A. Panchenko, F. Lanze, A. Zinnen, M. Henze, J. Pennekamp,
+networks,”inWPES. ACM,2004.URL:https://nymity.ch/tor-dns/pdf/ K. Wehrle, and T. Engel, “Website fingerprinting at Internet scale,”
+Feamster2004a.pdf (Citedonp.3) inNDSS. TheInternetSociety,2016.URL:https://nymity.ch/tor-dns/
+pdf/Panchenko2016a.pdf (Citedonpp.4and5)
+[17] D. Fifield, “meek-google suspended for terms of service violations
+(howtosetupyourown),”Jun.2016.URL:https://lists.torproject.org/ [37] A. Panchenko, L. Niessen, A. Zinnen, and T. Engel, “Website finger-
+pipermail/tor-talk/2016-June/041699.html (Citedonp.13) printing in onion routing based anonymization networls,” in WPES.
+[18] D.Fifield,C.Lan,R.Hynes,P.Wegmann,andV.Paxson,“Blocking-
+ACM, 2011. URL: https://nymity.ch/tor-dns/pdf/Panchenko2011a.pdf
+(Citedonp.3)
+resistantcommunicationthroughdomainfronting,”PoPETS,vol.2015,
+no.2,2015.URL:https://nymity.ch/tor-dns/pdf/Fifield2015a.pdf (Cited [38] M. Perry, “Padding negotiation,” Sep. 2015. URL: https://gitweb.
+onp.13) torproject.org/torspec.git/tree/proposals/254-padding-negotiation.txt
+(Citedonpp.3,4,and9)
+[19] L.Gao,“OninferringautonomoussystemrelationshipsintheInternet,”
+IEEE/ACM Transactions on Networking, vol. 9, no. 6, 2001. URL: [39] RIPE Network Coordination Centre, “RIPE Atlas.” URL: https:
+https://nymity.ch/tor-dns/pdf/Gao2001a.pdf (Citedonp.3) //atlas.ripe.net/ (Citedonpp.2,3,and12)
+[20] J. Hayes and G. Danezis, “k-fingerprinting: A robust scalable website [40] Y. Sun, A. Edmundson, L. Vanbever, O. Li, J. Rexford, M. Chiang,
+fingerprintingtechnique,”inUSENIXSecurity. USENIX,2016.URL: and P. Mittal, “RAPTOR: Routing attacks on privacy in Tor,” in
+https://nymity.ch/tor-dns/pdf/Hayes2016a.pdf (Citedonpp.4and8) USENIXSecurity. USENIX,2015.URL:https://nymity.ch/tor-dns/pdf/
+Sun2015a.pdf (Citedonp.3)
+[21] D.Herrmann,R.Wendolsky,andH.Federrath,“Websitefingerprinting:
+Attackingpopularprivacyenhancingtechnologieswiththemultinomial [41] Team Cymru, “IP to ASN mapping.” URL: https://www.team-cymru.
+naïve-bayes classifier,” in CCSW. ACM, 2009. URL: https://nymity. org/IP-ASN-mapping.html (Citedonp.4)
+ch/tor-dns/pdf/Herrmann2009a.pdf (Citedonp.3) [42] The Tor Project, “CollecTor.” URL: https://collector.torproject.org
+[22] R. Jansen and A. Johnson, “Safely measuring Tor,” in CCS. ACM, (Citedonpp.7and11)
+2016. URL: https://nymity.ch/tor-dns/pdf/Jansen2016a.pdf (Cited on [43] TheTorProject,“TorMetrics–Top-10countriesbydirectlyconnecting
+p.7) users.” URL: https://metrics.torproject.org/userstats-relay-table.html
+[23] A. Johnson, “The Tor path simulator.” URL: https://github.com/torps/ (Citedonp.11)
+torps (Citedonpp.2,3,and11) [44] T. Wang, “Website fingerprinting: Attacks and defenses,” Ph.D.
+[24] A. Johnson, C. Wacek, R. Jansen, M. Sherr, and P. Syverson, “Users dissertation, University of Waterloo, 2015. URL: https://nymity.ch/
+get routed: Traffic correlation on Tor by realistic adversaries,” in tor-dns/pdf/Wang2015a.pdf (Citedonpp.2and3)
+CCS. ACM, 2013. URL: https://nymity.ch/tor-dns/pdf/Johnson2013a. [45] T. Wang, X. Cai, R. Nithyanand, R. Johnson, and I. Goldberg,
+pdf (Citedonpp.1,3,11,and12) “Effective attacks and provable defenses for website fingerprinting,”
+[25] M. Juarez, S. Afroz, G. Acar, C. Diaz, and R. Greenstadt, “A critical inUSENIXSecurity. USENIX,2014.URL:https://nymity.ch/tor-dns/
+evaluation of website fingerprinting attacks,” in CCS. ACM, 2014. pdf/Wang2014a.pdf (Citedonpp.2,3,and8)
+URL: https://nymity.ch/tor-dns/pdf/Juarez2014a.pdf (Cited on pp. 4 [46] T.WangandI.Goldberg,“ImprovedwebsitefingerprintingonTor,”in
+and9) WPES. ACM, 2013. URL: https://nymity.ch/tor-dns/pdf/Wang2013a.
+[26] M. Juarez, M. Imani, M. Perry, C. Diaz, and M. Wright, “Toward pdf (Citedonpp.3and9)
+an efficient website fingerprinting defense,” in ESORICS. Springer, [47] T. Wang and I. Goldberg, “On realistically attacking Tor with
+2016. URL: https://nymity.ch/tor-dns/pdf/Juarez2016a.pdf (Cited on website fingerprinting,” PoPETs, vol. 2016, no. 4, 2016. URL:
+pp.3,4,and10) https://nymity.ch/tor-dns/pdf/Wang2016a.pdf (Citedonp.4)
+[27] J. Juen, A. Johnson, A. Das, N. Borisov, and M. Caesar, [48] P. Winter, “exitmap: A fast and modular scanner for Tor exit relays.”
+“Defending Tor from network adversaries: A case study of URL:https://github.com/NullHypothesis/exitmap (Citedonp.5)
+network path prediction,” PoPETS, vol. 2015, no. 2, 2015. URL:
+[49] P. Winter, R. Köwer, M. Mulazzani, M. Huber, S. Schrittwieser,
+https://nymity.ch/tor-dns/pdf/Juen2015a.pdf (Citedonpp.3and12)
+S.Lindskog,andE.Weippl,“Spoiledonions:ExposingmaliciousTor
+[28] S.Khattak,D.Fifield,S.Afroz,M.Javed,S.Sundaresan,D.McCoy, exitrelays,”inPETS. Springer,2014.URL:https://nymity.ch/tor-dns/
+V. Paxson, and S. J. Murdoch, “Do you see what I see? differential pdf/Winter2014b.pdf (Citedonpp.5and14)
+treatmentofanonymoususers,”inNDSS. TheInternetSociety,2016.
+[50] L. Zhu, Z. Hu, J. Heidemann, D. Wessels, A. Mankin, and
+URL:https://nymity.ch/tor-dns/pdf/Khattak2016a.pdf (Citedonp.8)
+N. Somaiya, “Connection-oriented DNS to improve privacy and
+[29] K. Krauss, “Ethical Tor research: Guidelines,” Nov. 2015. URL: security,” in Security & Privacy. IEEE, 2015. URL: https:
+https://blog.torproject.org/blog/ethical-tor-research-guidelines (Cited //nymity.ch/tor-dns/pdf/Zhu2015a.pdf (Citedonp.14)
+onp.13)
+15

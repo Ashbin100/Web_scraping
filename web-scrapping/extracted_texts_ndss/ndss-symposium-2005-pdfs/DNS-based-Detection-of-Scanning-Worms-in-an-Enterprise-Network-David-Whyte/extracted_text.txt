@@ -1,0 +1,1137 @@
+DNS-based Detection of Scanning Worms in an Enterprise Network
+DavidWhyte EvangelosKranakis P.C.vanOorschot
+SchoolofComputerScience
+CarletonUniversity
+Ottawa,Ontario,Canada
+(cid:0) dlwhyte,kranakis,paulv
+(cid:1)
+@scs.carleton.ca
+Abstract per second)only3 minutesafter it was released. In Au-
+gust2003theSoBigwormcausedanestimated$5billion
+in damage and at the height of its infection was respon-
+Worms are arguably the most serious security threat sible for approximately 73% of all Internet email traf(cid:2)c
+facingtheInternet. Seekingadetectiontechniquethatis [6]. Unfortunately,worm outbreaksof this scale are be-
+bothsuf(cid:2)cientlyef(cid:2)cientandaccuratetoenableautomatic coming commonplace. In March 2004, the Witty Worm
+containment of worm propagation at the network egress begantospreadbyexploitingabufferover(cid:3)owinInternet
+points, we propose a new technique for the rapid detec- SecuritySystems(ISS)productsthatinclude(cid:2)rewallsand
+tionofwormpropagationfromanenterprisenetwork. It intrusiondetectionsystems.Althoughthevulnerablepop-
+relies on thecorrelationofDomainName System(DNS) ulationofInternetsystemswasamagnitudesmallerthan
+querieswithoutgoingconnectionsfromanenterprisenet- previous worms, it spread very rapidly [19]. To achieve
+work. Improvementsoverexistingscanningworm detec- the rate of propagation observed, it is believed that this
+tiontechniquesinclude:(1)thepossibilitytodetectworm wormusedapreprogrammedhitlistoratimedreleaseof
+propagationafteronlyasingleinfectionattempt; (2)the thewormonpreviouslycompromisedsystems.Wittywas
+capacity to detect zero-day worms; and (3) a low false the (cid:2)rst widely propagatedworm to contain a malicious
+positive rate. The precision of this (cid:2)rst-mile detection payload and signi(cid:2)es a disturbing new trend for worm
+techniquesupportstheuseofautomatedcontainmentand writers,combiningskillandmalice[23].
+suppressionstrategiestostopfastscanningwormsbefore Staniford et al. [21] hypothesizedthat a properly con-
+theyleavethenetworkboundary.Webelievethatthistech- structedwormcouldinfectvulnerablesystemsontheIn-
+nique can be applied with the same precision to identify ternet at anevengreaterspeed. Wormsareevolvingand
+other forms of malicious behavior within an enterprise they can employ a number of anti-detection techniques
+networkincluding: mass-mailingworms,networkrecon- such as: anti-forensics, dynamic behavior, and modular-
+naissanceactivity,andcovertcommunications.Currently, ity of attack tools [16]. Furthermore, worms spread so
+it is unclear if our DNS-based detector will work for all quickly that traditional intrusion detection methods (i.e.
+network protocols. In some network environments, the generation and deployment of attack signatures) are not
+DNS detection technique may need to be used as a sec- feasible[15]. Inordertomakeautomaticcontainmentof
+ondaryinputtoamoresophisticatedanomalydetector. fastscanningwormsfeasible,arapidandaccuratedetec-
+tionmethodisrequired.
+Currently,mostcountermeasuresusedtomitigatethese
+1 Introduction attacksincludesomeformofhumanintervention.Routers
+can be con(cid:2)gured to block network traf(cid:2)c and vulnera-
+Recently, a multitude of high pro(cid:2)le worm epidemics
+blesoftwarecanbepatched. However,wormsthatprop-
+has affected millions of networked computing devices.
+agate and infect the Internet in just minutes make these
+TheSlammerWormthatemergedinJanuaryof2003ex-
+human-in-the-loopcountermeasuresimpractical. Thede-
+posedhowquicklywormpropagationcouldoccur. Itin-
+velopmentofwidescaleautomatedcountermeasuresisre-
+fectedsystemsbyexploitingabufferover(cid:3)owvulnerabil-
+quired. Currentwormpropagationdetectionmethodsare
+ityinMicrosoftSQLServer. Slammer’sinfectedpopula-
+limitedin: (1)theirspeedofdetection,(2)theirinability
+tion doubledin size every8.5 seconds [14] with 90% of
+toaccuratelydetectzero-dayworms,(3)theirinabilityto
+vulnerablehosts infectedin just 10 minutes. This worm
+detectslowscanningworms,and(4)theirhighfalseposi-
+achievedits fullscanningrate (i.e.over55millionscanstiverate. toreducefalsepositives.
+Typically,scanningwormsuseapseudorandomnum- 5. Low-false positive rate: our approachdoes not rely
+bergenerator(PRNG)togenerate32bitrandomnumbers onmodelingnormalnetworkanduserbehaviorpro-
+thatcorrespondtoanIPv4address. Theattackingsystem (cid:2)lesthatarepronetofalsepositives.
+uses this numeric address as the target for its infection 6. Ease of implementation: our approach is network-
+attempt. The use of a numeric IP address by the worm, based, runs on commodity hardware, and relies on
+instead of the quali(cid:2)ed domain name of the system, ob- theobservationofaprotocolfoundineverynetwork
+viates the need for a DNS query. In contrast, the vast (i.e.DNS).
+majority of legitimate publicly available services are ac-
+cessedthroughtheusetheDNSprotocolwhichprovides We believe this new technique can both rapidly and ac-
+themappingbetweennumericIPaddressesandthecorre- curately detect worm propagation within enterprise net-
+spondingalphanumericnames. The translationof a host works. The precision of this (cid:2)rst-mile detection enables
+nametoaregisteredIPaddressiscalledresolving. While theuseofautomatedcontainmentandsuppressionstrate-
+thereexistsvalidexceptions(e.g.clienttoclientapplica- giestostopscanningwormsbeforetheyleavethenetwork
+tions, remote administration tools, etc.) typical user be- boundary.
+haviorshouldincludesomeformofDNSactivitybeforea Ourdetectiontechniquecanbeusedtodetectscanning
+newconnectioncanbeinitiated. wormpropagationbothwithinanenterprisenetworkand
+OurContributions. WeuseDNSanomaliestodetect from the enterprise network to the Internet (i.e. local to
+scanningwormpropagation,relyingontheobservationof remote). It does not detect worm propagation from the
+DNS responses. If we do not observe DNS activity be- Internet to the enterprise network. It differs from exist-
+fore a new connectionis initiated, we considerthis con- ingscanningwormdetectiontechniquesinthatitdoesnot
+nectionanomalous. This premise is based on our obser- relyonhavingtoobserveandcorrelatemultipleeventsto
+vationthatwhereasuserstendtorememberalphanumeric determinethatascanisoccuring.Thereisnoconceptofa
+stringsandusethenetworkservicesprovided(i.e.DNS), threshold;weonlymaintaininstatealistofIPaddresses
+almost all scanning worms directly use numeric IP ad- ofvalidconnectiondestinationsandeachindividualcon-
+dresses. Behavioral signatures [9] are used to describe nectionattemptfromthe enterprisenetworkasit occurs.
+common aspects of worm behavior particular to a given Ourapproachenablesthedetectionofaninfectedsystem
+wormthatspaninfectedsystemsinatemporalorder.Our afterasinglescanhasbeeninitiated,regardlessofthetime
+DNS-baseddetectiontechniquecanbeusedasabehavo- betweenscans, andthuscomparesveryfavorablytopre-
+rialsignaturetodetectscanningworms. vious work (e.g. Weaver et al. [25]). Weaver et al. pro-
+Those legitimate applications and services that gener- poseanalgorithmbasedontheThresholdRandomWalk
+allydonotrelyonDNSareaddressedthroughtheuseof (TRW)scandetector[11]todetectascanninghostwithin
+whitelists(seeSection3.2).Inanenterprisenetworkwith anenterpriseenvironmentafteronly10scans,andit can
+an open security policy (i.e. few or no user and service detectscansasslowas1scanperminute.
+restrictions)thenumberofsuchapplicationsandservices Thesequelisstructuredasfollows. Section2presents
+maybesolargeastomakeourdetectiontechniqueprone the descriptionofthe DNS-basedscanningwormpropa-
+tosigni(cid:2)cantamountsoffalsepositivesandnegatives(see gation detection technique. Section 3 discusses our ex-
+Section5.2). Eveninthisscenario,DNS-baseddetection perimental platform. Section 4 discusses the analysis of
+maybeausefulinputtoamoresophsticatedanomalyde- ourprototype.Section5presentsdetectioncircumvention
+tector.However,webelievetheuseofourDNSanomaly- andlimitations.Section6discussesideasforextendedap-
+baseddetectionapproachinanenterprisenetworkthatim- plicationsofourdetectiontechnique. Section7discusses
+plementsaconservativeorrestrictivesecuritypolicy(i.e. relatedwork. WeconcludeinSection8withabriefsum-
+morecommoninlarge(cid:2)nancialorganizationsorgovern- mary.AppendixAcontainsbackgroundinformation.
+ment)isappealingforanumberofreasonsincluding:
+2 BasicMethodolgyandApproach
+1. Speed: the possibility to detect an infected system
+afteronlyasingleinfectionattempttotheInternet. For an overview of worm propagation strategies and
+2. Detection ofzero-dayworms: possible because our DNSpleaserefertoAppendixA.Inthissectionwegive
+approach does not rely on the matching of existing a high-level overview of our DNS-based anomaly scan-
+wormsignaturestoidentifysuspicioustraf(cid:2)c. ning worm detection approach. In larger enterprise net-
+3. Scanningrateindependence:ourapproachcandetect works,itisnotunusualfornetworksegmentstobeeither
+bothfastandslow(i.e.stealth)scanningworms. logically or physically separated. In fact, an enterprise
+4. Reducedtrainingperiod: ourapproachincludesthe networkmaybecomprisedofseveraldistinctsubnetsfor
+conceptofa whitelist thatcan be quicklygenerated a variety of reasons including security, ease of adminis-tration, and geographicallocation. We can leveragethis techniquetoanARP-basedimplementationwhichdetects
+naturalseparationofnetworkstocontainwormpropaga- L2L worm propagationwithin local cells. Figure 2 pro-
+tionwithindistinctnetworksegments. AsinSiliconeDe- vides an example of how our prototype could be opera-
+fense’s CounterMalice solution [7], we purposely divide tionallydeployed. PrototypeA in Cell 1monitorsactiv-
+the enterprise network into segments called cells. Each ity between Cell 1 and Cell 2. Cell 2 contains the sole
+cell contains a worm containment device to con(cid:2)ne and ingress/egresspointfortheenterprisenetwork. Prototype
+containworminfection. Ourde(cid:2)nitionofacellrefersto B,fromitsvantagepointinCell2,monitorsactivityfrom
+allsystems withinthesamesubnetservicedbyadistinct allcellswithintheenterprisenetworktoexternalsystems.
+authoritativeDNSserver. Figure1illustrateshowanen- FinallyprototypeCmonitorsactivitybetweenCell3and
+terprisenetworkcanbedividedintocells. Cell 2. A system in Cell 1 is infected with a scanning
+The propagation of fast-scanning worms can be char- worm.Theinfectedsystembeginsscanningtolocatesus-
+acterizedas: localtolocal(L2L),localtoremote(L2R), ceptiblesystemsbothwithinCell2andtheInternet. The
+orremotetolocal(R2L).InL2Lpropagation,ascanning prototypedeviceinCell1will detectthescanningactiv-
+wormtargetssystems withintheboundariesoftheenter- ity toCell 2andgenerateanalert. Theprototypedevice
+prisenetworkitresides.Topologicalscanningwormsem- in Cell 2, at the enterprisegateway, will detect scanning
+ploy this strategy. L2R propagationrefers to a scanning activityfromCell1totheInternetandgenerateanalert.
+wormwithinanenterprisenetworktargetingsystemsout-
+side of its network boundary. Finally, R2L propagation
+refers to worm scanning from the Internet into an enter-
+Remote Server(cid:13)
+prise network. In this paper, our worm propagation de-
+tectionmethoddetectsL2Rwormpropagationandworm
+propagation between local cells, but not R2L or worm
+propagationthatoccurswithinanindividualcell. Router(cid:13)
+Systems that reside within the same cell typically do Prototype B(cid:13)
+not use DNS to communicate. The Address Resolution
+Firewall(cid:13)
+Protocol(ARP)[17]isusedwhenasystemtriestocom- DNS Server(cid:13) DNS Server(cid:13) Prototype C(cid:13)
+Prototype A(cid:13) Cell 2(cid:13) DNS Server(cid:13)
+municate with another system in the same cell. ARP is
+Cell 1(cid:13) Router(cid:13) Switch(cid:13) Cell 3(cid:13)
+usedbythedatalinklayertoprovideamappingbetween
+thephysicalhardwareofasystemanditsassignedIPad-
+dress. L2Lwormpropagationcanoccurwithinaparticu-
+larcell orspanmultiplecells dependingonthescanning
+Enterprise Network(cid:13)
+strategyoftheworm. Asnotedabove,inthepresentpa-
+Figure2.DNSAnomaly›basedDetectionDe›
+ployment
+Router(cid:13)
+DNSAnomalyDetectionApproach. Inrandomscan-
+ning,theuseofanumericIPaddressbytheworm,instead
+Firewall(cid:13)
+DNS Server(cid:13) DNS Server(cid:13) ofthequali(cid:2)eddomainnameofthesystem, obviatesthe
+Cell 2(cid:13) DNS Server(cid:13)
+need for a DNS query. New connections from the net-
+Cell 1(cid:13) Router(cid:13) Switch(cid:13)Cell 3(cid:13) workthatcannotbeassociatedwithanyDNSactivityare
+considered anomalous. If we can observe and correlate
+alllocallygeneratedDNSactivityandnewconnectionat-
+tempts within an enterprise network, we have the means
+to detect L2L inter-cell or L2R worm propagation. The
+Enterprise Network(cid:13) techniquedoesnotdetectR2Lorintra-cell(i.e.withinthe
+boundariesofacell)wormpropagation.
+However,thisapproachmusttakeintoaccountvalidin-
+Figure1.NetworkCells stances wherenoDNSqueryis requiredto accessa par-
+ticular system or resource. Our analysis of DNS activ-
+per, we handle L2L worm propagation only in the case itywithinanetworkrevealstwoinstanceswherethisoc-
+thatthepropagationoccursbetweencells. Inarelatedpa- curs. The (cid:2)rst results from accessing distributed appli-
+per[26], wedetailhowwehaveadoptedtheDNS-based cationandcontentdeliveryservices. TheHTTPprotocolallowsURLsconsistingofnumericIPaddressestobeem- pcap [5] (cid:2)le format. To detect L2R worm propagation,
+beddedwithinthedatapayloadofanHTTPpacket. Itis thesoftwaresystemmustbedeployedatallexternalnet-
+common practice for busy websites to maintain or out- work egress/ingresspoints. To detect worm propagation
+sourcetheircontenttolargercentralizedimageserversto between network cells, a system would need to be de-
+allowforbetterwebpageretrievalperformance. Whena ployed in each cell at the internal ingress/egress points
+useraccessesawebsitetoretrieveawebpage,theymaybe (seeFigure2).
+retrievingtherequestedmaterialfromseveralgeographi-
+cally separated servers. It is not uncommonfor the web Network(cid:13)
+pagecontenttoincludeanIPaddressofacentralizedim-
+age server that the browser uses to retrieve an image or
+Prototype(cid:13)
+media(cid:2)le. Inthisinstance,thebrowserusesthisnumeric
+Packet Processing Engine(cid:13)
+IP address to retrieve the image and does not require a 5-tuple DNS(cid:13)
+DNSresourcerecord.InsteadofhavingtoperformaDNS 5-tuple TCP(cid:13)
+5-tuple HTTP(cid:13)
+requestfortheobject,thenumericIPaddressisprovided
+5-tuple DNS(cid:13)
+tothebrowserinthecontentofthewebpage.Weconsider 5-tuple DNS(cid:13)
+thisavalidconnectionattemptincidentallyobtainedbya
+previousDNSquery.
+Thesecondinstanceincludesthoseserversandservices DNS Correlation Engine(cid:13) 5-tuple DNS(cid:13)
+Connection Candidate Data Structure(cid:13) Alert(cid:13)
+that are simply not accessed with DNS. An application Alert(cid:13)
+5-tuple Connection Candidate(cid:13) 5-tuple TCP(cid:13) Alert(cid:13)
+may have the numeric IP addresses of systems it needs 5-tuple Connection Candidate(cid:13)
+5-tuple Connection Candidate(cid:13)
+toaccessembeddedinitscon(cid:2)guration(cid:2)le. Ausermay
+5-tuple Connection Candidate(cid:13)
+specifyconnectionstoaserverbyenteringanIPaddress
+frommemoryatacommandline. Intheseinstances,the
+application or user has a priori knowledge of the IP ad- Figure3.High›levelSystemDesign
+dressoftheservertheywishtoaccess. Thiscan include
+but is notlimited to networkservercommunications,re- Figure3revealsthehigh-leveldesignoftheprototype.
+moteadministrationtools,andcertainpeertopeer(P2P) In this example, the PPE extracts the relevant features
+applications. DNS, applications, and users are all legiti- fromlivenetworkactivityandbundlestheseintodatato-
+matesourcesofnumericIPaddressesthatcanenableac- kens. The data tokens are comprised of the appropriate
+cesstoservicesandsystems.LegitimateuseofnumericIP 5-tupleoffeatures(seeSection3.1)basedontheprotocol
+addressesbyapplicationsanduserscanbeidenti(cid:2)edand extracted. These tokens are consumedby the DCE. The
+added to a whitelist for exclusion from the detection al- DCE uses the tokens to maintain a list of destination IP
+gorithm. Takingtheseexceptionsintoconsideration(see addressesit deemsvalid andchecksanynewconnection
+Whitelists in Section 3.2), we consider any system that attempts from within the enterprise network against this
+tries to access another system without receiving a valid list. The DCE will generate an alert if it determines the
+DNSresponseasapossibleworminfectedsystem. newconnectionisbeinginitatedtoadestinationIPthatis
+notcontainedinitslist.
+3 High-LevelSystemDesign
+3.1 PacketProcessingEngine
+Oursoftwaresystemdesignusesthelibpcap[5]library
+andiscomprisedoftwologicalcomponents:thePPEand ThePPEisresponsibleforprocessingpacketsofinter-
+DCE.ThePacketProcessingEngine(PPE)isresponsible est from pcap (cid:2)les or live off the network and extracts
+forextractingtherelevantfeaturesfromthelivenetwork a variety of information from several protocols. Specif-
+activityorsavednetworktrace(cid:2)les(seeSection3.1).The ically, the software must extract relevant features from
+DNS correlationengine(DCE)maintainsinstate all rel- new connectionattempts, embeddedIP addresses within
+evant DNS information, a whitelist, and numeric IP ad- HTTPpackets,andallDNSactivityoccurringwithinthe
+dressesembeddedinHTTPpacketsextractedbythePPE networkcell.
+(seeSection3.2). Thisinformationisusedtoverifyboth In orderto discovernewTCP connectionattempts, all
+outgoing TCP connections and UDP datagrams. In this TCP packets with the SYN (cid:3)ag set are examined. TCP
+context,verifyingmeansensuringthat thedestinationIP packets with the SYN only (cid:3)ag set indicate the start of
+addressofanoutgoingTCPconnectionorUDPdatagram the three-way handshakethat signi(cid:2)es a new connection
+canbeattributedtoeitheraDNSquery,anHTTPpacket, attempt. UDP is connectionless and does not have the
+or an entry in the whitelist. The software can process conceptofasession.EachUDPpacketistreatedasadis-
+either live network traf(cid:2)c or saved network traces in the creteeventandthusapotentialnewconnection. Featureextraction for either new TCP connections or non-DNS Whitelists. Toaddressthoseclientapplicationsthatle-
+UDP datagramsincludesthe5-tupleofsourceIP,source gitimatelydonotrelyonDNS,awhitelistisgenerated.A
+port,destinationIP,destinationport,andtimestamp. whitelist provides a list of IP addresses and port combi-
+Packetsthatcontainasourceportof80or8080arecap- nationsthatareexemptfromthedetectionalgorithm. For
+turedandcategorizedasHTTPpackets. AllHTTPpack- example, in most networks there are systems that regu-
+ets are decoded and the payload inspected for any em- larlycommunicatewithoneanotherbyusingIPaddresses
+beddedIPaddresses. AnyIPaddressesdiscoveredinthe speci(cid:2)edincon(cid:2)guration(cid:2)lesratherthanfetchedinDNS
+payload are extracted along with the previously de(cid:2)ned records. Furthermore,speci(cid:2)capplicationsandusers(see
+5-tuple. further discussions below) may also use numeric IP ad-
+DNSArecordsaregeneratedwhensystemswithinthe dressesinsteadofDNStoaccessservicesorcommunicate
+networkwishtocontactsystemsinothercellsorexternal withothersystems.
+to the network. Any DNS requests originating from the Inpractice,internalnetworkservercommunicationsare
+network cells and any DNS replies coming into the net- eitherwell-knownoreasilydiscovered.Ifahard-codedIP
+workcellsareextractedanddecoded. Featureextraction addressiscontainedinanetworkcon(cid:2)gurationparameter
+forDNSdatagramsincludesthe5-tupleofDNSsourceIP, or(cid:2)le,itiseasilycon(cid:2)rmed.Theseserverinteractionscan
+DNSsourceport,TTL,domainname,andresolvedIPv4 bemodeledandtheappropriateIPaddressportcombina-
+address. tionaddedof(cid:3)inetothewhitelistforexclusion.However,
+inthecaseofusers,theuseofnumericIPaddressesmay
+3.2 DNSCorrelationEngine bemorepervasiveandmoreunpredictable.Therearetwo
+casesworthdiscussion.Inorganizationswhichimposere-
+The DNS correlation engine (DCE) is responsible for
+strictivenetworksecuritypolicies,endusersarerestricted
+processinginformationpassed by the PPE. The two ma-
+to usinga (cid:2)nite list of well knownservices deemed per-
+jorfunctionsoftheDCEare: (1)tocreateandmaintaina
+missible in the securitypolicies. Forinstance, it maybe
+datastructureofIPaddressesandassociatedfeaturesthat
+permissable to access FTP and Telnet servers using nu-
+areconsideredvalidconnectioncandidates;and(2)toval-
+mericIPaddresses. Toaccommodatethis,thelistoffre-
+idateallnewTCPandUDPconnectionattemptsbetween
+quentlyaccessedFTPserversIPaddressescouldbeadded
+cells or to remote systems against the connection candi-
+tothewhitelist. Alternatively,soasnottoweakenthese-
+date data structure. A valid connection candidate data
+curitypostureofthenetwork,in suchenvironments(e.g.
+structureis producedbyprocessingDNSArecords,em-
+(cid:2)nancialandgovernment)whereanorganizationhastight
+beddedIPaddressesinHTTPpackets,andthewhitelist.
+controloveritsemployees,userscouldbetoldtoenterin
+Connection Candidate Data Structure. All DNS A
+domainnamesinsteadoftheIPaddress.Thesecondcase,
+resourcerecord5-tuplesareparsedandaddedtothecon-
+which may be more problematic for whitelists, involves
+nection candidatedata structure. The TTL from each 5-
+enduserswhichenjoyunrestrictedoropennetworksecu-
+tuple is used just as it is in the cache of a DNS server.
+ritypolicies. Inthiscase,thenumberofwhitelistedprot-
+OncetheTTLexpires,theresourcerecordispurgedfrom
+colsmaylimittheeffectivenessofthedetector.
+the DCE’s connectioncandidatelist. AlthoughDNS ac-
+Thewhitelistisgranularenoughtoexemptnotonlyspe-
+tivityprovidesthemajorityofIPaddressestotheconnec-
+ci(cid:2)cIPaddressesbutalsoprovideforIPaddressandport
+tioncandidatedatastructure,numericIPaddresseswithin
+pairing. Forinstance,itispossibletospecifythatacom-
+HTTPpacketsmustalsobeconsidered.
+munication must contain the correct source and destina-
+Aspreviouslydiscussed,numericIPaddressesarereg-
+tion IP addresses as well as the correct destination port
+ularly embedded within HTTP packets. All HTTP 5-
+in order to match the applicable whitelist entry. Over
+tuples are parsed and added to the connection candidate
+time this list will need to be updated in order to re(cid:3)ect
+datastructure. UnlikeanIPaddressprovidedbyDNSA
+changes to the network, user activity, and new technol-
+records,theseIPaddressesdonothaveanassociatedTTL
+ogy.Themoreopenanetworksecuritypolicy,thegreater
+thatcan beusedtodiscardtheIPaddressentryfromthe
+theamountofeffortrequiredtomaintainthewhitelist.
+connectioncandidatedatastructure. Wecanassumethat
+New Connection Validation. The PPE only extracts
+a DNS query and response had to occur in orderfor the
+therelevantinformationfromasingleTCPpacketforeach
+web site to be initially accessed. Therefore, we can use
+newTCPconnectionattemptitdetects.ThisincludesTCP
+the TTL of the DNS A record of the original request as
+SYNpacketsaddressedtosystemsoutsidethecellthepro-
+the TTL for the embeddedIP address. All IP addresses
+totypeismonitoring.OnceanewTCPconnectionattempt
+harvested from HTTP decoding are then are maintained
+is detected, the IP destination address is compared with
+in state. That is, the assigned TTL values are respected
+theaddresseslistedintheconnectioncandidatedatastruc-
+andtheseaddressesarevalidonlyaslongastheTTLhas
+ture. Iftheaddressisnotfoundanditdoesnotmatchan
+notexpired.entry in the whitelist, the connectionis consideredto be ThelabnetworkcontainsoneauthoritativeDNSserver
+anomalousandanalertisgenerated. that allinternalsystems inthenetworkarecon(cid:2)guredto
+UDP datagrams are regarded as discrete events. The use. Thelab’sDNSserverhasentriesassociatedwiththe
+PPEextractstherelevantinformationfromtheUDPdata- lab’s mail server, web server, and Kerberos server. The
+gramsandpassesthisinformationtotheDCE.Onceanew (cid:2)rewall does not permit any inboundconnectionsunless
+UDP datagram is detected, the IP destination address is theywere(cid:2)rstestablishedbyaninternalsystem. Allsys-
+processedasdescribedinthepreviousparagraph. temswithinthelabcanaccesstheInternetdirectlythrough
+Alerts.Analertisgeneratedwhenaconnectionattempt the(cid:2)rewall,whichisthesoleegress/ingresspointforthe
+toasysteminanothercellorremotesystemisdetectedfor network. Using the cell de(cid:2)nition previously described,
+whichthereisnoassociatedentryintheconnectioncandi- the lab can beconsideredonecell in theuniversity’sen-
+datedatastructure.Multipleconnectionattemptsbetween terprise network. The lab analysis allowedus to test the
+thesametwosystemswithinaspeci(cid:2)edtimewindoware prototype’sabilitytodetectL2Rwormpropagation.
+regarded as a single alert. This alert grouping reduces During the course of our network traf(cid:2)c collection in
+thenumberofalertsgeneratedwithoutreducingtherele- front of the lab (cid:2)rewall, network traf(cid:2)c from a separate
+vantwarninginformationtotheoperator.Itisnotunusual internaluniversitynetworkwasalsocaptured.Wewillre-
+foranewTCPsessiontorequireanumberofconnection fertothisnetworkastheInternalDepartmentalNetwork
+attempts before an actual connectioncan be established. (IDN).TheIDNhasitsownauthoritativeDNSserverthat
+Systems may be busy, unable or simply unwilling to es- allitsinternalsystemsarecon(cid:2)guredtouse.TheIDNcan
+tablish a session. If a separate alert were generated for be considered another cell in the university’s enterprise
+eachunsuccessfulconnectionattempt,asinglecommuni- network. This incidentalcollectionprovidedus with the
+cationbetweentwosystemsmaygenerateseveralalerts. opportunitytoperformadditionalanalysis. Inadditionto
+In regardsto UDP, the decision to considereach UDP runningthe prototypeagainstthe lab networktraces, we
+datagramasapossiblenewconnectioncouldresultinnu- rantheprototypeagainsta(cid:2)lteredversionoftheIDNnet-
+merousalerts that couldquicklyoverwhelman operator. work traces. To address privacy concerns, we restricted
+Theimportantintelligencefromthesealertsistheidenti(cid:2)- ourinspectionoftheIDN’snetworktracestothosepack-
+cationofthepotentiallyinfectedsystemandtheintended ets that contained either a source or destination address
+victim. The fact that it took the worm multiple connec- thatmatchedalabnetworkIPaddress. TheIDNanalysis
+tion attempts or datagramsto infect the system does not allowed us to test the prototype’s ability to detect worm
+aidinourpropagationdetection. Thetimestampfromthe propagationbetweencells.
+(cid:2)rstTCPSYNpacketorUDPdatagramthatgeneratedan At the start of our analysis, we (cid:3)ushed the lab DNS
+alertisusedasthetimestampforthealert. Thealertcon- server’s cache. This ensured that any new connections
+tains the time the activity was detected, protocol, source fromlabsystems wouldresultin anexternalDNS query
+anddestinationIPaddressandsourceanddestinationport to retrieve the appropriate A record instead of accessing
+number. thelabDNSserver’scache. Fromourvantageatthenet-
+work boundary, we are only able to detect DNS replies
+4 Prototype Evaluation as they enter the lab network, not those generated inter-
+nally from the DNS server’s cache. The (cid:3)ushing of the
+4.1 DataSet labDNScacheensuresthattheDCEwillcontainthesame
+DNS informationas the lab’s DNS server. In ouranaly-
+TovalidateourDNS-baseddetectionapproach,wede-
+sis,allIPaddresseshavebeenmodi(cid:2)edtokeeptheactual
+velopedandtested a fullyfunctionalsoftwareprototype.
+IPaddressesanonymous.Theuniversitynetwork’sIPad-
+The software was installed on a commodity PC with a
+dresses arerepresentedbythe 192.168.0.0/16IP address
+Linux operating system and a 10/100 network interface
+range.
+card. Theprototypeimplementsallfeaturesdiscussedin
+Section 3. To conduct our evaluation, one week of net-
+worktraf(cid:2)cwas collectedat a (cid:2)rewall infrontofoneof Table1.NetworkDataSet
+ouruniversity’sresearchlabs. ALinuxsystemusingtcp- NetworkProtocol PacketCount
+dumpwasconnectedtoatapinfrontofthe(cid:2)rewalltocol- TCPpackets 5,969,266
+lect and archive the network traces. We monitored both TCPconnections 18,634
+incomingandoutgoingnetworktraf(cid:2)ctothelab. Thelab ICMPpackets 4,955
+routeris connectedtotheuniversity’sInternetaccessible UDPpackets 5,301,489
+ClassBnetwork. Thelabnetworkconsistsofaonequar- Other 805,604
+ter Class C network (i.e. 63) of Internet reachable IPv4
+addresses. Network traf(cid:2)c was collected for a seven-day periodtowormpropagationbutincontrast,seeSection4.3.This
+Table2.DNSDatagrams
+is not surprising since the lab is a well-maintainedhard-
+Date TotalPackets DNS DNS
+ened network administered by security-aware personnel.
+Request Reply
+Afullanalysisofthetruefalsepositivesgeneratedbythe
+Data- Data-
+prototypeisgiveninsection4.4.
+grams grams
+06-24-2004 2,101,243 6,485 6,264
+4.3 IDNMonitoringAnalysis
+06-25-2004 2,491,663 5,525 4,951
+06-26-2004 847,687 1,192 658 The IDN deployment was used to test the prototype’s
+ability to detect worm propagation between cells. Ini-
+06-27-2004 889,251 2,231 3,174
+tially, we observed the network for a three-hour period
+06-28-2004 1,339,283 5,225 4,752
+the daypriorto ourdata set togeneratea whitelist. The
+06-29-2004 1,382,642 6,121 5,998
+whitelist fortheIDNconsisted offourentries(see Table
+06-30-2004 1,081,451 4,973 4,164
+9inSection5.2).Alloftheseentriesconsistedofallowed
+communicationsbetweenspeci(cid:2)cservers. Overtheone-
+week period, 74,610alerts were generatedas a result of
+from June 24th to June 30th, 2004. The network traces
+wormpropagationattemptsfromtheIDNtothelab. Ta-
+arecomprisedofallnetworkactivitythatreachedthelab’s
+ble3containsthespeci(cid:2)cpropagationattemptsbydatefor
+routerfrominternalsystems,systemsintheIDNcell,and
+eachworm. UsingtheSymantectaxonomyforanaming
+theInternet.Duringthisperiod,over5millionUDPpack-
+convention,thethreewormsdetectedwere: W32.Sasser,
+etswereobservedaswellasalmost6millionTCPpack-
+W32.Blaster,andavariantofW32.Gaobot. We estimate
+ets. A total of 18,634 individual TCP connections oc-
+thatthese wormsinfect atotal of195IDNhosts. Figure
+curred. Table1providestheobservedprotocolsandtheir
+4illustratesthewormactivityofthethreewormsoverthe
+respectivequantities.
+entireanalysisperiod.
+DNSistransportedmainlyoverUDP.DNSzonetrans-
+fers use the TCP protocolbut it is a standard acceptable
+security practice to disallow this feature. Table 2 shows
+Table3.IDNWormActivity
+thenumberofDNSrequestandreplydatagramsthatwere Alerts
+detectedinthenetworktraces. Overall,weobservedthat
+Date Sasser Blaster Gaobot
+the total amount of DNS traf(cid:2)c is a small percentage of
+06-24-2004 25,052 1,104 3,299
+the total amount of network traf(cid:2)c. An individual DNS
+06-25-2004 5,946 539 9,137
+reply may contain multiple records. In fact, the 10,162
+06-26-2004 8,894 721 761
+DNS replies we received in the network actually gener-
+06-27-2004 4,680 1,353 2,516
+ated99,994individualDNSresourcerecords.
+06-28-2004 739 1,085 21
+06-29-2004 2,731 532 1,778
+4.2 LabMonitoringAnalysis
+06-30-2004 1,383 1,680 659
+Total 49,425 7,014 18,171
+The lab deployment was used to test the prototype’s
+abilitytodetectL2Rwormpropagation. Initially,weob- InfectedHosts
+served the network for a three-hourperiod the day prior Worm Sasser Blaster Gaobot
+to our data set to generate a whitelist. Section 5.2, Ta- Total 101 38 56
+ble 8 contains the seven entries that comprised the lab’s
+whitelist. In order for network activity to be identi(cid:2)ed
+as complyingwith the whitelist, the protocol, source IP,
+Table4.AdditionalIDNAlerts
+source port, destination IP, and destination port must all
+Alerts Activity
+match. The (cid:2)rst four entries consist of communications
+125 OptixProTrojanHorsescan-
+between speci(cid:2)c servers. The (cid:2)fth entry speci(cid:2)es a sin-
+ning:port3410TCP
+gleserverallowedtoinitiate connectionswithothersys-
+5 Random scanning: port
+temsonaspeci(cid:2)cport. Finally,thelasttwoentriesallow
+60510-60518TCP
+anysysteminthelabtoinitiateconnectionstoanyother
+12 Ident/authservice: 113TCP
+systems as longas theyadhereto the particularport and
+49 CommonUnixPrintingSys-
+protocolspeci(cid:2)ed.
+tem(CUPS):631TCP
+Over the course of the one week, a total of 52 alerts
+TotalAlerts: 191
+were generatedby the prototype. Table 5 gives the alert
+breakdownbyday. NoneofthealertscouldbeattributedTable5.LabAlerts
+Date #ofAlerts KnownFalsePositives TrueFalsePositives
+06-24-2004 18 6InternalLab,3StreamingAudio 9HTTP
+06-25-2004 20 4StreamingAudio 16HTTP
+06-26-2004 1 1HTTP
+06-27-2004 6 6HTTP
+06-28-2004 1 1HTTP
+06-29-2004 4 2Port90TCP 2HTTP
+06-30-2004 2 1Port90TCP 1HTTP
+Total 52 16 36
+25000
+20000
+15000
+10000
+5000
+0
+24/06/04 25/06/04 26/06/04 27/06/04 28/06/04 29/06/04 30/06/04
+snacS
+mroW
+devresbO
+fo
+rebmuN
+Authorized network communications. For the pur-
+Observed Daily Worm Scans
+posesofouranalysis,weinitiallyallowedforathreehour
+W32.Blaster training period to generate the whitelist. If this was ex-
+W32.HLLW.Gaobot.gen
+tended to a few days, the whitelist could be augmented
+W32.Sasser
+Total Activity with additional entries, greatly reducingthe instances of
+legitimatenetworkactivitygeneratingfalsealerts.
+Networkcon(cid:2)gurationerrors. 6ofthefalsepositives
+were due to an isolated network con(cid:2)guration problem.
+Non-routableIP addressespassedthroughthe(cid:2)rewall as
+a result of a router con(cid:2)guration error. Increasing the
+trainingperiodshouldalsoallowforsuf(cid:2)cienttimetode-
+tect anynetworkcon(cid:2)gurationserrorsthat may generate
+alerts.
+Date Suspicious scanning activity. 125 alerts were gener-
+atedasaresultofanIDN systemscanningfortheOptix
+Figure4.IDNWormActivity Pro Trojan horse [3] (i.e. port 3410 TCP). 5 alerts were
+generatedas a resultof anIDNsystem scanningforser-
+vices listening on port numbers between the ranges of
+Inadditiontothewormactivity,theprototypedetected
+60510and60518TCP.Ourpreliminaryversionofthepro-
+otherformsofscanningactivityandasaresultgenerated
+totypesoftwaredoesnotdistinguishbetweenscanningfor
+191alerts. Table4revealsthenumberandtypeofalerts
+thepurposesofwormpropagationorforsomeotheractiv-
+generated.
+ity. Although these alerts are considered false positives,
+A full analysis of the false positives generated by the
+they do warn an administrator that potentially malicious
+prototypeisgiveninsection4.4.
+activityis occurringwithinthenetworkcell. We discuss
+thisingreaterdetailinSection6.
+4.4 FalsePositivesandFalseNegatives
+True false positives. Those alerts that cannot be at-
+FalsePositivesResultsAnalysis tributed to the previous three categories are considered
+52false alerts weregeneratedfrommonitoringthelab truefalsepositives.
+cell,and191falsealertsfromtheIDNcell. Basedonour Afterfurtheranalysisofthelabmonitoringresults,we
+analysisintheprevioussection,wehavecategorizedthese determined that 10 of the 52 alerts resulted from autho-
+falsepositivesasoccurringdueto: rized network communications. 6 of the alerts resulted
+from a network con(cid:2)guration error. The remaining 36
+1. Authorized network communications that could be
+alerts we classify as truefalse positives. With respectto
+incorporatedintoawhitelistbutwerenotinourpro-
+theIDNmonitoringresults,wedeterminedthat130alerts
+totypetesting.
+were causedbynon-wormrelatedmaliciousactivityand
+2. Network con(cid:2)guration errors that could be elimi-
+61 alerts resulted from authorized network communica-
+natedwithpropersystemadministration.
+tions. None of the alerts were what we classify as true
+3. Suspiciousscanningactivityotherthanwormpropa-
+falsepositives. Table6summarizesthenumberandtype
+gation.
+of false positives generatedfrom monitoringthe lab and
+4. Truefalsepositives.
+IDNcells.
+Thesearediscussedinturnbelow. Based onmanualinspectionof the networktraces, wefectionattempts).
+Table6.FalsePositiveResultsAnalysis
+Lab IDN
+Finally,althoughnoUDPbasedalertsweregenerateddur-
+TotalAlerts 52 74,801
+ing ouranalysis, we must commenton the false positive
+WormPropagationAlerts 0 74,610
+potentialofpersistentUDPconnections. UDPdatagrams
+Pre-AnalysisFalsePositives 52 191
+aretreatedatomicallybyourprototypeinthateachdata-
+gram is veri(cid:2)ed against the connectioncandidate list. If
+WhitelistInclusion 10 61
+the exchange of datagrams between the two systems is
+NetworkCon(cid:2)gurationErrors 6 0 longerthantheTTLoftheDNSresourcerecordthatini-
+SuspiciousActivity 0 130 tially started the exchange, a false positive will be gen-
+erated. This could become a concern if the TTL of the
+TrueFalsePositives 36 0 resourcerecordisverylow(i.e.typicallythedefaultTTL
+valueis1day).
+FalseNegativesResultsAnalysisAfalsenegativeoc-
+offersomeinsightintothecauseofthe36truefalseposi-
+curs when malicious activity occurs and no subsequent
+tives. ThemajoritywerecausedbyTCPconnectionsini-
+alertisgenerated. Itwasadesigndecisiontomonitorthe
+tiatedusingaDNSresourcerecordwithaverylowTTL
+network cell at the ingress/egress points, so that all new
+and then not properly closed. It was a prototype design
+connectionscouldbeeasilydetected. Anotherconsidera-
+decision to detect a new TCP connection by simply ob-
+tionforthisdesigndecisionwasthefactthatanenduser
+serving a packet with the SYN (cid:3)ag set. The individual
+canspecifyanyDNSservertheywishtousethusexclud-
+connectionsthemselveswerenottrackedandmaintained
+ing the one administratively provided to them. As long
+instate. Subsequently,wehaveobservedHTTPconnec-
+asthenetworkegress/ingresspointismonitored,anyex-
+tionsthathavebeeninitiatedusingaDNSresourcerecord
+ternal DNS queries can be detected and incorporated in
+with a TTL as low as 10 seconds. Several of these low
+thedetectionalgorithm. However,bynotmonitoringthe
+TTLconnections, all to the sameweb server,do notter-
+cell activitytothe localDNS server,wewill notbeable
+minate properly. The client (i.e. inside the lab) does not
+to detect when the local systems contact the local DNS
+sendthe(cid:2)nalACKintheFINACKexchange.Instead,in
+server.TheprototypesystemmaintainstheDNSresource
+somecases,theclientsendsaSYNtostartanewsession
+recordsinstaterespectingtheTTLvaluesforeachrecord.
+withthesameserver.Thisconnectionisinitiatedafterthe
+Ifwedetectaninternalsystemstartinganewconnection
+TTLhasexpired.
+to a remote system, the prototype checks the candidate
+Approximately60%(i.e.22alerts)ofourtruefalsepos-
+connectionlisttodetermineiftheconnectionisvalid. In
+itiveswerecausedbythistypeofnetworktraf(cid:2)c. Subse-
+effect,wedonotverifythattheindividualsystemhasac-
+quent versions of our detection prototype could account
+tually requested and received the DNS resource record,
+forthisnetworkactivityintwoways:
+butratherthattheresourcerecordisavailableinthelocal
+DNSserver.Thisisasubtlebutimportantdistinction.
+1. Enforce a minimum TTL: those TTL values lower
+Consider the scenario where an internal system be-
+thanaminimumthreshold(e.g.600seconds),could
+comes infected with a scanning worm. There exists the
+be given a default value (e.g. 600 seconds) in the
+possibilitythatitmayscan asystemwhoseIPaddressis
+DCE.Accordingtoouranalysis,thiswouldhavere-
+intheconnectioncandidatedatastructure.Thatis,thein-
+ducedourtruefalsepositivecountfrom36to14(i.e.
+tendedvictimwaspreviouslyaccessedbyasysteminthe
+60%reduction). Theincreasedprobabilityofafalse
+cell andthe associated entryin the connectioncandidate
+negativeduetothisarbitraryincreaseinTTLvalues
+datastructurestillexists. Todeterminetheprobabilityof
+wouldbenegligible(seediscussionlaterinthissec-
+this, we used the worm model discussed by Staniford et
+tion).
+al. [7].
+2. Require a second anomalous connection: we could
+Weassumethatthewormtargetsvictimsatrandomover
+modify our algorithm to generate an alert after two
+theentireIPv4addressspace.Therefore,ifristhenumber
+anomalous connections were observed from a sys-
+ofscans,asinglehosthasa
+temtryingtoconnecttotwoseparatesystemswithin
+a(cid:2)nitetimewindow. Accordingtoouranalysis,this
+wouldhavereducedourtruefalsepositivesfrom36
+to4. Requiringtheobservationofasecondconnec-
+tionattemptwouldgreatlyreduceourfalsepositives
+andonlyslightlydegradeourdetectionprecision(i.e.
+detectwormpropagationafterobservingonlytwoin-
+(cid:2)(cid:4) (cid:3) (cid:6)(cid:8) (cid:7)(cid:10)(cid:5) (cid:9)
+probabilityofbeing
+reachedbythescan.IfNisequaltothenumberofentries
+intheconnectioncandidatedatastructure,theprobability
+that a scan from the internal network will be directed at
+oneofthedatastructuresentriesis
+(cid:11)
+(cid:3)(cid:13) (cid:12)
+(cid:2)
+(cid:14)(cid:16) (cid:15) (cid:6)(cid:18) (cid:17)
+(1)Table7.ProbabilityofFalseNegativesduetoRemoteDNSMonitoring
+DNSRecords 10InfectedSystems 100InfectedSystems 200InfectedSystems 500InfectedSystems
+500
+(cid:19) (cid:17)(cid:19)(cid:21) (cid:20)(cid:23) (cid:22)(cid:24) (cid:19)(cid:26) (cid:25)(cid:27) (cid:19)(cid:29) (cid:28)(cid:31) (cid:30)! " (cid:17)#
+(cid:14)
+(cid:19)(cid:26) (cid:25)(cid:27) (cid:19)(cid:29) (cid:28)(cid:31) (cid:30)! (cid:19) (cid:17)(cid:19)(cid:21) (cid:20)(cid:23) (cid:22)(cid:24) (cid:19)(cid:26) (cid:25)(cid:27) (cid:19)(cid:29) (cid:28)(cid:31) (cid:30)! $
+(cid:14)
+(cid:17)%
+(cid:14)
+# (cid:25)(cid:27) (cid:19)(cid:29) (cid:28)& (cid:30)’ $
+1000 (cid:14)
+(cid:17)%
+(cid:14)
+# (cid:25)(cid:27) (cid:19)(cid:29) (cid:28)(cid:31) (cid:30)! (cid:19) (cid:17)(cid:19)(cid:29) (cid:20)(cid:16) (cid:22)( (cid:25)(cid:27) (cid:19)(cid:29) (cid:28)(cid:31) (cid:30)! $
+(cid:14)
+(cid:17)%
+(cid:14)
+# (cid:25)(cid:27) (cid:19)(cid:29) (cid:28)(cid:31) (cid:30)! $ (cid:22) (cid:17)(cid:20)) "(cid:23) (cid:20)( (cid:25)(cid:27) (cid:19)(cid:29) (cid:28)& (cid:30)’ $
+2000
+(cid:22) (cid:17)(cid:20)* "(cid:23) (cid:20)+ (cid:25)(cid:27) (cid:19)(cid:29) (cid:28)(cid:31) (cid:30)!
+(cid:14)
+(cid:17)%
+(cid:14)
+# (cid:25)(cid:27) (cid:19)(cid:29) (cid:28)(cid:31) (cid:30)! $ (cid:22) (cid:17)(cid:20)) ") ,- (cid:25)(cid:27) (cid:19)(cid:29) (cid:28)(cid:31) (cid:30)! $ . (cid:17)% (cid:19) % (cid:25)(cid:27) (cid:19)(cid:29) (cid:28)& (cid:30)’ $
+5000
+(cid:19) (cid:17)(cid:19)(cid:21) (cid:20)(cid:23) (cid:22)/ (cid:19)0 (cid:25)(cid:27) (cid:19)(cid:29) (cid:28) (cid:30)! $ " (cid:17)#
+(cid:14)
+(cid:19)(cid:26) (cid:25)(cid:27) (cid:19)(cid:29) (cid:28) (cid:30)! $ (cid:19) (cid:17)(cid:19)(cid:21) (cid:20)(cid:23) (cid:22)(cid:24) (cid:19)(cid:26) (cid:25)(cid:27) (cid:19)(cid:29) (cid:28) (cid:30)(cid:24) 1
+(cid:14)
+(cid:17)%
+(cid:14)
+# (cid:25)(cid:27) (cid:19)(cid:29) (cid:28) (cid:30)! 1
+10000 (cid:14)
+(cid:17)%
+(cid:14)
+# (cid:25)(cid:27) (cid:19)(cid:29) (cid:28) (cid:30)! $ (cid:19) (cid:17)(cid:19)(cid:29) (cid:20)(cid:16) (cid:22)( (cid:25)(cid:27) (cid:19)(cid:29) (cid:28) (cid:30)(cid:24) 1
+(cid:14)
+(cid:17)%
+(cid:14)
+# (cid:25)(cid:27) (cid:19)(cid:29) (cid:28) (cid:30)(cid:24) 1 (cid:22) (cid:17)(cid:20)) "(cid:23) (cid:20)( (cid:25)(cid:27) (cid:19)(cid:29) (cid:28) (cid:30)! 1
+For example, with a 10,000 entry connection candidate services. Theseclientsystemscouldcompriseasig-
+listandanetworkthathas500infectedsystems, ifallof ni(cid:2)cantportionofthesusceptibleInternetpopulation
+thesystemsbeganscanningatpreciselythesametime,the dependingontheexploitablevulnerability(e.g.Win-
+probabilitythatafterasinglescanatleastoneofthescans dowsXPbufferover(cid:3)ow).
+would match an entry in the connectioncandidate list is
+Oneofthelimitationsofthedetectiontechniqueisthat
+only.04%. Table7containsprobabilities,forvariouspa-
+it cannot detect intra-cell and R2L attacks. A skilled at-
+rameters, that a false negativewill occur due to a single
+tackercouldusetheselimitationsinconcerttoremainun-
+scan simultaneouslyoccuringfrom each infectedsystem
+detectedwhileinfectingthenetwork.Forexample,aR2L
+targeting a previously cached IP entry in the connection
+attack is launchedagainst the networkand the worm in-
+candidatelist.
+fects a single system within a cell. Using the network
+information obtained from the infected system (e.g. net-
+5 Detection Circumvention and Current
+mask,broadcastdomain),thewormcanlimititsscansto
+Limitations within the network cell. In parallel, another R2L attack
+could be executed against a system within another net-
+In this section, we give an overview of possible ways
+workcellandtheprocessrepeats.
+our detection technique can be defeated and its current
+limitations.
+5.2 CurrentDetectionLimitations
+5.1 DetectionCircumvention Ourapproachhaslimitations. As discussedin Section
+2, it cannot detect R2L or intra-cell worm propagation.
+Any new worm detection algorithm will be the sub-
+Automatedattacktoolactivity(e.g.auto-rooters,network
+ject of scrutiny for both security researchers and mali-
+scanners,Trojanhorsesscans, etc.) will bedetectedbut
+cious actors. The former seeks to validate and improve
+categorizedaswormpropagation.
+newideastorealizeimprovementsinoverallnetworkse-
+Although it depends on the implementation, a worm
+curitycountermeasures.Thelatterwilldevisewaystoex-
+thattargetsDNSserversmayintroduceirregularitiesthat
+ploitweaknessesinthealgorithmtocircumventdetection.
+could limit the detection technique. Our detection tech-
+Onemethodawormwritercouldemploytoevadedection
+niquealsoassumesthatallapplicationshonorTTLvalues;
+from our approachis to have the worm do a preemptive
+thismaynotbethecaseforallapplications. Topological,
+validDNSquerybeforeeachinfectionattempt(i.e.scan).
+metaserver,andpassivewormsmaynottriggerthedetec-
+However,performingvalidDNSqueriesbeforeeveryin-
+tordependingonthebehaviorofthehostprograms[24].
+fectionattemptwouldhavenegativeconsequencesforan
+Additionally,worm propagationvia email/networkshare
+attacker,e.g.itwould:
+traversalwillnotbedetected.
+1. Require worms writers to adopt a new infection Finally, the use of whitelists in certain network envi-
+paradigmtorandomlygeneratevaliddomainnames ronmentscouldconstrainthedetectiontechnique,asdis-
+insteadofnumericIPaddressesfortargeting. cussedinSection2.Whitelistsareusedtoexemptspeci(cid:2)c
+network activities and systems from the detection algo-
+2. SlowpropagationaswormsperformDNSqueriesin
+rithm to reduce the occurence of false positives. Tables
+ordertospread.
+8and9containthewhitelistentriesfortheLabandIDN
+3. IncreaseDNSactivityaseveryinfectionattemptwill
+networks respectively. These exemptions can be applied
+poseasigni(cid:2)cantandnoticeableimpactontheDNS
+to the entire network (e.g. Activity 6, Table 8) or just to
+server.
+speci(cid:2)c systems (e.g. Activity 5, Table 8). During our
+4. Reducethenumberofreachablevulnerablesystems
+analysis of both networks, the following protocols com-
+becausenotallsystems(e.g.homeusers,clientsys-
+prisedtherespectivewhitelists:
+tems in an enterprise networks) have quali(cid:2)ed do-
+mainnamesbeingsimplyclientsthatdonotofferany 1. InternetMessageAccessProtocol(IMAP):IMAPisTable8.LabWhitelist
+# Activity WhitelistEntry Reason
+1 IMAP 192.168.1.33:993-192.168.200.50:993TCP Mailservercommunications
+2 IMAP 192.168.1.25:993-192.168.200.50:993TCP Mailservercommunications
+3 NTP 192.168.1.12:123-192.168.200.2:123UDP Serverclocksynchronization
+4 NTP 192.168.1.12:123-192.168.200.1:123UDP Serverclocksynchronization
+5 IMAP 192.168.1.5:993TCP Mailservercommunications
+6 FTP 192.168.1.0/191:21TCP UserinitiatedFTPsessions
+7 SSH 192.168.1.0/191:22TCP UserinitiatedSSHsessions
+Table9.IDNWhitelist
+# Activity WhitelistEntry Reason
+1 IMAP 192.168.200.50:993-192.168.1.33:993TCP Mailservercommunications
+2 IMAP 192.168.200.50:993-192.168.1.25:993TCP Mailservercommunications
+3 NTP 192.168.200.2:123-192.168.1.12:123UDP Severclocksynchronization
+4 NTP 192.168.200.1:123-192.168.1.12:123UDP Serverclocksynchronization
+aTCPbasedprotocolthatallowsaclienttoremotely worm detection; and (5) integration with other anomaly
+accessemailfromaserver[8]. baseddetectors.Wediscusstheseinturn.
+2. NetworkTImeProtocol(NTP):NTPisaUDPbased Automated Attack Tools. Automated attack tools
+protocolusedtosynchronizecomputerclocksovera share the same exploit methodologyas scanningworms.
+network[13]. Theirgoalistorapidlyidentifyandcompromiseasmany
+3. File Transfer Protocol (FTP): FTP is a TCP based systems as possible. A typical con(cid:2)guration parameter
+protocolusedtoremotelyexchange(cid:2)les[18]. forautomatedattacktoolsis arangeofnumericalIPad-
+4. Secure Shell Protocol (SSH): SSH is a TCP based dressesthattheyuseastheirtargetinformation.Thefaster
+protocol used to encrypt a data stream to eliminate theyscan,thefastertheycancompromisevulnerablesys-
+eavesdropping[4]. tems.
+OurDNS-basedscanningwormdetectiontechniquecan
+TheLabandIDNnetworkshaveastrictsecuritypolicy be used to detect automated attack tools. As part of our
+that restricts the type of services allowed within the net- analysisduringtheprototypetesting, wedeterminedthat
+work. Therefore,thewhitelistentriesforthesenetworks 130falsepositiveswereattributedtoscanningforvulner-
+were limited to a few systems and protocols. In a net- ableservicesandpreviouslyinstalledmalicioussoftware
+workwith a veryopensecuritypolicy,thewhitelist may (i.e.theOptixTrojan).
+becomeso largethat maintanencebecomes an issue and R2L Worm Propagation. R2L worm propagation
+thedetectionalgorithmeitherexemptstoomuchnetwork refers to worm propagation attempts that originate from
+activityorcreatestoomanyfalsenegativestobeuseful.In outside the enterprise network boundary. Our detection
+thisscenario,webelievethattheDNSdetectiontechnique techniquereliesonobservingDNSactivityandnewcon-
+would best be used in conjunction with other detection nection attempts from systems within the enterprise net-
+techniques. For instance, the scan detection and supres- work. AswecanobserveallDNSactivityinitiatedbyin-
+sionalgorithmdevelopedbyWeaveretal. [25]coulduse ternalsystems,itiseasilyadaptedtocorrelatethisactivity
+ourdetectiontechniqueasanotherdetectionsignal.Inthis withnewconnections.
+scenario,ourdetectiontechniquecouldprovideameansto Webelievethatitwouldbepossibletoobserveandcor-
+assignconnectionsthatdidnotuseDNSagreateranomaly relateallDNSrequestsandnewconnectionattemptsini-
+scorethanthosethatusedDNS. tiated from remote systems. To determine the precision
+of the detection algorithm, requires further investigation
+6 Extended Applications of the dif(cid:2)culty of correlatingDNS server requests with
+individualsystemconnectionrequests.
+OurDNS-baseddetectionapproachcouldbeappliedto
+CovertChannels. Covertchannelsareusedtoprovide
+(cid:2)veadditionalareas,whichwebelievewarrantfuturein-
+acommunicationsmethodthatviolatesthesecuritypolicy
+vestigation: (1)automatedattacktooldetection;(2)R2L
+ofthesystemornetwork. Oncea system hasbeencom-
+worm propagation detection; (3) covert channel and re-
+promised, an attacker typically requires some means to
+mote access Trojan (RAT) detection; (4) mass mailingaccessthesystemtoeitherex(cid:2)ltratedataormaintaincom- from systems other than the network mail servers. This
+mandandcontrol. RATstypicallyusecovertchannelsto detectiontechniquecanbedevelopedtoidentifyamass-
+communicatewiththeirrespectivecontrollersoutsidethe mailingworminfectedsysteminasinglepropagationat-
+network. Covertchannelsareoftencreatedthroughsoft- tempt.
+warethatcantunnelcommunicationsthroughwellknown Anomaly Detection Integration. We have identi(cid:2)ed
+and security policy sanctioned protocols in the network. that this detection technique can be prone to signi(cid:2)cant
+Forinstance,severalpubliclyavailabletoolsallowauser amountsoffalsepositivesandnegativeswhenusedinan
+totunneldatathroughtheHTTPprotocol. open network environment. In this scenario, we believe
+Often an attacker uses a previouslycompromisedsys- thistechniquecouldbeusefulifintegratedintomoreso-
+tem to attack other systems to evade detection. A large phisticated anomaly based detectors to avoid false posi-
+percentage of Internet systems (e.g. home users) do not tivesandnegatives.
+haveafullyquali(cid:2)eddomainnameassociatedwiththeir
+IPaddress.Furthermore,itwouldnot(cid:2)tthepro(cid:2)leofbe- 7 RelatedWork
+ingcovertifacompromisedsystemhadtoperformaDNS
+The observationofnetworkserviceuse, such as DNS,
+querytoidentifythesystemthathadsurreptitiouscontrol
+offers a means to detect anomalous network activity.
+ofit. Inthisscenario,ourDNS-baseddetectionapproach
+Kruegeletal.[12]orginallyproposedtheuseofapplica-
+wouldbeabletodetectcovertchannelcommunications.
+tionspeci(cid:2)cknowledgeofnetworkservicestoenablede-
+Mass-mailing Worms. Mass-mailing worms infect
+tection of maliciouscontentin individualpackets. Their
+systems by sendinginfectedemail messages. The worm
+approach was to use statistical anomaly detection to de-
+payloadistypicallycontainedwithinanemailattachment.
+tect R2L attacks targeted at essiential network services.
+Aspartoftheinstalledcodebase,thesewormsoftencon-
+Anomaly scores for speci(cid:2)c packets are based on devi-
+taintheirownSimpleMailTransferProtocol(SMTP)en-
+ations from expected values in a predetermined pro(cid:2)le.
+gine. To avoid the need to detect and then use disparate
+Onceathresholdisexceeded,analarmisgenerated.They
+email clients onvictim systems, worms install theirown
+basedtheirexperimentalanalysisonaprototypethatpro-
+fullyfunctionalSMTPserver,ensuringthattheycangen-
+cessedbothHTTPandDNSnetworktraf(cid:2)c.
+erate infected emails regardless of the email client soft-
+Grangeretal.[10]presentasoftwarearchitecturetoen-
+wareusedbythevictim.Thisincreasesawormspropaga-
+able self-securingnetworkinterfaces to examinepackets
+tionrate.
+as they move between network links and host software,
+In contrast to a normal email message generation, a
+detectingandpotentiallyblockingmaliciousactivity.This
+mass-mailingwormautomaticallycomposestheinfected
+host-based approach includes a detection technique that
+emailmessagewithnohumanintervention.Infact,unless
+enablesdetectionofwormpropagation.Thetechniquein-
+a virus scanner or some other malicious code detection
+volvesshadowingahost·sDNStableandcheckingtheIP
+devicedetectstheinfection,thesystemowneristypically
+addressofeachnewconnectionagainstit. Thebasiccon-
+unaware that a worm is resident on the system. Using
+struct of this approach is that its abnormal for a host to
+itsbuilt-inSMTPserver,theinfectedsystembypassesthe
+make a large number connection attempts without DNS
+corporate mail server when it attempts to send infected
+activity. We have extended it to a network-based solu-
+emailstotherespectiverecipients.
+tionthatincorporatesadditionalnetworkinformation(i.e.
+In this scenario, the SMTP engineof the infectedsys-
+whitelists,embeddedIPaddressesinHTTPpackets)that
+temisresponsibleforpropagatingthewormanddeliver-
+hostsusetoinitiatenewconnections.
+inginfectedemails. Inordertodeterminethemailserver
+Williamson[27]devisedamethodtolimitorthrottlethe
+thatservicesaparticularrecipient,theinfectedsystem,not
+rateofmaliciousmobilecodebydeterminingifasystem
+thelocalmailserver,queriesthelocalDNSserverforthe
+triestoconnecttonewaddresses. Ifso,theconnectionis
+MXrecordassociatedwiththeemailrecipient’saddress.
+delayedinordertoslowthepropagationofthemalicious
+SomewormsalsocontainalistofInternetaccessibleDNS
+code. Bynotdroppingtheconnection,abalanceisstruck
+serversthattheycanqueryifcommunicationtothelocal
+betweenreducingtheimpactoffalsealarmsandlimiting
+DNSserverfromtheinfectedhostfails.
+thespreadofmaliciousactivityinthenetwork.
+Our approach can be used to monitor for MX record
+Junget al. [11] developedan algorithmcalled Thresh-
+queriestouncoversystemsthatquerytheDNSserverdi-
+old Random Walk (TRW), to identify malicious remote
+rectly for MX records. If a local system other than the
+hosts. Theybasedthis algorithmonthe observationthat
+mailserverrequestsanMXrecord,wemayconsiderthis
+scannersaremorelikelytoaccesshostsandservicesthat
+activitytobeanomalous. Inordertodetectmass-mailing
+do notexist thanlegitimate remotehosts. Ifthe connec-
+worm propagation, we simply observe all locally gener-
+tion is determinedto succeed the randomwalk is driven
+ated MX queries to the local DNS server that originate
+upwards,failuretosucceeddrivestherandomwalkdown.By giving legitimate network traf(cid:2)c a higher probability Duringevaluation,ourprototypewassuccessfulinde-
+tosucceedthanattacktraf(cid:2)c,adeterminationcanbemade tecting scanning worm propagation in the Internal De-
+onwhetheraseriesofconnectionattemptsisascan. partmental Network cell of our enterprise network. We
+Weaveretal.[25]developedascandetectionandsup- have demonstrated that this network-baseddetection ap-
+pressionalgorithmbasedonasimpli(cid:2)cationoftheTRW. proach can be used in certain network environments to
+Theyusecachestotracktheactivityofbothnewconnec- offersigni(cid:2)cantimprovementindetectionspeedoverex-
+tionsandIPaddressestoreducetherandomwalkcalcula- istingscanningwormpropagationdetectionmethods.Re-
+tion in the TRW. This simplication made the algorithm gardless of the scanning rate, the detection algorithm is
+suitable for implementation in both hardware and soft- abletodetectscanningwormpropagatoninasinglescan-
+ware. Their technique allows a scanning host to be de- ningattempt. It relies on a networkservicefoundin ev-
+tectedandstoppedinfewerthan10scanswithalowfalse erynetwork(i.e.DNS),andbeinganomaly-based,hasthe
+positiverate. ability to detect emergingworms. We have developeda
+Two commercial scanning detectors offer an alternate fullimplementationofourapproachin asoftwareproto-
+approachtodetectwormpropagation. Forescout[1] and type that runs on non-specialized commodity hardware.
+Mirage[2]networksuse a techniquecalleddark-address Weplantomakethesoftwareavailabletothepublic.
+detection. These detectors either have knowledge of or Finally, we believe that this detection approach could
+route unoccupied address spaces within an internal net- be easily modi(cid:2)ed to detect additional classes of mali-
+workanddetectswhensystemsattempttoconnecttothese cious activity including: covertchanneldetection, mass-
+unusedspaces. mailingworms,automatedscanningtools,andremoteto
+SiliconDefensedevelopedtheCounterMalicewormde- local worm propagation. In fact, we have already ex-
+fense solution [7] to proactively identify and automati- tended these ideas in an analogous worm detection im-
+callyblockwormactivityinaninternalnetwork. Theso- plementation based on the Address Resolution Protocol
+lutiondividesthenetworkincellsandpreventstheworms asnotedinSection2.
+fromspreadingbetweenthecells. Staniford’sanalysisof
+wormpropagationwithin anenterprisenetworkrevealed Acknowledgements
+thatsuchoutbreaksexhibitaphasedstructurewithanepi-
+We thank Anil Somayaji and the anonymous review-
+demicthreshold[20]. Ifthenetworkcontainsalowden-
+ers for comments which signi(cid:2)cantly improved this pa-
+sityofsusceptiblesystemsorifthethresholdislow,con-
+per. The second author is supported in part by NSERC
+tainmentsystemscanbeeffectiveincontainingtheworm
+(Natural Sciences and Engineering Research Council of
+outbreak. If these parameters are too large however, the
+Canada)andMITACS(MathematicsofInformationTech-
+containment systems will not be able to stop the spread
+nology and Complex Systems) grants. The third author
+ofthewormuntilasigni(cid:2)cantnumberofsystemsarein-
+is the Canada Research Chair in Network and Software
+fected.
+Security, andis supportedin partby an NSERC Discov-
+Zou et al. [28] model requirements for the dynamic
+eryGrant,theCanadaResearchChairsProgram,andMI-
+quarantineof infectedhosts. Theydemonstratethat epi-
+TACS.
+demicthresholdsexistfordifferingdetectionandresponse
+times.Thisworkprovidesabenchmarkagainstwhichthe
+References
+ef(cid:2)ciencyofanynewproposeddetectionalgorithmshould
+takeintoaccount.Webelievethatourscanningwormde- [1] Forescout. Wormscout. http://www.forescout.com/
+tectionapproachhastherequiredef(cid:2)ciencytostopworm wormscout.html.
+propagationbeforeepidemicthresholdsarereached.
+[2] MirageNetworks.http://www.miragenetworks.com.
+8 Concluding Remarks [3] Optixpro trojan horse. http://securityresponse1.
+symantec.com/sarc/sarc.nsf/html/backdoor.optixpro
+TheDNS-basedwormpropagationdetectionapproach
+.12.html.
+is an effective way to combat scanning worm infec-
+tion within appropriate enterprise networks (see Section [4] Secure Shell Protocol (secsh). http://www.ietf.org/
+1). Depending on the network environment and secu- html.charters/secsh-charter.html;accessed on Octo-
+rity policy however, the number of protocols added to ber24,2004.
+thewhitelistmaypotentiallylimittheapplicabilityofthis
+[5] tcpdump/libpcap public repository. http://
+techniqueasastandalonedetector.Inthesescenarios,this
+www.tcpdump.org.
+detectionmethodcouldbeusedasanadditionaldetection
+signal in concert with other worm detection schemes in- [6] AugustwasWorstMonthEverforViruses,Worms.
+steadofbeingusedastheprimarydetectiontechnique. TechnetNews,September2003.[7] Wormcontainmentintheinternalnetwork. Techni- [20] S.Staniford. Containmentofscanningwormsinen-
+calreport,SiliconDefense,2003. terprisenetworks. InJournalof ComputerScience,
+toappear,2004.
+[8] M. Crispin. Internet Message Access Proto-
+col. March 2003. http://www.ietf.org/rfc/rfc3501. [21] S.Staniford,V.Paxson,andN.Weaver.Howto0wn
+txt?number=3501;accessedOctober22,2004. theinternetinyoursparetime.InProceedingsofthe
+11thUSENIXSecuritySymposium,August2002.
+[9] D. Ellis, J. Aiken, K. Attwood, andS. Tenaglia. A
+[22] N. Weaver. Potential strategies for high speed
+behavioral approach to worm detection. In To Ap-
+active worms: A worst case analysis. 2002.
+pearinProceedingsofTheWorkshoponRapidMal-
+http://www.cs.berkeley.edu/(cid:152)nweaver/worms. pdf;
+code,2003.
+lastaccessedOctober20,2004.
+[10] G. Granger, G. Economou, and S. Bielski. Self-
+[23] N.WeaverandD.Ellis.Re(cid:3)ectionsonWitty.;login:
+securing network interfaces: What, why and how.
+TheUSENIXMagazine,29(3):34(cid:150)37,June2004.
+Technicalreport,CarnegieMellonIniversity,CMU-
+CS-02-144,May2002. [24] N.Weaver,V.Paxson,S.Staniford,andR.Cunning-
+ham. Ataxonomyofcomputerworms. InTheFirst
+[11] J.Jung,V.Paxson,A.Berger,andH.Balakrishman.
+ACMWorkshoponRapidMalcode(WORM),Octo-
+Fast portscan detection using sequential hypothesis
+ber2003.
+testing. In 2004 IEEE Symposium on Security and
+Privacy,2004. [25] N. Weaver, S. Staniford, and V. Paxson. Very fast
+containmentofscanningworms. InProceedingsof
+[12] C. Kruegel,T.Toth, andE. Kirda. Servicespeci(cid:2)c
+the13thUSENIXSecuritySymposium,2004.
+anomalydetectionforintrusiondetection.Technical
+report,TU-1841-2002-28,2002. [26] D.Whyte,E.Kranakis,andP.C.vanOorschot.Arp-
+baseddetectionofscanningwormsinanenterprise
+[13] D.Mills. NetworkTimeProtocol(Version3). RFC, network. Technicalreport,SchoolofComputerSci-
+March 1992. http://www.ietf.org/rfcs/rfc1305.txt? ence,CarletonUniversity,October2004.
+number=1305;accessedOctober24,2004.
+[27] M.Williamson.Throttlingviruses:Restrictingprop-
+[14] D. Moore, V. Paxson, S. Savage, C. Shannon, agationtodefeatmaliciousmobilecode. InAnnual
+S. Staniford, and N. Weaver. Inside the slammer ComputerSecurityApplicationsConference,2002.
+worm. InIEEEMagazineof SecurityandPrivacy,
+[28] C. Zou, L. Gao, W. Gong, and D. Towsley. Moni-
+pages33(cid:150)39,July/August2003.
+toring andearly warning forInternet worms. In In
+[15] D. Moore, C. Shannon, G. Voelker, and S. Sav- Proceedingsof the 10th ACM Conferenceon Com-
+age. Internetquarantine: Requirementsforcontain- puterandCommunicationsSecurity,2003.
+ing self-propagating code. In Proceedings of the
+2003IEEEInfocomConference,SanFrancisco,CA, A Background
+April2003.
+A.1 WormPropagationMethods
+[16] R. Pethia. Attacks on the Internet2003. Congres- A thorough discussion of worm classi(cid:2)cations based
+sionalTestimony,SubcommitteeonTelecommunica- onwormtargetdiscoveryandselectionstrategies,carrier
+tionsandtheInternet,November2003. mechanisms, activation, payloads, andtypes of attackers
+isfoundin[24]. Wormsaretypicallyclassi(cid:2)edbasedon
+[17] D. Plummer. An Ethernet Address Res-
+twoattributes:methodsusedtospreadandthetechniques
+olution Protocol. RFC, November 1982.
+usedtoexploitvulnerabilities. Mostwormspropagateby
+http://www.ietf.org/rfc/rfc0826.txt?number= 826;
+using indiscriminate scanning of the Internet to identify
+accessedonOctober24,2004.
+vulnerablesystems. AsrevealedbySlammer,thefastera
+wormcanlocatesystemsthemorerapidtheinfectionrate.
+[18] J. Postel and J. Reynolds. File Trans-
+Stanifordetal.’s study[21]usedempiricaldatafromac-
+fer Protocol (FTP). RFC, October 1985.
+tual worm outbreaksto reveala commoneffectiveprop-
+http://www.ietf.org/rfc/rfc959.txt?number=959;ac-
+agation strategy, random constant spread (RCS) model,
+cessedOctober24,2004.
+whereinawormrandomlyscanningthroughtheentireIn-
+[19] C.ShannonandD.Moore. Thespreadofthewitty ternetaddressspace,of2
+worm. Technicalreport,CAIDA,March2004.
+(cid:15) (cid:6) systems,searchingforvulner-
+ablesystems.Traditional PropagationMethods. The limiting fac- ofcoordinationontheworm. UntiltheWittyworm[19],
+torswhichdictatehowfastawormcanspreadare:(1)the thesestrategieshavenotappearedinthewild.
+rateofscanningusedtodetectvulnerablesystems,(2)the
+population of vulnerable systems, (3) the time required A.2 DNSReview
+to infect vulnerable systems, and (4) their resistance to
+DNSisagloballydistributedhierarchicaldatabasethat
+countermeasures[22]. Thespreadofa randomscanning
+providesamappingbetweennumericIPaddressesandal-
+wormcanbedescribedinthreephases: theslowspread-
+phanumeric domain names. Whenever access to service
+ingphase,fastspreadingphase,andslow(cid:2)nishingphase
+occursthatusesadomainnametolocateaserver,DNSis
+[28].
+used.Adomainnameisahumanfriendlypseudonymfor
+Intheslowspreadingphase,thewormisbuildingupan
+asystemsIPaddress.
+initial base of infected systems. Although it is infecting
+DNS queries are performedonbehalf ofthe user by a
+systemsatanexponentialrate,thesmallinitialpopulation
+resolver, an application installed on the user’s local sys-
+limitsthepropagationspeed. Onceacertainthresholdof
+temtoquerythelocalDNSserverwhoselocationisspec-
+infectedhostsisreached,thewormbeginsthefastspread-
+i(cid:2)ed during the system’s network connection con(cid:2)gura-
+ingphase.Modelsderivedfromactualwormdataindicate
+tion. TheresolvercontactsthelocalDNSserverwiththe
+thatthisthresholdis approximately10,000systems [21].
+domainnameprovidedbyanapplication.IfthelocalDNS
+Worms use a number of different scanning strategies to
+serverdoesn’tknowtheIP addressforthe requesteddo-
+propagate. Scans can be focused on speci(cid:2)c groups of
+mainname,itqueriesexternalDNSserverstoresolvethe
+systems (e.g. subnet scanning) that are phyically or log-
+domain name. If the external DNS servers do not know
+ically connected together. Some scanning strategies use
+theinformationforthedomainname,theyrespondtothe
+information such as URL caches, peer-to-peer connec-
+queryinglocalDNSserverwiththeaddressofanauthor-
+tions, trusted network connections, and email addresses
+itative DNS serverhigherupthe chain. A serveris con-
+harvested from their victims (e.g. topological scanning)
+sideredauthoritativeaboutadomainifitcanrespondtoa
+totargetpotentiallysusceptiblehosts[21].
+querywithcertaintythatthenameexists.
+In addition to scanning, worms have also used mass
+IfasystemoruserhasaprioriknowledgeoftheIPad-
+email and network shares to propagate. Using built-in
+dress of anothersystem it needs to access, a DNS query
+emailers, wormscan harvestemail addresses fromexist-
+canbeavoided. However,themajorityofaccessestore-
+ingemailaddressbooks,theinboxoftheemailclient,and
+motesystemsareinitiatedbyspecifyingthedomainname
+web page caches. Copies of the worm are then sent to
+inaclientapplication. DNSresourcerecordsarethedis-
+all the harvestedemail entries. Throughshared network
+crete data structures used to store information about the
+drives, systems often have access to directories on other
+structure and content of the entire domain name space.
+systems. By placingitself in a shared system, the worm
+There exists a variety of DNS resource records. The re-
+can use this shared access to infect other systems. The
+sourcerecordofinterestwithrespecttoourdetectionap-
+wormcanalsotakeamoreactiveroleandchangepermis-
+proach is the authoritative resource record or A record,
+sionsondirectoriesoraddguestaccounts.
+which maps a fully quali(cid:2)ed domain name to an IP ad-
+Hyper Virulent Worm Propagation Strategies.
+dress. Themappingbetweendomainnamesandnumeric
+Weaver et al. [21] describe a number of possible hyper
+IP addresses can change over time as new services are
+virulentwormpropagationstrategiesthatincludeshit-list
+added or as networks change. Each DNS record has an
+andpermutationscanning.Ahit-listisalistofvulnerable
+associated Time to Live (TTL)value, thenumberof sec-
+systemstargetedforinfection. Typically,ahit-listisgen-
+ondsthatthemappingwillbeguaranteedtobevalid.The
+eratedbypreviousreconnaissanceactivitiessuchas: net-
+TTLdictateshowlongtheresourcerecordwillbekeptin
+workscanning,websurveys,DNSqueries, andwebspi-
+theDNSserver’scache.Cachingresourcerecordsenables
+ders. Ahit-listisusedtoallowawormtorapidlyspread
+aDNSservertoreducethenumberofrequestsitneedsto
+in the (cid:2)rst few minutes. This increasesits virulenceand
+maketoothernameservers. AlthoughtheTTLvaluecan
+itschancesofsurvival.Permutationscanningisastrategy
+beaslowasafewseconds,inpracticethedefaultTTLis
+toincreasescanningef(cid:2)ciency. Randomscanningcanbe
+oneday.
+inef(cid:2)cientbecausemanyaddressesmaybeprobedmulti-
+TTLvaluesareassociatedwithallDNSreplies.ATTL
+pletimes. Here,wormsshareacommonpseudorandom
+valueprovidesamechanismto allowresourcerecordsto
+permutation of the Internet address space. Infected sys-
+expiresothattheinformationtheycontaincanbeupdated
+tems start scanning at a (cid:2)xed point in the permutation.
+periodicallyin casechangesto the networktopologyare
+Ifthewormdetectsaninfectedsystem, itsimplypicksa
+made.
+newrandompointinthepermutationandbeginsscanning
+again. This prevents reinfection and imposes a measure

@@ -1,0 +1,927 @@
+Secure IP Telephony using Multi-layered Protection(cid:3)
+BrennenReynolds1 andDipakGhosal2
+1-DepartmentofElectricalandComputerEngineering
+2-DepartmentofComputerScience
+UniversityofCalifornia,Davis,CA95616,USA
+Abstract web [5]. This trend will continue as new complex ser-
+vicesaredeployedandgainwidespreadadoption. IPtele-
+phony is one such complex service that is gaining rapid
+Thispaperpresentsthedesignandanalysisofamulti- momentumandhasthepotentialforbecomingastrategic
+layer protection scheme against denial-of-service (DoS) newtechnologiesincomingdecades. Inturn,itisaprime
+attacks in IP telephony enabled enterprise networks. targetfornewformsofDoSattacks.
+While there are many types of DoS attacks, we focus on In order to support IP telephony in an enterprise net-
+flood-basedattacksusingapplicationlayerandtransport work, new network elements must be deployed and ex-
+layersignalingmessagesinIPtelephony. Wedesignsen- isting network elements must be modified. To support
+sorstodetectandcontrolthesetypesattacksandconsider callsbetween endpointsconnected to the IP network, re-
+different location of these sensors in the enterprise net- ferredtoasNet-to-Netcalls,SIP(SessionInitiationProto-
+work. The algorithm for detecting these attacks is based col)Proxy[23]andRegistrar/LocationServer(RLS)[23]
+on the well established non-parametric cumulative sum (or equivalently H.323 Gateway[12]) must be deployed.
+method. The response to the attack uses standard pro- TosupportcallbetweenendpointsinthePublicSwitched
+tocol features of IP telephony to control the number of Telephone Network (PSTN) and endpoints connected to
+incoming application and transport layer setup requests. the IP network, referred to Net-to-PSTN and PSTN-to-
+We consider different recovery algorithms and compare Net calls, it is necessary to deploy a Media/Signal Gate-
+their performance using our emulation toolkit. Our re- way(MSG)[26]thatcanactasanapplicationlevelproxy
+sultsshowthatthedetectionalgorithmcanquicklydetect betweentheIPnetworkandthePSTN.Besidesthesenew
+bothtransportandapplicationlayerattacksandisrobust networkelements,supportingIPtelephonyrequiresmod-
+against various types of attacks. We also show that with ificationsintheenterprisefirewalltoallowdynamicpro-
+proper choice of sensor parameters, the detection algo- tocolportstobeopenedattheclientstosendandreceive
+rithmiseffectiveoverawiderangeofcallvolumes. audio and/or signaling and control messages. In this pa-
+per,weexaminetheserequiredarchitecturalchangesand
+theassociatedvulnerabilities.
+1.Introduction Since there are many types of DoS attacks [19, 5, 25],
+we first provide a classification of attacks specific to IP
+Denial-of-service (DoS) attack is not a new concept. telephony. Thisclassificationisbasedonthemechanisms
+However, the manifestation of these attacks, their tar- thatcanbeusedtoeitherremovethevulnerabilitytheat-
+gets,andhowtheyareexecutedhasevolvedoverthepast tackexploitsorreducetheimpactoftheattack. Wethen
+decade[19,5]. Todate,mostInternetoriginatedDoSat- focus on flood-based attacks using signaling and control
+tackshavetargetedthetransportandnetworklayersofthe messagesinIPtelephony. Wedefinetransportandappli-
+TCP/IPprotocolstack.Typically,thegoaloftheseattacks cation layer sensors to detect and control these types at-
+iseithertooverwhelmaparticularmachineortosaturate tacks. Thealgorithmfordetectingtheseattacksarebased
+thecommunicationlink. However,astheInternetevolves on non-parametric cumulative sum method described in
+and enterprises deploy multiple connections to the Inter- [2]. Onceanattackisdetected,theresponsetotheattack
+net, attacking the infrastructure has become less critical. uses standard protocol features of IP telephony to adapt
+ModernDoSattacksarebeingtargetedatspecificservices the number of incoming application and transport layer
+that consumers demand and rely upon, e.g., e-mail and setuprequests. Theplacementofthesensorsintheenter-
+prise network is an important consideration and impacts
+(cid:3)This work is supported by NSF grants NCR-9703275 and ANI-
+the recovery algorithm that must be enabled once the at-
+9741668tack ceases. We consider various placement alternatives TheSIPProxy(orH.323Gatekeeper[12])isplacedin
+anddiscusstheirimplications. the enterprise DMZ. All IP telephony signaling and con-
+Toensurethatthesensorsoperateasdesigned,wehave trol messages are routed through this proxy. Note that
+carried out a quantitative analysis using an IP telephony the actual media stream bypasses the proxy and sent di-
+emulationtool. ThreedifferenttypesofDoSattackswere rectly to the end terminal. The proxy server can support
+used to determine the performance and range of attacks manyadditionalfeaturessuchasSpamaddresslists. This
+thesensorscandetect. Foreachattack,weconsiderthree could include both individual clients’ lists as well as an
+differentrecoveryalgorithms. Thesensorsoperationwere aggregateenterprisewidelist. Anyincomingcallrequest
+evaluated based on the detection time and the recovery fromanaddressinthelistwillresultinabusysignalbeing
+time for the various configurations and attack scenarios. senttothecallingparty. TheRegistrar/LocationServeris
+Our results show that the detection algorithm is robust alsolocatedintheenterpriseDMZ.Twokeyfunctionsof
+against the three types of DoS attacks considered in this theRLSare1)tomaintainthelocation(IPaddress)ofall
+paper and can detect both the transport and application theenduserswithintheenterpriseand2)tocommunicate
+layer attacks quickly. Furthermore, we also show that withotherRLSstoimplementthefunctionalitiesdefined
+withproperchoiceofsensorparameters,thedetectional- inTelephonyRoutingoverIP(TRIP)[22]. Allincoming
+gorithmiseffectiveoverawiderangeofcallvolumes. callsmusthavetheSIPuniformresourceidentifier(URI)
+The rest of the paper is organized as follows. Sec- resolvedtoanIPaddressbeforethecallcanberoutedto
+tion 2 examines the changes in the network infrastruc- itsfinaldestination.
+ture required to deploy IP telephony services. Section 3 TheMedia/SignalGatewayisanapplicationlevelproxy
+describes the signaling and control messages in several toconnecttheIPnetworktothePSTN.TheMSGiscom-
+commonIPtelephonycallsetupsequences. InSection4, posed of voice ports bound to voice trunks on the PSTN
+we give a classification of different types of DoS attacks side and LAN connectivity in the enterprise side. Addi-
+basedonthemechanismsthatcanbeusedtomitigatesuch tionally, it may contain a Signaling System 7 (SS7) [24]
+attacks. Thedesignoftransportandapplicationlayersen- linktoaSignalTransferPoint(STP).TheMSGprovides
+sorstodetectandcontrolflood-basedattacksisdescribed controlanddatamessageconversionbetweenthetwonet-
+inSection5.Aquantitativeanalysisoftheperformanceof works. An user initiating an calls from within the enter-
+the sensors is provided in Section 6. Section 8 describes prisenetworktoaPSTNendterminal,providestheMSG
+the related work. Finally, Section 9 concludes this paper with authentication credentials (which the MSG verifies)
+withasummaryoftheresultsandadiscussiononfuture beforeacallcanbeassignedtoavoicetrunkandinitiated.
+researchdirections. Inadditiontotheintroductionofnewdevicesintheen-
+terprise network, certain existing network elements must
+2. IP Telephony Enabled Enterprise Net- bemodified[20]. Theoriginalstaticfirewallmustbere-
+works placedwithanewdynamicfirewallthatiscapableofin-
+telligently parsing all layers of the network stack. The
+Typical enterprise networks consist of two sections:
+new firewall must be capable of verifying the content of
+1) the internal network and 2) the DMZ (de-militarized
+eachpackettoensurethatonlylegitimatetrafficisallowed
+zone). The DMZ is connected to the public Internet
+through.AverificationengineorProtocolParserisloaded
+through an external firewall and contains various servers
+into the firewall for each complex protocol run over the
+thatneedtobeaccessedfromexternallocations. Thisin-
+network. ForIPtelephony,theProtocolParserisrespon-
+cludes web, mail, and domain name service (DNS) [8]
+sible for extracting the media flow port information de-
+servers. The internal network is connected to the DMZ
+terminedduringthecallsetupphase. Thisinformationis
+by another firewall. In some architectures, the two fire-
+usedtoopenappropriatepinholesinthefirewalltoallow
+wallsarereplacedbyasinglefirewallwiththreenetwork
+trafficthatmatchesthecalltuple. Uponthecompletionof
+interfaces[6].
+acall,theProtocolParserclosestheappropriatepinholes.
+Enabling IP telephony services in enterprise networks
+ToenablePSTN-to-NetandNet-to-PSTNcalls,theDo-
+requires additional devices to be added to the enterprise
+main Name System (DNS) [8] service must be extended
+network as well as modifying the functionality of exist-
+to support ENUM. In this new standard, each telephony
+ingcomponents. Additionalcomponentsthatarerequired
+terminalconnectedtotheIPnetworkisassignedanE.164
+includes, the SIP Proxy [23], Registrar/Location Server
+number(i.e.,atelephonenumber)similartoaPSTNcon-
+(RLS) [23], the Media/Signal Gateway (MSG) [26] to
+nected end terminal. The DNS servers must then imple-
+connect to the PSTN, and various sensors as described
+menttheENUMprotocol. Inparticular, ENUMusesthe
+later in Section 5. IP telephony also requires modifica-
+NAPTR DNS Resource Record type to store a mapping
+tion to the firewall. An IP telephony enabled enterprise
+of E.164 number to a globally unique DNS name. All
+networkisshowninFigure1.Softphone(cid:13) IP Phone(cid:13)
+DNS(cid:13) Web(cid:13)
+Server(cid:13) Server(cid:13)
+Enterprise(cid:13) Internet(cid:13)
+PSTN(cid:13) LAN(cid:13)
+Application(cid:13) Transport(cid:13)
+Media /(cid:13) Layer(cid:13) Layer(cid:13) Edge(cid:13)
+GS ai tg en wa al(cid:13) y(cid:13) FIn irt ee wrn aa ll l(cid:13) (cid:13) RegS isIP tr(cid:13) ar /(cid:13) ReS dI iP re(cid:13) ct(cid:13) SA ett na sc ok r(cid:13) (cid:13) SA ett na sc ok r(cid:13) (cid:13) E Fx irt ee wrn aa lll (cid:13)(cid:13) Router(cid:13)
+Authentication(cid:13) Location(cid:13) Proxy(cid:13)
+Server(cid:13) Server(cid:13)
+Enterprise DMZ(cid:13)
+Figure1.IPTelephonyenabledenterprisenetwork.
+ENUM names belong to the e164.arpa domain. While PSTN(cid:13) Originating Local(cid:13) Media / Signal(cid:13) SIP(cid:13)
+ENUM is required for PSTN-to-Net calls, it can also be End Terminal(cid:13) Exchange(cid:13) Gateway(cid:13) End Terminal(cid:13)
+SETUP (1)(cid:13)
+usedforNet-to-Netcalls. Section3discussesseveraltyp- IAM (2)(cid:13)
+INVITE (3)(cid:13)
+icalcallsetupsequences. Trying (4)(cid:13)
+Ringing (5)(cid:13)
+Finally,thisworkpresentsnewattackssensorstobede- ALERTING (7)(cid:13) ACM (6)(cid:13)
+OK (8)(cid:13)
+ployed in strategic points within the network to monitor CONNECT (10)(cid:13) ANM (9)(cid:13)
+trafficanddetecttheonsetofDoSattacks.Figure1shows
+Call Established (11)(cid:13) Call Established(cid:13)
+onepossibleplacementoftwosuchsensors. ATransport (Voice)(cid:13) (11) (RTP Data)(cid:13)
+LayerAttackSensor(TLAS)ispositionedinthefrontof DISCONNECT (12)(cid:13) REL (13)(cid:13)
+RELEASE (14)(cid:13)
+the DMZ to detect transport protocol layer flood attacks. RELEASE(cid:13) RLC (15)(cid:13) BYE (17)(cid:13)
+An Application Layer Attack Sensor (ALAS) is used to COMPLETE (16)(cid:13) OK (18)(cid:13)
+detect IP telephony call request flood attacks targeted at
+eitheranindividualuser(orURIs)ortoalargenumberof
+URIswithintheenterprise. Thedetectionalgorithmsim- Figure2.MessageflowforasuccessfulPSTN-
+plemented in these sensors and the appropriate response to-Netcall.
+totheseattacksarediscussedinSection5. Anevaluation
+ofthesensorplacementinFigure1ispresentedinSection
+6. AdditionaldeploymentissuesareaddressedinSection
+7.
+Figure2showsthemessagesequencetosetupacallre-
+quest initiated by a end terminal connected to the PSTN
+3.NormalIPTelephonyCallSetupSequences
+toanendterminalattachedtoanenterprisenetwork. The
+SS7 network routes1 the Initial Address Message (IAM)
+Thissectionoutlinesthenormalcallsetupsequencein
+to the enterprise MSG. A voice port on the gateway is
+IP telephony. Detecting a DoS attack is based on detect-
+allocated for the incoming call. The MSG translates the
+ingmessagesequencesthatissignificantlydifferentfrom
+E.164 number to an IP address using the ENUM exten-
+thesenormalcallsetupsequences.
+sions to DNS. Once the destination address has been re-
+solved,thegatewayestablishesanIPtelephony(e.g.,SIP)
+3.1.SuccessfulPSTN-to-NetCall
+connection with the end terminal. In this scenario, the
+calledterminalacceptsthecallandthemessageisrelayed
+Toallowcallstobeplacedbetweenanendterminalin
+through the gateway back to the calling terminal. When
+the PSTN and an end terminal in the IP network, each
+either terminal terminates the call, the appropriate tear
+terminal in the IP network must be assigned an address
+down messages are exchanged, the circuits are released,
+thatiscapableofbeingspecifiedbyterminalsattachedto
+andthevoiceportinthegatewayisfreed.
+thePSTN,e.g., aphonenumber(orE.164number). The
+result of this global naming scheme means that a PSTN
+terminalmaynotknowthattheyarecommunicatingwith
+terminal on a different network. The interoperability be-
+tweenthetwonetworkprotocolstacksisperformedbythe 1DetailsofSS7routingcanbefoundin[24]andisbeyondthescope
+MSG. ofthispaper.SIP(cid:13) Media / Signal(cid:13) Terminating Local(cid:13) PSTN(cid:13) External SIP(cid:13) External(cid:13) SIP Redirect(cid:13) Internal SIP(cid:13)
+End Terminal(cid:13) Gateway(cid:13) Exchange(cid:13) End Termial(cid:13) End Terminal(cid:13) Firewall(cid:13) Server(cid:13) End Terminal(cid:13)
+INVITE (1)(cid:13) TCP SYN (1)(cid:13)
+Trying (2)(cid:13)
+IAM (3)(cid:13) TCP SYN - ACK (2)(cid:13)
+REL BUSY (4)(cid:13) TCP ACK (3)(cid:13)
+RLC (5)(cid:13) INVITE (4)(cid:13)
+Busy Here (6)(cid:13)
+ACK (7)(cid:13) Trying (5)(cid:13) TCP SYN (6)(cid:13)
+TCP SYN-ACK (7)(cid:13)
+TCP ACK (8)(cid:13)
+INVITE (9)(cid:13)
+Trying (10)(cid:13)
+Figure 3. Message flow for a Net-to-PSTN call
+Ringing (11)(cid:13)
+Ringing (11)(cid:13)
+withcalledpartyunavailable. OK (13)(cid:13) OK (12)(cid:13)
+ACK (14)(cid:13)
+ACK (15)(cid:13)
+Call Established (15)(cid:13)
+3.2.Net-to-PSTNCallwithCalledPartyUnavail- BYE (1( 7R )(cid:13)TP Data Flow)(cid:13) BYE (16)(cid:13)
+OK (18)(cid:13)
+able OK (19)(cid:13)
+The message sequence for a Net-to-PSTN call when
+the called party is available is very similar to the previ- Figure4.Messageflowforasuccessfulincom-
+ouscase. Figure3showsthemessagesequencewhenthe ingNet-to-Netcall.
+calledpartyisunavailable. TheURIintheINVITEmes-
+sage of a Net-to-PSTN call is formatted differently than
+in a Net-to-Net call. In particular, the user portion is the
+wallextractstherequiredinformationfromthesetupmes-
+E.164numberofPSTNendterminalandthehostaddress
+sagestoopenpinholestoallowthemediastreamtoflow
+istheIPaddressoftheMSG.UponreceivingtheINVITE
+through uninterrupted. Once the call setup is complete,
+message (and the user validation), the MSG follows the
+themediaflows(RTPstreams)areexchangeddirectlybe-
+SS7callsetupsequence. Thisincludesallocatingavoice
+tweenthetwoendterminals(assumingbothhavepublicly
+portinthegatewayandinitiatinganIAMmessagewhich
+routableaddresses). WhentheProtocolParserdetectsthe
+is routed over the SS7 network to the Terminating Local
+callcompletionmessage,itinstructsthefirewalltocloses
+Exchange(TLE).TheTLErespondswithaRelease(REL)
+theappropriatepinholes.
+messagewiththebusyflagset. Thisresultsinthecircuit
+betweentheMSGandtheTLEtobereleased. TheMSG
+3.4.Net-to-NetCallwithCalledPartyUnavailable
+translatestheRELmessageintoaSIPBusyHereresponse
+andforwardsittothecallingterminal.
+Thefinalcallsetupscenarioinvolvesanenterpriseter-
+minalattemptingtocallaterminalconnectedtotheInter-
+3.3.SuccessfulIncomingNet-to-NetCall
+netbutthethecallrequestiscanceledbecausethecalled
+ThenumberofcallscenariosinvolvingNet-to-Netcalls partydoesnotanswer. Justasallincomingcallsmustbe
+is extremely large. While detailed descriptions can be routed through the proxy, so to must all outgoing calls.
+found in [15], here we describe how several of the ba- Rules are created at the firewall to block all SIP control
+siccallsetupsarehandled. Onetypicalsituationisacall trafficfromsourcesotherthantheproxy. This,inaddition
+setup between an external end terminal connected to the to authenticating the outgoing call request at the proxy,
+Internet and an end terminal in the enterprise network. ensuresthatunauthorizeduserscannotinitiateNet-to-Net
+Notethatforthisexampleitisassumedtheexternaltermi- calls.
+nalcancommunicatewiththecalledterminal,i.e.,itisnot ThemessagesequenceshowninFigure5isverysimilar
+blockedbyastaticfirewall. Itisfurtherassumedthatthe toanincomingcallrequest. ATCPconnectioniscreated
+firewalldeployedbytheenterprisefunctionsasdescribed betweenthecallingterminalandtheSIPProxy.Theinitial
+inSection2. INVITEissenttotheproxy. TheIPaddressofthedesti-
+From the message sequence shown in Figure 4, it is nationterminalisdeterminedandasecondTCPconnec-
+clearthatthefirewalldoesnothaveanactiveroleafterthe tioniscreatedtoforwardthemessage. Inthiscase,since
+initialTCPSYN[27]packetisreceived. Oncetheincom- the called party does not answer the incoming request in
+ingINVITEarrivesattheproxy,thelocationofthedesti- a reasonable period of time, the calling party cancels the
+nationURImustbedetermined(thisstepisnotshown).A callrequest.TheCANCELmessagegeneratedbythecall-
+secondTCPconnectioniscreatedbetweentheproxyand ingterminalresultsinthedestinationterminalterminating
+end terminal and the INVITE is forwarded. All control thecallrequestlocally. WhentheProtocolParserreceives
+messages are relayed through the two TCP connections the Request Terminated message, it instructs the firewall
+bridgedbytheproxy. TheProtocolParserwithinthefire- toclosetheappropriatepinholes.Internal SIP(cid:13) SIP Redirect(cid:13) External(cid:13) External SIP(cid:13) vulnerabilitiesthatcanbedealtwithusingstrongauthen-
+End Terminal(cid:13) Server(cid:13) Firewall(cid:13) End Terminal(cid:13) ticationtargettheIPtelephonysignalingandcontrolmes-
+TCP SYN (1)(cid:13)
+sages. SeveraltypesofDoSattacksarepossibleifstrong
+TCP SYN-ACK (2)(cid:13)
+TCP ACK (3)(cid:13) authenticationisnotusedbetweenthetwoendterminals.
+INVITE (4)(cid:13)
+Trying (5)(cid:13) TheseincludetheuseofSIPCANCELrequestmessages
+TCP SYN (6)(cid:13)
+TCP SYN-ACK (7)(cid:13) to drop all incoming calls to a particular terminal or to
+TCP ACK (8)(cid:13)
+cancelalloutgoingcallsinitiatedbyaterminal. Another
+INVITE (9)(cid:13)
+Trying (10)(cid:13) attackistosendaBYErequestmessagetoallthetermi-
+Ringing (11)(cid:13)
+Ringing (12)(cid:13) nalsinvolvedinanalreadyestablishedcall.Thisresultsin
+CANCEL (13)(cid:13)
+OK (14)(cid:13) thecallbeing droppedandtheterminalshave toreestab-
+CANCEL (14)(cid:13)
+OK (15)(cid:13) lish the call. A third type of DoS attack is caused by an
+Request Terminated (16)(cid:13)
+ACK (17)(cid:13) attackergeneratingillegitimateSIPresponsemessagesin-
+Request(cid:13)
+Terminated (18)(cid:13) forming the calling terminal that the called address is no
+ACK (19)(cid:13)
+longeravailable.
+Anotherclassofattackisbasedoncallredirection. By
+injecting malicious SIP response messages into an exist-
+Figure 5. Message flow for a Net-to-Net call
+ing call control stream, an attacker can alter the servers
+withcalledpartyunavailable.
+throughwhichthecontrolmessagesarerouted. Inpartic-
+ular, themessagescanberoutedthroughacompromised
+proxy. Otherresponsescanbegeneratedtocausethecall-
+4.EnumerationandClassificationofAttacks
+ingterminaltobelievethecalledpartyhaseitherchanged
+locations or address. Yet another attack in this class is
+Inacomplexnetwork,suchasanIPtelephonyenabled
+when an attacker re-registers with the RLS by sending a
+enterprise network, there are a large number of potential
+SIPREGISTERrequestmessagewithanewURIforthe
+vulnerabilitiesandattacktargets. Inthissectionweenu-
+targetparty. Theresultisthatallfutureincomingcallsto
+merateandclassifythevariousDoSattacks. Theclassifi-
+beroutedtothenewURIallowingtheattackertoimper-
+cationisbasedonthevariousmethodsthatareusedtomit-
+sonatethetarget.
+igatetheattacks. Inparticular,weconsiderthreedifferent
+Through the use of strong authentication, all of the
+typesofdeterrencemethods:1)enterprisedomainauthen-
+above attacks can be stopped. If each end terminal and
+tication,2)authenticatedcontrolprotocolsand3)devices
+server has un-compromised digital signatures then all
+(attack sensors) to detect and control the flood-based at-
+messagescanbeauthenticated. TheSIPprotocolincludes
+tacksusingapplicationandtransportlayersignalingmes-
+headerfieldstoprovideauthenticationinformationaswell
+sages. Other classes of attacks including eavesdropping,
+as request authentication if it is absent. By requiring all
+covertchannelsandfraudcancauseseriousproblems,but
+messagestobedigitallysigned,anattackerwillbeunable
+arebeyondthescopeofthiswork.
+toinsertfalserequestsorresponsesintothesignalingand
+controlmessagestreamandimpersonatevariouselements
+4.1.EnterpriseDomainAuthentication
+onthenetwork.
+Withthedeploymentofwirelessnetworkswithinenter-
+prises,thevulnerabilitythatanunauthorizeduserwillbe 4.3.SensorstoDetectandControlFloodAttacks
+able to connect to the internal LAN has increased. Once
+Therearemanytypesofattackscannotbedealtwithby
+connectedtothenetwork,anattackercanmaketelephony
+provisions included in the IPtelephony protocols. These
+calls and launch DoS attacks. To ensure that this is not
+includefloodbasedattacks. Topreventandcontainthese
+possible,alloutgoingcallsmustbemadebyauthenticated
+types of attacks, various components in the network in-
+users. This can be implemented by a central authentica-
+frastructuremustbeleveraged. Thefirsttypeoffloodat-
+tionserversuchasactivedirectory,Kerberos[16],orRa-
+tacksthatnetworkdevices(alsoreferredtoassensors)can
+dius[21].Topreventunauthorizedoutgoingcalls,devices
+be used to detect and control are malicious media flows.
+withinthecontrolpathmustbeabletoquerytheauthenti-
+Byusingsamplingschemes[9,7,14]thesensorcantrack
+cationservertoensuretheidentityofthecaller.
+thenumberofpacketssentperflowandalsomonitorthe
+sizeofthepackets.Ifaflowisdeterminedtobemalicious,
+4.2.AuthenticatedControlProtocols
+thesensorcaneithernotifyanadministratororactivatea
+There are several types of vulnerabilities and corre- responsemechanismlikeratelimiting. Theideallocation
+sponding attacks that can be eliminated if the associated where the sensor can be placed is the firewall or ingress
+network elements use strong authentication. All of the router since these network elements can observe all thetrafficandenforcetheresponseifastreamisdetermined dernormaloperation,thenumberofinitiatedhandshakes
+tobemalicious. should be very close to the number of complete hand-
+Thesecondtypeoffloodattacksarethosethataregen- shakeswithinafixedobservationperiod.Akeycharacter-
+erated by application and transport layer signaling mes- isticofbothapplicationandtransportlayerDoSattackis
+sages. DealingwiththiscategoryoffloodbasedDoSat- thatthehandshakingprocessisnotcompleted. Therefore,
+tacksismuchmorecomplicatedsincetheycantargetmul- if the difference between initiated and completed hand-
+tipleprotocollevels. TherearethreelevelsinanIPtele- shakessuddenlybecomesverylargeitisastrongindica-
+phony deployment that can be targeted. To further com- tionthatthesystemisunderattack. Anadditionalbenefit
+plicatethesituation,theattackscancomefromeitherthe of using the handshakes to detect attacks is the temporal
+InternetorfromthePSTN. proximityofthemessages. Allsetupmessagesaretrans-
+Theenduseristhefirsttarget.Thepacketswitchingna- mitted within a relatively short time period. This allows
+tureofdatanetworksallowsmultipleconnectionstoshare for shorter sampling periods and hence lower detection
+the same physical channel. Therefore, unlike in circuit time.
+switched networks, an IP telephone terminal can receive
+and potentially participate in multiple calls at once. An 5.1.DetectionAlgorithm
+attackercaneasilyoverwhelmasingleterminalbysend-
+ingseveralcallINVITErequestsinashortperiodoftime. The algorithm used in detecting the presence of an at-
+Thenexttargetistheinternalrelaypointsintheenter- tackisbasedontheworkpresentedin[30]. Thecorrela-
+prise. For Net-to-PSTN and Net-to-Net calls this is the tionbetweenthe numberofconnection establishmentat-
+SIP Proxy and for PSTN originated calls it is the MSG. temptsandthecompletedhandshakesissimilartothere-
+Each of these devices has a finite amount of resources. lationship between connection setup and tear-down. The
+The MSG contains a fixed number of voice ports and a differencecanbemodeledasastationary,randomprocess.
+request occupies a single port for the entire duration of The sensor is an implementation of Sequential Change
+the call. For calls relayed through the SIP proxy, the re- PointDetection[1]scheme. Inparticular,thedetectionof
+source limit determined by the concurrency of the proxy an attack is accomplished by normalizing the difference
+serverwhichdeterminesthemaximumnumberofsimul- withtheaveragenumberofconnectionsandapplyingthe
+taneouscallsitcanhandle. Thislimitisafunctionofthe non-parametriccumulativesummethod[2].
+memoryandtheprocessingcapacityoftheserver.Alarge At the end of each observation period t0, (cid:1) n is calcu-
+volumeofcallscouldresultintheseresourcesbeingcom- latedtobethenumberofestablishmentattempts(EA(n))
+pletelyconsumedanddenyinganyfurthercalls. Itshould minusthenumberofcompletedhandshakes(HS(n)). To
+benotedthatthisconditioncouldoccurundernormalop- removethedependencybetweenthemeanof(cid:1) n andthe
+eration. samplesize,anormalizedvalueX n iscalculatebasedon
+ThefinaltargetofafloodbasedDoSattackarethenet- (cid:1) n=C(cid:22)whereC(cid:22)istheaveragenumberofconnectionsdur-
+worklinksthatconnecttheenterprisenetworktotheother ingtheobservationperiodt0. C(cid:22) isdefinedas:
+networks. ForaccesstothePSTNnetwork,thisisthesig-
+nalinglinkbetweentheMSGandSS7network.Theother C(cid:22)(n)=(cid:11)C(cid:22)(n(cid:0)1)+(1(cid:0)(cid:11))HS(n) (1)
+keynetworklinkistheonethatconnectstheenterpriseto
+theInternet. AfloodbasedDoSattackcansaturatethese The detection of an attack within a single observation
+links and disrupt not only IP telephony service but also period is based upon the expected value of X n. Under
+otherservicesthatusetheselinks. normal operation, E(X n) = d (cid:28) 1. To make detection
+easy,avalueoischosensuchthato>dandX(cid:22) =X (cid:0)
+n n
+5.SensorsforDetectingDoSAttacks o. By shifting X n, whenever X(cid:22) n is positive it indicates
+thepresenceofanattack.
+ThereisabigdifferencebetweentraditionalTCPtraffic To ensure that short high volume attacks as well as
+andenterpriseIPtelephonytraffic. StudiesofTCPtraffic longerlowvolumeattacksaredetectedbythesensors,the
+suggeststhattheaveragesessionlengthisbetween12and algorithmincludesacumulativesumcomponent. Wede-
+19 seconds [29]. Enterprise telephony traffic, however, finey as
+n
+lastsmuchlongerwithatleast10%ofcallshaveduration
+over 10 minutes [28]. This difference in session length
+y =
+y n(cid:0)1+X(cid:22) n; if(y n(cid:0)1+X(cid:22) n)>0
+(2)
+imposes constraints on the sampling schemes that mon- n (cid:26) 0; otherwise
+itor connection setups and tear downs. However, it still
+possible to apply a single sampling process to both traf- Thedetectionofanattackisdeterminedbythevalueof
+fic models. Both IP telephony and TCP connections uti- y . Ifthisvalueexceedsapre-definedthresholdvalue,T,
+n
+lizeahandshakeforconnectionsetupandtear-down. Un- thesystemisconsideredtobeunderattack.5.2.RecoveryAlgorithm To ensure that each end terminal is protected against
+floodattacks,theALASmustmonitoreachURIindepen-
+Perhapsjustasimportantasminimizingthetimetode-
+dently. This is accomplished by a tracking table within
+tectanattack, isquicklydeterminingwhenanattackhas
+the sensor. During an observation period, the URI is ex-
+ceasedandreturningthenetworktoitsnormalstate. The
+tracted from INVITE and OK messages and is stored in
+impactofanattackcanbeamplifiedifittakesalongtime
+the table. Each URI entry has an associated counter to
+toresumenormaloperation. Inthisstudy,wehaveinves-
+track the numberofINVITEs and OKsobserved. At the
+tigatedthefollowingthreedifferentrecoveryalgorithms.
+expirationofthesamplingperiod,thedecisionalgorithm
+isexecutedforallURIsinthetrackingtable.Theincrease
+Linear Recovery: The linear recovery approach is the inoverheadrequiredtomonitorindividualURIsisaccept-
+defaultbehaviorofthedetectionalgorithmoncetheattack ablebecauseitallowstheresponsemechanismtoprovide
+hasstopped. ThevalueofX(cid:22) n iscloseto(cid:0)oandthusy n protection only for those affected by the attack. Using
+decayslinearlyto0.Usingthisalgorithmdoesnotrequire an aggregate based approach would result in all end ter-
+additionalcomplexitytobebuiltintothesensor,however, minals being affected by the response mechanisms if an
+ifthevalueofy n islargewhentheattackceasesandthe attackwasdetected.
+offset, o, is small, it will require a long time for y n to UpondetectinganattacktargetedatanindividualURI,
+drop below the threshold T. This results in the response theALASsendsacontrolmessagetotheSIPProxytoin-
+mechanisms to remain activated for yn minutes after the dicatethedetectionofanattack. Withinthemessageisa
+o
+attackisover. severity indicator. This value is determined by the value
+ofy discussedintheprevioussection. Inresponsetothe
+n
+Exponential Recovery: In this recovery algorithm, y control message, the proxy initiates the attack response
+n
+isdecrementedusingamultiplicativefactoronceX(cid:22) <0. byreturningTemporarilyUnavailableorBusyHeremes-
+n
+Thevalueofy iscalculatedby: sagestoafractionofincomingcallstothecorresponding
+n
+URI.Theseverityindicatorinthecontrolmessagedeter-
+y = y n(cid:0)1+X(cid:22) n; if X(cid:22) n >0 minestheprobabilitythatanewincomingcallwillbeal-
+n (cid:26) y n(cid:0)1(cid:0)oi; otherwise lowed to pass through the proxy. In the worst case sce-
+nario, all calls to the URI will be blocked by the proxy.
+If X(cid:22) n (cid:20) 0, the value of i is incremented after y n is ThecallrestrictionsareonlyremovedwhentheALASin-
+calculated. Oncey n returnsto0orbeginstoincrease,the structstheproxytodoso.
+valueofiisresetto1. Usingthisapproach, thetimefor
+whichtheattackresponsemechanismremainsactiveafter 5.4.TransportLayerAttackSensor(TLAS)
+theattackhasceasedislog (y )minutes.
+o n
+Asstatedpreviously,usingthebothsetupandtear-down
+control messages for IP telephony traffic is not a reason-
+Reset after Timeout: This scheme is an extension of
+able solution for detecting DoS attacks. To identify at-
+the linear recovery algorithm. When the value of y be-
+n tacks targeted at the network stack, a sensor can be built
+gins to drop, a timer, E, is started. The value of y is
+n tomonitorTCPSYNandACKpackets. Thearrivaltime
+allowed to decay linearly until the timer expires. At the
+betweenthesepacketsistypicallyverysmall. Thisallows
+expiration of the timer, if the value of y is still above
+n the sensor to use a short observation period and thus en-
+thethresholdT, itisresetto0. Unliketheothertwoap-
+surequickdetectionofanattack.
+proaches,byusingdiscretetimeoutsitispossibletoplace
+ThelocationoftheTLASwithinthenetworkallowsfor
+afixedupperbound,E,onthetimetheresponsemecha-
+it to be leveraged to protect all machines in the DMZ if
+nismswillbeinplaceaftertheattackhasstopped.
+needed. The need to monitor the related SYN and ACK
+packets at an individual connection level or end terminal
+5.3.ApplicationLayerAttackSensor(ALAS)
+isnotappropriatebecauseoftheextremelylargevolume
+To detect flood attacks targeted at a particular end ter- of connections and the lack of trustworthiness of source
+minal, the detection algorithm presented in the previous addresses. Therefore,anaggregateapproachisadoptedin
+section is applied to the application level traffic. In Sec- determiningthepresenceofanattack. DoSattackstarget-
+tion 3, it was shown that each legitimate call using the ing the network layer of a device require a large volume
+SIP protocol relies on an INVITE and OK message pair oftraffic. Therefore,monitoringatanaggregatelevelwill
+tocompletethesetupphase. Trackingthevolumeofthis showananomalywhenanetworkisunderattack.
+message pair and applying the detection algorithm, it is ThepairofSYNandACKpacketscanbeusedtodetect
+possibletodeterminewhenaparticularterminalisreceiv- anattackbecauseoftworeasons. First, theexternalfire-
+ingavolumeofcallsitcannothandle. wall is a stateful device and will not allow ACK packetsnot associated with an existing connection to pass. The terprise. Each URI only receives a very low volume of
+resultofthisisthatanattackercannotfloodatargetwith calls(e.g.,oneperminuteorless). Thisresultsinalarge
+amixtureofbothSYNandACKpacketsinanattemptto consumption of network wide resources while not modi-
+hide the attack from the TLAS since the ACKs will not fying the statistical network traffic level by a significant
+traversethefirewall. amount.
+The second reason the SYN and ACK packets are a
+good choice is that they both come from an external ter-
+AggressiveDoSAttack: Thisattackcanbeviewedasa
+minal and are connected using information generated by
+combination of the two previous cases. The impact and
+an internal terminal. It is very difficult for an attacker to
+detection of this attack can widely vary. In evaluating
+spoofthesourceaddressofaSYNpacketandthengener-
+the ability of ALAS to detect this attack, a subtle vari-
+ate a correct ACK packet because the SYN-ACK packet
+ant was chosen because it is more difficult to detect than
+generatedbythetargetenterpriseserverwillbesenttothe
+extremelylargeversions. Oneormoreattackersinitiated
+spoofed address. The attacker might be able to view the
+a low level of calls to a moderate number of URIs. The
+SYN-ACKpacketiftheywerelocatedonthedatapathbe-
+impact of the attack was two fold, 1) the end users were
+tweenthetargetandthespoofedaddress,butthissituation
+successfully disrupted from their normal operations and
+israre.
+2) a large amount of network resources were consumed
+Using the SYN and ACK pair also allows for a short
+causingotherservicestosuffer.
+observationperiod. The time between the twopacketsis
+For each scenario, the ALAS did detect the attack at
+equaltotheroundtriptimebetweentheenterpriseserver
+either the individual URI level or at the aggregate level.
+and the initiating machine. In the worst case, this value
+In the aggressive attack, both TLAS and ALAS detected
+wouldbeontheorderofseveralseconds. Thisclosetime
+theattack.Thenextsectiondiscussesseveralvariationsof
+proximitybetweenpacketsallowsforaveryfastdetection
+theinitialattackdetectionalgorithm.
+ofattacks.
+The response mechanisms for a transport layer attack
+6.2.EnterpriseUserModel
+can be classified into three categories: end server re-
+sponse,firewallresponse,androuterresponse. Attheend The user model was constructed to closely match that
+serverSYNcache[17]orSYNcookies[3]canbeusedto of a large enterprise. The distribution of calls to differ-
+reduce the amount of resources consumed by an incom- ent URIs is shown in Table 1. The majority of URIs re-
+ingSYNpacket. Ratelimitingatthefirewallcanbeacti- ceived a very low volume of calls during the simulation
+vatedtodecreasethefrequencyofincomingSYNpackets period. However, there are certain addresses within an
+totheservers. Finally, PushbackandAggregateConges- enterprise (e.g., help desk, front office, etc.) that receive
+tionControl[18,10]canbeusedbyupstreamprovidersto a much higher volume of calls. To determine if the vol-
+dropoffendingflowsbeforetheyreachanenterprisenet- ume of legitimate calls affected the performance of the
+work’sborder. sensors,bothhighandlowvolumeuserswereincludedin
+themodel.
+6. Experimental Evaluation of Initial Attack
+SensorDeployment
+Table1.EnterpriseCallDistribution
+6.1.DoSAttackModels CallsReceivedDuringSimulation NumberofURIs
+1 500
+ToevaluatetheperformanceoftheALAS,thefollowing
+2-5 400
+threedifferentDoSscenarioswereconsidered.
+6-10 80
+11-20 20
+LimitedDoSAttack: ItinvolvesasingleURIbeingtar-
+getedbyoneormoreattackers. Thevolumeofincoming
+attackcallswasvariedbetweendifferentrunsoftheattack
+6.3.SimulationParameters
+fromalowannoyancelevelofonehostilecallperminute
+to an overwhelming level of 10 or more hostile calls per ALAS was evaluated using three different recovery
+minute. Thisattackisextremelyfocusedondisruptingon techniques. The recovery techniques impacted how the
+asmallnumberofendusersandnotondegradingthelevel sensoroperatedonceanattackhadstopped. Foreachre-
+ofservicethroughouttheenterprise. covery algorithm, four simulations were run. Each sim-
+ulation lasted for thirty minutes with the detection algo-
+Stealth DoS Attack: This attack involves one or more rithmsamplingthevolumeoftrafficandcalculatingstatis-
+attackerstargetingalargenumberofURIswithintheen- ticseachminute.45
+40
+35
+30
+25
+20
+15
+10
+5
+0
+1 3 5 7 9 11 13 15 17 19 21 23 25 27 29
+Time (minutes)
+nY
+fo eulaV
+detaluclaC
+Attack 1 - Low Volume URI
+Attack 2 - High Volume URI
+40
+35
+30
+25
+20
+15
+10
+5
+Figure 7. Limited DoS using Exponential Re-
+0
+covery(o uri =2andT uri =5)(a)Attack1with 1 3 5 7 9 11 13 15 17 19 21 23 25 27 29
+Time (minutes)
+4 attack calls per minute and (b) Attack 2 with
+10attackcallsperminute.
+The first two were limited DoS attacks using 4 hostile
+callsperminuteand10hostilecallsperminutetoasingle
+URI.ToensurethatALASwoulddetecttheattackregard-
+less of the volume of legitimate calls the URI received,
+two URIs were targeted during each simulation. One of
+theURIsreceived2to5callsduringthesimulationperiod
+andtheotherreceivedover20calls.Theattackswereeach
+5minutesinlengthandstartedonthesecondandseventh
+minuteofthesimulation.
+TheothertwosimulationsusedastealthDoSattackand
+anaggressiveDoSattack,respectively. Thestealthattack
+targeted200uniqueURIsoutofthe1000URIswithinthe
+enterprise and generated one call a minute to each URI.
+Theaggressiveattackused50uniqueURIs,butincreased
+the number of calls to 3 per minute to each target. The
+attackslasted10minutesandbeganonthesecondminute
+ofthesimulation.
+Theoffsetvalues,o ando ,weresetto2and1,re-
+uri agg
+spectively. Theattackthresholds,T andT ,wereset
+uri agg
+to5and2. ThevalueEforthediscretetimeoutalgorithm
+wassetto2.
+6.4.ExperimentalResults
+For each sensor configuration, two key metrics were
+used to determine its performance: attack detection time
+and system recovery time. Figures 6, 7 and 8 show the
+sensor’sdetectionofalimitedDoSattack. Figures9and
+10 show the detection plots for an aggressive and stealth
+DoSattackrespectively.
+By choosing the offset and threshold values appropri-
+ately,thefalsealarmratewasreducedtozeroforallsim-
+nY
+fo
+eulaV
+etaluclaC
+Attack 1 - Low Volume URI
+Attack 2 - High Volume URI
+Figure 8. Limited DoS using Reset after Time-
+out (o = 2 and T = 5) (a) Attack 1 with 4
+uri uri
+attackcallsperminuteand(b)Attack2with10
+attackcallsperminute.
+3.5
+3
+2.5
+2
+1.5
+1
+0.5
+0
+1 3 5 7 9 11 13 15 17 19 21 23 25 27 29
+Time (minutes)
+nY
+fo eulav
+detaluclaC
+50 URIs with 3 calls per minute
+Figure 9. Aggregate level detection of Aggres-
+siveDoSattack(o =1andT =2).
+agg agg10
+9
+8
+7
+6
+5
+4
+3
+2
+1
+0
+1 3 5 7 9 11 13 15 17 19 21 23 25 27 29
+Time (minutes)
+nY fo
+eulaV
+detaluclaC
+40
+Attack 1 - Low Volume URI
+Attack 2 - High Volume URI
+35
+30
+Threshold 25
+20
+15
+10
+5
+0
+1 3 5 7 9 11 13 15 17 19 21 23 25 27 29
+Time (minutes)
+nY
+fo eulaV
+detaluclaC
+Attack 1 - Low Volume URI
+Attack 2 - High Volume URI
+(a) (b)
+Figure 6. Limited DoS Experiment using Linear Recovery (o = 2 and T = 5) (a) Attack 1 with 4
+uri uri
+attackcallsperminute(b)Attack2with10attackcallsperminute.
+8
+7
+6
+5
+4
+3
+2
+1
+0
+1 3 5 7 9 11 13 15 17 19 21 23 25 27 29
+Time (minutes)
+nY fo
+eulaV
+detaluclaC
+ulations. Lowering the values would allow for stealthier
+attacks to be detected, but would have also increased the
+falsealarmrate.
+The attack detection times for the four DoS attacks
+types are shown in Table 2. The results in Figures 6, 9
+and 10 show that the larger the volume of attack calls,
+the shorter the detection time. The one result that might
+200 URIs with 1 call per minute seem surprising is the stealth attack was detected in less
+timethantheaggressiveattack.Thisisbecausetheoverall
+call volume was greater for the particular stealth and ag-
+gressiveattacksusedinthisstudy. Theaggressiveattack
+generated 150 attack calls per minute (three to 50 differ-
+entURIs)whilethestealthgenerated200attackcallsper
+minute(oneto200differentURIs).
+Table2.DetectiontimeforvariousDoSattacks
+AttackType DetectionTime
+4calls/minLimitedDoS 4minutes(URIlevel)
+10calls/minLimitedDoS 2minutes(URIlevel)
+50URIAggressiveDoS 6minutes(URIlevel)
+8minutes(aggregatelevel)
+200URIStealthDoS 4minutes(aggregatelevel)
+Figure 10. Aggregate level detection of Stealth
+DoSattack(o =1andT =2). To evaluate the performance and impact of the differ-
+agg agg
+entrecoveryalgorithms, alimitedDoSattacktargetinga
+lowvolumeURIwasused. Table3showstheamountof
+time required from the end of the attack until the levels
+inthesensordroppedbelowthethreshold. Figures6b,7,
+8provideagraphicalrepresentationoftherecoveryalgo-
+rithms operation. As expected, the linear recovery algo-
+rithmperformancewassubstantiallylowerthantheother
+two. For real world deployments, the increase in sensorcomplexitytousetheexponentialorresetaftertimeoutal-
+gorithmsisacceptablebecauseofthesignificantincrease
+inperformance. Thecostofapoorrecoveryalgorithmis DNS(cid:13) Web(cid:13)
+Server(cid:13) Server(cid:13)
+substantial if the response mechanisms remain activated
+muchbeyondtheendoftheattack.
+Application(cid:13) Transport(cid:13)
+Layer(cid:13) Layer(cid:13)
+Attack(cid:13) Internal(cid:13) SIP(cid:13) SIP(cid:13) Attack(cid:13) External(cid:13)
+Table 3. Recovery time for Limited DoS attack Sensor(cid:13) Firewall(cid:13) Registrar /(cid:13) Redirect(cid:13) Sensor(cid:13) Firewall(cid:13)
+Location(cid:13) Proxy(cid:13)
+onasmallnumberofURIs Server(cid:13)
+Enterprise DMZ(cid:13)
+AttackVolume-RecoveryAlg. RecoveryTime
+4calls/min-LinearRecovery 3minutes
+10calls/min-LinearRecovery 17minutes Figure11.ALASplacedbehindtheSIPProxy.
+10calls/min-ExponentialRecovery 6minutes
+10calls/min-ResetafterTimeout 3minutes Softphone(cid:13) IP Phone(cid:13)
+To ensure that the detection algorithm works indepen-
+dentofthevolumeoflegitimatetrafficareceivedbyany
+Enterprise(cid:13)
+URI, we considered limited attacks targeting two URIs PSTN(cid:13) LAN(cid:13)
+fromdifferentusercategoriesinTable1. Foruserswitha Media /(cid:13) Application(cid:13)
+highvolumeoflegitimatetraffic,thevalueC(cid:22)(n)inEqua- Signal(cid:13) Layer(cid:13)
+Gateway(cid:13) Attack(cid:13)
+tion1islarge. Thisimpactsthenormalizationofthedif-
+Sensor(cid:13)
+ferencebetweenconnectionattemptsandestablishments. Authentication(cid:13)
+Server(cid:13)
+The larger the value of C(cid:22)(n), the greater in reduction of
+X because X = (cid:1) =C(cid:22)(n). Figure 6b shows the im-
+n n n Figure12.DetectingPSTNBasedDoSAttacks
+pact of this normalization. The peak value of the attack
+onthehighvolumeURIis25%lessthanthelowvolume
+URItarget. marshaled and the attack must be coordinated between a
+largenumberofindividuals.Inanycasetodetectandcon-
+7.OtherDeploymentIssues
+trolsuchattacks,anotherpossibledeploymentlocationfor
+an ALAS is in series with the MSG (Figure 12). A sen-
+ThesensorplacementinFigure1isonlyoneofseveral
+sor placed here would operate almost identically to one
+possibilities. Thissection examinestoimpact ofdeploy-
+placedbehindtheSIPProxy.Thetrafficpatternswouldbe
+ingALASatotherlocationsinthenetwork.
+consistent because the enforcement mechanism is placed
+7.1.ALASbehindtheSIPProxy beforethesensoronthenetworkpath. Thedifferencebe-
+tweenthetwodeploymentlocationsistheresponsemech-
+Instead of placing the ALAS in front the SIP Proxy, it
+anisms that are utilized. For PSTN based attacks, the
+ispossibletoplaceitinbehindtheSIPProxyasshownin
+MSGmustgenerateTransferControlled(TFC)messages
+Figure11.However,bydoingsoseveralcharacteristicsof
+orReleaseBusymessagesforthetargetedE.164numbers
+the traffic seen by the sensor changes. During an attack,
+dependingontheseverityoftheattack[24].
+thesensorwillnotcontinuetoseeallincomingcalls. The
+various response mechanisms activated in the proxy will
+8.RelatedWork
+influencethetrafficpatternseenbythesensor. Itwillnot
+receive notification nor be able to detect which calls are
+DetectionandprotectionofDoSattackshasbeenapop-
+blocked at the proxy without significantly modifying the
+ulartopicinrecentyears. Thetrendhasbeentofocuson
+interactionbetweentheproxyandsensors. Thedetection
+either protection and/or reduction of the impact of an at-
+and the recovery algorithms need to be modified for this
+tackordetectionofanattack.
+architecture. Thisisthescopeoffuturework.
+Yau et al [31] developed a scheme to include throttles
+in the network routers that use a leaky-bucket approach
+7.2.ProtectionforPSTNOriginatedAttacks
+to reduce the incoming rate of traffic to targeted servers.
+In a converged network, the Internet is not the only Another approach to countering DoS attacks at the net-
+source of attacks. While more difficult, it is possible to workinfrastructureistheuseofPushbackandAggregate
+launch an attack from the PSTN. It becomes more diffi- CongestionControl[18,10,13].
+cultbecausealargenumberofindividualphonesmustbe TheworkonDoSattacksisalsonotlimitedtoonlyIPbasednetworks. In[4],BurnsandGhosalexaminemedia References
+stimulated focused overloads in the PSTN. As in an IP
+[1] M. Basseville and I. V. Nikiforov. Detection of Abrupt
+DoS attack, the target of a focused overload is unable to
+Changes:TheoryandApplication. PrenticeHall,1993.
+operatenormally.
+[2] B. E. Brodsky and B. S. Darkhovsky. Nonparametric
+Otherworkhasbeendoneonreducingtheimpactofan
+Methods in Changepoint Problems. Kluwer Academic
+attack on the targeted terminals. Both SYN cookies [3] Publishers,1993.
+andSYNcache[17]areextensionstothenetworkproto- [3] Bronzesoft.org. SYNcookiesfirewall. WorldWideWeb,
+colstackinanattempttoreducetheresourceconsumption http://www.bronzesoft.org/projects/
+ofeachincomingSYNpacket. scfw,2002.
+Athirdapproachtoreducingtheimpactofanattackis [4] J.BurnsandD.Ghosal. Designandanalysisofanewal-
+fromaqualityofservice(QoS)pointofview. Bylimiting gorithmforautomaticdetectionandcontrolofmediastim-
+ulatedfocusedoverloads. InProceedingsofInternational
+theamountofresourceseachtypeoftrafficcanconsume,
+TeletrafficCongress,Edinburgh,June1997.
+theextentofaDoSattackcanbeseverelylimited.In[11],
+[5] C. C. Center. Trends in denial of service attack tech-
+Garg and Reddy present a prototype system capable of
+nology. WorldWideWeb, http://www.cert.org/
+enforcingQoSrestrictionsonvariousresourcesincluding
+archive/pdf/DoS_trends.pdf,Oct.2001.
+network bandwidth, protocol state memory buffers and
+[6] W.CheswickandS.Bellovin. FirewallsandInternetSe-
+CPUcycles. curity. Addison Wesley Longman, Inc., New York, NY,
+Theothercategoryofresearchhasbeenonquicklyand 1stedition,1994.
+effectivelydetectingthepresenceofanattack. Wangetal [7] K.Claffy,G.Polyzos,andH.Braun. Applicationofsam-
+[30]introducedasimplistic, yetpowerful, algorithmthat pling methodologies to network traffic characterization.
+exploits the normal behavior of TCP traffic to detect the InProceedingsofACMSIGCOMM,SanFrancisco,Sept.
+presenceofaSYNfloodattack. Theiralgorithmwasused 1993.
+[8] R.DanielandM.Mealling.RFC2168:ResolutionofUni-
+asabasisforthealgorithmspresentedinthispaper.
+form Resource Identifiers using the Domain Name Sys-
+tem,June1997.
+[9] C.EstanandG.Varghese. Newdirectionsintrafficmea-
+9.Conclusion
+surement and accounting. In Proceedings of ACM SIG-
+COMM,Pittsburg,Aug.2002.
+This study provided a detailed examination of DoS at- [10] S.FloydandV.Jacobson. RandomEarlyDetectionGate-
+waysforCongestionAvoidance.IEEE/ACMTransactions
+tacksagainstIPtelephonyenabledenterprisenetworks. It
+onNetworking,1(4):397–413,Aug.1993.
+wasshownthatalargeclassofattackscanonlybehandled
+[11] A.GargandA.Reddy. Mitigationofdosattacksthrough
+by implementing dedicated sensors in an enterprise net-
+qos regulation. In Proceedings of IEEE International
+work. Theoperationandimplementationofsensorsatthe
+WorkshoponQualityofService(IWQoS),MiamiBeach,
+transport and application layers were described in detail.
+May2002.
+Each of these sensors exploited a non-parametric cumu- [12] I.-T.R.H.323. Visualtelephonesystemsandequipment
+lative sum algorithm to detect the presence of an attack. for local area networks which provide a non-guaranteed
+In addition to attack detection, we examined the impact qualityofservice,May1996.
+andperformanceofthreedifferentrecoveryalgorithms.A [13] J. Ioannidis and S. Bellovin. Implementing pushback:
+quantitativeanalysisusingasimulatedenterpriseenviron- Router-baseddefenseagainstDDoSattacks. InProceed-
+mentshowedthatthedetectionalgorithmcorrectlyidenti- ingsofNetworkandDistributedSystemSecuritySympo-
+sium,SanDiego,Feb.2002.
+fiedthreedifferenttypesofDoSattacksandwequantified
+[14] J.Jedwab,P.Phall,andB.Pinna.Trafficestimationforthe
+the difference between the different recovery algorithms.
+largestsourcesonanetwork,usingpacketsamplingwith
+Furtherworkneedstobecarriedouttounderstandtheim-
+limited storage. Technical Report 35, Hewlett Packard
+pact of the various sensor parameters and the placement
+Labs,Mar.1992.
+ofthesensors. Workisalsorequiredtointegratethetech- [15] A. Johnston, S. Donovan, R. Sparks, C. Cunningham,
+niquesdevelopedinthispaperwithsensorstodetectDoS D.Willis,J.Rosenberg,K.Summers,andH.Schulzrinne.
+attacksusingmaliciousmediaflows. Internetdraft:SIPcallflowexamples,Apr.2002.Workin
+Progress.
+[16] J. Kohl and C.Neuman. RFC1510: The Kerberos Net-
+Acknowledgment workAuthenticationService(V5),Sept.1993.
+[17] J.Lemon. ResistingSYNfloodDoSattackswithaSYN
+cache. In Proceedings of USENIX BSDCon 2002, San
+We would like to thank the anonymous reviewers and Francisco,Feb.2002.
+Radha Poovendran for their comments that helped us in [18] R. Mahajan, S. Bellovin, S. Floyd, J. Vern, and P. Scott.
+preparingthefinalversionofthepaper. Controlling high bandwidth aggregates in the network.Technical Report 1, University of California, Berkeley -
+InternationalComputerScienceInstitute,Feb.2001.
+[19] J. Mirkovic, J. Martin, and P. Reiher. A taxonomy of
+DDoSattacksandDDoSdefensemechanisms. Technical
+Report18,UniversityofCalifornia,LosAngeles-Com-
+puterScienceDepartment,2002.
+[20] B. Reynolds and D. Ghosal. STEM: Secure Telphony
+Enabled Middlebox. IEEE Communications Magazine,
+40(10),Oct.2002.
+[21] C.Rigney,S.Willens,A.Rubens,andW.Simpson. RFC
+2865: RemoteAuthenticationDialinUserService(RA-
+DIUS),June2000.
+[22] J.RosenbergandH.Schulzrinne. RFC2871: AFrame-
+workforTelephonyRoutingoverIP,June2000. Status:
+Informational.
+[23] J.Rosenberg,H.Schulzrinne,G.Camarillo,A.Johnston,
+J.Peterson,R.Sparks,M.Handley,andE.Schooler. In-
+ternet draft: SIP: Session initiation protocol, Feb. 2002.
+WorkinProgress.
+[24] T.Russell. SignalingSystem7. McGraw-Hill,NewYork,
+NY,3rdedition,2000.
+[25] C.Schuba,I.Krsul,M.Kuhn,E.Spafford,A.Sundaram,
+and D. Zamboni. Analysis of a denial of service attack
+on TCP. In Proceedings of the 1997 IEEE Symposium
+onSecurityandPrivacy,pages208–223.IEEEComputer
+Society,IEEEComputerSocietyPress,May1997.
+[26] H.SchulzrinneandJ.Rosenberg. InternetTelephony:Ar-
+chitectureandProtocols-anIETFPerspective. Computer
+Networks,31(3):237–255,1999.
+[27] R.Stevens. TCP/IPIllustratedVolume1: TheProtocols,
+volume1. AddisonWesleyLongman,Inc.,Reading,MS,
+1stedition,1994.
+[28] Telecost. Enterprise call durations distributions.
+WorldWideWeb,http://www.telecost.co.uk/
+pages/OnCallDurations.htm,2002.
+[29] K.Thompson,G.J.Miller,andR.Wilder. Wide-areain-
+ternettrafficpatternsandcharacteristics. IEEENetwork,
+11(6),Dec.1997.
+[30] H.Wang,D.Zhang,andK.Shin.DetectingSYNflooding
+attacks. In Proceedings of IEEE INFOCOM 2002, New
+York,June2002.
+[31] D.Yau,J.Lui,andF.Liang.Defendingagainstdistributed
+denial-of-serviceattackswithmax-minfairserver-centric
+router throttles. In Proceedings of IEEE International
+WorkshoponQualityofService(IWQoS),MiamiBeach,
+May2002.

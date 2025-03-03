@@ -1,0 +1,1614 @@
+Secure Password-Based Cipher Suite for TLS (cid:0)
+PeterBuhler
+(cid:1)
+ThomasEirich
+(cid:1)
+Michael Steiner
+(cid:2)(cid:4) (cid:3)
+MichaelWaidner
+(cid:1)
+(cid:1)
+IBMZu¨rich ResearchLaboratory
+CH-8803 Ru¨schlikon,Switzerland
+(cid:5) bup,eir,wmi
+(cid:6)
+@zurich.ibm.com
+(cid:2) Universita¨tdes Saarlandes
+D-66123Saarbru¨cken, Germany
+steiner@cs.uni-sb.de
+Abstract
+SSL is the de facto standard today for securing end-
+to-end transport. While the protocol seems rather se-
+cure there are a number of risks which lurk in its use,
+e.g.,inwebbanking. We motivatetheuseofpassword-
+basedkeyexchangeprotocolsbyshowinghowtheyover-
+come some of these problems. We propose the integra-
+tion of such a protocol (DH-EKE) in the TLS protocol,
+the standardization of SSL by IETF. The resulting pro-
+tocolprovidessecuremutualauthenticationandkeyes-
+tablishmentoveraninsecurechannel. Itdoesnothave
+toresorttoaPKIorkeysandcertificatesstoredonthe
+userscomputer. AdditionalytheintegrationinTLSisas
+minimalandnon-intrusiveaspossible. Asaside-effect
+we also improve DH-EKE to provide semanticsecurity
+assumingthehardnessoftheDecisionalDiffie-Hellman
+Problem.
+1. Introduction
+TheSecureSocketLayer(SSL)protocol[15]istodays
+defactostandardforsecuringend-to-endtransportover
+the Internet. In particular the presence of SSL in vir-
+tuallyallwebbrowsersledtoawidespreaduseofSSL,
+alsoinapplicationrequiringahighlevelofsecuritysuch
+as home banking. While early versions of SSL con-
+tainedanumberofflawsandshortcomingstheanalysis
+ofthelatestversion3.0showsonlyafewminoranoma-
+lies [35, 28]. SSL was further refined in the Transport
+Layer Security (TLS)protocol [13], the standardization
+effort of the Internet Engineering Task Force (IETF),
+andseemstoprovideareasonablelevelofsecurity1.
+(cid:7) Appeared in Proceedings of Network and Distributed Systems
+SecuritySymposium(NDSS2000),SanDiego,California,February
+2000. c (cid:8) InternetSociety.
+(cid:9)
+Currently all standard methods for authentication in
+TLS rely on a public-key infrastructure (PKI). While
+this is suitable for many cases it might not suit en-
+vironments where the infrastructures is “light-weight”
+(e.g., diskless workstations, user-to-user authentica-
+tion),timeswhenasystemhastobebootstrappedfrom
+scratch,orsituationswhenusermobilityisrequired.
+Furthermorecurrentciphersuitesalsohavetheirown
+risks, most prominently illustrated in following exam-
+ple. Over the last years many banks have built home
+bankingapplicationsfortheweb.Fortheirsecuritythey
+relymainlyonthewebbrowserandtheSSLbuiltin.As
+reliably issuing client certificates is rather complicated
+mostoftheseapplicationsuseSSLforserverauthentica-
+tiononly.Theysetupasecurechannelfromthebrowser
+totheserverandthenasktheusertoauthenticateherself
+bytypingherpasswordinasimplewebform.However,
+insuchasetuptheuserauthenticationisnottiedtothe
+channelandinfactthesecuritycannotbeguaranteedif
+theuserdoesnotexplicitlyverifytheconnectionbefore
+enteringherpassword. Verificationdoesnotonlymean
+toverifythatthereisa secureconnectionbyobserving
+thatthelockgetsgoldenandclosed. Italsorequiresthat
+the user makes sure that the connection is to the right
+entitybycheckingthatthecertificateidentifiestheright
+bankandisissuedbyanappropriatecertificationauthor-
+ity (CA). This is a non-trivialtask, e.g., Netscape con-
+tains by default over 70 root certificates varying from
+high to virtually no assurance. To counter possible at-
+tacks2theusermightevenhavetoverifythefingerprint
+of the CA itself. If the user fails to do that properly
+sheishighlysusceptibletoaman-in-the-middleattack.
+Thisseemstoputtoohighaburdenontheaverageuser.
+anditsnewencodingmethodEME-OAEPbasedonworkbyBellare
+andRogaway[6]shoulddwarfthatattackcompletely.
+However,asillustratedby[32],theattackclearlydemonstratesthe
+importanceofcarefulprotocoldesignwhentreatingcryptosystems
+asblackboxes. Eitherwehavetocarefullyspecifytherequirements
+OnleaveofabsencefromtheIBMZu¨richResearchLaboratory ontheblackboxesorwehavetousethestrongestavailablecrypto
+1Notethattheriskoftherecent,verypracticalattackofBleichen- systemswheninstantiatingtheblackboxes.Afailuretodosoclearly
+bacher[12]ontheRSA-basedciphersuitescanbereducedthrough ledtothisattack.
+carefulimplementations.TheadoptionofVersion2.0ofPKCS#1[21]
+2SeeSection6.7.3forfurtherdiscussiononproblemslurkingin
+thecertificatemanagementofwebbrowsers.
+1Use of one-time-use transaction authorization numbers ticationandkeyestablishmentwithperfectforwardse-
+(TAN) only marginally improves this situation. Using crecyoveraninsecurechannelandlimitsthedamagein
+clientsidecertificateshelpsbutbesidescomplicatingthe case an attacker gains access to the server’s databases.
+setup it requires proper protection of the client’s keys, TheintegrationintoTLSisasnon-intrusiveaspossible
+which isdifficultgiventhe (in)securityofcommonop- and with some optimizations retains the 4-round hand-
+eratingsystemsavailabletoday. shakeoverheadofTLS.
+Above problems related to a PKI apply mainly to Thestructure ofthe remainderof thepaper is asfol-
+multi-purposeapplicationssuchasawebbrowser.Mul- lows. InSection2wegiveabriefoverviewoftheflows
+tiple differenttrustdomains (CAs) co-existand theap- ofTLSandwestatesomecriteriafortheintegrationof
+plication cannot know and enforce which policies are a new cipher suite. In Section 3 we introduce a new
+appropriate to particular contexts. However, these is- cipher suite based on DH-EKE. Before presenting the
+sues arenotintrinsicproblemsofSSLand willnotap- details of the protocol in Section 5 we haveto dig into
+pearwiththepassword-basedprotocolspresentedinthe somecryptographicpreliminariesinSection4. Wethen
+following,regardlessoftheapplications. giverationalesforourchoicesinSection6andconclude
+The proposition to add cipher suites based on Ker- inSection7.
+beros[26,22]wouldgetridoftherequirementofaPKI.
+Unfortunately Kerberos is not really light-weight (e.g., 2. TLS
+there is no real structural difference from a PKI) and,
+2.1.Overview
+evenmoreimportantly,itisvulnerabletodictionaryat-
+tacks when weak passwords are used [37, 9, 29, 16].
+TLSiscomposedoftwolayers: theTLSRecordPro-
+Giventhehumannature,thiscannotbeexcluded.Proac-
+tocol and the TLS Handshake Protocol. The Record
+tive password checking [11] can help only to a limited
+Protocol encapsulates higher level protocols (such as
+degree. Ontheonehandthechoiceofpasswordshasto
+HTTP[10])andcaresaboutthereliability,confidential-
+beeasyandunrestrictedenoughtomakeitpossiblefor
+ityandcompressionofthemessagesexchangedoverthe
+humans to remember (and prevent them from writing
+connection. The TLS Handshake Protocol is responsi-
+down the password!). This limits the possible entropy
+bleforsettingupthesecurechannelbetweenserverand
+insuchpasswords. Ontheotherhandcomputingpower
+clientand providesthe keysand algorithm information
+growsstilldrasticallyandmakesdictionaryattackspos-
+totheRecordProtocol. Thechangesrequiredinourin-
+sibleonlargerandlargerclassesofpasswords.
+tegration of password based protocols are not relevant
+Luckily,thereisaclassofauthenticatedkey-exchange
+tothe Record Protocol. Thereforewe will omitfurther
+protocols based on human-memorizeable weak pass-
+discussionofit.
+wordswhichareresistantto(off-line)dictionaryattacks.
+Figure1givesanoverviewoftheflowsoftheHand-
+They do not have to be backed by any infrastructure
+shake Protocol. The main purpose of the first mes-
+suchasaPKI.Assumingproperhandlingofonlinedic-
+sage, ClientHello, is to send a random challenge
+tionary attacks which are usually detectable, these sys-
+toguaranteefreshnessandtotelltheserverwhichcryp-
+tems are at least as secure as other systems based on
+tographicalgorithmsaresupportedbytheclient.
+strong public or shared keys. To substantiate the “at
+Based on this proposal the server will pick a set
+least” we note that in reality most of these other sys-
+of algorithms, the cipher suite. As an illustrative ex-
+temsrelyalsoonpasswordssomewhereattheuserend:
+ample let us assume the choice was the cipher suite
+thekeyringinPGP[38]andkeysforbrowsersarepass-
+TLS DHE DSS WITH DES CBC SHA.Thismeansthat
+wordencryptedandarevulnerableeventoundetectable
+the session key will be based on a Diffie-Hellman key
+off-line dictionary attacks once stolen! Thesecurity of
+exchange[14]using ephemeralparameters, DSAisthe
+password-based key exchange protocols relies only on
+signaturealgorithmusedandthesecurityontherecord
+two assumptions: The integrity of the underlying ma-
+layer will be based on DES in CBC mode and SHA-1.
+chine, and the availability of a reasonably good source
+ThechosenciphersuiteisstoredintheServerHello
+of randomness. But this is in essence the minimal re-
+messagetogetherwithanotherrandomchallengetohelp
+quirementforanyothersystemaswell.
+assuringtheserverofthefreshnessoftheprotocolrun.
+Thereforeitseemsquiteusefultoenrichthesetofcur-
+If serverauthentication is required the serversends the
+rent TLS cipher suites with a password-based protocol
+own certificate in Certificate. Depending on the
+and reduce the risks explained above. In the following
+chosenciphersuitetheserveralsosendstheServer-
+wedescribetheintegrationofanimprovedversionofthe
+KeyExchange message. This message contains key-
+Diffie-HellmanEncryptedKeyExchange(DH-EKE)[8]
+ing data required for the key exchange. In our exam-
+intoTLS.Thenewciphersuiteprovidesmutualauthen-
+pleitwouldholdtheserver’sephemeralDiffie-Hellman
+2Client Server
+proposeacceptableciphersuites
+(cid:10)(cid:11) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)
+ClientHello
+(cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:13) (cid:10)(cid:14) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:15) (cid:10)(cid:12) (cid:10)(cid:16) (cid:17)(cid:10)
+chooseciphersuiteandprepare
+keyexchangeparameters
+(cid:18)(cid:10)
+ServerHello,
+Certificate*,
+ServerKeyExchange*,
+CertificateRequest*,
+ServerHelloDone
+(cid:10)(cid:12) (cid:10)(cid:15) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:15) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:10)
+verifyparametersandprepareown
+keyexchangeandverification
+parameters
+(cid:10)
+Certificate*,
+ClientKeyExchange,
+CertificateVerify*,
+[ChangeCipherSpec],
+Finished
+(cid:10)(cid:12) (cid:10)(cid:15) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:15) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:17)(cid:10)(cid:10)
+completeauthenticationofclient
+(ifpossible)
+(cid:18)(cid:10)
+[ChangeCipherSpec],
+Finished
+(cid:10)(cid:12) (cid:10)(cid:15) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:15) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:10)
+completeauthenticationofserver
+(cid:18)(cid:10)(cid:19) (cid:10)(cid:20) (cid:10)(cid:19) (cid:10)(cid:22) (cid:21)(cid:24)(cid:10)(cid:20) (cid:23)(cid:25)(cid:10)(cid:19) (cid:23)(cid:27) (cid:26)(cid:29)(cid:10)(cid:20) (cid:28)(cid:31) (cid:30)!(cid:10)* # "(cid:31)(cid:10)(cid:19) (cid:28)(cid:31) $&(cid:10)(cid:20) %(cid:16)(cid:10)(cid:19) ’( (cid:10)(cid:19) # ")(cid:10)+ (cid:10)(cid:19) (cid:10)(cid:20) (cid:10), (cid:17)(cid:10)
+Figure1.OverviewofTLSflows. (Situation-dependentmessagesareflaggedwitha“*”).
+3half-key
+-(cid:13) .
+signed with the server’s signing key. Fur-
+thermore a list ofaccepted certificate types and CAs is
+send as part of the CertificateRequest if client
+authenticationis required. Finallytheservermarks the
+endoftheturnbysendingtheServerHelloDone.
+In the next step the client verifies the received data.
+The client prepares the own input to the key genera-
+tion,e.g.,theDiffie-Hellmanhalf-key
+-(cid:15) /
+,storesthemin
+ClientKeyExchangeand derivesfromthisand the
+server’sinputcontainedinServerKeyExchangethe
+premastersecret. Inourexamplethiswouldmeancom-
+putingtheDiffie-Hellmankey -(cid:15) .0 /
+ifying ClientHello. As we will see later this un-
+fortunately has important consequences. Further desir-
+able properties are to minimize setup time by keeping
+thenumberofflowsandthecomputationcostslow.
+3. DH-EKE/TLS:An overview
+3.1.Exponentialkeyexchange
+In 1992 Steve Bellovin and Michael Merritt, of Bell
+Labs, published a family of methods called Encrypted
+Key Exchange (EKE) [8]. These methods provide key
+.Thepremastersecret exchangewithmutualauthenticationbasedonweakse-
+is then hashed together with two previouslyexchanged crets (e.g., passwords). Theyareverycareful designed
+challenges to form the master secret. The master se- topreventtheleakageofweaksecretsandwithstanddic-
+cret is, as its name implies, the main session key and tionaryattackswhicharemostoftenpossibleonproto-
+allcryptographickeysusedfurtheronarederivedfrom colsinvolvingsecretswithlowentropy.
+thismastersecret. TheclientsendsnowtheClient- ThesimplestandmostelegantofthemethodsisDH-
+KeyExchange and, if required by the cipher suite, EKE. In DH-EKE a weak secret
+also CertificateVerify and Certificate for
+client authentication to the server. The client issues
+then a ChangeCipherSpec to the Record Protocol
+instructing it to use keys and algorithms newly negoti-
+ated. Finallytheclientsends theFinishedmessage,
+amessageauthenticationcode(MAC)onthepreviously
+sentmessagesusinganewlyderivedkey.
+The server derives the premaster and master secret
+fromthedatacontainedinClientKeyExchangeand
+theowninputs. VerifyingtheFinishedmessagewill
+assure the server now of the freshness of the request
+and of the authenticity of the client if client authenti-
+cation was enabled. The server then sends a similar
+Finishedmessagetotheclient. Thisallowstheclient
+toverifytheauthenticityoftheserverandthefreshness
+ofthekeysused.
+2.2.AddingNewCipherSuites
+Before presenting the integration of DH-EKE let us
+lookfirstattherequirementsandconstraintsoftheinte-
+grationofanewciphersuiteingeneral. TheTLSspeci-
+fications[13]donotmentionexplicitlywhatisallowed
+orwhat isnot for theintegrationofa new cipher suite.
+But it is obvious that such an integration should be as
+leastintrusiveaspossible. Lookingcloseratthedefined
+datastructuresrevealsthattheidealplacestoadjustTLS
+for new cipher suites are the ServerKeyExchange
+and ClientKeyExchange messages. They are al-
+ready variant records and can be rather transparently
+extended with a new element. We can also approach
+the problem from the other side and look on the hard
+constraints. It is quite clear that for compatibility rea-
+sonsweshouldnotaltermessageswhicharesentbefore
+an agreement on a cipher suite has been reached. This
+means in particular that we should refrain from mod-
+1
+is used to encrypt
+the elements of a Diffie-Hellman key exchange, i.e.,
+2
+.4 36 58 7: 9
+(cid:23)< ;
+and 2
+/= 36 5> 7? 9
+(cid:23)(cid:27) ;
+. The protocol is shown
+inFigure2.
+The session key that Alice and Bob compute is
+2
+.0 /= 3(cid:29) 58 7? 9
+(cid:23)< ;
+. Thekeyiscryptographically strong if
+@
+and
+A
+arecryptographicallystrongrandomnumbers,re-
+gardlessofthestrengthofthepassword.
+Various ways exist to optimize the number of flows
+as well as the number of encryptions. However, these
+optimizations, as design of the encryption process and
+the choice of the algebraic group, has to be done very
+carefullytopreventvariousattacks[8,34,19,30].
+The cipher suite presented in the following will be
+basedontheoptimizedprotocolpresentedbySteineret.
+al. [34]. As a second line of defense we also integrate
+B-EKE [20], a technique to reduce the risks caused by
+lossortheftofuserdatabasesfromtheserver’smachine.
+3.2.IntegrationofDH-EKEinTLS
+Let us now turn our attention to the concrete inte-
+gration of DH-EKE. Figure 3 givesan overviewof the
+flowsassumingDH-EKE/TLSwasamongtheproposed
+cipher suites in the ClientHello and got selected
+by the server. The arguments of messages contain the
+security critical protocol information in abstracted and
+simplifiedformwhere
+BD C
+’saredifferentpseudo-random
+functionsand 2 isakeyderivationfunction.
+The protocol looks very similar to the case given as
+anexampleintheprevioussectionwithtwomaindiffer-
+ences:Theclient’s
+-(cid:13) /
+isencryptedwiththepasswordin-
+steadofbeingaccompaniedbyasignatureandthesend-
+ingoftheclient’sandserver’sFinishedmessagesare
+swapped. Thefirstdifferencehelpstoauthenticateeach
+otherbasedonthecommonknowledgeofthepassword.
+Thesecondchangeisduetotheproblemsoftransferring
+4Alice
+(weaksecret
+1
+Bob
+) (weaksecret
+1
+)
+choose
+@F E(cid:16) GI HH< J
+(cid:10)K (cid:10)(cid:15) (cid:10)( (cid:10)(cid:12) LN(cid:10)(cid:12) M(cid:10)(cid:13)
+3
+(cid:10)(cid:12)
+2
+(cid:10)(cid:13)
+.
+(cid:10)(cid:12) (cid:10)(cid:13)
+3(cid:29) 58
+(cid:10)(cid:12) (cid:10)(cid:12)
+7?
+(cid:10)(cid:12)
+9
+(cid:10)(cid:12) (cid:23)(cid:27)(cid:10)(cid:13) ;O(cid:10)(cid:13) ;(cid:10)P (cid:10)(cid:12) (cid:10)Q (cid:17)(cid:10)
+choose
+A( E(cid:16) GR HH< J
+,compute
+SU T 2
+.V /W 36 5> 7? 9
+(cid:23)(cid:27) ;
+,choose
+challenge
+(cid:18)L[(cid:10) (cid:10)(cid:12) M(cid:10)(cid:12)
+2
+3
+(cid:10)(cid:13) (cid:10)(cid:12)
+.\
+(cid:10)(cid:12) (cid:10)(cid:12)
+3(cid:29) 58
+(cid:10)(cid:15) (cid:10)(cid:12)
+7?
+(cid:10)(cid:12)
+9
+(cid:10)(cid:12) (cid:23)<(cid:10)(cid:12) ;O(cid:10)(cid:13) ;!(cid:10)(cid:12) ] LN(cid:10)(cid:12) (cid:10)(cid:13) ^(cid:10)(cid:13)
+3_
+(cid:10)(cid:12)
+X
+(cid:10)(cid:12)
+Y
+(cid:10)(cid:31) ;(cid:10)
+XZ Y
+compute SU T 2
+.V /W 3(cid:29) 58 7? 9
+(cid:23)(cid:27) ;
+,
+chooseschallenge
+XQ ‘
+(cid:10)K (cid:10)(cid:15) (cid:10) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) L[(cid:10)(cid:12) ^(cid:10)(cid:13)
+3a
+(cid:10)(cid:12)
+X
+(cid:10)(cid:13)
+Y
+(cid:10)(cid:12) ](cid:10)(cid:12)
+X
+(cid:10)(cid:12)
+‘
+(cid:10)(cid:12) ;(cid:10)(cid:13) (cid:10)(cid:13) (cid:10)P (cid:10)(cid:12) (cid:10)Q (cid:17)(cid:10)
+verifyresponse
+(cid:18)(cid:10)K (cid:10)(cid:15) (cid:10) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) L(cid:10)(cid:13) ^(cid:10)(cid:12) (cid:10)(cid:13)
+3_ XQ
+(cid:10)(cid:12) (cid:10)(cid:12)
+‘
+;(cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:13) (cid:10)P (cid:10)(cid:12) (cid:10)Q (cid:10)
+verifyresponse
+Figure2.DH-EKE
+identity information and the subtle issues of dictionary
+attacks. Notethatitisofparamountimportancethatthe
+client doesnot useanykeyderivedfrom the premaster
+secret
+(cid:23)(cid:13) bd c
+before the client has successfully received
+and verified the server’s Finished message. How-
+ever, the changes in the overall protocol state-machine
+should be kept to a minimum. Note also that there is
+nopenaltyincommunicationdelayduetothefifthflow:
+Theclientcanstarttosendapplicationdataimmediately
+aftersendingtheFinishedmessage.
+Our integration is actually optimal in respect to the
+numberofflowsaswewillshowinSection6.1.
+The server’s Certificate and Certificate-
+Request messages and the client’s Certificate
+and CertificateVerify messages are omitted in
+Figure 3 for obvious reasons (no PKI). Note that these
+messagesarespecifiedasoptionalintheTLSprotocol;
+therefore,omittingthemispermissible.
+4. CryptographicPreliminaries
+4.1.MultiplicativeGroup
+HHf ge
+The cryptographic operations in DH-EKE are per-
+formed in the multiplicative group
+HHf ge
+with
+(cid:23)
+prime
+and h a large prime divisor of ij 3 (cid:23)(cid:27) ; T 3 (cid:23) (cid:10)l k ; . Let
+%
+Tn mpo
+7(cid:25) q ‘
+(cid:23)(cid:12) r
+and
+b
+Ts mpo
+7(cid:25) q ‘ h
+r
+be the number of bits
+of
+(cid:23)
+and
+h
+respectively. Typicalvaluesare768,1024or
+2048 for
+%
+and 160 or 320 for
+b
+. We also need an
+(arbitrary) primitive root 2 of the group
+HH ge
+and a gen-
+eratorofthe(unique)subgroup
+t
+oforder
+h
+computed
+as
+-
+T 2(cid:15) g&u v Y) w_ xy J
+tiplicative groups we refer the reader to other sources,
+e.g.,[27].
+4.2.GroupVerification
+Thegroupparameters
+. For algorithms on finding primitive
+rootsandefficientlycomputinggroupoperationsinmul-
+(cid:23)z ]
+h
+]
+2 and
+-
+shouldpreferably
+befixedatsystemstartup. Otherwise,theymaybecho-
+senby theserverand passedto the clientin Server-
+KeyExchange. In this case, the client has to verify
+them. Of particular importance is to make sure that
+(cid:23)
+and
+h
+are prime and
+%
+and
+b
+are sufficiently large.
+As in the ephemeral case the parameter might be cho-
+sen by an adversary, it is not possible to use optimiza-
+tiontechniqueswhich drasticallyreduce thenumber of
+Miller-RabintestssuchastheonedescribedinTable4.3
+of [27]. Instead we can only rely on k& {& |~ } as the upper
+bound ofthe probability that a candidateis prime after
+"
+Miller-Rabin tests: Therefore at least 40-50 tests per
+prime,i.e.,
+h
+and
+(cid:23)
+,arerequiredtomaketheprobability
+negligiblethatweacceptacompositenumberfalselyas
+prime. Thetestbases shouldbechosenatrandomand
+notbepredictablebytheadversary.
+These tests are rather expensive, in particular if we
+assume light-weight clients. A more efficient way of
+verification is to let the server send further verification
+information together with the group parameters. This
+canhelpprovingthecorrectnessoftheparametersmore
+efficiently. The approach chosen here is quite sim-
+ple. Toshowtherandomnessoftheprimeselectionthe
+server sends together with the prime also a pre-image
+of that number taken from a one-way function. This
+wouldrequireonlyasmallchangeintheserver’sprime
+5Client
+(password
+(cid:23)(cid:13) (cid:127)[ (cid:128)
+Server
+) (
+(cid:129)
+T
+-(cid:13) (cid:130)Z (cid:131)
+g(cid:133)u (cid:132)(cid:16) (cid:134)0 (cid:135)(cid:137)(cid:136)a (cid:138)(cid:139)(cid:141)(cid:140)a (cid:142)(cid:4) (cid:143) (cid:142)(cid:25) (cid:144)O (cid:145)Z (cid:140) w ,
+B ‘ 3
+(cid:23)(cid:15) (cid:127)[
+(cid:146)(cid:4) (cid:147)?
+(cid:128)(cid:15)
+(cid:148)(cid:29)
+]V
+(cid:149)
+(cid:153)(cid:133)
+(cid:150)(cid:25)
+(cid:151)!
+(cid:154)(cid:156)(cid:155)
+(cid:151)(cid:133)
+(cid:157)(cid:15)
+(cid:152)
+(cid:148)
+T
+(cid:157)< (cid:146)(cid:4) (cid:158)(cid:159) (cid:151)
+;
+)
+(cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)
+ClientHello
+(cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:15) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)y (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:17)(cid:10)? (cid:10)
+choose
+(cid:18)(cid:10)K (cid:10)(cid:12) (cid:10)
+@
+]
+@(cid:15) (cid:160)(cid:11) E(cid:16) GR HH< J
+ServerHello,
+ServerKeyExchange(
+-(cid:15) .
+]
+-(cid:15) .0 ¡
+),
+ServerHelloDone
+(cid:10)(cid:12) (cid:10)(cid:15) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:24) (cid:10)
+derive (cid:146)(cid:4) (cid:147)? (cid:148)(cid:29) (cid:149) (cid:150)~ (cid:151)(cid:133) (cid:152) from
+(cid:23)(cid:13) (cid:127)[ (cid:128)
+and
+choose
+A( E G HH J
+(cid:10)
+ClientKeyExchange(
+L
+(cid:144)O ¢& (cid:143)(cid:156)£ ⁄¥ (cid:140)a ƒ 3_ -(cid:15) /
+;
+)
+(cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:15) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:13) (cid:10)(cid:12) (cid:17)(cid:10)(cid:10)
+calculatepremastersecretas
+(cid:18)(cid:10)K (cid:10)(cid:12) (cid:10)
+(cid:23)(cid:13) bd c
+T
+BD §(cid:25) 3¤ 3_ -(cid:15) /
+;
+.
+]
+(cid:129)# .V ¡
+; [ChangeCipherSpec],
+Finished(
+B( 'P 3
+2
+3
+(cid:23)(cid:13) bd c& ;¥ ]
+- .
+]0 “(cid:133) “0 “;
+)
+(cid:10)(cid:12) (cid:10)(cid:15) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:24) (cid:10)
+calculatepremastersecretas
+B § 3O 3_ -(cid:15) .
+;
+/
+]
+3a -(cid:13)
+(cid:23)(cid:13)
+.
+bd
+¡
+;
+(cid:130)
+c
+(cid:131)
+T
+g(cid:133)u (cid:132)(cid:16) (cid:134)0 (cid:135)(cid:137)(cid:136)a (cid:138)(cid:139)(cid:141)(cid:140)a (cid:142)(cid:4) (cid:143) (cid:142)(cid:25) (cid:144)O (cid:145)Z (cid:140) w
+; andacceptsessionifFinished
+canbeverified
+(cid:10)K (cid:10)(cid:12) (cid:10)
+[ChangeCipherSpec],
+Finished(
+BD «(cid:4) 3
+2
+3
+(cid:23)(cid:13) bd c& ;¥ ]
+-(cid:15) .
+]0 “(cid:133) “0 “;
+)
+(cid:10)(cid:12) (cid:10)(cid:15) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:12) (cid:10)(cid:13) (cid:10)(cid:12) (cid:10)(cid:24) (cid:17)(cid:10)
+AcceptsessionifFinishedcan
+beverified
+(cid:18)(cid:10)f (cid:10)(cid:20) (cid:10)(cid:19) (cid:10)(cid:20) (cid:10) (cid:10)* (cid:10)(cid:20) (cid:21)‹ (cid:23)(cid:25)(cid:10)(cid:19) (cid:23)(cid:27)(cid:10)(cid:20) (cid:26)(cid:29) (cid:28)(cid:31)(cid:10)(cid:19) (cid:30)! #(cid:10)(cid:19) "(cid:31) (cid:28)(cid:31)(cid:10)(cid:20) $& %(cid:16)(cid:10)(cid:19) ’((cid:10)(cid:20) #(cid:10)* ") (cid:10)(cid:19) (cid:10)› (cid:10)(cid:19) (cid:10)(cid:20) (cid:10)(cid:19) (cid:10)(cid:159) (cid:17)(cid:10)
+Figure3.Overviewof(simplified)flowsofDH-EKE/TLS.
+6generation process but it should restrict an adversary
+from choosing weak or special primes. Therefore this
+randomization allows the use of the optimization tech-
+niquesdescribedin[27]andthenumberofMiller-Rabin
+testsontheclientsidecanbereduceddowntoatmost5
+testswiththegivenrangeof
+%
+asdefinedabove.
+4.3.EncryptionusingWeakSecrets
+Inadditiontoexponentiationsinmultiplicativegroups
+wealsoneedashared-keyencryptionfunction
+L M
+36 fi
+;
+to
+transporttheclient’sDiffie-Hellmanhalf-key. Oninput
+1
+, a weaksecret, and
+fi
+, anelement of
+HHf ge
+we perform
+thefollowingsteps:
+KeyDerivation We derive the encryption key fl as
+B( (cid:176)# 36 1
+]y cV : (cid:26)(cid:29) "O ;
+. The input parameters are the
+weak secret 1 and the concatenation of the
+two challenges found in ClientHello and
+ServerHello as
+c0 : (cid:26)6 "
+. The function B( (cid:176): 36 fi
+]O (cid:127)– ; is computed as the first fl? †V A
+(cid:26)
+†
+%
+2
+"
+- bits of
+‡(cid:181) ·– ¶ 36 fi
+](cid:25) •
+‡ (cid:146)& ‚(cid:14) ‚¥ „‹ ”(cid:4) »¤ … (cid:10) …(cid:25) (cid:151)(cid:133) »
+(cid:155)p‰
+(cid:151)(cid:14) …8 (cid:150)(cid:25) (cid:151)(cid:133) (cid:152) (cid:160)(cid:160)
+]O (cid:127)(cid:190) ;
+. The
+pseudo-random function ‡(cid:181) ·[ ¶ is defined in Sec-
+tion5of[13],takesasinputasecret,anidentifying
+label and a seed and produces an output of arbi-
+trarylength. fl? †V A
+(cid:26)
+†
+%
+2
+"
+- equalsto8forDES,16for
+3DES, IDEA and RC4-128, 5 for RC2. For DES
+(3DES) the key should be considered as a 64-bit
+(192-bit) encoding of a 56-bit (168-bit) DES key
+withparitybitsignored.
+Expansion To prevent dictionary attacks on the en-
+cryptedelements(seeSection6.3formoredetails)
+we uniformly expand the element
+fi
+from an
+%
+-bit
+numbertoa
+%(cid:192) ¿4 `
+-bitnumber. Weformablock
+´
+of
+%( ¿W `
+bitsasfollows:
+`
+T, ˆP ˜ ;
+%
+T¯ mpo
+7(cid:25) q ‘
+(cid:23)(cid:12) r
+;
+` (cid:160)(cid:11) T¯ ˘ ˙ 3a ¨(cid:25) (cid:201)~ ˚(cid:16) ¸ ; { (cid:23)(cid:12) (cid:204) ; (cid:30) Ef ˝\ ˛ ˜ ]0 “(cid:133) “0 “! ]¤ ` (cid:160) (cid:10)ˇ kP — ;
+´>
+T
+˘ fi
+¿\ (cid:30)(cid:31) (cid:23)
+;
+˛
+Notethatthiscalculationisin
+HH
+andnotin HHf ge ,e.g.,noreduction! —
+Padding If the block length
+(cid:26)
+†
+%
+of the encryption
+schemedoesnotdivide o
+7(cid:25) qK ´
+then
+´
+ispaddedwith
+3
+(cid:26)
+†
+%
+(cid:10) 3 o 7(cid:25) qK ´(cid:209) 3(cid:29) 58 7? 9
+(cid:26)
+†
+%(cid:11) ;O ;¤ ;
+randombitstoform ´¥ (cid:160) .
+Encryption The
+´¥ (cid:160)
+is encrypted using the derived
+key
+fl
+See Figure 5 for the proposed cipher suites. For
+block ciphers in chaining mode the IV will be set
+toall0.
+Decryption Anencryptedvalueisdecryptedusingthe
+key
+. The used shared-key cipher is defined
+by the agreed cipher suite. It is encoded in
+the cipher suite name after TLS DH EKE and
+is basically the agreed session encryption ci-
+pher if existing (e.g., we would encrypt with
+RC4/128 if the agreed upon cipher suite is
+TLS DH EKE RC4 128 WITH RC4 128 MD5).
+fl
+derivedasdefinedabovein“Keyderivation”.
+From the decrypted text, the random padding (if
+existing)isremovedandtheresultingvalueisthen
+reduced
+36 58 7: 9
+(cid:23)< ;
+toundotheexpansion.
+5. Protocol FlowProcessing
+Before describing the processing of the flows let
+us first look at the setup of the system. The client
+first chooses a password
+(cid:23)(cid:13) (cid:127)[ (cid:128)
+. Then the client de-
+rives a password authentication key
+BD ‘~ 3
+(cid:23)(cid:13) (cid:127)– (cid:128)(cid:13) ]& (cid:153)! (cid:154)(cid:156)(cid:155)
+(cid:151)(cid:133) (cid:157)(cid:13) (cid:148) (cid:157)(cid:27) (cid:146)P (cid:158)8 (cid:151)
+;
+(cid:146)P (cid:147)? (cid:148)p(cid:149) (cid:150)~ (cid:151)! (cid:152) T
+which is later used to authen-
+ticate the session key. Finally the client computes
+the password verifier
+(cid:129)
+T
+-(cid:12) (cid:130) (cid:131)
+g(cid:133)u (cid:132)(cid:16) (cid:134)0 (cid:135)(cid:137)(cid:136)(cid:210) (cid:138)(cid:139)(cid:141)(cid:140)(cid:210) (cid:142)& (cid:143) (cid:142)(cid:25) (cid:144)O (cid:145)Z (cid:140) w . The
+value (cid:129) will allow the server later to verify that
+the user really knows the password in a way that
+the server does not has to get or store the pass-
+word itself; this way we can limit the damage if the
+server is corrupted or the database is leaked. The
+functions
+B Y 3_ fi
+]¤ (cid:127)– ;
+and
+B ‘ 36 fi
+]O (cid:127)(cid:190) ;
+are computed as
+the first
+b
+bits of ‡(cid:181) ·– ¶ 36 fi
+](cid:25) •(cid:31) (cid:211)
+(cid:146)& ‚(cid:14) ‚¥ „‹ ”(cid:4) »y …
+‰
+(cid:151)! »
+(cid:155)(cid:212)
+(cid:151)! » (cid:160)(cid:160)
+]O (cid:127)– ; and ‡(cid:181) ·[ ¶
+3_ fi
+]~ •(cid:31) (cid:211)
+(cid:146)& ‚(cid:14) ‚¥ „‹ ”(cid:4) »¤ …(cid:192) (cid:146)(cid:4) (cid:147)? (cid:148)(cid:29) (cid:149)(cid:12) (cid:151)(cid:133) (cid:157)(cid:13) (cid:148)
+(cid:155)6 (cid:153)
+(cid:146)(cid:4) (cid:148)
+(cid:155)
+”(cid:4) (cid:157)(cid:192) (cid:150)~ (cid:151)! (cid:152)
+(cid:160)(cid:160)
+]¤ (cid:127)– ;
+re-
+spectively.
+(cid:129)
+and (cid:146)(cid:4) (cid:147)? (cid:148)(cid:29) (cid:149) (cid:150)(cid:25) (cid:151)(cid:133) (cid:152) arethensentsecurelytothe
+serverandstored togetherwiththeclient’snameinthe
+server’suserdatabase.
+In the following we assume the client proposes in
+ClientHellosomeoftheDH-EKEciphersuitesand
+theserveragreesononeofthem. Wealsoomitallstan-
+dard processing as defined in TLS and refer the reader
+to [13].
+1. Client (cid:17) Server The client prepares the Client-
+Helloasusual.
+2. Server (cid:17) Client The server chooses @ E(cid:16) G HH< J and computes -(cid:13) .ˇ 3(cid:29) 58 7? 9
+(cid:23)(cid:27) ;
+. Additionally the
+server also chooses
+@ (cid:160) E(cid:16) G(cid:213) HH< J
+and computes
+36 58 7: 9
+(cid:23)< ;
+- .V ¡ .
+TheservercompletestheServerDHEKEParams
+field in ServerKeyExchange with
+-(cid:15) .
+and
+-(cid:15) .V ¡
+. If the server’s group parameters are not a
+priori fixed, the server also prepares Server-
+DHParamsProof to allow optimized parame-
+ter verification for the client as described in
+Section 4.2. The server sends the Server-
+Hello, ServerKeyExchange and Server-
+HelloDonemessagestotheclient.
+3. Client (cid:17) Server The Client verifies the parameters
+of the group: if they are not installed and well-
+7defined,theclientperformsthetestsasoutlinedin
+Section4.2.
+The client then verifies that the
+-(cid:15) .
+and
+-(cid:15) .0 ¡
+con-
+tainedinServerKeyExchangeareoftheright
+sizeandorder( 3_ -(cid:15) .
+;
+J 36 58 7: 9
+(cid:23)< ;
+T k? (cid:214) -(cid:15) .D T (cid:215) k ).The
+clientabortsifaboveconditionsarenotfulfilled.
+Theclient(software)asktheuserforherpassword
+and derivesthe authentication key as
+B ‘ 3
+(cid:23)(cid:13) (cid:127)– (cid:128)(cid:13) ]0 ]V (cid:153)(cid:133) (cid:154)(cid:156)(cid:155)
+(cid:151)! (cid:157)(cid:15) (cid:148) (cid:157)< (cid:146)(cid:4) (cid:158)(cid:159) (cid:151)
+;
+(cid:146)(cid:4) (cid:147)? (cid:148)(cid:29) (cid:149) (cid:150)~ (cid:151)! (cid:152) T
+. Theclientchooses
+HH g
+AD E G
+andcomputes 2 /W 3(cid:29) 58 7? 9
+(cid:23)(cid:27) ;
+. Thentheclienten-
+crypts 2
+/
+as defined in Section 4.3, enters the re-
+sulting value
+L
+(cid:144)O ¢& (cid:143)(cid:156)£ ⁄! (cid:140)a ƒ 3 2 /
+;
+as well as the user’s
+identityintheClientDHEKEParamsfieldofthe
+ClientKeyExchange message and sends the
+messagetotheserver.
+4. Server (cid:17) Client The server extracts the identity of
+the client from the ClientKeyExchange mes-
+sage and retrieves the client’s password context.
+The server verifies that the account is not locked
+and decrypts the client’s half-key 2
+/
+as defined in
+Section4.3usingtheauthenticationkey (cid:146)P (cid:147)? (cid:148)p(cid:149) (cid:150)(cid:25) (cid:151)(cid:133) (cid:152)
+storedinthecontext.
+The server computes the premaster secret
+(cid:23)(cid:13) bd c as B § 3O 3 2 /
+;
+u . g(cid:4)u v Y¤ xy JO w(cid:29) w
+]
+(cid:129)# .V ¡
+;
+(with B § 3_ fi
+]¤ (cid:127)– ;
+defined
+as ‡(cid:181) ·[ ¶ 3_ fi
+]~ •y (cid:216)(cid:190) (cid:217)l (cid:211)
+»¤ (cid:151)(cid:133) (cid:158)(cid:159) (cid:146)& ‚¥ (cid:148)(cid:210) (cid:151)(cid:133) »(cid:218) ‚(cid:133) (cid:151)
+(cid:153)
+»¤ (cid:151)(cid:133) (cid:148) (cid:160)(cid:160)
+]
+„ ) and gen-
+eratestheserver’sFinishedmessageasdefined
+in the TLS specifications, e.g., the function
+B '
+in
+Figure 3 is a MAC over all previously sent hand-
+shakemessages. TheserverperformsaChange-
+CipherSpecandsendstheFinishedmessage
+totheclient.
+5. Client (cid:17) Server The client computes
+B § 3O 3_ - .
+;
+u
+/
+u(cid:220)(cid:219)(cid:181) (cid:221)¥ (cid:222) JO w(cid:29) w
+]
+3a - .V ¡
+;
+(cid:130) (cid:131)
+g(cid:133)u (cid:132)(cid:16) (cid:134)0 (cid:135)(cid:137)(cid:136)a (cid:138)(cid:139)(cid:141)(cid:140)a (cid:142)(cid:4) (cid:143) (cid:142)(cid:25) (cid:144)O (cid:145)Z (cid:140) w
+; to get the premaster secret
+(cid:23)(cid:13) bd c
+and verifies the
+server’s Finished message. If the verification
+fails,theclientaborts.
+TheclientgeneratestheFinishedmessage(
+B «
+inFigure3isagainaMACoverallpreviouslyex-
+changed handshake messages), proceeds with the
+ChangeCipherSpecandsendstheFinished
+message to the server. Note that contrary to the
+standardcasetheclientcanstarttosenddataimme-
+diatelyaftertheFinished(andbasicallyretains
+theoriginal4-flowhandshakeoverhead).
+6. Server (cid:17)
+forthethresholdmightbe5. Notethatmoreelab-
+orate policies with exponential retry delays might
+beused inaddition). Ifthe verificationisOK, the
+’potential online attack’ counter is updated (exact
+proceduredependsonlocalpolicy:possibilitiesare
+settingitto0,decrementingitby1,etc.).
+Note:Toreduceriskofpasswordexposureimplemen-
+torsareadvisedtothrowaway(zeroout)alltracesfrom
+the password and all used critical random values (e.g.,
+theDiffie-Hellmanparameters
+Client The server verifies the client’s
+Finished message. If the verification fails, the
+server aborts, increments the ’potential online at-
+tack’ counter in the client’s password context and
+locks the account if the ’potential online attack’
+counter reaches a threshold (a reasonable number
+@ , A , -(cid:15) . andthepremas-
+tersecret)assoonaspossible.
+6. Rationalesand Explanations
+The above proposed protocol takes into account all
+knownattacks([8,34,19,30]). Inaddition,itprovides
+for semantic security and at the same time it improves
+performance. Findinthefollowingafewmoredetailed
+rationalesandexplanationofcertainchoicestakendur-
+ingtheprotocoldesign.
+6.1.Flows
+Theclientcannotcarryitsidentityinformationinthe
+ClientHellomessage3. Thereforetheservercannot
+encryptits valueasin theoptimalprotocol [34]. How-
+ever, to prevent dictionary attacks, the party which en-
+crypts withthe passwordshould beverycareful. Inno
+caseshouldtheclientusederivedsessionkeysbeforeit
+knowsthattheserverconfirmedknowledgeofthepass-
+wordexplicitlybyprovingknowledgeofthekeyorim-
+plicitly by encrypting its own half-key with the pass-
+word.
+This rules out using the standard TLS flows. The
+client, which is the first party to be able to encrypt
+with the password, cannot send the Finished before
+getting a “proof of knowledge of password” from the
+server. Any other approach would have increased the
+number of flows and would have deviated even further
+fromthestandardTLSmessages.
+If we exclude altering or misusing ClientHello
+we can actually extend this reasoning and show that it
+iscompletelyimpossibletobuildasecuremutuallyau-
+thenticatedkey-exchangeinfourflowswhichreliesonly
+on weak secrets. The server, not knowing the client’s
+identity afterthe firstflow, cannot produce anysort of
+implicitorexplicitproofofknowledgeofthepassword
+inthesecondflow. Consequentlytheclientcannotsend
+anykeyconfirmationinthethirdflowandtheonlyway
+tocompleteclientauthenticationistosendsuchames-
+3AtleastifweliketostaycompatibletostandardTLSanddonot
+resorttochangesofClientHelloorunacceptablead-hocmeasures
+suchasencodingtheidentityinthenonce-fieldoftheClientHello
+8sageinanadditionalfifthflow. Henceforthourprotocol
+isoptimalinnumberofflows.
+6.2.SubgroupConfinement
+Anattackermightsendelementsofsmallordertoei-
+therreducethepossiblekey-spaceforimpersonationsor
+attacksonthepassword. (e.g.,iftheattackersends1in-
+stead of
+-(cid:13) .
+then the key will be 1 regardless of what
+theother (honest)partychooses asrandomexponent!).
+This attack can be prevented when the receiver of the
+unencrypted half-key
+-(cid:15) .
+verifies the order of the ele-
+ment. However, note that verification of the order for
+decryptedvalueisnotnecessary: Anattackercaneither
+guessapasswordandencryptanelementofsmallorder
+orsendanarbitraryrandomvalue. Intheunlikelycase
+thatthepasswordguesswascorrectthenobviouslythere
+wasnopointofencryptinganelementofsmallorderin
+thefirstplace. Otherwise,giventhepseudo-randomna-
+ture of the encryption function, a decryption will yield
+a random element regardlessif the attacker has chosen
+awrongpasswordoranarbitraryvalue. Butif
+ij 3
+(cid:23)< ;
+has
+largeprimefactorsitishighlyunlikelythatarandomly
+selectedvaluedecryptstoanelementofsmallorder.
+If we choose
+HH ge
+such that
+ij 3 (cid:23)(cid:27) ;
+would contain only
+prime factors of sufficient size (e.g., they are all of at
+least
+b
+bits) we could improvethe check for elements
+ofsmallorderevenfurther.Insuchgroupsitissufficient
+to test that @ ‘ 36 58 7: 9
+(cid:23)< ;
+T (cid:215) k to verifythat @ has larger
+order. Although this seems to be sufficient, the overall
+securityofthismethodneedsfurtherstudy[23]anditis
+notimmediatelyclearifwecanretainsemanticsecurity.
+6.3.Encryption
+The security in the encryption process
+LN M
+36 fi
+;
+de-
+scribedinSection4.3reliesontwopropertiestoprevent
+anadversaryfromverifyingcandidatepasswordsusing
+an encrypted element
+fi
+: First, the encryption function
+should produce cipher-texts containing no redundancy
+and the range of the encryption function has to be the
+same regardless of the chosen key. Second, the plain-
+text has to be close to uniformly distributed. The first
+condition is fulfilled by stream-ciphers and by block-
+ciphers performing a permutation on the input block.
+The second condition is fulfilled by encrypting a (ran-
+dom)elementofthegroupandnotofthesubgroup(see
+alsoSection6.4),byrandompadding(forblockciphers)
+andproperexpansion.
+The expansion is necessary to prevent dictionary at-
+tacks onthe encryptedelements. Ifwe omit expansion
+anattackerhas a probability of 3 k– (cid:10)4 (cid:223)
+;
+(where (cid:223) is the
+ratioofsizeofthevalidrangeoverthesizeofthepos-
+sible range, i.e., 3
+(cid:23)
+(cid:10)l k
+;
+{ ¨(cid:25) ¸
+the guess and finding an element in the illegal range
+) to reject a wrong pass-
+word guess by decrypting observed encryptions with
+˛ ˜
+]6 (cid:23)z ]6 (cid:23)D ¿
+k
+](cid:133) “0 “(cid:133) “! ]
+¨P ¸ (cid:10)d kP — . Taking into account that the
+attackercanobserve
+"
+runsoftheprotocoltheprobabil-
+ityof successfullyrejecting a password guessbecomes
+3 k– (cid:10)I (cid:223) }
+;
+andapproaches k veryquickly,evenforsmall
+"
+. Notethat ˜ ˆÆ
+“
+(cid:224) (cid:223) (cid:224) k alwaysholdsbydefinitionof
+%
+.
+In average if we expand with 1 bit we decrease the
+proportionoftheinvalidrangeinrespecttothecomplete
+range by half. Therefore we also reduce the chances
+of an attacker by half. Let us define
+") (cid:226)Z ª .
+as an upper
+boundforthenumberofprotocolrunswithagivenpass-
+word and
+¨
+v< (cid:228) as the maximally tolerable probability
+thatanattackercanrejectan(incorrect)passwordguess
+after having observed some (i.e, at most
+") (cid:226)(cid:229) ª .
+) proto-
+colruns. Thenthenumberofrequiredexpansionbitsis
+`
+T (cid:10) o 7(cid:25) q ‘ 3 k(cid:229) (cid:10) 3 k[ (cid:10) ¨ v< (cid:228)
+;
+Y¤ x }(cid:29) (cid:230)(cid:11) (cid:231)O Ł
+;– Ø
+fl
+¿Œ (cid:26)6 $
+2 ‘ 3
+" (cid:226)(cid:229) ª . ;
+.
+Ifwetakeas
+º
+˜ for
+fl
+and
+¨
+‘¤ (cid:176) for
+" (cid:226)(cid:229) ª .
+wegetthe
+`
+T, ˆ(cid:25) ˜
+requiredinSection4.3. Notethatwiththesevalueswe
+have a wide safety marginin all practical applications:
+On the one hand no user will enter his password and
+connecttotheservermorethan
+¨
+‘¤ (cid:176) timesandtheserver
+which tracks failed connection request in his ’potential
+onlineattack’ counter willfoil allattemptsto getmore
+sampleswith activeattacks. Onthe otherhandalready
+fl T k means that an attacker reduces the number of
+possible passwords by half which would be acceptable
+alreadyinmostcases.
+The key derivation mechanism reuses basic building
+blocks of TLS and approximates also the upcoming
+PKCS#5Version2.0[31]. Thesaltguaranteesthatfor
+each protocol run we get independent keys to address
+concerns about interactions between multiple usage of
+thesamekey.
+6.4.ChoiceOfGroup
+As mentioned above there should be no structure in
+decryption otherwise we might be open to attacks. In
+previouspapersonDH-EKEitwascommonlyassumed
+that this means that we cannot operate in a (more effi-
+cient)cyclicsubgroup
+t
+buthavetoworkinthewhole
+group HHf ge (e.g.,weneedaprimitiverootasbaseforthe
+exponentiations). Encrypting elementsofthesubgroup
+wouldlead to followingattack: Theattackerchooses a
+candidatepassword,decryptswithitanencryptedhalf-
+key 2
+/
+observedonthewireandrejectsthepasswordif
+thedecryptedelementisnotanelementofthesubgroup.
+Ifthepasswordguesswaswrongthelikelihoodthatthe
+decryptedelement isnotan element ofthesubgroupis
+highandthereforetheattackwillbequiteeffective.
+However,werunintoaproblemifweliketoachieve
+semanticsecurityinthesenseoftheindistinguishability
+of a valid session key from a random key. If we don’t
+resorttorandomoracles[5], theweakestcryptographic
+9assumptionwe canrelyonisthehardnessofthe Deci-
+sional Diffie-Hellman Problem (DDH). It is also obvi-
+ousthatthiscannotbedonein
+HH ge
+4 butonlyinaprime
+ordersubgroupof
+HH ge
+. Thismeansthattheproofofthe
+securityasfoundintheappendixof[34]doesnotwork
+forDH-EKEasoriginallyproposedin[8]. Tomakethe
+proof work we have to modify the protocol such that
+theyoperateinasubgroup.
+Luckily, the first observation that we cannot operate
+insubgroupsisnotcompletelycorrect: Whileitistrue
+that we cannot encrypt elements of the subgroup with
+the password it nevertheless does not prevent us from
+computinginthesubgroup. Thetrickissimple. Instead
+ofencryptingan element ofthesubgroupwe sendran-
+domlyoneofthe 3
+(cid:23)
+(cid:10)(cid:236) k
+;
+{ h
+;
+-throotscontainedingroup.
+Assuming uniformly and randomly chosen exponents
+and roots we will get a uniform distribution over
+HH ge
+.
+Evenbetter, asthesender actuallychooses theelement
+there is no need to compute roots and randomly select
+oneofthem:Justselectingarandomelementin
+HH ge
+and
+lettingthereceiverconstructthegroupelementbyrais-
+ingittothepowerof 3
+(cid:23)
+(cid:10), k
+;
+{ h issufficient(Notethat
+following equality holds
+-(cid:15) /
+T
+-(cid:15) /
+u(cid:137)(cid:219)(cid:181) (cid:221)¥ (cid:222) J) w
+2
+/
+u6 g(cid:4)u v YO w6 x(cid:14) J) w T 2(cid:27)
+3
+g(cid:4)u v YO w6 x(cid:14) J
+;
+/
+T
+). Thereforenotonlycanweretainse-
+mantic security but we also improve efficiency as now
+onlytwoofthefourexponentiationsrequirelongexpo-
+nents. Further performance improvementscan be ob-
+tained if we choose 2 and/or
+-
+to be small. This will
+speedupexponentiationswithoutanylossofsecurity.
+Instead of
+HH ge
+we could also choose the alternative
+multiplicative group
+t(cid:238) (cid:237)(cid:159) 3_ ¨ (cid:226)
+;
+e
+. Computation is rather
+efficient and additionally the encryption problem dis-
+cussed in Section 6.3 disappear. The cardinality of
+t(cid:238) (cid:237)(cid:159) 3_ ¨ (cid:226)
+;
+e
+is
+ij 3_ ¨ (cid:226)
+;
+T
+¨ (cid:226)
+v Y andthiscanbeefficiently
+mappedto
+b
+(cid:10)Œ k bits. Thismeansthatwithproperen-
+coding a decryption of a random value and a random
+password guess will always produce a legal value and
+cannotserveasbasisfordictionaryattacks. However,
+further study is necessary to find concrete parameters
+andcomparethesecurityandperformancewiththeso-
+lutionfor
+HHf ge
+.
+6.5.VerifiableParametergeneration
+The verification of ephemeral group parameter is
+based on heuristics. There still remains some degree
+of freedom for the opponent to find (pseudo) primes
+through pre-computational search. A safer alternative
+might be to use provable primes generated from Mau-
+rer’sprovableprimenumbergeneration[25].Theserver
+generates
+(cid:23)
+basedonMaurer’salgorithm. Theprimality
+4Theorderofelementsin (cid:239)(cid:239) (cid:7) (cid:240) leakstoomuchinformation. This
+leadseasilytoanalgorithmwhichdistinguisheswithhighprobability
+between æ(cid:220)(cid:242)(cid:133) (cid:243)~ (cid:244)_ (cid:242)0 ı(cid:4) (cid:244)6 (cid:242)(cid:133) (cid:243)¥ ı& (cid:246)
+of
+andatripleofrandomelements.
+h
+canthenbeshownaspartoftheprimalityprooffor
+(cid:23)
+. Onedrawbackof this approach isthat messages get
+biggerandthecodegetsmorecomplicated(thecurrent
+approach can be built on components already existing
+mostTLS toolkits). Additionally we can expecta con-
+siderableperformanceimpactforthisapproach.
+6.6. Reducing the Risk of Stolen Server
+Databases
+As additional measure of precaution we also reduce
+the risks caused by loss or theft of user databases
+from the server’s machine. In the original proposal by
+BellovinandMerrittheserverhadtostorethepassword.
+Thismeantthatanattackergettingaccesstotheserver’s
+database could masquerade as both client and server
+right away. Extensions to EKE such as A-EKE [7], B-
+EKE [20] or SRP [36] reduce the risk of stolen server
+databases to–unavoidable in such situations–dictionary
+attacksasonlya(salted)hashofthepasswordisstored.
+While we argue that dictionary attacks are always fea-
+sible and therefore the password will eventually be re-
+vealedsuchasecondlineofdefenseisneverthelessde-
+sirable. For this reason we used the idea of B-EKE in
+our protocol with the inclusion of
+(cid:129)
+and (cid:146)(cid:4) (cid:147)? (cid:148)(cid:29) (cid:149) (cid:150)(cid:25) (cid:151)(cid:133) (cid:152) and
+the computation of the premaster secret as the hash of
+thetwoDH-keys. UsingthestrongDH-key
+-(cid:13) .V /
+askey
+to the pseudo-random function should completely hide
+anyinformationonthepassword,evenifthepremaster
+secretisavailabletoanattacker. We considertheaddi-
+tionalcostsofthe additionalexponentiations (notethat
+allarewithsmallexponents)worthwhilebutitwouldbe
+straightforwardtomaketheuseofB-EKEoptionaland
+allowperformancecriticalenvironmentstotradetherisk
+ofstolenserverdatabaseswithimprovedperformance.
+6.7.WhyEKE?
+WealsoinvestigatedalternativestoEKE.Whilemany
+of them do have various advantages over DH-EKE
+none could match DH-EKE with its minimal impact
+onTLS:TwoadditionsinClientKeyExchangeand
+ServerKeyExchange and a minimal and unavoid-
+ablechangein the protocolstate machine(reversionof
+thetwofinishedflows)seemstobethesmallestchange
+possible to integrate secure password based protocols.
+Findbelowsomemoredetailedexplanationswhywere-
+jectedtheotherprotocols.
+6.7.1. SPEKE An alternative protocol is the Simple
+PasswordEncryptedKeyExchange(SPEKE)[19]. The
+protocolisalsobasedonaDiffie-Hellmankeyexchange
+but instead of encrypting the half-keys with the pass-
+word it uses the password to derive a generator for a
+largeprime-ordersubgroup.
+10IthastwomainadvantagesoverDH-EKE.Ontheone
+handtheproblemduetonon-uniformdistributionofen-
+crypted elementsdoes not occur and on the other hand
+there is a possibility to improve performance by com-
+putingonellipticcurves.5
+Unfortunately integrating SPEKE into TLS is not
+straightforward:AspreviouslyexplainedtheClient-
+Hello message cannot carry identity information and
+asidentityofthepeertobeknownbeforeanybodycan
+starttheprotocolwerequiremoreradicalchangesinthe
+flows,inparticularitwouldrequiretwomoremessages
+and/orchangesinFinishedmessages.
+6.7.2. SRP Yetanotherprominentproposalisthese-
+cure remote password protocol (SRP) [36]. While it
+seemsthemostefficientsystemwhich reducesalsothe
+risk when the server database is stolen it has similar
+problemswithintegrationasSPEKE.Theprotocolcan-
+not be started in flow 2 which means that the hand-
+shakewouldrequireanadditionalrequestresponsepair.
+Takingintoaccountcurrentnetworkdelaysandperfor-
+manceoftodayscomputersleadustotradeperformance
+forreducedflows.
+6.7.3. What about Protocols relying on Server Pub-
+lic Keys? Theresponder sideinTLS isquiteoftena
+stand-aloneservercapableofkeepingstrongpublickey
+pairs. You might wonder if this cannot be exploited to
+achieveeasierandmoreefficientprotocols. Indeed,var-
+iousprotocols[18,17]showhowtodothisinaprovably
+secure and arguably simpler manner. While these pro-
+tocolsaredefinitelysuitableinmanyapplicationsthere
+isonemajordrawback: Theclienthastogettheproper
+publickeyoftheserver. Onesolutionistoasktheuser
+for confirmation of a fingerprint as suggested in [18].
+While this is definitely preferable over fixing the pub-
+lic key in the software it is quite cumbersome for the
+user. You might argue now that current web-browsers
+alreadymanageroot-certificatesandaddingonemoreis
+notabigdeal. Whilethisistruethereistheproblemof
+keyrevocation. Additionally oneshould notignorethe
+fact that it is not too hard to trick ignorant users in in-
+stallingbogusrootkeystotheirkeyring: Generateyour
+own root CA, build a fancy web site and require https
+usingcertificatesrelyingonyourownrootCAtoaccess
+it. Thelikelihoodthatsomeuserwillinstall thiskeyis
+ratherlarge. Evenworseyoucantellwhohasinstalled
+your root CA certificate if you track user access to the
+siteandthecertificateandthenyoucantargetthatuser
+for a man-in-the-middle attack. In fact a similar man-
+in-the-middleattackhashappenedmid-1998toaDutch
+web banking site. As EKE-like protocols rely less on
+5UsingellipticcurvesforDH-EKEseemsratherhardaswewould
+havetobijectivelymaptheelementsonthecurveontoarangeof
+(cid:239)(cid:239)
+theuser’sawarenessofthesuchinvolvedriskstheyare
+clearlyamoresecureapproach.
+6.7.4.Others Furtherprotocolsweconsideredwhere
+theEKEvariantduetoLucks[24]andprotocolsbased
+oncollisionfulhash[1,3]. However,noneoftheirfea-
+turecouldoutweighthesimplicityoftheintegrationof
+DH-EKEinTLS.
+7. Conclusion
+We outlined a number of situations where the cur-
+rent cipher suites of TLS are not completely satisfac-
+tory, e.g. home banking over the web. Secure pass-
+word based authenticated key-exchange protocols can
+improvethesituationandcanbeintegratedintoTLSin
+anefficientandnon-intrusivemanner. Wevalidatedour
+approachbyintegratingtheciphersuiteintoain-house
+toolkit providing the complete SSL3.0 protocol suite.
+Due to our careful protocol design with a reliance on
+existing building blocks and the non-intrusive integra-
+tion of the protocol flows we had to adapt the protocol
+engineonlywithfewandsmallchanges. Measurements
+of the performance showed that our cipher suite com-
+pares well with other cipher suites. DH-EKE outper-
+formed comparable cipher suites providing mutual au-
+thentication and perfect forward secrecy by a factor of
+up to two (SSL DHE DSS WITH DES CBC SHA) and
+wasonlyslightlyslowerthanthecommonlyusedcipher
+suiteSSL RSA WITH RC4 128 SHA.
+In a modification to the original DH-EKE protocol
+we showed further that the session keys not only can
+butalso shouldbecomputedin subgroupsofprime or-
+der: Weachievebettersecurityandasaside-effectalso
+improvethe performance of DH-EKE. In line with the
+security analysis as found in the appendix of [34] we
+getreasonable assurance that thesecurity of our proto-
+colscanbefoundedonthehardnessofDDH.However,
+in the light of recent development in the formalization
+of the security of key agreement protocols [4, 33] it’s
+anopenquestionif theprotocol couldalsobeformally
+provensecureinthesestrongerandmorerigidmodels.
+Acknowledgments
+WewouldliketothankVictorShoup,LukeO’Connor
+andBirgitPfitzmannfortheirinvaluablediscussionson
+cryptographicandalgorithmicissuesrelatedtothisdoc-
+ument and N. Asokan and Ahmad-Reza Sadeghi for
+theirdetailedcomments.
+.
+11References [15] A. O. Freier, P. Kariton, and P. C. Kocher. The SSL
+protocol: Version3.0. Technicalreport,InternetDraft,
+[1] R.J.AndersonandT.M.A.Lomas. Fortifyingkeyne-
+1996. WillbeeventuallyreplacedbyTLS.
+gotiationschemeswithpoorlychosenpasswords. Elec-
+[16] L.Gong,M.Lomas,R.Needham,andJ.Saltzer. Pro-
+tronicsLetters,30(13):1040–1041,June1994.
+tectingpoorlychosensecretsfromguessingattacks. In
+[2] V.Ashby,editor.1stACMConferenceonComputerand
+ProceedingsoftheTwelthACMSymposiumonOperat-
+CommunicationsSecurity,Fairfax,Virginia,Nov.1993.
+ing Systems Principles. The Wigwam, Litchfield Park,
+ACMPress.
+Arizona,Dec.1989. Arevisedjournalversionappeared
+[3] S. Bakhtiari, R. Safavi-Naini, and J. Pieprzyk. On
+as[17].
+password-based authenticated key exchange using col-
+[17] L.Gong,M.Lomas,R.Needham,andJ.Saltzer. Pro-
+lisionfulhashfunctions. In1stAustralasianConference
+tecting poorly chosen secrets from guessing attacks.
+onInformationSecurityandPrivacy(ACISP’96),num-
+IEEE Journal on Selected Areas in Communications,
+ber1172inLectureNotesinComputerScience,pages
+11(5):648–656,June1993.
+299–310.Springer-Verlag,BerlinGermany,1996.
+[18] S. Halevi and H. Krawczyk. Public-key cryptogra-
+[4] M.Bellare,R.Canetti,andH.Krawczyk.Amodularap-
+phy and password protocols. In 5th ACM Conference
+proachtothedesignandanalysisofauthenticationand
+onComputerandCommunicationsSecurity, SanFran-
+keyexchangeprotocols. InProceedingsofth30thAn-
+cisco, California, Nov. 1998. ACM Press. Revised
+nualSymposiumontheTheoryofComputing,1998.
+version available as Theory of Cryptography Library:
+[5] M.BellareandP.Rogaway. Randomoraclesareprac-
+Record99-04.
+tical: A pardigm for designing efficient protocols. In
+[19] D. P. Jablon. Strong password-only authenticated key
+Ashby[2]. alsoappeared(inidenticalform)asIBMRC
+exchange. ComputerCommunicationReview,26(5):5–
+19619(87000)6/22/94.
+26,Sep1996.
+[6] M. Bellare and P. Rogaway. Optimal asymmetric en-
+[20] D.P.Jablon.Extendedpasswordkeyexchangeprotocols
+cryption – how to encrypt with RSA. In I. Damgard,
+immunetodictionaryattack.InProceedingsoftheWET-
+editor, Advances in Cryptology – EUROCRYPT ’94,
+ICE’97 Workshop on Enterprise Security, Cambridge,
+Lecture Notes in Computer Science, pages 92–111.
+MA,USA,June1997.
+Springer-Verlag,BerlinGermany,1994. Final(revised)
+[21] B. Kaliskiand J. Staddon. PKCS#1: RSA cryptogra-
+versionappearedNovember19,1995.
+physpecifications. Technicalreport,RSALaboratories,
+[7] S. Bellovin and M. Merrit. Augmented encrypted key
+Sept.1998. Version2.0.PublishedinOctober1998as
+exchange:apassword-basedprotocolsecureagainstdic-
+InternetRFC2437.
+tionaryatttacksandpasswordfilecompromise.InAshby
+[22] J.T.KohlandB.C.Neuman.TheKerberosnetworkau-
+[2],pages244–250.
+[8] S.M.BellovinandM.Merrit. Encryptedkeyexchange: thenticationservice(V5).InternetRequestforComment
+Password-based protocols secure against dictionary at- RFC1510,ProjectAthena,MIT,1993.
+[23] C. H. Lim and P. J. Lee. A key recovery attack on
+tacks. In Proceedings of the IEEE Symposium on Re-
+discrete log-based schemes using a prime order sub-
+searchinSecurityandPrivacy,May1992.
+[9] S.M.BellovinandM.Merritt. LimitationsoftheKer- group. In B. S. K. Jr., editor, Advances in Cryptology
+beros authentication system. In USENIX Conference –CRYPTO’97,number1294inLectureNotesinCom-
+Proceedings,pages253–267,Dallas,TX,Winter1991. puter Science, pages 249–263. Springer-Verlag, Berlin
+USENIX.Anearlierversionofthispaperwaspublished Germany,Aug.1997.
+in the October, 1990 issue of Computer Communica- [24] S. Lucks. Open key exchange: How to defeat dictio-
+tionsReview. naryattackswithoutencryptingpublickeys. InSecurity
+[10] T.Berners-Lee,R.T.Fielding,H.F.Nielsen,J.Gettys, ProtocolWorkshop’97,EcoleNormaleSuprieure,Paris,
+andJ.Mogul. Hypertexttransferprotocol–HTTP/1.1. Apr.1997.
+InternetRequestforCommentRFC2068,Jan.1997. [25] U. M. Maurer. Fast generation of prime numbers and
+[11] M.BishopandD.V.Klein. Improvingsystemsecurity securepublic-keycryptographicparameters. Journalof
+viaproactivepasswordchecking.Computers&Security, Cryptology,8(3):123–155,1995.
+14(3):233–249,1995. [26] A.MedvinskyandM.Hur. Additionofkerberoscipher
+[12] D. Bleichenbacher. Chosen ciphertext attacks against suitestotransportlayersecurity(TLS). InternetDraft,
+protocols based on the rsa encryption standard pkcs. Aug.1999. ExpiresJanuary22,2000.
+In H. Krawczyk, editor, Advances in Cryptology – [27] A.J.Menezes,P.C.vanOorschot,andS.A.Vanstone.
+CRYPTO’98, number 1462 in Lecture Notes in Com- Handbook of applied cryptography. CRC Press series
+puterScience,pages1–12.Springer-Verlag,BerlinGer- ondiscretemathematicsanditsapplications.CRCPress,
+many,Aug.1998. 1997. ISBN0-8493-8523-7.
+[13] T.DierksandC.Allen. TheTLSprotocolversion1.0. [28] J. Mitchell, V. Shmatikov, and U. Stern. Finite-state
+Internet Request for Comment RFC 2246, Jan. 1999. analysis of SSL 3.0. In 7th USENIX Security Sympo-
+ProposedStandard. sium,1998.
+[14] W.DiffieandM.Hellman. Newdirectionsincryptog- [29] R.MorrisandK.Thompson. Passwordsecurity:Acase
+raphy. IEEE Transactions on Information Theory, IT- history. Commun.ACM,22(11),Nov.1979.
+22(6):644–654,Nov.1976.
+12[30] S.Patel. Numbertheoreticattacksonsecurepassword [35] D.WagnerandB.Schneier.AnalysisoftheSSL3.0pro-
+schemes.InProceedingsoftheIEEESymposiumonRe- tocol.InSecondUSENIXWorkshoponElectronicCom-
+searchinSecurityandPrivacy,ResearchinSecurityand merce, pages 29–40, Oakland, California, Nov. 1996.
+Privacy,pages236–247,Oakland,CA,May1997.IEEE USENIX.
+ComputerSocietyPress. [36] T.Wu. Thesecureremotepasswordprotocol. InSym-
+[31] RSA. PKCS #5: Password-basedencryptionstandard. posium on Network and Distributed Systems Security
+Technicalreport,RSALaboratories,Feb.1999. Version (NDSS’98),pages97–111,SanDiego,California,Mar.
+2.0;ThirdDraft. 1998.InternetSociety.
+[32] V.Shoup. Whychosenciphertextsecuritymatters. Re- [37] T.Wu.Areal-worldanalysisofkerberospasswordsecu-
+searchReportRZ3076(#93122),IBMResearch,Nov. rity. InSymposiumonNetworkandDistributedSystems
+1998. Security(NDSS’99),SanDiego,CA,Feb.1999.Internet
+[33] V.Shoup. Onformalmodelsforsecurekeyexchange. Society.
+Research Report RZ 3120 (#93166), IBM Research, [38] P. R. Zimmermann. The Official PGP User’s Guide.
+Apr.1999. MITPress,Cambridge,MA,USA,1995. ISBN0-262-
+[34] M.Steiner,G.Tsudik,andM.Waidner. Refinementand 74017-6.
+extension ofencrypted key exchange. ACMOperating
+SystemsReview,29(3):22–30,July1995.
+13Appendix: DataStructures andDefinitions
+Figure 4 defines the necessary additional data structures for the ClientKeyExchange and ServerKey-
+Exchange messages. For a standardization of TLS extension one also would have to define the corresponding
+ciphersuitecodes. Figure5proposespossibleciphersuitesfortheDH-EKEprotocolbutleavesforobviousreasons
+thecodesblank.
+struct
+˛
+select(KeyExchangeAlgorithm)
+˛
+casedh eke: /*newoption*/
+ServerDHEKEParams params;
+casediffie hellman:
+ServerDHParams params;
+Signature signed params;
+casersa:
+ServerRSAParams params;
+Signature signed params;
+— ;
+— ServerKeyExchange;
+struct
+˛
+ServerDHParams key params;
+ServerDHParams verifier params;
+ServerDHParamsProof proof; /*optional*/
+— ServerDHEKEParams; /*newtype*/
+struct
+˛
+seed (cid:224)(cid:159) ˜
+“(cid:247)“
+¨ YO ł (cid:10)(cid:159) k(cid:11) ø ;
+—
+struct
+ServerDHParamsProof; /*newtype*/
+˛
+select(KeyExchangeAlgorithm)
+˛
+casedh eke: /*newoption*/
+ClientDHEKEParams params;
+casersa:
+EncryptedPreMasterSecret;
+casediffie hellman:
+ClientDiffieHellmanPublic;
+— exchange keys;
+— ClientKeyExchange;
+struct
+˛
+String clientIdentity;
+EncryptedDHParams params;
+— ClientDHEKEParams; /*newtype*/
+struct
+˛
+password-encrypted dh Xs (cid:224) k “(cid:247)“ ¨ YO ł (cid:10)(cid:159) k(cid:16) ø ; — EncryptedDHParams; /*newaddition*/
+Figure4.AddingDH-EKE/TLStodatastructuresofTLS.
+CipherSuite TLS DH EKE DES CBC WITH NULL SHA = ˛ , — ;
+CipherSuite TLS DH EKE RC4 128 WITH NULL MD5 = ˛ , — ;
+CipherSuite TLS DH EKE DES CBC WITH DES CBC SHA = ˛ , — ;
+CipherSuite TLS DH EKE 3DES EDE CBC WITH 3DES EDE CBC SHA = ˛ , — ;
+CipherSuite TLS DH EKE RC4 128 WITH RC4 128 MD5 = ˛ , — ;
+CipherSuite TLS DH EKE IDEA CBC WITH IDEA CBC SHA = ˛ , — ;
+CipherSuite TLS DH EKE RC4 128 WITH NULL SHA = ˛ , — ;
+CipherSuite TLS DH EKE DES CBC WITH NULL MD5 = ˛ , — ;
+CipherSuite TLS DH EKE DES CBC WITH DES CBC MD5 = ˛ , — ;
+CipherSuite TLS DH EKE 3DES EDE CBC WITH 3DES EDE CBC MD5 = ˛ , — ;
+CipherSuite TLS DH EKE RC4 128 WITH RC4 128 SHA = ˛ , — ;
+CipherSuite TLS DH EKE IDEA CBC WITH IDEA CBC MD5 = ˛ , — ;
+Figure5.ProposedCipherSuitesforDH-EKE/TLS.
+14

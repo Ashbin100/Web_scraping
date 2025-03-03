@@ -1,0 +1,1318 @@
+Ramblr: Making Reassembly Great Again
+Ruoyu Wang, Yan Shoshitaishvili, Antonio Bianchi, Aravind Machiry,
+John Grosen, Paul Grosen, Christopher Kruegel, Giovanni Vigna
+University of California, Santa Barbara
+{fish, yans, antoniob, machiry, jmg, pcgrosen, chris, vigna}@cs.ucsb.edu
+Abstract—Static binary rewriting has many important ap- However, when source code is absent, such as in the case of
+plications in reverse engineering, such as patching, code reuse, proprietary software, the problem is much more complex. If
+andinstrumentation.Binaryreassemblingisanefficientsolution the user of the software is unwilling to wait for the vendor to
+for static binary rewriting. While there has been a proposed ship a new binary (or if the vendor no longer exists), the only
+solution to the reassembly of binaries, an evaluation on a real-
+option is to patch the binary directly.
+world binary dataset shows that it suffers from some problems
+that lead to breaking binaries. Those problems include incorrect Patching binary code introduces challenges not present
+symbolization of immediates, failure in identifying symbolizable when patching source code. When a patch is applied at
+constants,lackofpointersafetychecks,andotherissues.Failure the source code level, the compiler will redo the process
+in addressing those problems makes the existing approach un- of arranging code and data in memory and handling links
+suitable for real-world binaries, especially those compiled with
+between them. In binary code, this is extremely difficult,
+optimizations enabled.
+since this linkage information is discarded by the compiler
+In this paper, we present a new systematic approach for once finished. A performant binary patching process would
+binaryreassembling.Ournewapproachisimplementedinatool need to rediscover the semantic meanings of different regions
+calledRamblr.WeevaluateRamblron106real-worldprograms of program memory, and reassemble the program, redoing
+on Linux x86 and x86-64, and 143 programs collected from the the compiler’s arrangement while preserving cross-references
+Cyber Grand Challenge Qualification Event. All programs are
+among code and data. As a result of the difficulties inherent
+compiled to binaries with a set of different compilation flags
+to this procedure, the patching of binary code is currently
+in order to cover as many real-world scenarios as possible.
+an ad-hoc process. Current work in the research community
+Ramblr successfully reassembles most of the binaries, which
+either makes unrealistically strict assumptions, does not pro-
+is an improvement over the state-of-the-art approach. It should
+be noted that our reassembling procedure yields no execution vide realistic functionality guarantees, or results in significant
+overhead and no size expansion. performanceand/ormemoryoverhead.Becauseofthis,notool
+currently exists that can automatically and reliably patch real-
+world binary software.
+I. INTRODUCTION
+In this paper, we present a novel, systematic approach to
+Our world is extremely software-dependent. Because of
+the reliable patching of software. Our work builds on the
+this, disruption caused by flaws in this software has signif-
+reassembleabledisassemblyideaintroducedbyUroboros[25],
+icant impact in the “real world”. These flaws come in two
+buteliminatesmanyofitslimitations,addsfunctionalityguar-
+forms: bugs that simply affect functionality and bugs that lead
+antees(or,unlikepriorwork,theabilitytoabortthereassembly
+to exploitable vulnerabilities. While the former cause their
+process when these guarantees cannot be met), and results in
+own level of havoc on our connected society, the latter are
+zero performance overhead compared to the original binary.
+especially dangerous, since vulnerabilities can be leveraged
+We disassemble the original binary, properly identify symbols
+by a proficient attacker to perform a larger-scale compromise.
+and intended jump targets, insert the necessary patches, and
+For example, an unpatched vulnerability in an internet-facing
+reassemble the assembly into the patched binary.
+service could be exploited by attackers and used as a pivot
+pointintotheinternalnetworksoftheorganizationrunningthe Our solution is based on advanced static analyses, which
+service. Because of this risk, patches to remediate exploitable introduces moderate analysis time requirements. To accom-
+bugs must be deployed as quickly as possible. modate situations in which quick patching is paramount (e.g.,
+when an identified zero-day vulnerability needs to be patched
+If the source code of an application is available, patching
+as quickly as possible), we developed a series of workarounds
+a bug is fairly straightforward: the source code is modified to
+that drastically reduce the analysis time requirements while
+preclude the vulnerability (e.g., by adding a safety check or
+relaxing some of the guarantees of functionality.
+refactoring application logic), and the program is recompiled.
+We describe our approach, discuss the workarounds, and
+evaluate our approach on two corpora of binaries: a large set
+Permission to freely reproduce all or part of this paper for noncommercial of “realistic” binaries developed for the DARPA Cyber Grand
+purposes is granted provided that copies bear this notice and the full citation
+Challenge,andthesetofGNUCoreutilsbinariesthathasalso
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author been evaluated by related work. Our evaluation measures the
+(for reproduction of an entire paper only), and the author’s employer if the reliability of our binary rewriting approach and demonstrates
+paper was prepared within the scope of employment. an application in the form of the insertion of general binary
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+hardeningtechniquesintopreviously-unhardenedbinaries,and
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23225 finds that we make significant improvements over the state ofthe art. While existing work breaks between 15% and 60% of transfer, and recursively follows those targets to decode any
+the binaries it rewrites, our approach results in a successful encountered bytes [12]. Recent research on static disassembly
+reassembly rate of over 98%. mostly focuses on complicated corner cases in binaries [3],
+[15].
+We summarize our contributions as follows:
+The de-facto standard in industry for binary disassembling
+• Wedemonstratethatcorrectlydisassemblingandreassem- is IDA Pro, although recently, other tools and systems, like
+bling binaries on a large scale is not as easy as previous Hopper, Binary Ninja, angr, BAP, Radare2, etc. have started
+work has claimed. We identify several critical challenges to challenge its dominance [5], [21], [16], [23], [6].
+in binary reassembling that are not thoroughly explored
+Disassemblyisthefirststepincontrolflowgraphrecovery,
+in previous work, and show that failing to tackle these
+challenges will result in broken binaries. Our solution and other highly effective techniques have been developed
+to recover the control flow graph of a binary [12], [21].
+eliminates several key assumptions made by previous
+Recentresearchsuggeststhat,whilemoderndisassemblersand
+workandgreatlyexpandsthescopeofbinariesthatbinary
+disassembly techniques are able to achieve a high coverage
+reassembling can be applied to.
+• We propose a systematic solution, based on localized of disassembled instructions on stripped, real-world binaries,
+properly identifying functions remains a challenge, especially
+data flow analysis and value-set analysis, to solve these
+on optimized binaries [1]. Even for the best techniques, ac-
+challenges in real-world binaries. Our solution allows a
+curacy falls drastically from 99%, on binaries compiled with
+certain level of functionality guarantees, and allows a
+no optimization (i.e., O0 optimization level in GCC), to only
+trade-off to be made between analysis speed and guar-
+82%, on binaries compiled with nearly full optimizations (i.e.,
+anteed functionality.
+• With a new definition of procedures and an improved O3 optimization level in GCC), combined with a noticeable
+increase in both false positives and false negatives [1]. As we
+control flow graph recovery technique, our solution also
+will discuss in the following sections, current techniques have
+makes it possible to freely rearrange functions when
+apathologicalrelianceonproperidentificationoffunctionstart
+reassembling, which was never done by any previous
+points, a dependency that we remove with our approach.
+work. This is critical in certain use cases.
+• WeimplementoursolutioninatoolcalledRamblr,and
+evaluateitonalargesetofbinariesfromtheDARPACy- B. Content Classification
+ber Grand Challenge, as well as real-world binaries from
+After disassembling, the content within a binary must be
+GNU Coreutils. In order to capture important features of
+classified (i.e., differentiated as either code or data) before the
+binariesthataremostlyusedintherealworld,weamplify
+binary can be reassembled. This problem is formally referred
+the amount of binaries in our dataset by compiling them
+to as content classification, and is believed to be difficult
+with different optimization levels and compiler flags, fur-
+in binary analysis [22]. As previous research demonstrates,
+therstressingourtool.Toourknowledge,wedemonstrate
+differentiating code and data statically is “unresolvable” in
+the first reassembling technique that works on optimized
+general, while doing so in a dynamic approach will inevitably
+binaries. We also demonstrate several applications of
+face the classical problems of dynamic coverage and state
+binary reassembling, implement a few of them on top
+explosion [11].
+of reassembling, and evaluate the overhead compared
+with several alternative applications of binary patching, Recent work has been advancing the state of binary disas-
+showing that our technique has a significantly lower sembling. While the problem is still unsolvable in general, we
+execution overhead and higher functionality guarantees leverage, and improve, modern techniques stemming from the
+than the alternatives. control-flow integrity (CFI) community for this purpose [29].
+In the next section, we will provide an overview of related
+C. Binary Rewriting
+work and discuss how it relates to our approach.
+Binary rewriting refers to the process of transforming one
+binary into another, either statically or dynamically, while
+II. BACKGROUNDANDRELATEDWORK
+maintainingexistingfunctionality.Normally,oneormorenew
+Ourtechniquebuildsoncurrentworkinthefieldtoachieve features or behaviors are optionally added to the transformed
+safe reassembly of binaries. In this section, we provide an binary during this process. Static binary rewriting, where
+overview of the state of the art to provide a proper frame for the binary file itself is modified, generally introduces lower
+our work. overhead when compared with dynamic counterparts, where
+binary code is instrumented at runtime. Thus, static rewriting
+is widely used in control flow integrity protection [29], [24],
+A. Static Disassembling
+binaryhardening[14],[27],securitypolicyreinforcement[26],
+There is much work in the literature regarding the correct binary instrumentation, etc. Traditionally, static binary rewrit-
+and complete disassembly of binaries. Linear sweeping [7], ing is either performed via detouring, which involves adding
+which refers to sweeping from the beginning to the end of the jump-out hooks to inserted code, or with full binary trans-
+executable region of a binary and decoding all encountered lation, lifting all code to an intermediate representation and
+bytesasinstructions,isthesimplestsuchtechnique.Themore translating it back to machine code. Both manners incur
+advanced approach, that most disassembling techniques build significant overhead on the resulting binary when compared
+upon, is recursive traversal. This technique starts from the with the original binary. In practice, full binary translation
+entry point of a binary, resolves the targets of each control usually results in a binary that is very different, in terms of
+2cache locality and actual control flow, from the original one. Uroboros makes many assumptions that preclude its use
+Binary reassembling does not suffer from those drawbacks, on many real-world binaries, and we propose significant
+as the reassembled binary is generated from the recovered improvements on its approach in this paper. In the next
+assembly code, avoiding the need for detours or complete section, we will discuss Uroboros’ limitations and why they
+binary translation. prevent it from working on many binaries. After this, we
+describe our proposed approach, eliminating these limitations.
+Dynamicbinaryrewritingtechniquestransformbinariesas
+In Section X, we evaluate our approach against the released
+they are executing, and are able to guarantee a full-coverage
+implementationofUroboroswrittenandreleasedbyitsauthors
+transformationofcommercialoff-the-shelf(COTS)orstripped
+and demonstrate improvements of our approach. Finally, in
+binaries at a high cost of performance overhead. Common
+Section XI, we discuss limitations of our approach and give
+dynamic rewriting tools include Pin, DynamoRIO [4], Val-
+potential directions on future work.
+grind [13], and Paradyn/Dyninst [10], which are all widely
+used in dynamic binary instrumentation.
+III. PROBLEMSWITHCURRENTTECHNIQUES
+D. Reassembleable Disassembling
+As discussed in Section II, our technique aims to achieve
+reassembly on a wider range of binaries than Uroboros does.
+804867d: sub esp,0x8
+Uroboros is a first step in the direction of reassembleable
+8048680: push DWORD PTR [ebp-0x10]
+8048683: push 0x80487c8 disassembly, but it does not perform well enough to work on
+8048688: call 80483e0 many real-world binaries. This is due to simplifying assump-
+804868d: add esp,0x10 tions made by the authors. We present their assumptions here,
+8048690: sub esp,0xc
+followed by a motivating example demonstrating failure cases
+8048693: push DWORD PTR [ebp-0x18]
+for Uroboros, and a discussion of the challenging situations
+8048696: call 80483f0
+804869b: add esp,0x10 that cause such corner cases.
+804869e: jmp 80486b9
+A. Uroboros’ Assumptions
+Listing 1: An example output from objdump of a binary
+without relocation information. As discussed in Section II, Uroboros categorizes symbol
+references into four categories: code-to-code (c2c), code-to-
+Theassemblygeneratedbyadisassemblerisusuallyunfea- data(c2d),data-to-code(d2c),anddata-to-data(d2d).Because
+sibleforassembling,duetothelackofrelocationinformation. programs do not contain overlapping instructions, it is reason-
+Listing 1 shows a small piece of assembly extracted from a able to assume that the symbol references that target code
+strippedbinary.Thereadercanobservethattheassemblycon- (c2c and d2c) must point to the beginning of an instruction 1.
+tains absolute addresses, as opposed to labels. Theoretically, To handle data-pointing symbol references (c2d and d2d) in
+an assembler can take an assembly with absolute addresses Uroboros, the following three assumptions are made:
+andassembleitintoaworkingbinary.However,thisapproach
+a) Allpointerstothedataregionmustbestoredatanaddress
+is incompatible with binary patching and retrofitting, as it
+aligned to the bit-width of the machine.
+would require all of the basic blocks in the binary to be
+b) Notransformation(i.e.,ofanybaseaddresses)isrequired
+at their original positions. The crux of binary reassembling
+to be performed on the original binary. Hence in the
+is the ability to relocate any binary code without any re-
+reassembled binary, all data sections begin at the same
+location information. The procedure that converts absolute
+address as their counterparts in the original binary.
+addresses into corresponding labels, or symbol references,
+c) d2c symbols are only used as function pointers or jump
+is called symbolization, which is the core of reassembling.
+tables.Henceanyd2csymbolreferencemusteitherpoint
+Symbolization was first proposed and developed in trace-
+to the beginning of a function, or be part of an identified
+oriented programming [28], and then used by Uroboros to
+jump table.
+make reassembling binaries feasible [25]. Since our binary
+reassembling approach stems from the approach described in
+Withthethreeassumptionsabove,averylowfalsepositive
+Uroboros, we first summarize the original approach here.
+and false negative rate of symbolization is achieved in the
+Symbolizationattemptstodeterminewhetheranimmediate original paper.
+value is directly or indirectly used as a symbol reference (i.e.,
+In the course of developing our approach, we identified
+whether it is symbolizable). In Uroboros, all references in a
+cases of reassembled binaries being broken after applying the
+binary can be categorized into four different types, depending
+originalsymbolizationapproach.Afterinvestigation,wefound
+on the location of the reference itself and the location of
+thattherearemultiplecomplexcornercasesthatmustbecon-
+its target: code-to-code (c2c), code-to-data (c2d), data-to-code
+sideredinordertosymbolizeallsymbolizableimmediates,and
+(d2c), and data-to-data (d2d). Given predefined code and data
+symbolize none of the non-symbolizable immediates. Further,
+memory regions from the binary, the symbolization process
+we found that two of the original assumptions (assumption b)
+checksiftheimmediatevaluefallsintoanypredefinedmemory
+and c)) about d2c and d2d symbol references are too strict,
+region.Ifitdoes,asymbolnameiscreatedforthelocationand
+whichleadstothebreakingofreassembledbinaries,ordonot
+references to that location are changed from being absolute
+support the goal of binary patching and retrofitting, which are
+references (via immediates) to symbolic references (via the
+important applications of reassembling.
+symbol name). Once this is done, code can be inserted into
+there-symbolizedassemblyandthemodifiedassemblycanbe 1Specially constructed binaries could contain overlapping instructions,
+reassembled into a new binary. whichbothUroborosandusignore.
+3optimization enabled and C++ binaries. Hence relying on
+Fig. 1: A typical section layout of an ELF binary.
+all function start points being successfully identified is not
+practical, which is why our solution does not assume a set of
+.text perfectly-identified function start points.
+... B. Motivating Failure Case
+The successful operation of Uroboros depends on the
+.rodata perfect execution of its symbolization step. Uroboros linearly
+scans the data section of binaries, and considers every word-
+sized buffer whose integer value falls in a memory region to
+.data
+be a symbolizable integer. The idea seems straightforward,
+but it does not necessarily work due to false positives and
+.bss false negatives during the symbolization step. An immediate
+might be a symbolizable immediate, meaning that it should
+be treated as a reference, or a non-symbolizable immediate,
+Assumption a) assumes that all pointers are stored at an
+meaning that it might look like a reference, but is actually
+alignedaddress.Thisassumptionisgenerallyacceptable,since
+a true immediate. Any incorrect classification of the above
+most compilers tend to align pointers in memory for the sake
+during reassembling directly leads to the generation of broken
+ofbetterperformance.Butitdoesnotnecessarilyholdtruefor
+reassembled binaries. As we will show throughout the rest of
+all data constructs. Listing 2 demonstrates one such example
+this section and in our evaluation, this incorrect classification
+with a custom packing. A function pointer (field cb) is stored
+happens rather frequently.
+atoffset1ofstructdp.Assumingdpisstoredatamachinebit-
+aligned address, the function pointer my_callback must be Uroboros depends on the three assumptions described
+stored at an aligned address. Accepting assumption a) breaks previously in order to lower the chance of collisions between
+any binary that has a data construct holding an unaligned normal data and pointers, without the need of any advanced
+pointer like Listing 2. Our technique supports unaligned stor- static analysis. Now we demonstrate why this approach is not
+ageandaccessofpointers,allowingustohandlearbitrarydata generally applicable.
+structures.
+Consider the code snippet shown in Listing 3. Suppose
+typedef int (*callback)(); the compiled binary has a .text section ranging from
+0x8000000 to 0x8050000, a floating point variable a has an
+#pragma pack(1) /* Disables struct field aligning */ initial value of 4e−34. Its binary representation, as shown
+struct dp_t
+in the listing, happens to be 3d ec 04 08, which is
+{
+unsigned char flag; 0x804ec3d on little-endian machines. Uroboros mistreats the
+/* A function pointer stored at an unaligned initial value as a symbolizable integer and symbolizes it.
+address */ This is incorrect, and the binary is consequently broken after
+callback cb;
+reassembling. The root cause is that Uroboros does not know
+};
+the real type of any piece of data in the binary: all of its
+static dp_t dp = {1, my_callback}; assumptions depend on the low odds of misidentification of a
+normal piece of data as a pointer.
+Listing 2: An example of unaligned pointer storage. Assume
+struct dp is stored at an aligned address 0x600000. static float a = 4e-34; 8060080 3d ec 04 08
+(a) Definition of a float variable (b)Binaryrepresentationoffloat
+Assumptionb)directlyleadstotherequirementthatalldata
+a. a.
+sections must be put at their original addresses in the origi-
+nal binary, which, in some cases, breaks binary retrofitting.
+Figure 1 shows a common section layout for ELF binaries Listing 3: An example of a pointer value collision occurring
+on Linux. Usually, a binary may have a read-only section in a float. .text section begins at 0x8000000 with size
+.rodata, a read-write section .data, and a section .bss 0x50000.
+which is initialized to all zeros at program start. If all three
+sections are close enough to each other, we cannot add any As we discuss in this paper, Ramblr takes a different
+custom data to .rodata or .data section. Alternatively, a routeofperformingdataidentificationandtyperecognitionon
+new section must be created to hold the newly inserted data, the target binary to support the symbolization step. The more
+which, in certain cases where memory usage is a concern, non-symbolizabledataweidentify,thelesssymbolizationfalse
+is suboptimal. Our technique uses advanced static analysis positivestherewillbe.Byutilizingdataidentificationandtype
+to support arbitrary relocation and resizing of all sections, recognition, our solution is able to identify the consecutive 4
+discarding this assumption in the process. bytes located at 0x8060080 as a floating point constant, and
+avoids symbolizing it.
+Assumptionc)simplydoesnotholdtrueinmanybinaries.
+The root issue is, as we mentioned in Section II-A, that Inthefollowing,wewilldetailthedifferentchallengesthat
+identifying function start points on stripped binaries is still Uroboros is unable to overcome, and that Ramblr addresses
+an unsolved problem, especially on binaries compiled with with advanced static analysis.
+4C. Unsurmounted Challenges /* Assume the array is stored at 0x80609e8 */
+uint64_t state[16] = {0};
+Many challenges arise when applying current reassembly
+void sprng(uint64_t seed)
+approaches on a large set of real-world binaries. Like the
+{
+motivating failure case in Section III-B, these challenges
+uint64_t state_64 = seed;
+stem from corner cases that cause incorrect symbolization for (int i = 0; i < 16; i++)
+classifications. These classifications fall into two categories: {
+state_64 ˆ= state_64 >> 27;
+Symbolizationfalsenegatives.Asymbolizationfalsenegative state_64 ˆ= state_64 >> 13;
+state_64 ˆ= state_64 >> 46;
+occurs when an immediate value (which is deemed as a
+state[i] = state_64 * 1865811235122147685;
+non-symbolizable immediate initially) does not fall into
+}
+anyknownmemoryregion,butisusedaspartofapointer }
+in the binary.
+Symbolization false positives. An immediate value, initially (a) An implementation of xorshift PRNG.
+deemed as a symbolizable immediate, is sometimes sim-
+.text
+ply a normal piece of data, causing a symbolization false
+...
+positive, as shown above in our motivating failure case. ; initial value of i is -0x80
+804a2e4 mov esi, -0x80
+There are several categories of situations that cause sym- 804a300 mov eax, ebx
+bolization mis-classifications. Here, we enumerate these cate- ...
+gories with concrete examples. ; beginning of the loop
+804a300 mov eax, ebx
+Compiler optimizations. Due to compiler optimization ...
+techniques (namely, constant propagation and constant fold- ; state[i] = state_64 * 1865811235122147685
+804a32d imul ebp, ecx, 0x19071d96
+ing), a constant may be added to or subtracted from a pointer, 804a333 add ebp, edx
+creating a pointer to a different value. The target of this new 804a335 imul edx, ebx, 0xd81ecd35
+pointer might appear to point outside of any memory region 804a33b add edx, ebp
+; write results to the state array
+(causingasymbolizationfalsenegative)ortoanothermemory
+; note that 0x8060a68 - 0x80 = 0x80609e8
+region altogether (causing an incorrect symbolization).
+804a33d mov dword ptr [esi+0x8060a68], eax
+804a343 mov dword ptr [esi+0x8060a6c], edx
+Listing 4 is a xorshift pseudo-random number generator
+804a349 add esi, 8
+(PRNG) adapted from CGC binary CROMU_00042. We as- 804a34c jnz 0x804a300 ; loop end
+sume that the state array is stored at 0x80609e8. Ac-
+cording to the source code, variable i, which is the index .bss
+...
+counter of the loop, should range from 0 to 16, and memory
+80609e8 uint64_t state[16];
+addresses of the array assignment should be ranging from
+0x80609e8to0x80609e8+16×8.However,intheassembly (b) An extract of the compiled PRNG in Clang with -O1.
+compiled using Clang under optimization level O1, due to
+compiler optimization, the index variable i takes an initial
+Listing 4: An example where the base pointer appear to point
+value of −0x80 (which is −16 × 8), and the base pointer
+outside of any memory region due to compiler optimization.
+at instruction 0x804a33d is 0x8060a68, which is essentially
+0x80609e8−0x80. Uroboros cannot detect this occurrence.
+Ramblr, instead, addresses it by using base pointer reattri- 80480bb mov ecx, OFFSET FLAT: encrypted_func_ptr
+bution, described in Section VII-A. 80480c1 sub ecx, OFFSET FLAT: encryption_key
+; parameter to the function
+Abnormal binary behavior. In this case, the binary ex- 80480c7 mov dword ptr [esp], 0xDEADBEEF
+80480ce call ecx
+hibits abnormal behavior (for instance, pointer encryption and
+decryption). If pointers are stored in a binary in a modified
+Listing 5: An example of pointer decryption before using the
+form, they might cause symbolization false negatives.
+pointer as a jump target.
+Adapted from CGC binary KPRCA_00044, Listing 5 binaries. Ramblr addresses this through its data consumer
+shows an example of decryption of a jump target stored
+check, presented in Section VII-B.
+in ecx before using it as the target for call. The tar-
+get function being called might be offsetted after reassem- Value collisions. A frequent cause of broken reassembled
+bling, but since Uroboros cannot determine that the variable binaries is value collision within the binary: a non-pointer
+encrypted_func_ptr is the encrypted pointer of the integer happens to have a value that coincides with a location
+target function, the pointer will not be symbolized, which in a pre-defined memory region. This causes symbolization
+results in a broken binary. false positives, in which the colliding immediate is incorrectly
+symbolized, and its final value is wrongly modified in the
+Since such binaries are rare in practice, and there is no
+reassemblyprocess.Contrarytotheargumentin[25]thatsuch
+generic way to handle those cases, we deem those binaries as
+collisions are “rare”, we find multiple cases in our dataset.
+unsafe for reassembling, and refrain from reassembling them.
+However,itisnecessarytodetect thesecasestobeabletoopt When reassembling more binaries, especially those com-
+out of reassembling. Uroboros has no functionality to handle piled with optimization enabled, value collisions are not as
+these cases, leading to broken data references in the resulting rare as Uroboros claimed. For instance, Listing 6 shows a
+5simple collision we found in Coreutils program factor in section:
+byte array primes_diff. This array is the same (and with
+Disassembly and CFG Recovery. First, Ramblr recovers a
+the same alignment) when compiled with different flags and
+optimization levels, but when compiled with -O0, -O1, and complete CFG of the target binary, fully disassembling
+-O2, those binaries are not big enough, and as a result, the each basic block as it is identified. We discuss this in
+Section V.
+address 0x8060406 is not covered by any section in those
+Content Classification. Next,Ramblrclassifiesthecontents
+binaries. A similar issue is found in Coreutils’ ubiquitus
+programls.Withouthandlingsuchcases,thebinaryisbroken ofthetargetbinaryintoseveraltypes(i.e.,code,pointers,
+arrays, etc). Ramblr uses a combination of advanced
+by reassembling.
+static analysis techniques, along with metadata available
+static const unsigned char in the target binary, to accomplish this task. Our classifi-
+primes_diff[] = { .rodata: cation process is described in Section VI.
+1, 2, 2, 4, 805da50 .db 2 Symbolization. Using the results of the previous two steps,
+2, 4, 2, 4, ... 805da51 .db 6 Ramblridentifiessymbolreferencesinthetargetbinary.
+/* at 0x805da50 */ 805da52 .db 4
+2, 6, 4, 2 805da53 .db 2 These references identify the semantic meaning of a
+/* at 0x805da54 */ 805da54 .long 0x8060406 memory location (i.e., “the start of function X”), as
+6, 4, 6, 8, ... opposedtothesyntacticmeaningoftheaddress(i.e.,“this
+}; (b) Byte sequence at 0x805da54 codeisataddressY”)andareusedinthereassemblystep
+falls into the memory region of
+to maintain relationships from a reference to the object it
+(a) Part of the primes_diff this binary when decoded as a
+points to. Symbolization, with our various improvements
+byte array. pointer.
+over previous work, is presented in Section VII.
+Reassembly. With the symbols identified, reassembleable as-
+Listing 6: An extract from factor compiled with GCC sembly code is generated for the binary. Any desired
+in -O3 demonstrating a value collision occurred in array modifications to the binary are done on top of this
+primes_diff.
+assembly code – instructions can be added, removed, or
+replaced, and functions or data can be added. The mod-
+A generic solution to this issue would require an analysis ified assembly is then reassembled using an off-the-shelf
+that can reason about the purpose of an immediate value in assembler.Theresultingbinaryisafunctionalapplication
+a binary. In general, this is not solvable, and Uroboros makes that exhibits the desired change of behavior from the
+noattempttocompensateforthis.Ramblrusesasetofbest- original. We delve into this process in Section IX.
+effort approaches to mitigate this problem:
+Throughout the rest of the paper, we will detail, discuss,
+a) We perform a primitive data type recovery to identify and evaluate the steps summarized above.
+the types of these data blocks. For example, if a 4-byte
+The content classification and symbolization steps require
+data block is recognized as a float constant, it should
+static analyses that have moderate runtime requirements. To
+not be symbolized as a pointer. This is described in
+address the case in which reassembly must happen extremely
+Section VI.
+quickly,wehavedevelopedasetofworkaroundsthatincrease
+b) We perform an array size recovery to identify the
+the speed of our technique at the cost of some function-
+size of some more complex program data constructs, like
+ality guarantees of the resulting binary. We present these
+byte arrays, etc. For example, if a 128-byte data block is
+workarounds in Section VIII.
+identifiedasasinglebytearray,noneofthevaluesinside
+should be symbolized as a pointer. This is also described Despiteouradvancementsinthetechniqueofreassembling
+in Section VI. binaries, there are still cases where Ramblr cannot guarantee
+c) If an immediate value pointing to the middle of the functionality of the resulting binary. In these cases, it will
+an instruction is first determined to be symbolizable, emit an error message and refuse to reassemble the binary.
+all previous decisions leading to this decision must be
+rolledback.SectionVI-Ccontainsdetailsofthisdecision V. CFGRECOVERYANDDISASSEMBLY
+process.
+Before a target binary can be reassembled, it must be
+Disassembly readability. Ideally, the disassembly disassembled. We do this by computing a control flow graph
+file should be easy-to-read. Uroboros displays all non- (CFG) of the target binary and disassembling any identified
+symbolizable data in the form of individual bytes, which basic block. Aside from this, we attempt to identify and
+is very difficult for users to understand or edit. With the disassemble dead code, as it is important for our approach
+help of data type recognition, we are able to generate more that as much of the code as possible is disassembled.
+natural-looking assemblies.
+We use the angr binary analysis framework for CFG
+recovery. If angr’s CFG recovery fails on the target binary,
+IV. APPROACHOVERVIEW
+Ramblr is unable to continue and reports an error message.
+To make our technique more approachable, we present an However, we did not find such cases in our test dataset.
+overview of the technique in this section before describing it
+We will briefly summarize how angr’s CFG recovery
+in-depth throughout the rest of the paper.
+works and the slight modifications that we made to it to
+Ramblrworksinseveralmainstepswhenreassemblinga improve the disassembly coverage. While we summarize the
+target binary, each of which will be discussed in a subsequent approach in this section, we encourage the interested reader
+6to explore the angr authors’ full description on the design of scope of this execution is strictly confined to the current
+their CFG recovery [21]. function. We assume all calls to other functions return an
+unconstrained value 4, as long as the callee returns.
+A. Recursive CFG Recovery Localized Value-set Analysis. Value-set analysis is first pro-
+posed as an abstract interpretation technique to statically
+CFGrecoverystartsfromtheentrypointofthebinary,and analyzemachinecode[2],[18].Insteadofrunningvalue-
+recursively follows direct control flow transitions or resolves set analysis on the entire binary, or a whole function,
+and follows indirect control flow transitions. Eventually, the we designed a constrained version of value-set analysis,
+recoveryexhauststherecursivelyreachablebasicblocksofthe called localized value-set analysis, that only runs on a
+executable regions of the binary (typically the .text section slice of the binary, such as a set of basic blocks, a
+forELFbinaries),anddisassemblesasmanybytesaspossible. loop, etc. With the result from data dependence analysis,
+we are able to build a program slice with respect to a
+B. Utilizing Meta Information memory access that acts on data representing potential
+mis-classificationsofcontent.Runninglocalizedvalue-set
+angr respects certain meta information from the binary,
+analysis on the slice usually gives us enough information
+which includes segment and/or section information2. angr’s
+regardingtheclassificationofthecontentusedbythefinal
+CFG recovery assumes that non-executable memory regions
+memory access.
+only contain data bytes, not executable code.
+Unlike traditional static analyses, those two analyses used
+C. Iterative Feedback in our approach are heavily constrained and localized in order
+to make them fast and tractable. Empirically speaking, those
+While the CFG recover and the latter steps are described
+localized analyses are generally sufficient for the use cases in
+separatelyinthispaper,thereisabackwardflowofinformation
+our approach: resolving jump tables, recovering primitive data
+in our implementation. If the later Content Classification step
+types, and retrieving the sizes of arrays accessed in simple
+identifies a code reference (i.e., a hardcoded pointer in the
+loops.Weusetheseanalysestosupportthedatatyperecovery
+data segment of the binary that points to the code segment),
+andthesegregationofdifferentblocksofdatafromeachother.
+weinjectitintoangrasanadditionaltargetofafakecontrol
+Both are used to reduce symbolization mis-classifications in
+flowtransition,sothattherecursiveCFGrecoverycanexplore
+the next step of the reassembly process.
+that code block 3.
+A. Data Identification and Type Recognition
+VI. CONTENTCLASSIFICATION
+ByanalyzingarecoveredCFG,somedatainthebinarycan
+To avoid the pitfalls discussed in Section III, we leverage beidentifiedanditstyperecognized,aprocedurewecalldata
+advancedstaticanalysistechniquestoclassifypotentialsources identificationandtyperecognition.Severalapproaches,includ-
+ofreferences.Wedetailthesetechniques,andtheirapplication,
+ing data dependence analysis, program slicing, and value-set
+in this section, and describe how they are ultimately used for
+analysis are integrated in our solution to recognize data types
+symbolization in Section VII.
+with a high identification rate. Data identification and type
+recognition,althoughnotevaluatedinthispaper,isveryuseful
+Our analyses add a reasonable runtime requirement to the
+ingeneratingcorrectdisassemblywheninlinedataexistsinthe
+reassembling process. In addition, they yield a certain level
+binary, as it avoids symbolization classification errors in the
+of functionality guarantee (discussed below), which makes
+symbolization step.
+it possible for reassembler to opt-out when facing binaries
+with bizarre features, rather than reassemble and break them.
+Hereweusejumptablerecoveryasanexampletodemon-
+That being said, in cases when reassembly speed is absolutely
+strate how this approach works: a local backward program
+critical,wehavedevelopedworkaroundsthatavoidtheruntime
+sliceisfirstgeneratedwithrespecttothejumptarget,followed
+of the static analysis in exchange for a lower functionality
+by the application of value-set analysis on the generated slice
+guarantee of the resulting binary. Those are discussed in
+to recover the entries of the jump table and addresses of all
+Section VIII.
+possible jump targets. Once the entries of the jump table are
+recovered, we mark the range as data with a data type of
+Our approach to content classification uses two fundamen-
+“pointer array”.
+tal analyses:
+For binary reassembling, it is important to correctly differ-
+Intra-function Data Dependence Analysis. We perform a
+entiate symbolizable and non-symbolizable data, since sym-
+blanket execution [8] on basic blocks in a specific func-
+bolizing a non-symbolizable data entry or vice versa will lead
+tion, from which we recover data dependencies between
+to a broken resulting binary. Table I shows all types of data
+variable and constant definitions. Variable definitions in-
+that Ramblr recognizes at the moment. They fall into several
+clude registers, stack variables, and memory cells. The
+broad categories:
+2PEfilesdonothavesegments,whileELFfilesnormallyhavebothsections
+Primitives. This includes pointers, bytes, shorts, integers,
+andsegments,sectionsarenotnecessaryforexecution.
+floats, doubles, and so on. They are recognized by an-
+3Although linear sweeping will always find the code block eventually,
+finding the basic block as early as possible, and starting decoding the basic
+blockatacorrectlocationisstillbeneficialwithrespecttoreducingthenumber 4Thenotionofunconstrainedvaluesisnotemployedinblanketexecution.
+ofoverlappingorincorrectly-startedblockscausedbyinlinedataorfunction Thiscanbeseenasanabstractvaluethatsatisfiesanycomparisons.
+alignments. 5Dependsonthebit-widthofthebinary.
+7Datatype Size Symbolizable struct personal_info_t {
+pointerarray multipleof4/85 Yes unsigned char* name;
+regionboundary 0 Yes unsigned int age;
+DWORD 4 No } personal_info;
+QWORD 8 No
+32-bitfloatingpoint 4 No
+void zero_fill()
+64-bitfloatingpoint 8 No
+{
+80-bitfloatingpoint 10 No
+128-bitfloatingpoint 16 No /* memset() is inlined by the compiler. */
+null-terminatedstring variable No memset(&personal_info, 0, sizeof(personal_info));
+non-null-terminatedstring variable No }
+null-terminatedUTF-16string variable No
+non-null-terminatedUTF-16string variable No void initialize()
+{
+TABLE I: All data types Ramblr currently recognizes.
+personal_info.name = "Beatrice";
+personal_info.age = 25;
+alyzing instruction and data access patterns during CFG }
+recovery and localized value-set analysis.
+Strings. ASCII strings and Unicode strings. Identified by
+void rename(char* new_name)
+{
+propagating types from known string manipulating func-
+/* from the assembly, we can only say
+tions (like strlen, strcpy, etc.) and scanning print- * personal_info.name is a four-byte integer. */
+able characters. personal_info.name = new_name;
+Jump tables. Jump tables, from indirect jump resolution. }
+Arrays of primitives. These are recognized by performing
+Listing 7: An example of a data block being accessed at
+an intra-function data dependence analysis and localized
+multiple locations in different ways.
+value-set analysis.
+The strategy we take to handle misidentification is two-
+B. Data Block Sanitization fold. First, we prioritize smaller data blocks over larger ones.
+Thisisbecause,likeinourexample,programstendtoinitialize
+All data blocks recognized from the previous step are
+data in bulk, then access individual fields in the proper, type-
+sanitizedtoavoidoverlappingdata.Therequirementissimple:
+dependent manner. In the example of Listing 7, since the 12-
+any identified data block should not overlap with another
+byteblockidentifiedfromzero_fill()islargerthanother
+identified data block. Data block overlapping arises when
+three blocks identified from initialize(), the latter ones
+one data block is part of another data block or due to a
+are taken as identification result. Second, we prioritize sym-
+misidentification occurring during data type recognition. The
+bolizable data types over non-symbolizable data types. This is
+first case is common, and is easy to handle - Ramblr simply
+because if a piece of data is ever accessed as a symbol by the
+merges the two data blocks. Handling the second case is
+program, then it should be treated in one during reassembly.
+more difficult, as it is not always clear which data blocks are
+Since personal_info.name is identified as an integer
+misidentified, or both of them are misidentified. We discuss
+from rename() function and a pointer in initialize(),
+ways to handle misidentification in Subsection VI-C.
+we correctly prioritize the symbolizable data type.
+C. Handling Misidentification Inmanycases,staticanalysesweperformarenotsufficient
+to find all data blocks used in binaries. Usually there are
+Misidentification of data blocks usually arises from the
+gaps between identified data blocks, in which case, Ramblr
+following scenarios:
+resorts to workarounds to find pointers inside, as described
+A data block being accessed in multiple ways. A data later in Section VIII. Note that the static analyses performed
+block might be accessed in a different manner in here significantly reduce the number of unsafe assumptions
+different places. Consider Listing 7 as an example:
+thatRamblrhastomakeduringsymbolization,whichinturn
+the personal_info struct is accessed as a whole reduces false positives.
+in function zero_fill(), and then each field of
+the struct is accessed individually later. During data VII. SYMBOLIZATION
+identification and type recovery, multiple data blocks
+During the original linking process of the target binary, all
+spanning personal_info are seen, and they have
+labels in the object files are converted to absolute addresses.
+conflicting types: the one accessed from zero_fill()
+Duringreassembly,thelocationofthedataandcodeinatarget
+is a 12-byte “unknown” block, while the other one
+binary will likely change due to the modifications performed
+accessed from initialize() contains two integers
+on it. If there are hard-coded pointer addresses or absolute
+and one pointer-array of length 1.
+jumps in the binary, they must be adjusted to target the new
+Failure in localized value-set analysis. Due to the fact that
+locations of the data or code to which they used to point. In
+our localized value-set analysis runs on a slice of the
+fact, even relative jumps must be adjusted, as the insertion of
+program generated from a best-effort (and, thus, poten-
+code into or removal of code from basic blocks will change
+tially incomplete) data dependence analysis, the value-
+the offsets of basic blocks from one another.
+set analysis might be processing incomplete code when
+recovering data sizes and types. Generally, a data block The assembler can make these adjustments during the
+spanning from the beginning address to the maximum reassembly step (see Section IX), but it needs to be provided
+address (e.g., upper bound of the section it belongs to) is the information of what references reference which locations.
+seen when such failures occur. To do this, we convert these references from hard-coded
+80.8
+0.6
+0.4
+0.2
+0
+-O0 -O1 -O2 -O3 -Os
+seiraniB
+ni
+sregetnI
+fo
+noitroP
+theidealcaseisthatallintegers(includingimmediateoperands
+or integers in data) in the binary can be categorized into
+two groups solely based on their values, which is described
+as classification in symbolization in Uroboros [25]. Their
+approach, in short, symbolizes integers to point to offsets in
+each memory region of the binary as long as the value of the
+integer falls into that region. If the integer does not fall into
+any memory region, it is marked as an integer, and will not
+be symbolized.
+The original approach seems plausible. However, it does
+not always hold in real-world binaries, especially in bina-
+ries compiled with optimization enabled, due to constant
+propagation and constant folding performed during compiler
+0-28 28-216 216-224 224-232 Within binary optimization (as described in Section III. Consider the sample
+CcodeshowninListing8,anditsassemblyshowninListing9
+Fig. 2: Distribution of integers (instruction operands and data) compiledbygccwithflag-O1.Fortheeaseofunderstanding,
+in the 32-bit Coreutils and CGC datasets. (The first four
+some unnecessary assembly lines are omitted, and the C code
+buckets exclude integers within the binary.)
+is put on top of each corresponding line of assembly.
+numerical references (absolute addresses or relative offsets) int counters[2] = {0};
+to symbols. This procedure, called Symbolization, converts
+absolute addresses back to labels, allowing relocation of the int main()
+{
+binary during the reassembly step.
+int input;
+input = getchar();
+However, not all immediate values should be converted
+switch(input - 'A')
+to symbols, i.e., symbolized. We call all immediate values
+{
+that must be symbolized in reassembling symbolizable imme- case 0:
+diates, and all other immediates (i.e., actual constants) non- puts("option A");
+symbolizable immediates. A successful binary reassembling break;
+case 1:
+requires that all symbolizable immediates are converted to
+puts("option B");
+correctsymbols,andnoneofthenon-symbolizableimmediates break;
+are converted. default:
+puts("Unknown option.");
+Symbolizable immediates exist in both code and data. In _exit(1);
+code, symbolizable immediates must be part of instructions, }
+used as pointers pointing to either code or data. In data, counters[input - 'A'] ++;
+}
+symbolizable immediates are integers that are of machine’s
+bit-width, which is also used as pointers pointing to either
+Listing 8: An example of a base pointer pointing to outside of
+code or data.
+any memory region.
+Figure 2 illustrates a distribution of integers in an x86
+binary. It is worth noting that most integers fall in the range
+.text
+between the beginning and the ending of memory regions of
+; input = getchar();
+the binary, because those integers are used as code or data 80484ff call __IO_getc
+references. If all immediate values falling in the range or 8048504 mov ebx, eax
+memory regions are symbolizable, and all immediate values ; switch(input - 'A')
+8048506 cmp eax, 0x42
+falling outside are non-symbolizable, then symbolization is
+8048509 jz short 0x8048523
+simply mapping those values within the range into symbol ...
+references. This is a common case, but it is not the general ; counters[input - 'A'] ++;
+case.InSectionIII,wedescribedseveralchallengesthatcause 8048557 add DWORD PTR 0x8049f30[ebx*4], 1
+mis-classified symbols and result in broken reassembled bina-
+.bss
+ries. In this section, we detail how Ramblr surmounts these
+; int counters[2] = {0};
+challenges to properly handle binaries that current techniques 804a034 counters[0]
+fail to reasssemble. 804a038 counters[1]
+Listing 9: The assembly manifest of Listing 8, compiled by
+A. Base Pointer Reattribution
+gcc with -O1.
+Conceptually,apointerisareferencetoamemorylocation.
+Atsomepointinthelifeoftheprogram,itwillbedereferenced The instruction at offset 0x8048557 increments the dword
+so that value located at the memory location it references [0x8049f30+ebx×4]by1,whereebxholdstheoptionletter
+is retrieved, or used as a jump target. If a pointer is never (either “A” or “B”) from user input. Due to optimizations, the
+dereferenced or used as a jump target anywhere in the binary, pointer 0x8049f30 comes from address of the counters
+it is the same as an integer. For the purpose of reassembling, array(0x804a034),minus4×0x41,where0x41istheASCII
+9code of character “A”. Since the integer value of this pointer 2) For each symbolizable integer, the data consumer check
+does not fall into any memory region defined in this binary, it performs an intra-function data dependence analysis on
+will be viewed as non-symbolizable by the original approach, it and examines if any “unusual” operation is applied on
+and consequently the reassembled binary is functionally bro- it.Unusualoperationsincludeoperationsbesidesaddand
+ken. The problem can be even worse: a symbolizable integer subtract (which are used for pointer offsetting and can
+having, due to optimizations, a value inside the .rodata be supported by reassembling). If hard-coded pointers
+section might actually be pointing to the .bss section when undergo such operations, we assume that the binary is
+being dereferenced. Such cases, which cause extremely hard- doing something unusual that reassembly cannot handle.
+to-detect symbolization mis-classifications, are not rare in
+Reassembling immediately terminates when any of the
+binaries compiled with optimization enabled.
+cases above are found, as the reassembled binary would
+To tackle this problem, we adopt a different approach. otherwise likely to be broken.
+Instead of checking if the integer falls into any predefined
+memoryregionsofthebinary,weenlargeeachmemoryregion An example of pointer encryption is shown in Listing 10.
+bysomeamount,bothinthebeginningandtheend,andcheck A pointer in the binary is encrypted before use by XORing
+if the integer falls into any of the enlarged memory regions. with a static number 0xdead1337. It is loaded into register
+This is used as a pre-filter to identify potential cases of mis- eax and decrypted before being used as a call target. Data
+classification due to constant folding. Empirically, we enlarge consumercheckrecoversadatadependencegraphwithrespect
+each memory region by 4KB. to the integer 0xdeed1137 loaded at instruction 0x400100.
+This analysis detects that two non-symbolizable integers are
+For each symbolizable integer that matches our pre-filter,
+XORed, and then used as a jump target. Data consumer check
+a forward slice is computed in the intra-function data depen-
+deemsthisbinarytobeunsafeforreassembling,andterminates
+dence graph,untila dereferencingsite ofany valuedepending
+reassembling right away.
+ontheintegerisreached.Thenvalue-setanalysisisperformed
+on the slice, from the beginning to the dereferencing site, and It is important to note that, unlike prior techniques,
+an address (expressed as a value-set in VSA) is obtained. Ramblr is able to detect these cases and avoid producing
+At this point, since the pointer must be valid when it is a broken reassembled binary.
+dereferenced, we can reasonably infer that the original sym-
+bolizableintegermustpointtothesamememoryregionasthis .text
+address belongs to. This approach not only makes it possible 400100 mov eax, DWORD PTR [0x600010]
+400105 xor eax, 0xdead1337
+for Ramblr to correctly handle the example we described
+40010a call eax ; calling address 0x400200
+above (where the value of the pointer no longer falls within
+the boundsofthe binary),but alsofinds andfixes caseswhere .data
+a base pointer points to one memory region, but in fact it 600010 0xdeed1137
+should be pointing to another memory region in the binary.
+Listing 10: An example of pointer decryption using a static
+key.
+B. Data Consumer Check
+After previous steps, all immediates and constant values
+shouldbecategorizedintotwogroups:symbolizablesandnon- VIII. FASTWORKAROUNDS
+symbolizables. Ramblr is normally guaranteed to be correct
+The systematic approach described in previous sections
+as long as the above categorization is perfect. However, there
+uses data dependence analysis and value-set analysis to offer
+arecertainscenarioswherecategorizationfails.Suchscenarios
+a level of functionality guarantee for the reassembled binary.
+are rarely seen in normal binaries, but arise when a binary
+However, those analyses, along with the CFG recovery re-
+implements unusual behavior, such as pointer decryption,
+quirement, are still inevitably time-consuming on real-world
+custompointerconstruction(e.g.,addingtwointegerstogether,
+binaries. In certain cases, where abundant test cases exist
+then converting the result to a pointer and dereferencing it),
+for the original binary and checking the functionality of the
+etc.Wedevelopedadataconsumercheck analysisthatdetects
+reassembled binary by running those test cases can be done
+these scenarios in two ways:
+quickly, some ad-hoc alternatives can be applied instead of
+1) For each non-symbolizable integer, data consumer check the Content Classification and Symbolization steps of our
+performs an intra-function data dependence analysis to systematicapproach.Thisallowsbinaryreassemblingbedone
+determine if it is used as a pointer or a jump target later almost instantly, at the cost of some functionality guarantee.
+without involving any symbolizable integer. Specifically,
+Thissetofwhatweterm“fastworkarounds”,alongwitha
+the requirement to avoid involvement of any symboliz-
+discussion of their compromises on the functionality guaran-
+able integers excludes the pointer offset case from the
+tees of the reassembled binary, are presented and discussed
+pointer construction case. The former is already handled
+in this section. We measure the resulting correctness and
+by making the base pointer properly symbolizable. The
+the runtime of both the systematic approach and the fast
+latter, on the other hand, results in a symbolization mis-
+workarounds in Section X.
+classification and a broken binary. Intuitively, building
+a pointer out of integers, although acceptable, is an
+A. Fast Data Type Recognition
+uncommon behavior, and we have found no way for
+it to be safely handled, in the general case, by binary In order to identify data types, especially to get the sizes
+reassembling. of arrays, our systematic approach leverages localized static
+10analysis, which is accurate but heavyweight. An alternative trackingandvalue-setanalysis.Theseanalysesarebothexpen-
+approach is to guess data types based solely on the values sive. Given that an immediate being used as a pointer must be
+of those data, which is way faster, and still maintains an valid (i.e., must point to the appropriate memory region at
+acceptable accuracy for reassembling. dereferencing time), we perform a forced concrete execution
+on any path starting from the source of the immediate and
+Weimplementaseriesoffastdatatypeguessingstrategies
+endingatthedereferencingsitethatdependsontheimmediate
+in Ramblr:
+value.Then,wesymbolizetheimmediatevalueasanoffsetto
+the beginning of the memory region that the final dereference
+Floating point numbers. Our type guessing strategy for
+was targeting. For the sake of performance, we only process
+floating point numbers does a scan of the disassembly
+immediatevaluesthatarenottriviallyidentifiableasbelonging
+to identify obvious cases of data being used as floating
+to any memory region.
+points.
+Pointer arrays. Oneormoreconsecutiveintegersofmachine The fast base pointer reattribution allows us to avoid sym-
+bit-width that points to any pre-defined memory region. bolizationfalsenegativesbycorrectlydetectingimmediatesas
+We still apply a fast version of base pointer reattribu- symbols in cases where they would otherwise be ignored.
+tion on pointer arrays, allowing for the identification of
+pointers that are, ostensibly, not pointing to any memory
+IX. REASSEMBLY
+region due to compiler optimization. We treat individual
+pointers as a single-element pointer array. The reassembling procedure is straightforward. Taking re-
+Null-terminated Unicode strings. Any fully-printable con- sultsfromsymbolization,wefirstassignlabelsforeverysym-
+secutive sequence of valid Unicode characters, ending bol reference we recovered, and then replace all symbolizable
+with two null bytes (by Unicode spec), is recognized as immediatevaluesineachinstructionandeachdataregionwith
+a null-terminated Unicode string. The minimal length is corresponding labels. The resulting reassembled disassembly
+four characters. is output into a single assembly file, to which the user can
+Null-terminated ASCII strings. Any fully-printable consec- apply their own patches as needed. Finally, an off-the-shelf
+utivebytesequenceendingwithanullbyteisrecognized assembler is used to assemble the resulting assembly into a
+as a null-terminated ASCII string. The minimal length is reassembled binary.
+four bytes.
+Theoretically, the assembly syntax can be either Intel or
+Sequences. Anyarithmeticprogressionofbytes,shorts,orints
+AT&T. Ramblr supports emitting either syntax, however, we
+is recognized as a sequence. The minimal length is five
+find that Clang (from version 4.4 to the latest version 4.8)
+elements.
+cannot support certain Intel-style instructions. Neither GCC
+Integers. We identify remaining “lone” integers by detecting
+nor Clang has issues supporting assembly in AT&T syntax.
+integer-sizedgapsintheremainingdisassembly.Thishas
+Therefore,RamblrdefaultstoAT&Tsyntax.Forthepurpose
+no effect on the functionality of the reassembled binary,
+of transparently supporting user patches written in a different
+but it makes the disassembly more readable.
+syntax than the target outputting syntax, we also implement a
+Unknown data. A linear sweep is performed on the entire
+syntax converter from Intel to AT&T style.
+non-executable memory region, and all gaps (bytes not
+belonging to any recognized data blocks) are identified
+as unknown data blocks.
+X. IMPLEMENTATIONANDEVALUATION
+This section covers the implementation of our prototype,
+Note that the order of applying these guessing strategies
+Ramblr, describes the datasets that we use, and presents its
+matters. For example, we cannot apply the “unknown data”
+evaluation. We evaluate the correctness of Ramblr against
+identification strategy before other strategies are applied, oth-
+ground truth produced during original compilation of the
+erwiseallbyteswillbeidentifiedasunknown.Weapplythese
+binaries, compare it against Uroboros on two datasets, and
+strategies in the order listed above.
+discuss analysis time and execution overhead in the resulting
+Ramblr’sdataguessingiseasilyextensible:userscanadd binaries.
+more type guessing strategies with respect to the nature of
+binaries to be reassembled, which will benefit the symbol- A. Implementation Overview
+ization procedure by lowering potential misidentification of
+We use angr, an open-source binary analysis framework,
+symbolizable immediates. If a binary embeds, for example, a
+as the platform for reassembling. Ramblr is implemented
+PDF as a resource, a “PDF file” identification strategy can be
+in Python as an angr analysis, and utilizes other publicly-
+easily added.
+available analyses routines in angr. All of our CFG re-
+covery improvements are done on top of angr’s CFGFast
+B. Fast Base Pointer Reattribution analysis. Capstone is used for performing the disassembly
+of instructions [17]. Our prototype works on x86 and x86-
+Asdiscussedpreviouslyinthispaper,oneissuethatoccurs
+64 ELF binaries. However, as angr is platform-independent,
+during symbolization is that an immediate holding a value
+there are no fundamental limitations preventing an extension
+belongingtoonememoryregion(orevenoutsideanymemory
+of Ramblr to other architectures. All of our evaluations are
+region) actually points to another memory region when deref-
+performed under PyPy 5.3.1 in Ubuntu Server 16.04 LTS.
+erenced. This is generally caused by compiler optimizations.
+The issue is addressed by our base pointer reattribution in the The entire Ramblr toolchain, including Ramblr itself
+systematic approach, involving intra-function data dependence andourassemblysyntaxconverters,isopensourced.Ramblr
+11Dataset Total#ofbinaries Optimizationlevel #ofbinaries ID Changes
+O0 106 1 Addaround20unsupportedinstructionopcodes
+O1 106 2 Removeduplicatedlabelsingeneratedassemblyfile6
+O2 106 3 Changeinputparsinglogictosupportoutputfromnewerreadelf
+Coreutils 106
+O3 106 4 Fixabuginfunctionalignmentsfiltering
+Ofast 106 5 Add“-ocamloptopt”tobuildscript
+Os 106 6 Makesomechangestosupportstatically-linkedbinaries
+O0 141
+O1 117 TABLE III: Changes we made to Uroboros prototype
+O2 116
+CGC 143
+O3 116
+Ofast 116 to perform a comparative evaluation on the Coreutils dataset
+Os 119 and on CGC binaries. To the best of our knowledge, these
+TABLE II: Number of binaries of each dataset. changesandbugfixes,aslistedinTableIII,donotchangethe
+behaviorandexpectedoutputofUroboros.Wewillpushthese
+improvementsupstreamtotheoriginalUroborosrepositoryon
+is included in angr, while other parts of the toolchain are
+GitHub.
+included in a binary patching platform called Patcherex,
+whichwasusedbythethird-placewinningteamintheDARPA Uroborosallowsforthedeactivationofsomeofitsassump-
+Cyber Grand Challenge [20]. tions, which, as discussed previously, are overly restrictive for
+real-worldcases.AswediscussedpreviouslyinSectionIII-A,
+B. Dataset assumption2wouldpreventanymodificationofdatasections.
+Therefore during evaluation, we enable assumptions 1 and 3
+Weusetwosetsofbinariesfortheevaluation.Thefirstset and disable assumption 2 (by specifying arguments -a 3) in
+is Coreutils 8.25.55-ff217, which includes 106 different order to obtain a comparative result.
+binariesthatformmuchofthebaseofaLinuxsystem.Accord-
+ingto[25],Coreutilsisoneofthebinariescollectionsused For Uroboros, we use non-stripped binaries as input, as
+toevaluateUroboros,andallowsustocompareourapproachto they rely on symbols in non-stripped binaries for function
+Uroboros.Totesttherelativeversatilityofthetwoapproaches identification.Ramblrdirectlytakesstrippedbinariesasinput
+inthepresenceofadvancedbinaryconstructs,wecompileeach and carries out its own analyses to recover the necessary data.
+programinx86andx64,withsixdifferentoptimizationlevels,
+including O0, O1, O2, O3, Ofast, and Os, with GCC 5.4.1 D. Symbolization Correctness
+in our testing environment.
+First,weevaluatethecorrectnessofRamblr’ssymboliza-
+The second dataset is a collection of 143 binaries from tion step on our dataset, with and without the use of its Fast
+the Qualification Event (CQE) and the run-up to the Final Workarounds (implemented in Ramblr Fast). To do this,
+Event (CFE) of the DARPA Cyber Grand Challenge (CGC), we collect the ground truth of mappings between labels and
+representing all CGC binaries released before August 2016. addresses from the linker ld during the original compilation
+CGC binaries are stripped, self-contained x86 binaries that of the binary, and compare this ground truth against the
+do not rely on any dynamically-linked libraries. We compile immediate values Ramblr symbolizes. It is important to note
+each program with six different optimization levels, including that Ramblr does not utilize the ground truth during its
+O0, O1, O2, O3, Ofast, and Os, with Clang 4.4 (the only operation – it is only used for evaluation purposes. As we
+supported compiler for CGC) in the DECREE VM provided are interested in the potential damage to reassembled binaries,
+by DARPA. binaries that the tools opted out of reassembling were not
+included in this evaluation.
+Note that some binaries in both datasets simply do not
+work(crashingwithsegmentationfaults,failingtestcases,etc.) The mis-classifications represented by these results are
+whencompiledwithcertainoptimizationlevels.Thosebinaries roughly a measure of how likely the approach is to break
+are removed from each dataset. We also remove all multi-CB the binary, as each mis-classification could result in a broken
+binaries from the CGC dataset as it is difficult to tell exactly reference. When there are no mis-classifications in a given
+which one of the full set of binaries is the culprit when a binary, the reassembled binary is guaranteed to work, except
+test case fails. The final count of binaries our datasets across for in the scenarios described in Section VII-B. We could not
+different compilation flags is shown in Table II. The entire make this evaluation comparative to Uroboros, as we were
+dataset is available upon inquiry. unabletoextractthisinformationfromtheUroborosprototype.
+Test Cases. Both Coreutils and CGC binaries come with TheresultsareshowninTableIV.WhilebothRamblrand
+abundant test cases, making them well-suited for evaluating Ramblr Fast achieves an extremely low mis-classification
+thefunctionalityofreassembledbinaries.Weruntestcaseson rate, the former performs better than the latter, as expected.
+every reassembled binary, and mark a binary as broken if any
+test case fails. E. Comparative Evaluation - Correctness
+We compare Ramblr against Uroboros by evaluating
+C. Pre-evaluation both tools (plus Ramblr with Fast Workarounds) against our
+datasets. We run Uroboros, Ramblr, and Ramblr Fast on
+TheauthorsofUroboros[25]open-sourcedtheirprototype
+implementation to the community [19]. We used their code
+6Clang displays error messages and terminates at duplicated labels, while
+for evaluating their approach in our comparative evaluation.
+GCC does not seem to care as long as duplicated labels do not reference
+However,wehadtomakeseveralaugmentationsandbugfixes differentaddresses.
+12Arch Dataset Opt.Level Solution TotalReferences FalseNegatives FalseNegative% FalsePositives FalsePositive%
+Ramblr 500682 0 0 0 0
+O0
+Ramblr Fast 500682 0 0 0 0
+Ramblr 501613 0 0 0 0
+O1
+Ramblr Fast 501613 0 0 0 0
+Ramblr 505409 0 0 0 0
+O2
+Ramblr Fast 505409 12112 2.39 15 0.02
+i386 CGC
+Ramblr 505813 0 0 0 0
+O3
+Ramblr Fast 505813 12120 2.39 15 0.02
+Ramblr 469512 3 0.0006 0 0
+Os
+Ramblr Fast 469512 12064 2.56 15 0.02
+Ramblr 505828 0 0 0 0
+Ofast
+Ramblr Fast 505828 12120 2.39 15 0.02
+Ramblr 128065 0 0 0 0
+O0
+Ramblr Fast 128065 0 0 0 0
+Ramblr 124555 0 0 0 0
+O1
+Ramblr Fast 124555 0 0 0 0
+Ramblr 122215 0 0 0 0
+O2
+Ramblr Fast 122215 0 0 0 0
+i386 Coreutils
+Ramblr 192863 0 0 0 0
+O3
+Ramblr Fast 192863 4 0.0021 0 0
+Ramblr 83600 1 0.0012 0 0
+Os
+Ramblr Fast 83600 1 0.0012 0 0
+Ramblr 193317 0 0 0 0
+Ofast
+Ramblr Fast 193317 0 0 0 0
+Ramblr 125005 4 0.00319 0 0
+O0
+Ramblr Fast 125005 4 0.00319 0 0
+Ramblr 123156 4 0.0032 0 0
+O1
+Ramblr Fast 123156 4 0.0032 0 0
+Ramblr 113651 4 0.0035 0 0
+O2
+Ramblr Fast 113651 4 0.0035 0 0
+x86 64 Coreutils
+Ramblr 171302 4 0.0023 0 0
+O3
+Ramblr Fast 171302 4 0.0023 0 0
+Ramblr 82592 4 0.0048 0 0
+Os
+Ramblr Fast 82592 4 0.0048 0 0
+Ramblr 171849 8 0.0047 0 0
+Ofast
+Ramblr Fast 171849 12 0.0070 0 0
+TABLE IV: Symbolization ground truth for different approaches across different datasets. Since reassembly failures are caused
+by mis-classification of symbols, we measure the rate at which symbols are mis-classified against ground truth provided by the
+linker during compilation.
+each binary, and then run test cases against the reassembled Correctness of Uroboros. The fact that Uroboros breaks
+binary to see if it still functions correctly. Using this data, we many Coreutils binaries is unexpected, as it contradicts the
+compile the rate of failures, which we present in Table V. claim in the Uroboros paper that no broken Coreutils binary
+wasgeneratedbyUroborosunderanyassumption.Weinvesti-
+We evaluate both flavors of Ramblr on all optimization gatedtheissue,andfoundouttheculpritwasdifferingversions
+levels. However, Uroboros’ failure rates increase to meaning- of GCC. Uroboros was evaluated on all Coreutils binaries
+less levels for optimizations above O1, so we only present O0 compiledbytheGCCversionshippedwithUbuntu12.04LTS,
+and O1 results. Furthermore, the Uroboros prototype that we which was GCC 4.6. Our Coreutils binaries are compiled by
+initially used completely fails to reassemble 64-bit binaries7. GCC 5.4.1. The prototype of Uroboros has trouble dealing
+Regardless of the reason, we were only able to carry out the withsomememoryreferences(e.g.__JCR_LIST__)insome
+comparative evaluation on 32-bit binaries. For CGC binaries, binaries,andthosereferencesdonotexistinonesgeneratedby
+we evaluate all optimization levels on all tools. GCC 4.6. Additionally, GCC 5 introduces new optimizations
+that were not present in GCC 4, such as inter-procedural op-
+As demonstrated in Table V, both Ramblr and Ramblr
+timizations [9]. These optimizations more frequently produce
+Fast are strictly better than Uroboros. With optimizations
+hard-to-handle folded constants.
+disabled, Uroboros breaks 22.64% of the Coreutils binaries,
+which is significantly worse than Ramblr and Ramblr We reran the evaluation on Coreutils 8.15 compiled by
+Fast, which break none. Enabling optimization, this goes up GCC 4.6 shipped in Ubuntu 12.04 with the default opti-
+to 56.61% for Uroboros and still none for Ramblr. mization level (O2), and were able to reproduce their results.
+However, this reveals the fragility of the Uroboros approach.
+On the CGC dataset, Uroboros breaks 15% to 25% op-
+For instance, when running the evaluation on Coreutils 8.25
+timized binaries, which means that, when applied on real- with O0 under the same setting, we found out that factor
+world binaries, one out of four binaries will require manual
+wasbrokenduetoanincorrectsymbolizationindatasections.
+inspection, intervention, and repair. For larger binaries, this is
+infeasible.Bycomparison,Ramblrachievesasuccessrateof Opt-out case study. Ramblr successfully detects the
+over 98% across all levels, over 99% for optimization levels use of pointer encryption and decryption in KPRCA_00044
+below O3, and 100% for unoptimized binaries. and opts out, while Ramblr Fast fails to detect it, and
+generates a broken reassembled binary. Ramblr is the first
+binaryreassemblyenginewiththisdetectioncapability.Infact,
+7Uponcontact,authorsofUroborosconfirmedthattherewasabugintheir
+Ramblr was able to opt out of breaking all but one binary,
+prototype, which causes misalignment of data sections in generated x86-64
+assembly.Commit45f018awasmadetoaddressthisissue. resulting in a single broken binary out of the entire dataset.
+13Dataset Opt.Level Solution SafetyOpt-outs GenerationFailures TestFailures Successes Total Success%
+Uroboros 0 3 3 135 95.74%
+O0 Ramblr 0 0 0 141 141 100%
+Ramblr Fast 0 0 0 141 100%
+Uroboros 0 6 11 100 85.47%
+O1 Ramblr 1 0 0 116 117 99.15%
+Ramblr Fast 0 0 1 116 99.15%
+Uroboros 0 8 22 86 74.14%
+O2 Ramblr 1 0 0 115 116 99.14%
+Ramblr Fast 0 0 2 114 98.28%
+CGC
+Uroboros 0 8 22 86 74.14%
+O3 Ramblr 1 0 0 115 116 99.14%
+Ramblr Fast 0 0 2 114 98.28%
+Uroboros 0 6 18 95 79.83%
+Os Ramblr 1 0 0 118 119 99.16%
+Ramblr Fast 0 0 2 117 98.32%
+Uroboros 0 7 23 86 74.14%
+Ofast Ramblr 1 0 1 114 116 98.28%
+Ramblr Fast 0 0 2 114 98.28%
+Uroboros 0 0 24 82 77.36%
+O0 Ramblr 0 0 0 106 106 100%
+Ramblr Fast 0 0 0 106 100%
+Uroboros 0 5 55 46 43.39%
+O1 Ramblr 0 0 0 106 106 100%
+Ramblr Fast 0 0 0 106 100%
+Ramblr 0 0 0 106 100%
+Coreutils O2 106
+Ramblr Fast 0 0 0 106 100%
+Ramblr 0 0 0 106 100%
+O3 106
+Ramblr Fast 0 0 1 105 99.05%
+Ramblr 0 0 0 106 100%
+Os 106
+Ramblr Fast 0 0 0 106 100%
+Ramblr 0 0 0 106 100%
+Ofast 106
+Ramblr Fast 0 0 0 106 100%
+TABLE V: The successes and failures of reassembling binaries, with six different optimization levels. The datasets used were
+the Coreutils binaries, compiled in 32-bit (due to limitations of the original Uroboros prototype), and the CGC binaries, which
+are all 32-bit. The column “Safety Opt-outs” represents the number of binaries for which the tool detected that functionality
+would be broken and opted out, “Generation Failures” refers to instances of the tool itself crashing during binary generation,
+and “Test Failures” conveys the number of reassembled binaries that failed functionality testing.
+Binary Opt.Level Size CodeSize Time Time(Fast) a percent). We evaluated the binaries produced by Ramblr,
+CROMU 00043 Os 93KB 7.6KB 35s 4s but identified no execution overhead. For most purposes, the
+NRFIN 00004 Os 344KB 223KB 37s 20s
+EAGLE 00005 Os 5,408KB 9.4KB 75s 20s binaries are perfect replacements for the originals.
+NRFIN 00007 O3 233KB 10KB 73s 35s
+KPRCA 00007 Os 91KB 7.5KB 93s 70s Likewise, Uroboros introduced a small increase in size
+NRFIN 00026 O0 10,768KB 10,600KB 525s 410s for their Coreutils dataset. Since unimportant sections (like
+TABLE VI: A comparison between the analysis runtimes of .comment) are removed by Ramblr during reassembling,
+Ramblr and Ramblr Fast on some binaries in the CGC ourbinariesareusuallysmallerthantheoriginals.Compensat-
+dataset. ing for this removal, the resulting size is practically identical.
+F. Ramblr Runtime
+XI. DISCUSSION
+While our approach improves the feasibility of real-world
+Ramblr Fast trades functionality guarantees of the re-
+binary reassembly, it is a long way from “solving” the general
+sulting binaries for improved speed of the reassembling pro-
+issue. To focus the community’s attention on potential future
+cess.Formostbinariesinourdataset,thisisirrelevant.Infact,
+work in this field, we detail what we feel are the biggest
+the median runtime of Ramblr Fast in the CGC dataset is
+limitations of our technique in this section.
+2.8 seconds, compared to 3.0 seconds for Ramblr. However,
+Ramblr Fast scales considerably better for large binaries. The infeasibility of static content classification. We
+admit, and would like to stress again, that as Horspool, et al.
+In Table VI, we discuss the relative runtime of Ramblr
+maintained, static content classification is infeasible [11]. Our
+versus Ramblr Fast for the biggest CGC binaries in our
+reassembling approach is an empirical solution that works on
+dataset. Our fast workarounds significantly decrease runtime
+many binaries whose integer distributions roughly follow the
+in all cases, but it is important to note that runtime is not
+patternaspresentedinSectionVII.Obviously,aneasywayfor
+completelycontingentonbinarysize,butrather,ontheamount
+anti-reassembling is basing the binary to another base address
+of code that must be analyzed by the data classification and
+during linking, so immediate values belonging to memory
+symbolization steps of the systematic Ramblr approach.
+region of binaries collide with normal immediate values in
+the binary. In that case, our approach will most likely fail and
+G. Execution Overhead and Binary Size result in broken binaries.
+In Section 6.2.1 of the Uroboros paper, the authors re- CFG recovery. The performance of CFG recovery may
+port that binaries produced by Uroboros have execution time work differently on binaries holding different features. The
+overheads of up to 7 percent (although the average was under technique on which our CFG recovery is based works well
+14on our tested Linux binaries compiled with GCC or Clang, [8] M. Egele, M. Woo, and D. Brumley, “Blanket Execution: Dynamic
+whichdonotgenerateanyinlinedata[1].Somecompilers(like Similarity Testing for Program Binaries and Components,” in 23rd
+MSVC) puts inline data into executable regions of binaries, USENIXSecuritySymposium(USENIXSecurity’14). SanDiego,CA:
+USENIXAssociation,2014,pp.303–317.
+mostnotably,jumptables.WhilewebelieveourCFGrecovery
+[9] GCC,“GCC5ReleaseNotes,”https://gcc.gnu.org/gcc-5/changes.html.
+and disassembly technique will work on such binaries with
+[10] L. C. Harris and B. P. Miller, “Practical Analysis of Stripped Binary
+the help of content classification, more work is needed in that
+Code,” ACM SIGARCH Computer Architecture News, vol. 33, no. 5,
+direction.
+pp.63–68,2005.
+[11] R. N. Horspool and N. Marovac, “An Approach to the Problem of
+XII. CONCLUSION DetranslationofComputerPrograms,”ComputerJournal,vol.23,no.3,
+pp.223–229,1980.
+We presented Ramblr, a tool for the disassembly, mod-
+[12] J. Kinder, “Static Analysis of x86 Executables,” Ph.D. dissertation,
+ification, and reassembly of binaries. The proposed approach 2010.
+extends previous approaches to the problem of reassembling [13] N.NethercoteandJ.Seward,“Valgrind:AFrameworkforHeavyweight
+binaries,makingitpossibletoapplystaticbinarymodifications Dynamic Binary Instrumentation,” in Proceedings of the 2007 ACM
+to real-world binaries, even when compiler optimizations are SIGPLAN Conference on Programming Language Design and Imple-
+used. Ramblr uses a novel composition of static analyses
+mentation(PLDI’07),2007,p.89.
+[14] P. O’Sullivan, K. Anand, A. Kotha, M. Smithson, R. Barua, and
+to characterize data contained in a binary, allowing for an
+A. D. Keromytis, “Retrofitting Security in COTS Software with Bi-
+improved symbolization. In addition, the reassembly process
+nary Rewriting,” IFIP Advances in Information and Communication
+introduces no execution overhead in the resulting binary. The Technology,vol.354,pp.154–172,2011.
+ability to modify binaries without affecting their performance [15] R. Paleari, L. Martignoni, G. Fresi Roglia, and D. Bruschi, “N-
+opens a number of applications, ranging from efficient instru- version Disassembly: Differential Testing of x86 Disassemblers,” in
+mentation to binary hardening. Proceedings of the 19th International Symposium on Software Testing
+andAnalysis(ISSTA’10),2010,p.265.
+[16] pancake,“radare,”http://www.radare.org/r/.
+ACKNOWLEDGEMENTS
+[17] N.A.Quynh.(2016)TheUltimateDisassemblyFramework Capstone.
+WewouldliketothankallcontributorstotheDARPACy- [Online].Available:http://capstone-engine.org
+ber Grand Challenge organization (for providing an excellent [18] T.RepsandG.Balakrishnan,“ImprovedMemory-AccessAnalysisfor
+testing dataset for Ramblr), the contributors of angr, and all x86Executables,”InternationalConferenceonCompilerConstruction,
+vol.4959LNCS,no.i,pp.16–35,2008.
+our fellow Shellphish CGC team members. This material is
+[19] s3team. (2015) s3team/uroboros: Infrastructure for Reassembleable
+based on research sponsored by the Office of Naval Research
+Disassembling and Transformation (v 0.1). [Online]. Available:
+under grant number N00014-15-1-2948 and by DARPA under https://github.com/s3team/uroboros
+agreement number N66001-13-2-4039. The U.S. Government
+[20] Shellphish,“DARPACGC,”http://shellphish.net/cgc/.
+is authorized to reproduce and distribute reprints for Gov-
+[21] Y. Shoshitaishvili, R. Wang, C. Salls, N. Stephens, M. Polino,
+ernmental purposes notwithstanding any copyright notation A.Dutcher,J.Grosen,S.Feng,C.Hauser,C.Kruegel,andG.Vigna,
+thereon. This work is also sponsored by a gift from Google’s “(Stateof)TheArtofWar:OffensiveTechniquesinBinaryAnalysis,”
+Anti-Abuse group. inProceedingsoftheIEEESecurityandPrivacy,2016,pp.138–157.
+[22] M. Smithson, K. Elwazeer, K. Anand, A. Kotha, and R. Barua,
+The views and conclusions contained herein are those of “StaticBinaryRewritingwithoutSupplementalInformation:Overcom-
+the authors and should not be interpreted as necessarily repre- ing the Tradeoff between Coverage and Correctness,” in Proceedings
+senting the official policies or endorsements, either expressed - 20th Working Conference on Reverse Engineering (WCRE 2013),
+R. La¨mmel, R. Oliveto, and R. Robbes, Eds. Koblenz, Germany:
+or implied, of DARPA or the U.S. Government.
+IEEE,2013,pp.52–61.
+[23] Vector 35, “binary.ninja : a reversing engineering platform,” https://
+REFERENCES binary.ninja/.
+[24] M. Wang, H. Yin, A. V. Bhaskar, P. Su, and D. Feng, “Binary Code
+[1] D.Andriesse,X.Chen,V.vanderVeen,A.Slowinska,andH.Bos,“An
+Continent:Finer-GrainedControlFlowIntegrityforStrippedBinaries,”
+In-DepthAnalysisofDisassemblyonFull-Scalex86/x64Binaries,”in
+in Proceedings of 2015 Annual Computer Security Applications Con-
+25th USENIX Security Symposium (USENIX Security ’16). Austin,
+ference(ACSAC’15),2015,pp.331–340.
+TX:USENIXAssociation,2016,pp.583–600.
+[25] S. Wang, P. Wang, and D. Wu, “Reassembleable Disassembling,” in
+[2] G. Balakrishnan and T. Reps, “Analyzing Memory Accesses in x86
+24thUSENIXSecuritySymposium(USENIXSecurity’15). USENIX
+Executables,” in International Conference on Compiler Construction,
+Association,2015,pp.627–642.
+2004,pp.5–23.
+[26] R.Wartell,V.Mohan,K.W.Hamlen,andZ.Lin,“SecuringUntrusted
+[3] A.R.BernatandB.P.Miller,“Anywhere,Any-TimeBinaryInstrumen-
+CodeviaCompiler-AgnosticBinaryRewriting,”inProceedingsofthe
+tation,”inProceedingsofthe10thACMSIGPLAN-SIGSOFTWorkshop
+28thAnnualComputerSecurityApplicationsConference(ACSAC’12),
+onProgramAnalysisforSoftwareTools(PASTE’11),2011,pp.9–16.
+2012,p.299.
+[4] D. L. Bruening, “Efficient, Transparent, and Comprehensive Runtime
+[27] R. Wartell, V. Mohan, K. W. Hamlen, Z. Lin, and W. C. Rd, “Binary
+Code Manipulation,” Ph.D. dissertation, Massachusetts Institute of
+Stirring:Self-randomizingInstructionAddressesofLegacyx86Binary
+Technology,2004.
+Code,”inProceedingsofthe2012ACMConferenceonComputerand
+[5] D.Brumley,I.Jager,T.Avgerinos,andE.J.Schwartz,“BAP:ABinary CommunicationsSecurity(CCS’12),2012,pp.157–168.
+Analysis Platform,” in International Conference on Computer Aided
+[28] J.Zeng,Y.Fu,K.a.Miller,Z.Lin,X.Zhang,andD.Xu,“Obfuscation
+Verification,vol.6806LNCS. Springer,2011,pp.463–469.
+ResilientBinaryCodeReusethroughTrace-orientedProgramming,”in
+[6] CrypticApps,“Hopper,”https://www.hopperapp.com/. Proceedings of the 2013 ACM SIGSAC Conference on Computer &
+[7] B. De Sutter, B. De Bus, K. De Bosschere, P. Keyngnaert, and CommunicationsSecurity(CCS’13),2013,pp.487–498.
+B.Demoen,“OntheStaticAnalysisofIndirectControlFlowTransfers [29] M. Zhang and R. Sekar, “Control Flow Integrity for COTS Binaries,”
+inBinaries,”inProceedingsoftheInternationalConferenceonParallel inProceedingsofthe22ndUSENIXConferenceonSecurity(USENIX
+and Distributed Processing Techniques and Application, 2000, pp. Security’13),2013,pp.337–352.
+1013–1019.
+15

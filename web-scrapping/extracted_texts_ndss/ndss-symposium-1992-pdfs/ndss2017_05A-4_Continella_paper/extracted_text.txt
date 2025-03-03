@@ -1,0 +1,1251 @@
+Obfuscation-Resilient Privacy Leak Detection for
+Mobile Apps Through Differential Analysis
+Andrea Continella∗†, Yanick Fratantonio†, Martina Lindorfer†, Alessandro Puccetti†, Ali Zand†,
+Christopher Kruegel†, and Giovanni Vigna†
+∗Politecnico di Milano †UC Santa Barbara
+andrea.continella@polimi.it, {yanick,martina,chris,vigna}@cs.ucsb.edu, ale.puccetti@gmail.com, ali.zand@gmail.com
+Abstract—Mobile apps are notorious for collecting a wealth I. INTRODUCTION
+ofprivateinformationfromusers.Despitesignificanteffortfrom
+theresearchcommunityindevelopingprivacyleakdetectiontools One main concern of mobile app users is the leakage of
+based on data flow tracking inside the app or through network private information: Mobile apps, and third-party advertisement
+traffic analysis, it is still unclear whether apps and ad libraries (ad) libraries in particular, extensively collect private informa-
+can hide the fact that they are leaking private information. In tion and track users in order to monetize apps and provide
+fact,allexistinganalysistoolshavelimitations:dataflowtracking targeted advertisements. In response, the security community
+suffersfromimprecisionsthatcausefalsepositives,aswellasfalse
+has proposed numerous approaches that detect whether a given
+negativeswhenthedataflowfromasourceofprivateinformation
+appleaksprivateinformationtothenetworkornot.Themajority
+to a network sink is interrupted; on the other hand, network
+of approaches utilize data flow analysis of the app’s code, both
+traffic analysis cannot handle encryption or custom encoding.
+through static and/or dynamic taint analysis. Tools based on
+We propose a new approach to privacy leak detection that static taint analysis, such as FlowDroid [6], identify possible
+is not affected by such limitations, and it is also resilient to sources of private information and determine how their values
+obfuscationtechniques,suchasencoding,formatting,encryption,
+flow throughout the app and, eventually, to sinks, such as the
+or any other kind of transformation performed on private
+network. Dynamic taint analysis tools, such as TaintDroid [13],
+information before it is leaked. Our work is based on black-
+execute apps in an instrumented environment and track how
+box differential analysis, and it works in two steps: first, it
+private information is propagated while the app is running.
+establishes a baseline of the network behavior of an app; then,
+it modifies sources of private information, such as the device Finally, AppAudit combines both approaches, determining
+ID and location, and detects leaks by observing deviations in criticalflowsthatleakdatathroughstaticanalysisandverifying
+the resulting network traffic. The basic concept of black-box them through an approximated dynamic analysis [46].
+differential analysis is not novel, but, unfortunately, it is not
+practicalenoughtopreciselyanalyzemodernmobileapps.Infact, While these tools provide useful insights, they suffer from
+their network traffic contains many sources of non-determinism, several limitations that affect their adoption, especially when
+such as random identifiers, timestamps, and server-assigned thethreatmodelconsidersappsthattrytohidethefactthatthey
+session identifiers, which, when not handled properly, cause too are leaking information. Adversaries can deliberately add code
+much noise to correlate output changes with input changes. constructs that break the flow of information throughout an app
+The main contribution of this work is to make black-box dif- and make data flow analysis approaches “lose track” of tainted
+ferentialanalysispracticalwhenappliedtomodernAndroidapps. values. Related works [9], [36] have already demonstrated how
+In particular, we show that the network-based non-determinism an app can, for example, use indirections through implicit
+can often be explained and eliminated, and it is thus possible to control flows or through the file system to efficiently bypass
+reliably use variations in the network traffic as a strong signal static and dynamic data flow analysis. Furthermore, static and
+to detect privacy leaks. We implemented this approach in a dynamic analysis approaches for mobile apps usually only
+tool, called AGRIGENTO, and we evaluated it on more than one
+inspectdataflowinDalvikbytecode(i.e.,theJavacomponentof
+thousandAndroidapps.Ourevaluationshowsthatourapproach
+the app) and miss data leaks in native code components, which
+works well in practice and outperforms current state-of-the-art
+arebecomingmoreandmoreprevalent[5],[26].Bothstaticand
+techniques. We conclude our study by discussing several case
+dynamic analysis can also have false positives, mainly due to a
+studies that show how popular apps and ad libraries currently
+exfiltrate data by using complex combinations of encoding and phenomenon called overtainting: imprecisions in modeling how
+encryptionmechanismsthatotherapproachesfailtodetect.Our information flows through specific instructions, or imprecisions
+results show that these apps and libraries seem to deliberately introduced to make the analysis scalable might establish that a
+hide their data leaks from current approaches and clearly given value is “tainted” with private information even when, in
+demonstrate the need for an obfuscation-resilient approach such fact, it is not.
+as ours.
+Since static analysis does not perform real-time detection of
+privacy leaks, and dynamic analysis requires heavy instrumen-
+Permission to freely reproduce all or part of this paper for noncommercial tation, and is thus more likely to be used by app stores than
+purposes is granted provided that copies bear this notice and the full citation
+by end users, researchers have recently proposed a more light-
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author weightalternative:identifyingprivacyleaksonthenetworklayer
+(for reproduction of an entire paper only), and the author’s employer if the throughtrafficinterception[24],[27],[34],[35],[39].However,
+paper was prepared within the scope of employment. obfuscation is out-of-scope for the majority of approaches as
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+they perform simple string matching and essentially “grep”
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23465 for hardcoded values of private information and some well-knownencodingssuchasBase64orstandardhashingalgorithms. limiting the channel capacity of what an attacker can leak
+ReCon [35] is the most resilient to obfuscation as it identifies without raising an alarm. We performed a series of experiments
+leaks based on the structure of the HTTP requests, for example on 1,004 Android apps, including the most popular ones from
+bylearningthatthevaluefollowinga“deviceid”keyinaHTTP theGooglePlayStore.Ourresultsshowthatourapproachworks
+GET request is probably a device ID. Still, the underlying wellinpracticewithmostpopularbenignappsandoutperforms
+machine learning classifier is limited by the data it is trained existing state-of-the-art tools. As a result, AGRIGENTO sheds
+on,whichiscollectedthroughTaintDroidandmanualanalysis— lightonhowcurrentAndroidappsobfuscateprivateinformation
+if the labelling process misses any leak and its corresponding beforeitisleaked,withtransformationsgoingfarbeyondsimple
+key, e.g., due to obfuscation or custom encoding, ReCon will formattingandencoding.Inourevaluation,weidentifiedseveral
+not be able to detect it. apps that use custom obfuscation and encryption that state-of-
+the-art tools cannot detect. For instance, we found that the
+In general, the transformation of privacy leaks, from sim-
+popular InMobi ad library leaks the Android ID using several
+ple formatting and encoding to more complex obfuscations,
+layers of encoding and encryption, including XORing it with a
+has gotten little attention so far. Only BayesDroid [42] and
+randomly generated key.
+MorphDroid [17] have observed that the leaked information
+does not always exactly match the original private information, It is not surprising that developers are adopting such stealth
+but focused on leaks consisting of subsets or substrings of techniques to hide their privacy leaks, given the fact that
+information instead of obfuscation. It is unclear to what extent regulators such as the Federal Trade Commission (FTC) have
+apps can hide their information leaks from state-of-the-art tools. recently started to issue sizable fines to developers for the
+For this purpose, we developed a novel automatic analysis invasion of privacy of their users [14], [15]: aforementioned
+approach for privacy leak detection in HTTP(S) traffic that is InMobi for example is subject to a penalty of $4 million
+agnostictohowprivateinformationisformattedorencoded.Our and has to undergo bi-yearly privacy audits for the next 20
+workbuildsontheideaofobservingnetworktrafficandattempts years for tracking users’ location without their knowledge and
+to identify leaks through a technique similar to the differential consent [16]. Also, counterintuitively to the fact that they are
+analysis approach used in cryptography: first, we collect an collectingprivateinformation,appdevelopersarealsoseemingly
+app’s network traffic associated with multiple executions; then, becoming more privacy-aware and encode data before leaking
+we modify the input, i.e., the private information, and look for it.Unfortunately,ithasbeenshownthatthestructurednatureof
+changesintheoutput,i.e.,thenetworktraffic.Thisallowsusto some device identifiers makes simple techniques (e.g., hashing)
+detect leaks of private information even if it has been heavily notenoughtoprotectusers’privacy[12],[18].Consequently,on
+obfuscated. one hand there is a clear motivation for developers to perform
+obfuscation—either to maliciously hide data leaks, or to secure
+The idea to perform differential black-box analysis is
+user data by not transmitting private information in plaintext—
+intuitive, and in fact, has already been explored by Privacy
+on the other hand privacy leak detection tools need to be
+Oracle [23] for the detection of information leaks in Windows
+agnostic to any kind of obfuscation.
+applications.Oneofthemainchallengesofperformingdifferen-
+tialanalysisistheeliminationofallsourcesofnon-determinism In summary, we make the following contributions:
+between different executions of an app. Only by doing this
+one can reliably attribute changes in the output to changes
+• We developed AGRIGENTO, a tool that performs root
+cause analysis of non-determinism in the network
+in the input, and confirm the presence of information leaks.
+While Privacy Oracle was mainly concerned with deterministic behavior of Android apps.
+executionstoeliminateOSartifactsthatvarybetweenexecutions • We show that, in most cases, non-determinism in
+and could interfere with the analysis, we observed that non- network behavior can be explained and eliminated.
+deterministic network traffic poses a far greater challenge when This key insight makes privacy leak detection through
+analyzing modern apps. Due to the frequent use of random differential black-box analysis practical.
+identifiers, timestamps, server-assigned session identifiers, or
+encryption, the network output inherently differs in every • Theresultsofourempiricalstudyprovidenewinsights
+execution. These spurious differences make it impractical to into how modern apps use custom encoding and obfus-
+detectanysignificantdifferencescausedbyactualprivacyleaks cation techniques to stealthily leak private information
+by simply observing variations in the raw network output. and to evade existing approaches.
+Onekeycontributionofthisworkistoshowthat,infact,itis In the spirit of open science, we make all the datasets and the
+possibletoexplainthenon-determinismofthenetworkbehavior code developed for this work publicly available.1
+inmostcases.Tothisend,weconductedasmall-scaleempirical
+study to determine the common causes of non-determinism in II. MOTIVATION
+apps’ network behavior. Then, we leveraged this knowledge in
+the development of a new analysis system, called AGRIGENTO, This section discusses a real-world example that motivates
+whicheliminatestherootcausesofnon-determinismandmakes our work. Consider the snippet of code in Figure 1. The code
+differential analysis of Android apps practical and accurate. first obtains the Android ID using the Java Reflection API,
+hashes the Android ID with SHA1, XORs the hash with a
+Ourapproachhasthekeyadvantagethatitis“fail-safe”:we
+randomly generated key, stores the result in JSON format, and
+adoptaconservativeapproachandflaganynon-determinismthat
+encrypts the JSON using RSA. Finally, it sends the encrypted
+AGRIGENTO cannot eliminate as a “potential leak.” For each
+JSON and the XOR key through an HTTP POST request.
+identifiedleak,AGRIGENTOperformsariskanalysistoquantify
+the amount of information it contains, i.e., its risk, effectively 1 https://github.com/ucsb-seclab/agrigento
+2StringBuilder json = new StringBuilder(); rather treats every inexplicable change in the network traffic as
+// get Android ID using the Java Reflection API
+Class class = Class.forName("PlatformId") a potential leak.
+String aid = class.getDeclaredMethod("getAndroidId",
+Context.class).invoke(context); We stress that the example we discussed in this section
+// hash Android ID
+is not synthetic, but it is actually the simplified version of a
+MessageDigest sha1 = getInstance("SHA-1");
+sha1.update(aid.getBytes()); snippet taken from one of the most popular apps in the Google
+byte[] digest = sha1.digest(); Play Store. Specifically, this example is the simplified version
+// generate random key
+ofafunctionalityimplementedinthepopularInMobiadlibrary.
+Random r = new Random();
+int key = r.nextint(); We also note that this case of nested encodings and encryption
+// XOR Android ID with the randomly generated key is not just an isolated example: our experiments, discussed at
+byte[] xored = customXOR(digest, key);
+// encode with Base64 length in §VI, show that these obfuscated leaks occur quite
+String encoded = Base64.encode(xored); frequently and that existing black-box approaches are unable to
+// append to JSON string
+detect them.
+json.append("O1:\’");
+json.append(encoded);
+json.append("\’");
+// encrypt JSON using RSA
+Cipher rsa = getInstance("RSA/ECB/nopadding");
+III. SOURCESOFNON-DETERMINISM
+rsa.init(ENCRYPT_MODE, (Key) publicKey);
+encr = new String(rsa.doFinal(json.getBytes())); One of the key prerequisites for performing differential
+// send the encrypted value and key to ad server analysisistoeliminateanysourcesofnon-determinismbetween
+HttpURLConnection conn = url.openConnection();
+OutputStream os = conn.getOutputStream(); differentexecutions.Onlybydoingso,onecanreliablyattribute
+os.write(Base64.encode(encr).getBytes()); any changes in the network output following changes in private
+os.write(("key=" + key).getBytes());
+input values to information leakage. While previous work has
+focused on deterministic executions through the use of OS
+Fig. 1. Snippet of code leaking the Android ID using obfuscation and snapshots [23], according to our experiments the network itself
+encryption. The example is based on real code implemented in the popular
+is by far the largest source of non-determinism.
+InMobiadlibrary.
+When executing an app multiple times on exactly the same
+device, with the same settings, and using the same user input,
+Depending on how this functionality is implemented, ex-
+one would intuitively expect an app to produce exactly the
+isting tools would miss the detection of this leak. Existing
+same (i.e., deterministic) network traffic during every execution.
+approaches based on static analysis would miss this privacy
+However,ourpreliminaryexperimentsshowedthatthisisnotthe
+leak if the functionality is implemented in native code [5], dy-
+case: the network traffic and more specifically the transmitted
+namicallyloadedcode[31],orinJavaScriptinaWebView[28].
+and received data frequently changes on every execution, and
+Furthermore, the use of the Java Reflection API to resolve calls
+even between the same requests and responses during a single
+at runtime can severely impede static analysis tools.
+execution.
+More fundamentally, the complex lifecycle and component-
+This non-determinism is not necessarily something that
+basednatureofAndroidappsmaketrackingprivateinformation
+is introduced by the app developer intentionally to evade
+throughout an app extremely challenging, and both static and
+analysis systems, but, instead, it is most often part of the
+dynamic approaches are sensitive to the disruption of the data
+legitimate functionality and standard network communication.
+flow. For instance, many existing tools would miss this leak
+Weconductedasmall-scalestudyon15Androidappsrandomly
+if this functionality is implemented in different components.
+selected from the Google Play Store, and we investigated the
+Similarly, if the app first writes the private information to a file,
+most common sources of non-determinism in network traffic.
+e.g., its settings, and only later reads it from there to transmit
+We were able to identify the following categories:
+it via a network sink, any data flow dependency would be lost.
+Furthermore, data flow is also lost when the implementation is • Random values. Random numbers used to generate
+incomplete and fails to propagate data flows through relevant
+session identifiers or, for instance, to implement game
+functions: TaintDroid for example does not track data flows
+logic.Also,theAndroidframeworkprovidesdevelopers
+through hashing functions [32].
+with an API to generate 128-bit random universally
+unique identifiers (UUID). In the most common sce-
+Existing black-box approaches that analyze the network
+nario, apps use this API to generate an UUID during
+trafficwouldmissthedetectionofthisleakaswell,astheyonly
+the installation process.
+consider basic encodings, such as Base64 or standard hashing
+algorithms, and cannot handle complex obfuscations techniques • Timing values. Timestamps and durations, mainly
+that combine multiple different encodings and algorithms such
+used for dates, logging, signatures, and to perform
+as the example code in Figure 1.
+measurements (e.g., loading time).
+Our work attempts to fill this gap: we focus on designing • System values. Information about the state and the
+and developing an approach able to detect privacy leaks even
+performance of system (e.g., information about free
+when custom obfuscation mechanisms are used. Our approach
+memory and available storage space).
+is black-box based, so it is not affected by code obfuscation
+or complex program constructs. Furthermore, our approach can • Encrypted values. Cryptographic algorithms use ran-
+handle obfuscations of the actual data since it does not look for domness to generate initialization vectors (IV) and
+specific tokens that are known to be associated with leaks, but padding.
+3• Network values. Information that is assigned by a Instrumented Environment Contextualized Trace
+networkresource(e.g.,cookies,server-assignedsession #1 App Network Trace
+identifiers). Run Sources of Leak Contextual Info
+• Non-deterministic execution. Randomness inherent ... ... ... Network Behavior
+Instrumented Environment Contextualized Trace Summary
+to the execution of an app, such as different loading
+times affecting the UI exploration. #n App Network Trace
+Run Sources of Leak Contextual Info
+Phase 1: Network Behavior
+IV. APPROACH Summary Extraction
+Instrumented Environment Contextualized Trace Phase 2: Differential Analysis
+Foranygivenapp,ouranalysisconsistsoftwomainphases.
+Inthefirstphase(see§IV-A),callednetworkbehaviorsummary F Rin ua nl SourcA esp p
+of Leak
+CN oe ntw teo xr tk
+u
+aT lr a Inc fe
+o
+D Aif nfe ar le yn st isial Risk Analysis
+extraction,weexecutetheappmultipletimesinaninstrumented
+environment to collect raw network traces, and contextual
+information, which allows us to attribute the non-determinism
+Fig. 2. High-level overview of AGRIGENTO: during the network behavior
+that we see in the network behavior to the sources discussed in summaryextractionitfirstgeneratesabaselineofanapp’snetworkbehavior
+§III. We then combine these network traces with the contextual during n runs, taking into account non-determinism in the contextual infor-
+informationtocreateacontextualizedtraceforeachrun.Finally, mation;duringthedifferentialanalysisitthenmodifiesthesourcesofprivate
+information and identifies privacy leaks based on differences in the network
+we merge the contextualized network traces of all runs into a
+behavior of the final run compared to the network behavior observed in the
+network behavior summary of the app.
+previousruns.
+In the second phase of our approach (see §IV-B), we run
+the app again in exactly the same instrumented environment,
+as sources of non-determinism. However, as we explain in the
+with the only difference that we change one of the input
+next paragraph, our approach is conservative, which means this
+sources of private information (e.g., IMEI, location). We then
+would produce a false positive, but not a false negative.
+compare the contextualized trace collected in this final run
+with the network behavior summary of the previous runs to
+Contextualized Trace. We build the contextualized trace
+identify any discrepancy. We perform this comparison in two
+by incorporating the contextualized information into the raw
+steps:differentialanalysis,whichidentifiesdifferences,andrisk
+network trace. To do this, we remove all sources of non-
+analysis, which scores the identified differences to determine
+determinism (i.e., values stored in the contextual information)
+potential privacy leaks.
+weencounteredduringtheexecution,bylabelingalltimestamps-
+Figure2showsahigh-leveloverviewofourapproach,while related values, random identifiers, and values coming from the
+Figure 3 illustrates the individual steps in more detail using a network, and decrypting encrypted content by mapping the
+simplified example. recorded ciphertext values back to their plaintext. Essentially,
+we look at the raw network trace and try to determine, based
+on string comparison, values in the HTTP traffic that come
+A. Network Behavior Summary Extraction
+from potential sources of non-determinism. This is similar to
+the techniques that previous works use to find certain values of
+Network Trace & Contextual Information. For each execu-
+private information in the network traffic. The key difference is
+tion of the app in our instrumented environment, we collect a
+that we do not perform the string matching to find leaks, but,
+network trace, which contains the raw HTTP flows generated
+rather,toexplainsourcesofnon-determinism.Thisisessentially
+by the app, and contextual information, which contains the
+the opposite goal of previous work: rather than finding leaks,
+values generated by any of the sources of non-determinism
+we use string matching techniques to flag potential leaks as
+we described earlier. Our approach here goes beyond simple
+“safe.” This approach has the advantage of being conservative.
+network traffic analysis, and includes instrumenting the way
+In fact, we flag any source of non-determinism that we cannot
+the app is interacting with the Android framework. Specifically,
+explain.Whileinpreviousworkafailureofthestringmatching
+AGRIGENTO is able to eliminate the different sources of non-
+wouldleadtoamissedleak(i.e.,afalsenegative),ourapproach
+determinism by intercepting calls from the app to certain
+would produce, in the worst case, a false positive.
+Android API calls and recording their return values, and in
+some cases replacing them—either by replaying previously
+Network Behavior Summary. When AGRIGENTO builds the
+seen values or by returning constant values. First, AGRIGENTO
+contextualizednetworktraces,itessentiallyremovesallcommon
+records the timestamps generated during the first run of each
+sources of non-determinism from the network traffic. However,
+app, and replays the same values in the further runs. Second,
+it cannot fully eliminate non-determinism in the execution path
+it records the random identifiers (UUID) generated by the app.
+of the app. Even though AGRIGENTO runs the app in an instru-
+Third,itrecordstheplaintextandciphertextvalueswheneverthe
+mented environment and replays the same sequence of events
+app performs encryption. Finally, the instrumented environment
+for each run, different loading times of the UI and other factors
+sets a fixed seed for all random number generation functions,
+can result in different execution paths. To mitigate this issue,
+andreplacesthevaluesofsystem-relatedperformancemeasures
+we run each app multiple times and merge the contextualized
+(e.g., free memory, available storage space) with a set of
+traces collected in the individual runs to a network behavior
+constants.
+summary. Intuitively, the network behavior summary includes
+Note that when an app uses its own custom encryption all the slightly different execution paths, generating a more
+routines, or generates random identifiers itself without relying complete picture of the app’s network behavior. In other words,
+on Android APIs, AGRIGENTO will not be able to detect these the network behavior summary represents “everything we have
+4https://ads.com/show?data=7aca67bfc75d7816a1d907fb834c8f69
+https://ads.com/register?id=732d064f-a465-0414-07f9-ff7d4c27544c
+https://auth.domain.com/user/sign https://ads.com/show?data=<TIMESTAMP>_c734f4ec
+https://ads.com/register?id=<RANDOM_UUID>
+UUIDs: [732d064f-a465-0414-07f9-ff7d4c27544c] https://auth.domain.com/user/sign
+Timestamps: [146897456, 146897562]
+Decryption map: {"7aca67bfc75d7816a1d907fb834c8f69"=>"146897456_c734f4ec"} https://ads.com/show?data=<TIMESTAMP>_c734f4ec
+https://ads.com/register?id=<RANDOM_UUID>
+https://auth.domain.com/user/sign
+https://ads.com/show?data=3951820fb1cad2e77a996e18fd1973ff https://ads.com/register?special=True
+https://ads.com/register?id=4716ac99-767e-42f4-86fa-092d489431a3&special=True https://ads.com/show?data=<TIMESTAMP>_c734f4ec
+UUIDs: [4716ac99-767e-42f4-86fa-092d489431a3] https://ads.com/register?id=<RANDOM_UUID> Timestamps: [146897985] https://ads.com/register?special=True
+Decryption map: {"3951820fb1cad2e77a996e18fd1973ff"=>"146897985_c734f4ec"}
+https://ads.com/show?data=dde108ec00cfc08d3b22a39659e3f6cf
+https://ads.com/register?id=e9040325-2b7e-a674-de21-ce1b983fa8a5
+https://ads.com/show?data=<TIMESTAMP>_03ff61e4
+03ff61e4 UUIDs: [e9040325-2b7e-a674-de21-ce1b983fa8a5] https://ads.com/register?id=<RANDOM_UUID>
+Timestamps: [146898910, 146912344]
+Decryption map: {"dde108ec00cfc08d3b22a39659e3f6cf"=>"146898910_03ff61e4"}
+nuR
+1#
+nuR
+n#
+nuR
+laniF
+Network Trace
+Contextualized Trace
+Contextual info
+Network Behavior Summary
+Network Trace
+Contextualized Trace
+Contextual info
+Phase 1
+Network Trace Phase 2
+Differential Analysis Contextualized Trace
+<TIMESTAMP>_c734f4ec
+Contextual info <TIMESTAMP>_03ff61e4
+Risk Analysis
+Score("c734f4ec", "03ff61e4") = 21
+Fig.3. Exampleofhow AGRIGENTO performsitsanalysisintwophases.(1)Inthefirstphaseitbuildsanetworkbehaviorsummaryandreplacescommon
+sourcesofnon-determinism.(2)Inthesecondphaseperformsdifferentialanalysisbychangingthevalueofaninputsourceofprivateinformationtoidentify
+differencesinthenetworkbehavior,whichitthenscoresaspotentialprivacyleaks.
+seen” during the executions of the given app and aims at against the network behavior summary, which we extracted
+providing a trusted baseline behavior of the app. in the previous phase. To extract the differences, we leverage
+the Needleman-Wunsch algorithm [29] to perform a pairwise
+A distinctive aspect of AGRIGENTO is how it determines
+string sequence alignment. The algorithm is based on dynamic
+the number of times each app should be executed. Intuitively,
+programming and can achieve an optimal global matching. It
+the number of runs affects the performance of our tool in terms
+is well-suited for our scenario: in fact, it has been successfully
+of false positives. However, we observed that this parameter
+applied to automatic network protocol reverse engineering
+strongly depends on the complexity of the app. Therefore, our
+efforts [7], [45], [50], which conceptually have a similar goal
+approachisiterativeanddecidesaftereachrunifanotheroneis
+than our network behavior summary, in that they extract a
+required. After each run AGRIGENTO performs the differential
+protocol from observing the network behavior during multiple
+analysis using the collected contextualized traces. By analyzing
+executions.
+thediscrepanciesinthenetworkbehaviorwithouthavingaltered
+any source of private information, we can understand when Atthispointofouranalysis,weeliminatethefinalsourceof
+AGRIGENTO has sufficiently explored the app’s behavior, i.e., non-determinism: values that come from the network. For each
+when the network behavior summary reaches convergence. In difference, AGRIGENTO checks if its value has been received
+practice, we say that an app reaches convergence when we do in a response to a previous network request (e.g., the value is a
+not see any discrepancies in the network behavior summary for server-assignedidentifier).Weassumethatleakedinformationis
+K consecutiveruns.In§VI-C,weshowhowthisparametersets notpartofthepayloadofpreviousresponses.Thisisreasonable
+a trade-off between the ability of explaining non-determinism since, in our threat model, the attacker does not know the value
+and the overall time it takes AGRIGENTO to analyze an app of the leaked source of private information in advance.
+(i.e., the average number of runs). Also, because some apps
+After this filtering step, AGRIGENTO raises an alert for
+might never reach convergence, we set a maximum number of
+each remaining difference between the contextualized trace in
+runs.
+the final run and the network behavior summary. This is a
+conservativeapproach,whichmeansthat,ifthereissomesource
+B. Differential Analysis of non-determinism AGRIGENTO does not properly handle
+(e.g., apps that create UUIDs themselves or perform custom
+In a second phase, we run the app in the same environment
+encryption without leveraging the Android framework), it will
+as before, but modify the value of private information sources,
+flagtheapp:Intheworstcase,thiswillproduceafalsepositive.
+such as the IMEI and location, we want to track. We can do
+this (a) once for all values to detect if an app is stealthily Risk Analysis. In the last phase of our approach, AGRIGENTO
+leaking information in general, or (b) multiple times—once quantifies the amount of information in each identified differ-
+for every unique identifier—to precisely identify the exact ence to evaluate the risk that an alert is caused by an actual
+type of information the app is leaking. In the example in information leak. Our key intuition is that not all identified
+Figure 3, AGRIGENTO changed the value of a source of private differences bear the same risk. Thus, we assign a score to
+information from c734f4ec to 03ff61e4. each alert based on how much the information differs from
+the network behavior summary. Specifically, we leverage two
+Differential Analysis. As in the previous phase, we collect distance metrics, the Hamming distance and the Levenshtein
+a network trace and contextual information to build a con- distance,tocompareeachalertvaluetothecorrespondingvalue
+textualized trace. Then, we compare this contextualized trace in the network behavior summary. Finally, for each app we
+5compute a cumulative score S as the sum of the scores of all 0x4432cd80 = Cipher.getInstance(0x48a67fe0)
+the alerts that AGRIGENTO produced for the app. This score *0x48a67fe0: "AES/CBC/PKCS5Padding"
+provides a measure of the amount of information (i.e., the 0x4432cd80.init(1, 0x48a9fac0, 0x48d448ec)
+number of bits) an app can potentially leak, and it can thus be 0x48ae98f0 = 0x4432cd80.update(0x485affb74)
+used as an indirect measure of the overall risk of a privacy leak *0x485affb74: "Plaintext"
+in a given app. *0x48ae98f0: \xea\x37\xfb\xfa\xc0\xcc\x47\x46\xce\x01
+\x25\x0a\x82\x5b\x6b\x38
+V. SYSTEMDETAILS 0x48aeb6f0 = 0x4432cd80.doFinal(0x485af740)
+*0x485af740: "Content"
+We implemented AGRIGENTO in two main components: an *0x48aeb6f0: \xf5\xff\x0a\xab\xf0\x5b\xd9\xd5\x6a\x0f
+\x6c\xda\x30\xaf\xf1\x3a
+on-device component, which instruments the environment and
+collects contextual information, and the core off-device compo- Decryption map
+nent, which intercepts the network traffic, extracts the network \xea\x37\xfb\xfa\xc0\xcc\x47\x46
+behavior summary, and performs the differential analysis. \xce\x01\x25\x0a\x82\x5b\x6b\x38
+\xf5\xff\x0a\xab\xf0\x5b\xd9\xd5
+\x6a\x0f\x6c\xda\x30\xaf\xf1\x3a
+A. Apps Environment Instrumentation
+"Plaintext Content"
+We implemented a module, based on Xposed [4], which
+hooks method calls and records and modifies their return
+values. As a performance optimization, AGRIGENTO applies Fig.4. ExampleofhowAGRIGENTOleveragesCryptoAPItracestobuildan
+entryofthedecryptionmapthatmapsciphertexttoitscorrespondingplaintext
+the contextualization steps only when needed (i.e., only when
+(*addressrepresentsthecontentstoredatthataddress).
+it needs to address values from a non-deterministic source).
+Random values. To record Android random identifiers from StatFs.getAvailableBlocks(), or by querying
+(UUIDs) the module intercepts the return of the Android ActivityManager.getMemoryInfo() for information
+API randomUUID() and reads the return value. However, about available memory.
+recording the randomly generated values is not enough: apps
+frequently process these numbers (e.g., multiply them with a Encrypted values. In order to decrypt encrypted con-
+constant), and thus they usually do not appear directly in the tent, we hook the Android Crypto APIs (i.e., Cipher,
+network traffic. To handle this scenario, we set a fixed seed MessageDigest, Mac) and store the arguments and return
+for random number generation functions. By doing so, we can value of each method. Our module parses the API traces to
+observe the same values in the output network traffic for each build a decryption map that allows it to map ciphertext to the
+run, even without knowing how they are transformed by an corresponding original plaintext. Since the final ciphertext can
+app. However, always returning the same number is also not be the result of many Crypto API calls, AGRIGENTO combines
+an option since this might break app functionality. Thus, we the values tracking the temporal data dependency. Figure 4
+rely on a precomputed list of randomly generated numbers. shows an example of how we use Crypto API traces to create
+For each run, the module modifies the return value of such a map between encrypted and decrypted content. Specifically,
+functions using the numbers from this precomputed list. In the example shows how AGRIGENTO creates an entry in the
+case the invoked function imposes constraints on the generated decryption map by tracing the API calls to a Cipher object
+number (e.g., integers in the interval between 2 and 10), we andbyconcatenatingtheargumentsofsuchcalls( update(),
+adapt the precomputed numbers in a deterministic way (e.g., doFinal()).
+by adding a constant), to satisfy the specific requirements of a
+function call.
+Patching JavaScript code. We observed many applications
+and ad libraries downloading and executing JavaScript (JS)
+Timing values. Also in the case of timing information, only code. Often, this code uses random number generation, time-
+recording the values is not enough since timestamps are often related, and performance-related functions. We implemented a
+usedtoproducemorecomplexvalues(e.g.,forthegenerationof module in the proxy that inspects the JS code and patches it
+signatures). To deal with timestamp-related values, the module to remove non-determinism. Specifically, this module injects
+hooks all the methods providing time-related information, such a custom random number generation function that uses a
+as System.currentTimeMillis(), stores the return fixed seed, and replaces calls to Math.random() and
+values in a file during the first run, and modifies the return getRandomValues() with our custom generator. Also,
+values reading from the file in the next runs. It reads the stored the JS injector replaces calls to time-related functions (e.g.,
+timestamps in the same order as they were written and, in case Date.now()) with calls to a custom, injected timestamp
+one of the next runs performs more calls to a specific method generator, and sets constant values in global performance
+than the first run (this could be due to a different execution structures such as timing.domLoading.
+path), it leaves the original return values unmodified for the
+exceeding calls.
+B. Network Setup
+System values. We set to constants the return val- Our implementation of AGRIGENTO captures the HTTP
+ues of Android APIs that apps use to perform perfor- trafficandinspectsGETandPOSTrequestsusingaproxybased
+mance measurements and fingerprint the device for example on the mitmproxy library [2]. In order to intercept HTTPS
+by reading information about the available storage space traffic, we installed a CA certificate on the instrumented device.
+6root Algorithm 1 Differential Analysis.
+1: procedureDIFFERENTIALANALYSIS(context trace,summary)
+2: diffs←Ø
+mydomain.com ads.com auth.domain.com 3: forhttp flow∈context tracedo
+4: ifhttp flow∈/summary then
+5: field←getMissingField(http flow,summary)
+... ...
+/showad /register/client 6: fields←getSamePositionField(field,summary)
+7: diffs.add(COMPARE(field,fields))
+Connection user ts 8: returndiffs
+9:
+10: procedureCOMPARE(field,fields)
+keep-alive John Jack <TIMESTAMP> 11: diffs←Ø
+12: most similar←mostSimilar(field,fields)
+13: ifisKnownDataStructure(field,most similar)then
+Fig. 5. Example of the tree-based data structure used to model a network
+14: subfields←parseDataStructure(field)
+behaviorsummary.
+15: similar subfields←parseDataStructure(most similar)
+16: fori∈subfieldsdo
+17: diffs.add(COMPARE(subfieldsi,similar subfieldsi))
+Furthermore, to be able to capture traffic also in the case apps 18: returndiffs
+use certificate pinning, we installed JustTrustMe [1] on the 19: ifisKnownEncoding(field,most similar)then
+client device, which is an Xposed module that disables certifi- 20: field←decode(field)
+21: most similar←decode(most similar)
+cate checking by patching the Android APIs used to perform
+the check (e.g., getTrustManagers()). However, if an 22: alignment←align(field,most similar)
+23: regex←getRegex(alignment)
+app performs the certificate check using custom functionality
+24: diffs←getRegexMatches(field)
+or native code, we cannot intercept the traffic. 25: diffs←removeNetworkValues(diffs)
+26: diffs←whitelistBenignLibaries(diffs)
+We limit our study to HTTP(S) traffic (further referred to 27: returndiffs
+bothasHTTP),sincerelatedworkfoundthistobetheprotocol
+ofchoiceforthemajority(77.77%)ofAndroidapps[11].How-
+ever,thisisonlyalimitationofourprototypeimplementationof D. Modifying Sources of Private Information
+AGRIGENTO, and not a fundamental limitation of our approach.
+In our implementation we track the following sources
+Finally, to filter only the network traffic generated by the of private information: Android ID, contacts, ICCID, IMEI,
+analyzed app, we use iptables to mark packets generated IMSI, location, MAC address, and phone number. For IC-
+by the UID of the app, and route only those packets to our CID, IMEI, IMSI, MAC address and phone number we
+proxy. leverage the Xposed module to alter the return values of
+the Android APIs that allow to retrieve such data (e.g.,
+TelephonyManager.getDeviceId()). For the An-
+C. Network Behavior Summary
+droid ID we directly modify the value in the database in which
+Wemodelthenetworkbehaviorsummaryusingatree-based it is stored, while to alter the contact list we generate intents
+data structure, which contains the HTTP GET and POST flows through adb. We also use mock locations, which allow to set
+from all the contextualized traces. The tree has four layers. The a fake position of the device for debug purposes.
+first layer contains all the domain names of the HTTP flows.
+ThesecondlayercontainsthepathsoftheHTTPflowsrecorded E. Differential Analysis
+for each domain. The third and fourth layers contain key-value
+pairs from the HTTP queries and HTTP headers. Also, we
+In the second phase of our approach, AGRIGENTO modifies
+the input sources of private information as described in the
+parseknowndatastructures(e.g.,JSON)accordingtotheHTTP
+Content-Type (e.g., application/json). Figure 5 shows previoussection,rerunstheappintheinstrumentedenvironment,
+and compares the new contextualized trace with the network
+an example of a tree modeling a network behavior summary.
+behavior summary to identify changes in the network traffic
+This structure is useful to group the fields of the HTTP caused by the input manipulation.
+flows that we track according to their “type” and position in
+Weimplementedthedifferentialanalysisfollowingthesteps
+the tree. In fact, when performing the differential analysis, we
+defined in Algorithm 1. For each HTTP flow in the contextual-
+want to compare fields in the same position in the tree. For
+instance, if an HTTP request contains an HTTP value that is
+ized trace collected from the final run, AGRIGENTO navigates
+the tree and checks if each field of the given flow is part of the
+not part of the tree, we compare it with the other values from
+requests with the same domain, path, and key.
+tree. If it does not find an exact match, AGRIGENTO compares
+the new field with the fields in the same position in the tree
+AGRIGENTO looks for privacy leaks at all levels of the (e.g., requests to the same domain, path, and key). Specifically,
+tree, i.e., in all parts of the HTTP request: the domain, AGRIGENTO performs the comparison between the new field
+path, key, and values, as well as the headers and the pay- and the most similar field among those in the same position in
+load. In the current implementation AGRIGENTO includes the tree. During the comparison phase, AGRIGENTO recognizes
+parsers for application/x-www-form-urlencoded, patterns of known data structures such as JSON. If any are
+application/json, and any content that matches a HTTP found, AGRIGENTO parses them and performs the comparison
+query format (i.e., variable=value). However, AGRIGENTO can on each subfield. This step is useful to improve the alignment
+be easily extended with parsers for further content types. quality and it also improves the performance since aligning
+7shortersubfieldsisfasterthanaligninglongvalues.Furthermore, bits the app is leaking:
+before the comparison, AGRIGENTO decodes known encodings (cid:40)
+Hamming(x,y) if len(x)=len(y)
+(i.e., Base64, URLencode). Then, AGRIGENTO leverages the distance(x,y)=
+Needleman-Wunsch algorithm to obtain an alignment of the Levenshtein(x,y)∗8 otherwise
+fields under comparison. The alignment identifies regions of (cid:88)
+S = min distance(d,f)
+A
+similarity between the two fields and inserts gaps so that ∀f∈F
+∀d∈D
+identical characters are placed in the same positions. From
+the alignment, AGRIGENTO generates a regular expression. We combine the Hamming and the Levenshtein distance as
+Essentially, it merges consecutive gaps, and replaces them with follows: if the values under comparison are of equal length we
+a wildcard (i.e., *). Finally, it obtains a set of differences use the Hamming distance, otherwise we use the Levenshtein
+by extracting the substrings that match the wildcards of the distance.WhileweapplytheHammingdistanceatthebitlevel,
+regular expression from a field. AGRIGENTO then discards the Levenshtein distance calculates the minimum number of
+any differences caused by values that have been received single-character edits. In the latter case, to obtain the number
+by previous network requests (e.g., server-assigned identifier). of different bits, we simply map one character to bits by
+Finally, AGRIGENTO also whitelists benign differences caused multiplying it with 8. We note that this distance metric does
+by known Google libraries (e.g., googleads), which can not provide a precise measurement, but we believe it provides
+be particularly complex to analyze and that contain non- a useful estimation of the amount of information contained in
+determinism AGRIGENTO cannot efficiently eliminate. each difference. Moreover, we note that BayesDroid [42] also
+applied the Hamming and Levenshtein distances, although only
+on strings of the same length, to provide a rough indication
+Example. For instance, in this simplified case, the network
+on how much information is contained in a given leak. Both
+behavior summary tree contains the following HTTP flows:
+metrics share the very same intuition and, therefore, provide a
+domain.com/path?key=111111111_4716ac99767e similar numeric result.
+domain.com/path?key=111111111_6fa092d4891a
+other.com/new?id=28361816686630788 VI. EVALUATION
+The HTTP flow in the contextualized trace collected from the For our evaluation, we first performed an experiment to
+final run is: characterizenon-determinisminnetworktrafficanddemonstrate
+the importance of leveraging contextual information when
+domain.com/path?key=999999999_4716ac99767e applying differential analysis to the network traffic of mobile
+apps. Second, we compared the results of our technique with
+AGRIGENTO navigates the tree from domain.com to key, existing tools showing that AGRIGENTO outperformed all of
+and then determines that 999999999_4716ac99767e is them,andidentifiedleaksinseveralappsthatnoothertoolwas
+not part of the tree. Hence, it selects the most similar field able to detect. Then, we describe the results of our analysis on
+in the tree, and performs the comparison with its value. current popular apps and present some interesting case studies
+In this case, it aligns 999999999_4716ac99767e with describing the stealthy mechanisms apps use to leak private
+111111111_4716ac99767e. Starting from the alignments information.Finally,weassesstheperformanceof AGRIGENTO
+it produces the regular expression *_4716ac99767e and in terms of runtime.
+determines 999999999 as the difference in the network
+behavior of the final run compared to the network behavior A. Experiment Setup
+summary of previous runs.
+We performed our experiments on six Nexus 5 phones,
+runningAndroid4.4.4,whilewedeployed AGRIGENTO ona24
+GB RAM, 8-core machine, running Ubuntu 16.04. The devices
+F. Risk Analysis
+and the machine running AGRIGENTO were connected to the
+As mentioned in §IV-B we combine the Hamming and
+same subnet, allowing AGRIGENTO to capture the generated
+network traffic.
+the Levenshtein distance to compute a score for each of the
+differences AGRIGENTO identifies during differential analysis. We chose to perform our experiments on real devices
+In particular, we are interested in quantifying the number of since emulators can be easily fingerprinted by apps and ad
+bits that differ in the network traffic of the final run from what libraries [30], [43]. Especially ad libraries are likely to per-
+we have observed in the network behavior summary. form emulator detection as ad networks, such as Google’s
+AdMob[21],encouragetheuseoftestadsforautomatedtesting
+For each field that the differential analysis flagged as being
+to avoid inflating ad impressions. By using real devices instead
+different from the previously observed network traffic, we
+of emulators our evaluation is thus more realistic. Furthermore,
+compute a score based on the distance of its value to the most
+we set up a Google account on each phone to allow apps to
+similar value in the same position of the network behavior
+access the Google Play Store and other Google services.
+summary. This is equivalent to selecting the minimum distance
+between the value and all other previously observed values for For each execution, we run an app for 10 minutes using
+a specific field. Monkey[3]forUIstimulation.WeprovideMonkeywithafixed
+seed so that its interactions are the same across runs. Although
+GivenanappA,D (=thedifferencesdetectedbyanalyzing the fixed seed is not enough to remove all randomness from
+A), and F (= all the fields in the tree of A’s network behavior), the UI interactions, it helps to eliminate most of it. At the end
+we then compute an overall score S that quantifies how many of each run, we uninstall the app and delete all of its data.
+A
+8B. Datasets
+1
+We crawled the 100 most popular free apps across all
+the categories from the Google Play Store in June 2016.
+0.8
+Additionally, we randomly selected and downloaded 100 less
+popular apps. We distinguish between those two datasets based
+on the intuition that these two sets of apps might differ 0.6
+significantly in their characteristics and overall complexity.
+0.4
+In order to compare our approach with existing techniques,
+we also obtained the dataset from the authors of ReCon [35],
+which they used to compare their approach to state-of-the-art 0.2
+static and dynamic data flow techniques. This dataset contains
+the 100 most popular free apps from the Google Play Store 4 6 8 10 12 14 16 18 20
+in August 2015 and the 1,000 most popular apps from the
+#runs
+alternative Android market AppsApk.com. Ultimately, we use
+750 of those apps for analysis, since those apps were the ones
+that produced any network traffic in ReCon’s experiments. We
+further obtained the dataset of BayesDroid [42], which contains
+54 of the most popular apps from the Google Play Store in
+2013.
+C. Characterizing Non-Determinism in Network Traffic
+Onekeyaspectofourworkisbeingabletocharacterizeand
+explain non-determinism in network traffic. In fact, we want to
+distinguish what changes “no matter what” and what changes
+“exactly because we modified the input.” First, we show that
+trivially applying approaches based on differential analysis is
+ineffective when applied to modern Android apps. Second, our
+techniqueallowsustopinpointwhichappsareproblematic,i.e.,
+for which apps we cannot determine why the network output
+changes.Inthiscase,wecannotreliablycorrelatethedifferences
+in output with the differences in input and, therefore, we flag
+themaspotentiallyleakingprivateinformation.Wenotethatwe
+can adopt this conservative aggressive policy only because we
+rarely encounter inexplicable differences in the network traffic
+of apps that do not leak private information. In other words,
+changes in network traffic that cannot be explained by our
+system are strong indicators that private information is leaked.
+To demonstrate how poorly a na¨ıve differential analysis ap-
+proachwithoutconsideringanynetwork-basednon-determinism
+would perform, we analyzed the 100 popular Google Play apps
+fromtheReCondatasettwice:thefirsttime,wetriviallyapplied
+the differential analysis without leveraging any contextual
+information; the second time, instead, we applied our full
+approach, executing the apps in our instrumented environment
+and exploiting the collected contextual information. In both
+cases, we measured the number of runs needed to converge,
+setting 20 as the maximum number of runs.
+Figure 6 shows the cumulative distribution functions of
+the number of runs required to reach convergence in the two
+scenarios. While in the first case almost all the apps did not
+reach convergence (within a maximum number of 20 runs), our
+approachcorrectlyhandledmostofthecases.Thisdemonstrates
+two things: (1) network traffic is very often non-deterministic,
+(2) in most cases, the contextual information recorded during
+the app’s analysis is enough to determine the real source of
+non-determinism.
+In order to further confirm this finding, we evaluated how
+thenumberofrunsperappaffectsthenumberofappsforwhich
+FDC
+Fig.6. Cumulativedistributionfunction(CDF)ofthenumberofrunsrequired
+forconvergence(forK=3)applyingAGRIGENTO’sfullapproach(solidline),
+andthetrivialdifferentialanalysisapproach(dashedline)thatdoesnotconsider
+anynon-determinisminthenetworkbehavior.
+0.8
+0.6
+0.4
+0.2
+0 5 10 15 20
+#runs
+sppa%
+Fig. 7. Percentage of apps with non-deterministic network traffic in an
+increasingnumberofrunswhenapplyingAGRIGENTO’sfullapproach(solid
+line),andthetrivialdifferentialanalysisapproachwithoutleveragingcontextual
+information(dashedline).
+AGRIGENTO cannot completely explain some source of non-
+determinism. To do so, we performed a final execution without
+altering any source of private information, and measured the
+number of apps that contained non-determinism in the network
+traffic (i.e., the number of apps for which AGRIGENTO raised
+an alert). Figure 7 shows that, in contrast to our full approach,
+when applying the differential analysis trivially, increasing the
+numberofrunsisnotenoughtoreducenon-determinism(82.1%
+of the apps generated non-deterministic network traffic).
+Finally, we evaluated how the choice of K (i.e., the number
+of consecutive runs without discrepancies considered to reach
+convergence) affects AGRIGENTO’s ability to explain non-
+determinism. We performed the evaluation on two datasets:
+the 100 most popular apps from the Google Play Store and
+100 randomly selected less popular apps from the Google
+Play Store. We run the analysis without altering any source
+of private information. By doing this, any alert is caused by
+the fact that there is some non-determinism in the network
+traffic that AGRIGENTO could not explain. Table I shows that
+K = 3 minimizes the number of apps with unexplained non-
+determinism in their network traffic, at the cost of a small
+increase in the average number of runs required per app. This
+evaluation also shows that the popular apps indeed seem to
+9TABLEI. CHOICEOFK(=NUMBEROFCONSECUTIVERUNSTOREACH TABLEII. COMPARISONOFAGRIGENTOWITHEXISTINGTOOLSONTHE
+CONVERGENCE)ANDITSEFFECTONTHEAVERAGENUMBEROFRUNSPER RECONDATASET(750APPS)
+APP,ANDNUMBEROFAPPSWITHNON-DETERMINISMINTHENETWORK
+TRAFFICTHATAGRIGENTOCANNOTEXPLAIN. Tool (Approach) #Apps detected
+Popular Non-Popular All FlowDroid (Static taint analysis) 44
+K
+Andrubis/TaintDroid (Dynamic taint analysis) 72
+#apps avg #runs #apps avg #runs #apps avg #runs
+AppAudit (Static & dynamic taint flow) 46
+1 39 6.02 16 3.10 55 4.56 ReCon (Network flow analysis) 155
+2 30 8.28 14 4.44 44 6.36 AGRIGENTO 278
+3 28 9.85 11 5.67 39 7.76
+4 28 12.42 11 6.78 39 9.60
+5 28 13.82 11 8.01 39 10.92
+ReConidentified.Wemanuallycheckedtheresultstoverifythe
+correctness of our approach. Among the 42 AGRIGENTO did
+not detect, 23 did not generate any network traffic during our
+be more complex than the randomly selected ones, for which
+analysis. This may be due to different reasons, for instance
+AGRIGENTO required a lower number of runs on average and
+different UI exploration (ReCon manually explored part of
+could fully explain all sources of non-determinism in more
+the dataset), or because the version of the app under analysis
+cases overall.
+does not properly work in our test environment. We manually
+inspected the network traffic generated by the remaining 19
+D. Comparison with Existing Tools
+apps. In particular, we manually verified whether each network
+To evaluate our approach and establish the presence of false trace contained any of the values of the sources of private
+positives and false negatives, we compared AGRIGENTO to informationthatweconsidered,andwealsocheckedforknown
+existingstate-of-the-artanalysistools.Generally,comparingthe transformations, such as MD5 hashes and Base64 encoding.
+results of this kind of systems is far from trivial, the main In all cases, we did not identify any leak (i.e., we did not
+problem being the absence of ground truth. Also, especially identify any false negatives). We acknowledge that this manual
+in the case of obfuscated leaks, the detected information leaks evaluation does not exclude the presence of false negatives.
+are often hard to verify by looking at the network traffic alone. However, we consider this an encouraging result nonetheless.
+Therefore, we manually reverse engineered the apps to the best
+To perform a more thorough evaluation of false negatives,
+of our ability to confirm our results. Finally, dynamic analysis
+we also performed an additional experiment. Since one main
+results are influenced by limited coverage and different UI
+challenge when comparing approaches based on dynamic
+exploration techniques, which impedes the comparison.
+analysis is related to GUI exploration differences, we asked
+The only currently available benchmark for privacy leak the authors of ReCon to run their tool on the network traffic
+detection is the DroidBench2 test suite, which is commonly dumps we collected during our analysis. In this way, it is
+used to evaluate approaches based on both static and dynamic possible to compare both tools, ReCon and AGRIGENTO, on
+analysis. We found, however, that it contains very few test the same dynamic trace. On this dataset, ReCon flagged 229
+casesfordynamicanalysis,andthosefocusmainlyonemulator apps for leaking information. AGRIGENTO correctly detected
+detection (not affecting us since we run our evaluation on real all the apps identified by ReCon, and, in addition, it detected
+devices).Italsodoesnotaddresscomplexobfuscationscenarios 49 apps that ReCon did not flag. This evaluation shows that,
+such as the ones we observed in this work, and, thus, none of also for this experiment, AGRIGENTO did not show any false
+the test cases are appropriate for the evaluation of AGRIGENTO. negatives. Moreover, we also looked for false positives, and
+we manually verified the 49 apps detected by AGRIGENTO and
+We thus performed the comparison against existing tools
+not by ReCon. Our manual analysis revealed that 32 of the 49
+using two datasets on which related work was evaluated: 750
+apps did indeed leak at least one source of private information,
+apps from ReCon, and 54 apps from BayesDroid.
+which should then be considered as true positives (and false
+negatives for ReCon). For further 5 apps we could not confirm
+ReCon dataset. A similar comparison to evaluate state-of-the- the presence of a leak and thus classify them as false positives
+art analysis tools from different categories (static taint analysis, produced by our system. We cannot classify the remaining 12
+dynamic taint analysis, and a combination of both) has been cases as either true or false positives because of the complexity
+performed recently to evaluate ReCon [35], which itself is of reversing these apps.
+based on network flow analysis. Table II shows the comparison
+between our tool and AppAudit [46], Andrubis [26] (which
+BayesDroid dataset. We obtained the dataset used by Bayes-
+internallyusesTaintDroid[13]),FlowDroid[6],andReCon.We
+Droid and analyzed the apps with AGRIGENTO. For the
+base our comparison on the number of apps flagged by each
+comparison we considered the common sources of information
+tool for leaking information. For the comparison we considered
+supported by both AGRIGENTO and BayesDroid (i.e., IMEI,
+thefollowingsourcesofprivateinformation:AndroidID,IMEI,
+IMSI, Android ID, location, contacts). BayesDroid flagged 15
+MAC address, IMSI, ICCID, location, phone number, and
+of the 54 apps. However, since this dataset contains older app
+contacts.
+versions (from 2013) 10 apps did not work properly or did not
+Compared to ReCon, AGRIGENTO detected 165 apps that generate any network traffic during our analysis. Nevertheless,
+ReCon did not identify, while it did not flag 42 apps that AGRIGENTO flagged 21 apps, including 10 of the 15 apps
+identified by BayesDroid. As we did for the ReCon dataset,
+2https://github.com/secure-software-engineering/DroidBench we manually looked at the network traces of the remaining
+10TABLEIII. NUMBEROFAPPSDETECTEDBYAGRIGENTOINTHE100MOSTPOPULARAPPS(JULY2016)FROMTHEGOOGLEPLAYSTORE.THECOLUMN
+“ANY”REFERSTOTHENUMBEROFAPPSTHATLEAKATLEASTONEOFTHEPRIVATEINFORMATIONSOURCES.
+Results Any Android ID IMEI MAC Address IMSI ICCID Location Phone Number Contacts
+Plaintext 31 30 13 5 1 0 1 0 0
+TPs Encrypted 22 18 9 3 5 0 0 0 0
+Obfuscated 11 8 5 6 0 0 1 0 0
+Total 42 38 22 11 6 0 1 0 0
+FPs 4 5 9 11 13 13 11 16 13
+5 apps and we did not see any leak (3 of them did not As a first experiment, we considered leaks only at the app
+produce any network traffic, furthermore BayesDroid used levelsinceweareinterestedindeterminingwhetheranappleaks
+manual exploration of all apps). Interestingly, AGRIGENTO information or not, independently from the number of times.
+detected 11 apps that BayesDroid did not. We found that 6 In other words, we are interested to determine whether a given
+of these apps used obfuscations that BayesDroid does not appleaksanysensitiveinformation.Thus,foreachappanalysis
+detect. For instance, one app included the InMobi SDK that we performed just one final run for which we modified all
+performs a series of encodings and encryptions on the Android the sources simultaneously. As a result, AGRIGENTO produces
+ID before leaking it. We describe this case in detail in §VI-F. a boolean output that indicates whether an app leaks private
+Moreover, the other 5 apps used Android APIs to hash or informationornot,withoutpointingoutwhichparticularsource
+encryptdatastructures(e.g.,inJSONformat)containingprivate has been leaked. Table III shows the results of this experiment.
+informationsources,againshowingthatoursystemdetectscases Forthisexperiment,weconsideranappasatruepositivewhen
+that previous work cannot. it leaks any of the monitored sources and AGRIGENTO flags it,
+and as a false positive when AGRIGENTO flags it although it
+does not leak any information.
+E. Privacy Leaks in Popular Apps
+Whilethisexperimentprovidesvaluableinsights,itprovides
+To evaluate AGRIGENTO on a more recent dataset, we only very coarse-grained information. Thus, as a second experi-
+analyzed the current (July 2016) 100 most popular apps from ment, we performed the same evaluation but we looked at each
+the Google Play Store in more detail. AGRIGENTO identified different source of information individually. In this case, we
+privacy leaks in 46 of the 100 apps. We manually verified the ran the app and performed the differential analysis changing
+resultsofouranalysistomeasurefalsepositives.Wefoundthat only one source at a time, and we consider an app as a true
+42 of these apps are true positives, that is, they leak private positive only if it leaks information from the modified source
+information, while four apps were likely false positives. Note and AGRIGENTO correctly identifies the leak. Our evaluation
+that, in some cases, to distinguish true positives from false shows that, while AGRIGENTO produces higher false positives
+positiveswehadtomanuallyreversetheapp.Duringourmanual in identifying leaks for a specific source of information, it has
+analysis, we did not encounter any false negative. Once again, very few false positives in detecting privacy leaks in general.
+we acknowledge that, due to the absence of a ground truth, it is The higher false positive rate is due to some sources of non-
+not possible to fully exclude the presence of false negatives. In determinism that AGRIGENTO failed to properly handle and
+particular, as further discussed in §VII, AGRIGENTO is affected that consequently cause false positives when an app does not
+by a number of limitations, which a malicious app could take leak data. For instance, consider the scenario in which an app
+advantage of. leaks the Android ID and also contains some non-determinism
+in its network traffic that AGRIGENTO could not eliminate.
+We then used our risk analysis to rank the risk associated In this case, when considering leaks at app-level granularity,
+withthesefalsepositives.Interestingly,wefoundthatwhiletwo we consider the app as a true positive for the Android ID,
+ofthefourappsthatcausedfalsepositiveshavehighscores(i.e., since it does leak the Android ID. Instead, for any other
+8,527 and 8,677 bits), for the other two apps, one in particular, source of information (e.g., the phone number) we consider
+AGRIGENTO assignedlowscoresof6and24bits.Wenotethat the app as a false positive because of the non-determinism in
+althoughforthisworkweuseourriskanalysisonlytorankthe the network traffic. Finally, we could not classify 9 apps, for
+risk of a data leak in each detected app, we believe it could be which AGRIGENTO identified leaks of some of the sources,
+used to build, on top of it, a further filtering layer that discards because of the complexity of reversing these apps.
+low bandwidth leaks. We will explore this direction in future
+work.
+F. Case Studies
+We further classified the type of leak in three groups:
+plaintext, encrypted, and obfuscated. The first group contains Wemanuallyreversedsomeappsthat AGRIGENTO automat-
+apps that leak the information in plaintext. The second group ically identified as leaking obfuscated or encrypted information.
+contains apps for which we observed the leaked information Here, we present some case studies showing that current apps
+only after our decryption phase (i.e., the leaked value has been usesophisticatedobfuscationandencryptiontechniques.Hence,
+encrypted or hashed using the Android APIs). Finally, the third as confirmed by the results of our evaluation, state-of-the-art
+group contains apps that obfuscate information leaks by other solutions to identify privacy leaks are not enough since they do
+means (i.e., there is no observable evidence of the leaked value not handle these scenarios and mostly only consider standard
+in the network traffic). encodings.
+11http://i.w.inmobi.com/showad.asm?u-id-map=iB7WTkCLJv G. Performance Evaluation
+NsaEQakKKXFhk8ZEIZlnL0jqbbYexcBAXYHH4wSKyCDWVfp+q+Fe
+LFTQV6jS2Xg97liEzDkw+XNTghe9ekNyMnjypmgiu7xBS1TcwZmF We execute each app for 10 minutes during each run. The
+xYOjJkgPOzkI9j2lryBaLlAJBSDkEqZeMVvcjcNkx+Ps6SaTRzBb
+Yf8UY=&u-key-ver=2198564 analysis time per app mainly depends on the complexity of the
+____________________________________________________ app (i.e., the number of runs required to reach convergence).
+https://h.online-metrix.net/fp/clear.png?ja=33303426
+Setting K = 3, AGRIGENTO analyzed, on average, one
+773f3a3930643667663b33383831303d343526613f2d36383024 app in 98 minutes. Note that, while we executed each run
+7a3f363026663d333539347a31323838266c603d687c76722531 sequentially, our approach can easily scale using multiple
+63253066253066616f6e74656e762f6a732c746370626f792663
+devices or emulators running the same app in parallel.
+6f652466723f6a747670253161273266253266616d6d2e65616f
+656b69726b7573267270697867636e617730266a683d65616437
+613732316431353c65613a31386e676065633037363639363434
+3363266d64643f6561633336303b64336a393531666330366663 VII. LIMITATIONSANDFUTUREWORK
+61373261363a61616335636761266d66733f353b32306d383230
+613230643b6534643934383a31663636623b3232376761612661 While we addressed the major challenges for performing
+6d65613d3139333331333331333131333133312661743d636565 differential analysis despite the overall non-determinism of the
+6e765f6f6f6a696c6d26617e3f7672777174666566676e666572
+network traffic of mobile apps, our overall approach and the
+2b6d6f606b6c652733632b392e3226342d3b
+implementation of AGRIGENTO still have some limitations.
+Fig. 8. Example of the requests performed by InMobi and ThreatMetrix Even though AGRIGENTO improves over the existing state-
+libraries.InMobileakstheAndroidID,asdescribedin§VI-F,inthevalueof
+of-the-art, it still suffers from potential false negatives. For
+u-id-map.ThreatMetrixleakstheAndroidID,location,andMACaddress
+inthejavariable. example, as any other approach relying on the actual execution
+ofanapp, AGRIGENTO suffersfromlimitedcodecoverage,i.e.,
+an app might not actually leak anything during the analysis,
+Interestingly, all the leaks we found in these case studies
+even if it would leak sensitive data when used in a real-world
+were performed by third-party libraries, and thus may concern
+scenario. This could happen for two main reasons: (a) An app
+all the apps using those libraries.
+could detect that it is being analyzed and does not perform any
+data leaks. We address this issue by performing our analysis on
+Case study 1: InMobi. We found that InMobi, a popular ad
+real devices; (b) The component of the app that leaks the data
+library,leakstheAndroidIDusingseverallayersofobfuscation
+is not executed during analysis, for example due to missing
+techniques. The Android ID is hashed and XORed with a
+user input. We currently use Monkey, which only generates
+randomly generated key. The XORed content is then encoded
+pseudorandomuserinputandcannotbypass,forexample,login
+usingBase64andthenstoredinaJSON-formatteddatastructure
+walls.RelatedworkssuchasBayesDroidandReConperformed
+together with other values. The JSON is then encrypted using
+manualexplorationofappsatleastforpartofthedataset,which
+RSA (with a public key embedded in the app), encoded using
+also included providing valid login credentials. Unfortunately,
+Base64 and sent to a remote server (together with the XOR
+manual exploration is only feasible for small-scale experiments
+key). Figure 8 shows an example of such a request leaking the
+and not on a dataset of over one thousand apps such as ours,
+obfuscated Android ID. AGRIGENTO automatically identified
+especially given the fact that AGRIGENTO needs to generate
+20 apps in our entire dataset leaking information to InMobi
+thesameconsistentuserinputovermultipleexecutions.Aspart
+domains, including one app in the 100 most popular apps from
+of our future work, we are planning to explore whether it is
+theGooglePlayStore.Indeed,accordingtoAppBrain3,InMobi
+possibletoprovidemanualinputsforthefirstrunofanapp,and
+is the fourth most popular ad library (2.85% of apps, 8.37% of
+then replaying the same input with tools such as RERAN [20]
+installs).
+in the subsequent runs. One option for collecting the initial
+manual inputs at scale is Amazon Mechanical Turk.
+Case study 2: ThreatMetrix. The analytics library Threat-
+Metrix leaks multiple sources of private information using Second,AGRIGENTOstillsuffersfromsomecovertchannels
+obfuscation. It first puts the IMEI, location, and MAC address that an attacker could use to leak information without being
+in a HashMap. It then XORs this HashMap with a randomly detected.Forinstance,asophisticatedattackercouldleakprivate
+generated key, hex-encodes it, and then sends it to a remote information by encoding information in the number of times a
+server. Figure 8 shows an example of such a request leaking certain request is performed. However, this scenario is highly
+the obfuscated Android ID, location, and MAC address. We inefficient from the attacker point of view. Furthermore, we
+found 15 instances of this scenario in our entire dataset, one of could address this issue with a more accurate description of the
+which is part of the 100 most popular apps from the Google “network behavior summary.” As a matter of fact, AGRIGENTO
+Play Store. According to AppBrain, ThreatMetrix SDK is used severely limits the bandwidth of the channel an attacker can
+by 0.69% of the apps in the Google Play Store, and is included use to stealthily trasmit private data.
+by 4.94% of the installs.
+We need to run each app multiple times: by nature, an
+approach using differential analysis requires at least two execu-
+Further ad libraries. We found several other apps and ad
+tions,onewiththeoriginalinputs,andanotheronewithdifferent
+libraries (MobileAppTracking, Tapjoy) leaking private informa-
+inputstoobservechangesintheoutputs.Aswediscussedinour
+tionusingtheAndroidencryptionandhashingAPIs.Inthemost
+evaluation, the non-deterministic network behavior of modern
+commonscenario,thevaluesarecombinedinasinglestringthat
+apps further requires us to perform the original execution more
+is then hashed or encrypted. In this scenario, even though the
+than once to build a more accurate network behavior summary.
+app uses known encodings or cryptographic functions, previous
+Since we conservatively flag any changes in the output as a
+tools are not able to detect the leak of private information.
+possible leak, in practice the number of runs is a trade-off
+3http://www.appbrain.com/stats/libraries/ad between the overall analysis time and the false positive rate.
+12Furthermore, we perform the final run once for each source of longitude and latitude instead of the location) to account for
+private information that we track. This requirement could be partial leaks. AppIntent [48] proposes to distinguish between
+relaxed if our goal was to find privacy leaks in general, and not user-intendedandcovertdataleaksandusessymbolicexecution
+specific types of information. In our evaluation we performed to determine if a privacy leak is a result of user interaction.
+all runs of a specific app consecutively on the same device. We AppAudit [46] addresses the false positives of related static
+couldparallelizethisprocessondifferentdevices,however,with analysis approaches and verifies the detected leaks through
+less control over device-specific artifacts that could potentially approximated execution of the corresponding functions.
+influence our analysis.
+Dynamic taint analysis tracks information flow between
+On the implementation side we suffer from two main sources of private information and sinks, e.g., the network,
+limitations: First, we currently do not instrument calls to during runtime, either by modifying the device OS (Taint-
+/dev/random, which could be used by native code directly Droid [13]), the platform libraries (Phosphor [8]), or the
+as a source of randomness. We leave this issue for future work. app under analysis (Uranine [33]). AppFence [22] extends
+Second, we are limited by the protocols we track: we only TaintDroid to detect obfuscated and encrypted leaks, and also
+check HTTP GET and POST requests for leaks (and man- performed a small-scale study on the format of leaks, but only
+in-the-middle HTTPS even with certificate pinning in most found the ad library Flurry leaking data in non-human readable
+cases). However, we share this limitation with other tools, such format in 2011— a situation that has drastically changed since
+as ReCon, and leave an extension of AGRIGENTO to other then as we showed in our study. BayesDroid [42] is similar
+protocols for future work. to TaintDroid, but addresses the problem of partial information
+leaks. It compares tainted data tracked from a source of private
+By design, AGRIGENTO can only determine that a specific
+information to a network sink, and uses probabilistic reasoning
+piece of private information was leaked, but not automatically
+toclassifyaleakbasedonthesimilaritybetweenthedataatboth
+determine how it was obfuscated. We can, however, perform
+points. While aforementioned approaches only track data flow
+thena¨ıveapproachemployedbyrelatedtoolofsimplegrepping
+intheDalvikVM,therealsoexistapproachesthatalsocantrack
+for widely-used encodings and hashing algorithms of the value,
+dataflowinnativecode:DroidScope[47]andCopperDroid[41]
+to filter out those cases and focus manual reverse engineering
+performfullsystememulationandinspectbothanapp’sDalvik
+efforts on the more complex and interesting ones.
+and native code for the purpose of malware analysis, while
+Finally, we can only speculate why app developers are the recent TaintART extends TaintDroid to native code [40].
+adopting the stealth techniques that we have uncovered in our However, ultimately, taint analysis approaches are vulnerable
+analysis. This development could be related to the increasing to apps deliberately disrupting the data flow: ScrubDroid [36]
+awareness and opposition of users to the collection of their discusses how dynamic taint analysis systems for example can
+private data, as well as the investigative efforts of regulators be defeated by relying on control dependencies (which related
+such as the FTC. Currently, InMobi is very open about the approaches usually do not track), or by writing and reading a
+data it collects in its privacy policy.4 For future work we could value to and from system commands or the file system.
+investigate any malicious intent or deceptive practice behind
+sophisticated obfuscation techniques, based on automatically Most recently, related work has explored detecting privacy
+verifyingwhetherthoseleaksareinviolationofanapp’sprivacy leaks at the network level, usually through network traffic
+policy or not. Related work in this direction by Slavin [38] has redirection by routing a device’s traffic through a virtual private
+so far only compared privacy policies against information flows network (VPN) tunnel and inspecting it for privacy leaks on
+identifiedwithFlowDroid,buthasnotconsideredcasesinwhich the fly. Tools such as PrivacyGuard [39], AntMonitor [24], and
+apps are hiding their leaks with the techniques AGRIGENTO Haystack[34],performtheiranalysison-deviceusingAndroid’s
+uncovered. built-inVPNService,butrelyonhardcodedidentifiers,orsimply
+grep for a user’s private information. Liu et al. [27] inspect
+network traffic at the ISP-level and identify private information
+VIII. RELATEDWORK
+leaksbasedonkeysgeneratedfrommanualanalysisandregular
+Static taint analysis of Android apps is an active research expressions. Encryption and obfuscation are out of scope of the
+topic, as several aspects of Android apps proved to be very analysis, as the authors assume this scenario is only a concern
+challenging—in particular their component-based architecture formalware.ReCon[35]isanotherVPN-basedapproach,which
+and the multitude of entry points due to their user-centric uses a machine learning classifier to identify leaks and can deal
+nature and complex lifecycle. AndroidLeaks [19] was one of with simple obfuscation. In the end, it relies on the data on
+the first static taint analysis approaches, but lacks precision which it is trained on—which can come from manual analysis
+as it tracks data flow at the object-level instead of tainting and dynamic taint analysis tools—and it could benefit from
+their individual fields. FlowDroid [6] is more precise in this a technique such as AGRIGENTO to deal with more complex
+regard and one of the most widely used static taint analy- obfuscation techniques.
+sis tools. Further approaches include EdgeMiner [9], which
+addresses the issue of reconstructing implicit control flow Informationleakageisnotanewproblemandnotuniqueto
+transitions, and Amandroid [44] and IccTA [25], which deal Androidapps:relatedworkondesktopapplicationshasfocused
+withinter-componentinsteadofjustintra-componentdataleaks. on identifying (accidental) leaks of private information through
+MorphDroid [17] argues that conventional data flow tracking differentialanalysisattheprocess-level.TightLip[49]andCroft
+approaches are too coarse-grained, and tracks atomic units of et al. [10] perform differential analysis on the output of two
+private information instead of the complete information (i.e., processes,onewithaccesstoprivatedata,andonewithout.Both
+consider timestamp-related information and random seeds as
+4http://www.inmobi.com/privacy-policy/ sources of non-determinism and share them between processes.
+13Ultimately, their main goal is to prohibit the accidental leakage ACKNOWLEDGEMENTS
+of private information, more specifically, sensitive files, and
+not obfuscated content. To this end, TightLip checks if the WewouldliketothankourreviewersandourshepherdMatt
+system call sequences and arguments of the two processes Fredrikson for their valuable comments and input to improve
+divergewhentheprivateinputchanges,andconsequentlyraises ourpaper.WewouldalsoliketothankJingjingRenforherhelp
+an alarm if the output is sent to a network sink. In contrast, comparingagainstReCon,aswellasAntonioBianchiandDavid
+Croft et al. only allow the output of the process without Choffnesfortheirinsightfulfeedback.Thisworkwassupported
+access to private information to leave the internal company in part by the MIUR FACE Project No. RBFR13AJFT. This
+network. The approach of Privacy Oracle [23] is related to material is also based upon work supported by the NSF under
+AGRIGENTO: it identifies privacy leaks based on divergences Award No. CNS-1408632, by SBA Research, and a Security,
+in the network traffic when private input sources are modified. Privacy and Anti-Abuse award from Google. Any opinions,
+However, it mainly addresses non-determinism at the OS-level findings, and conclusions or recommendations expressed in this
+(i.e., performing deterministic executions using OS snapshots) publication are those of the authors and do not necessarily
+and does not consider non-determinism in network traffic. In reflect the views of the NSF, SBA Research, or Google. This
+fact, it cannot handle random tokens in the network traffic, material is also based on research sponsored by DARPA under
+nor encryption, and produces false positives when messages in agreementnumberFA8750-15-2-0084.TheU.S.Governmentis
+network flows are reordered between executions. authorizedtoreproduceanddistributereprintsforGovernmental
+purposes notwithstanding any copyright notation thereon. The
+Finally, Shu et al. [37] propose a sequence alignment views and conclusions contained herein are those of the authors
+algorithm for the detection of obfuscated leaks in files and and should not be interpreted as necessarily representing the
+network traffic, which assigns scores based on the amount of official policies or endorsements, either expressed or implied,
+privateinformationtheycontain.Whilethisapproachfocuseson of DARPA or the U.S. Government.
+the detection of obfuscated leaks, it explicitly does not address
+intentional or malicious leaks, and only considers character
+replacement, string insertion and data truncation.
+REFERENCES
+In contrast to related work, we are the first to address the
+[1] “JustTrustMe,”https://github.com/Fuzion24/JustTrustMe.
+topic of obfuscation of privacy leaks in order to deal with
+[2] “mitmproxy,”https://mitmproxy.org.
+adversaries, i.e., apps or ad libraries actively trying to hide the
+[3] “UI/ApplicationExerciserMonkey,”https://developer.android.com/studio/
+factthattheyareleakinginformation.Aswehaveshowninour
+test/monkey.html.
+evaluation, this is a very realistic threat scenario and a practice
+[4] “Xposedframework,”http://repo.xposed.info.
+that is already common amongst popular mobile apps and ad
+[5] V.Afonso,A.Bianchi,Y.Fratantonio,A.Doupe,M.Polino,P.deGeus,
+libraries.
+C.Kruegel,andG.Vigna,“GoingNative:UsingaLarge-ScaleAnalysis
+ofAndroidAppstoCreateaPracticalNative-CodeSandboxingPolicy,”
+inProc.oftheISOCNetworkandDistributedSystemSecuritySymposium
+IX. CONCLUSION (NDSS),2016.
+[6] S.Arzt,S.Rasthofer,C.Fritz,E.Bodden,A.Bartel,J.Klein,Y.LeTraon,
+We showed that while many different approaches have D.Octeau,andP.McDaniel,“FlowDroid:PreciseContext,Flow,Field,
+tackled the topic of privacy leak detection in mobile apps, it is Object-sensitiveandLifecycle-awareTaintAnalysisforAndroidApps,”
+inProc.oftheACMSIGPLANConferenceonProgrammingLanguage
+still relatively easy for app and ad library developers to hide
+DesignandImplementation(PLDI),2014.
+theirinformationleaksfromstate-of-the-arttoolsusingdifferent
+[7] M. Beddoe, “The Protocol Informatics Project,” http://www.4tphi.net/
+types of encoding, formatting, and cryptographic algorithms.
+∼awalters/PI/PI.html,2004.
+This paper introduces AGRIGENTO, a new approach that is
+[8] J. Bell and G. Kaiser, “Phosphor: Illuminating Dynamic Data Flow
+resilient to such obfuscations and, in fact, to any arbitrary in Commodity JVMs,” in Proc. of the ACM International Conference
+transformationperformedontheprivateinformationbeforeitis onObjectOrientedProgrammingSystemsLanguagesandApplications
+leaked.AGRIGENTOworksbyperformingdifferentialblack-box (OOPSLA),2014.
+analysisonAndroidapps.Wediscussedthatwhilethisapproach [9] Y. Cao, Y. Fratantonio, A. Bianchi, M. Egele, C. Kruegel, G. Vigna,
+seems intuitive, in practice, we had to overcome several key and Y. Chen, “EdgeMiner: Automatically Detecting Implicit Control
+FlowTransitionsthroughtheAndroidFramework,”inProc.oftheISOC
+challenges related to the non-determinism inherent to mobile
+NetworkandDistributedSystemSecuritySymposium(NDSS),2015.
+app network traffic.
+[10] J. Croft and M. Caesar, “Towards Practical Avoidance of Information
+LeakageinEnterpriseNetworks,”inProc.oftheUSENIXConference
+One key insight of this work is that non-determinism in
+onHotTopicsinSecurity(HotSec),2011.
+network traffic can be often explained and removed. This
+[11] S.Dai,A.Tongaonkar,X.Wang,A.Nucci,andD.Song,“NetworkPro-
+observation allowed us to develop novel techniques to address
+filer: Towards Automatic Fingerprinting of Android Apps,” in Proc.
+the various sources of non-determinism and it allowed us to of the IEEE International Conference on Computer Communications
+conservatively flag any deviations in the network traffic as (INFOCOM),2013.
+potentialprivacyleaks.Inourevaluationon1,004Androidapps, [12] G. Eisenhaur, M. N. Gagnon, T. Demir, and N. Daswani, “Mobile
+weshowedhow AGRIGENTO candetectprivacyleaksthatstate- Malware Madness, and How to Cap the Mad Hatters. A Preliminary
+of-the-art approaches cannot detect, while, at the same time, LookatMitigatingMobileMalware,”inBlackHatUSA(BH-US),2011.
+only incurring in a small number of false positives. We further [13] W.Enck,P.Gilbert,B.-G.Chun,L.P.Cox,J.Jung,P.McDaniel,and
+A. N. Sheth, “TaintDroid: An Information-flow Tracking System for
+identified interesting cases of custom and complex obfuscation
+RealtimePrivacyMonitoringonSmartphones,”inProc.oftheUSENIX
+techniques,whichpopularadlibrariescurrentlyusetoexfiltrate
+ConferenceonOperatingSystemsDesignandImplementation(OSDI),
+data without being detected by other approaches. 2010.
+14[14] Federal Trade Commission, “FTC Approves Final Order Settling [33] V.Rastogi,Z.Qu,J.McClurg,Y.Cao,Y.Chen,W.Zhu,andW.Chen,
+Charges Against Flashlight App Creator,” https://www.ftc.gov/news- “Uranine:Real-timePrivacyLeakageMonitoringwithoutSystemModifi-
+events/press-releases/2014/04/ftc-approves-final-order-settling-charges- cationforAndroid,”inProc.oftheInternationalConferenceonSecurity
+against-flashlight-app,April2014. andPrivacyinCommunicationNetworks(SecureComm),2015.
+[15] ——, “Two App Developers Settle FTC Charges They Violated [34] A. Razaghpanah, N. Vallina-Rodriguez, S. Sundaresan, C. Kreibich,
+Children’s Online Privacy Protection Act,” https://www.ftc.gov/news- P. Gill, M. Allman, and V. Paxson, “Haystack: In Situ Mobile Traffic
+events/press-releases/2015/12/two-app-developers-settle-ftc-charges- AnalysisinUserSpace,”arXivpreprintarXiv:1510.01419,2015.
+they-violated-childrens,December2015.
+[35] J. Ren, A. Rao, M. Lindorfer, A. Legout, and D. Choffnes, “ReCon:
+[16] ——, “Mobile Advertising Network InMobi Settles FTC Charges
+Revealing and Controlling PII Leaks in Mobile Network Traffic,” in
+It Tracked Hundreds of Millions of Consumers’ Locations With-
+Proc.oftheInternationalConferenceonMobileSystems,Applications
+outPermission,”https://www.ftc.gov/news-events/press-releases/2016/06/
+andServices(MobiSys),2016.
+mobile-advertising-network-inmobi-settles-ftc-charges-it-tracked,June
+2016. [36] G.Sarwar,O.Mehani,R.Boreli,andM.A.Kaafar,“OntheEffectiveness
+[17] P.Ferrara,O.Tripp,andM.Pistoia,“MorphDroid:Fine-grainedPrivacy ofDynamicTaintAnalysisforProtectingAgainstPrivateInformation
+Verification,” in Proc. of the Annual Computer Security Applications LeaksonAndroid-basedDevices,”inProc.oftheInternationalConfer-
+Conference(ACSAC),2015. enceonSecurityandCryptography(SECRYPT),2013.
+[18] M. N. Gagnon, “Hashing IMEI numbers does not protect pri- [37] X. Shu, J. Zhang, D. D. Yao, and W. C. Feng, “Fast Detection of
+vacy,”http://blog.dasient.com/2011/07/hashing-imei-numbers-does-not- TransformedDataLeaks,”IEEETransactionsonInformationForensics
+protect.html,2011. andSecurity,vol.11,no.3,pp.528–542,March2016.
+[19] C. Gibler, J. Crussell, J. Erickson, and H. Chen, “AndroidLeaks:
+[38] R.Slavin,X.Wang,M.B.Hosseini,J.Hester,R.Krishnan,J.Bhatia,
+AutomaticallyDetectingPotentialPrivacyLeaksinAndroidApplications
+T.D.Breaux,andJ.Niu,“TowardaFrameworkforDetectingPrivacy
+onaLargeScale,”inProc.oftheInternationalConferenceonTrustand
+PolicyViolationsinAndroidApplicationCode,”inProc.oftheInterna-
+TrustworthyComputing(TRUST),2012.
+tionalConferenceonSoftwareEngineering(ICSE),2016.
+[20] L. Gomez, I. Neamtiu, T. Azim, and T. Millstein, “RERAN: Timing-
+and Touch-Sensitive Record and Replay for Android,” in Proc. of the [39] Y.SongandU.Hengartner,“PrivacyGuard:AVPN-basedPlatformto
+InternationalConferenceonSoftwareEngineering(ICSE),2013. DetectInformationLeakageonAndroidDevices,”inProc.oftheAnnual
+ACMCCSWorkshoponSecurityandPrivacyinSmartphonesandMobile
+[21] Google, “AdMob Behavioral Policies,” https://support.google.com/
+Devices(SPSM),2015.
+admob/answer/2753860?hl=en,2016.
+[22] P.Hornyack,S.Han,J.Jung,S.Schechter,andD.Wetherall,“”These [40] M. Sun, T. Wei, and L. John, “TaintART: A Practical Multi-level
+Aren’ttheDroidsYou’reLookingFor”:RetrofittingAndroidtoProtect Information-FlowTrackingSystemforAndroidRunTime,”inProc.of
+DatafromImperiousApplications,”inProc.oftheACMConferenceon theACMConferenceonComputerandCommunicationsSecurity(CCS),
+ComputerandCommunicationsSecurity(CCS),2011. 2016.
+[23] J.Jung,A.Sheth,B.Greenstein,D.Wetherall,G.Maganis,andT.Kohno, [41] K. Tam, S. J. Khan, A. Fattori, and L. Cavallaro, “CopperDroid:
+“Privacy Oracle: A System for Finding Application Leaks with Black AutomaticReconstructionofAndroidMalwareBehaviors,”inProc.of
+BoxDifferentialTesting,”inProc.oftheACMConferenceonComputer theISOCNetworkandDistributedSystemSecuritySymposium(NDSS),
+andCommunicationsSecurity(CCS),2008. 2015.
+[24] A. Le, J. Varmarken, S. Langhoff, A. Shuba, M. Gjoka, and
+[42] O.TrippandJ.Rubin,“ABayesianApproachtoPrivacyEnforcement
+A.Markopoulou,“AntMonitor:ASystemforMonitoringfromMobile
+inSmartphones,”inProc.oftheUSENIXSecuritySymposium,2014.
+Devices,”inProc.oftheACMSIGCOMMWorkshoponCrowdsourcing
+andCrowdsharingofBigInternetData(C2BID),2015. [43] T. Vidas and N. Christin, “Evading Android Runtime Analysis via
+[25] L. Li, A. Bartel, T. F. Bissyande´, J. Klein, Y. Le Traon, S. Arzt, Sandbox Detection,” in Proc. of the ACM Symposium on Information,
+S.Rasthofer,E.Bodden,D.Octeau,andP.McDaniel,“IccTA:Detecting ComputerandCommunicationsSecurity(ASIACCS),2014.
+Inter-Component Privacy Leaks in Android Apps,” in Proc. of the
+[44] F.Wei,S.Roy,X.Ou,andRobby,“Amandroid:APreciseandGeneral
+InternationalConferenceonSoftwareEngineering(ICSE),2015.
+Inter-component Data Flow Analysis Framework for Security Vetting
+[26] M. Lindorfer, M. Neugschwandtner, L. Weichselbaum, Y. Fratantonio, ofAndroidApps,”inProc.oftheACMConferenceonComputerand
+V. van der Veen, and C. Platzer, “Andrubis - 1,000,000 Apps Later: CommunicationsSecurity(CCS),2014.
+A View on Current Android Malware Behaviors,” in Proc. of the
+International Workshop on Building Analysis Datasets and Gathering [45] G.Wondracek,P.MilaniComparetti,C.Kruegel,andE.Kirda,“Auto-
+ExperienceReturnsforSecurity(BADGERS),2014. maticNetworkProtocolAnalysis,”inProc.oftheISOCNetworkand
+DistributedSystemSecuritySymposium(NDSS),2008.
+[27] Y. Liu, H. H. Song, I. Bermudez, A. Mislove, M. Baldi, and A. Ton-
+gaonkar,“IdentifyingPersonalInformationinInternetTraffic,”inProc. [46] M.Xia,L.Gong,Y.Lyu,Z.Qi,andX.Liu,“EffectiveReal-timeAndroid
+oftheACMConferenceonOnlineSocialNetworks(COSN),2015. ApplicationAuditing,”inProc.oftheIEEESymposiumonSecurityand
+[28] T.Luo,H.Hao,W.Du,Y.Wang,andH.Yin,“AttacksonWebViewinthe Privacy(S&P),2015.
+AndroidSystem,”inProc.oftheAnnualComputerSecurityApplications
+[47] L.K.YanandH.Yin,“DroidScope:SeamlesslyReconstructingtheOS
+Conference(ACSAC),2011.
+andDalvikSemanticViewsforDynamicAndroidMalwareAnalysis,”
+[29] S. B. Needleman and C. D. Wunsch, “A General Method Applicable inProc.oftheUSENIXSecuritySymposium,2012.
+to Search for Similarities in Amino Acid Sequence of Two Proteins,”
+JournalofMolecularBiology,vol.48,no.3,pp.443–453,1970. [48] Z. Yang, M. Yang, Y. Zhang, G. Gu, P. Ning, and X. S. Wang,
+“AppIntent:AnalyzingSensitiveDataTransmissioninAndroidforPrivacy
+[30] T. Petsas, G. Voyatzis, E. Athanasopoulos, M. Polychronakis, and
+LeakageDetection,”inProc.oftheACMConferenceonComputerand
+S. Ioannidis, “Rage Against the Virtual Machine: Hindering Dynamic
+CommunicationsSecurity(CCS),2013.
+AnalysisofAndroidMalware,”inProc.oftheEuropeanWorkshopon
+SystemSecurity(EuroSec),2014. [49] A.R.Yumerefendi,B.Mickle,andL.P.Cox,“TightLip:KeepingAp-
+[31] S. Poeplau, Y. Fratantonio, A. Bianchi, C. Kruegel, and G. Vigna, plicationsfromSpillingtheBeans,”inProc.oftheUSENIXSymposium
+“ExecuteThis!AnalyzingUnsafeandMaliciousDynamicCodeLoading onNetworkedSystemsDesignandImplementation(NSDI),2007.
+inAndroidApplications,”2014. [50] C.Zuo,W.Wang,R.Wang,andZ.Lin,“AutomaticForgeryofCrypto-
+[32] V.Rastogi,Y.Chen,andW.Enck,“AppsPlayground:AutomaticSecurity graphicallyConsistentMessagestoIdentifySecurityVulnerabilitiesin
+AnalysisofSmartphoneApplications,”inProc.oftheACMConference MobileServices,”inProc.oftheISOCNetworkandDistributedSystem
+onDataandApplicationSecurityandPrivacy(CODASPY),2013. SecuritySymposium(NDSS),2016.
+15

@@ -1,0 +1,1377 @@
+On the Safety and Efficiency of
+Virtual Firewall Elasticity Control
+Juan Deng†∗, Hongda Li†∗, Hongxin Hu†, Kuang-Ching Wang†, Gail-Joon Ahn‡, Ziming Zhao‡, and Wonkyu Han‡
+† Clemson University
+{jdeng, hongdal, hongxih, kwang}@clemson.edu
+‡Arizona State University
+{gahn, zzhao30, iamhwk}@asu.edu
+Abstract—Traditional hardware-based firewall appliances are order of magnitude [17]. This leads to an expensive option of
+placed at fixed locations with fixed capacity. Such nature makes over-provisioning hardware-based firewalls with the capacity
+them difficult to protect today’s prevailing virtualized environ- to process peak traffic load that occurs occasionally.
+ments. Two emerging networking paradigms, Network Function
+Virtualization (NFV) and Software-Defined Networking (SDN), Two emerging networking paradigms, Network Function
+offer the potential to address these limitations. NFV envisions Virtualization (NFV) [6] and Software-Defined Networking
+toimplementfirewallfunctionassoftwareinstance(a.k.avirtual (SDN) [39], push forward a new breed of firewalls, virtual
+firewall). Virtual firewalls provide great flexibility and elasticity, firewalls (VFW), which feature flexibility and elasticity, and
+which are necessary to protect virtualized environments. In are well suited to protect virtualized environments. NFV
+this paper, we propose to build an innovative virtual firewall
+implements firewall function as software instance that can
+controller, VFW Controller, to enable safe, efficient and cost-
+be created or destroyed quickly to handle traffic volume
+effective virtual firewall elasticity control. VFW Controller
+variations.Forexample,ClickOS[38],ahigh-performanceand
+addressesfourkeychallengeswithrespecttosemanticconsistency,
+open-source NFV platform, can create a virtual instance in
+correctflowupdate,bufferoverflowavoidance,andoptimalscaling
+invirtualfirewallscaling.Todemonstratethefeasibilityofourap- less than 30 milliseconds. SDN, recognized as complimen-
+proach,weimplementthecorecomponentsofVFW Controller tary technology to NFV [26], seamlessly provides dynamic
+ontopofNFVandSDNenvironments.Ourexperimentalresults traffic steering support toward flexible, on-demand placement
+demonstrate that VFW Controller is efficient to provide safe of virtual firewalls. Given these benefits, major commercial
+elasticity control of virtual firewalls. virtualizedenvironments(e.g.,VMwarevCloud[37],Amazon
+AWS [2] [9], VCE Vblock [11]) have recently started to
+I. INTRODUCTION embrace virtual firewalls. Virtual firewalls can also be used
+to protect traditional enterprise networks [47].
+Firewall is the most critical and widely deployed network
+security function that protects networks against suspicious However,tofullytakeadvantageofvirtualfirewallbenefits,
+traffic and unauthorized access. Traditional hardware-based our study reveals that there are great challenges to enable
+firewalls are often placed at fixed network entry points and virtual firewall elastic scaling. When a virtual firewall is over-
+haveaconstantcapacitywithrespecttothemaximumamount loaded due to a large amount of incoming traffic and needs to
+oftraffictheycanhandlepertimeunit.Givensuchrigidnature, scaleout,newinstancesviaNFVarequicklycreated.Selective
+itisdifficulttoleveragehardware-basedfirewallstoprotectto- firewall rules and states (in case of stateful firewall) on the
+day’s prevailing virtualized environments. First, the perimeter overloaded virtual firewall are migrated to new instances,
+of a network in virtualized environments becomes fluid, as and the corresponding traffic flow rules in SDN switches are
+VMs and applications may span across racks within a data updatedalongsidetoredistributetraffic.Whenmultiplevirtual
+center or even across multiple data centers, and they are often firewall instances are underloaded and need to scale in, some
+migrated for the purpose of flexible resource management instances are destroyed, all firewall rules and states on them
+and optimization [20]. Second, traffic volume in virtualized are migrated to remaining instances, and flow rules are also
+environments varies frequently and significantly [17] [18]. A updated accordingly. The scaling of virtual firewalls must be
+study on network traffic characteristic in virtualized environ- safe, efficient and optimal. A safe scaling does not cause legal
+mentssuggeststhattrafficvolumedependsontime-of-dayand traffictobedroppedorillegaltraffictobeallowed.Anefficient
+day-of-week, and the traffic volume variations are nearly an scaling ensures that the latency overhead caused by scaling is
+bounded.Anoptimalscalingconsumesminimumcomputeand
+∗Thefirsttwoauthorscontributeequallytothepaper.
+network resources.
+To achieve safe, efficient, and optimal virtual firewall
+Permission to freely reproduce all or part of this paper for noncommercial
+scaling, the following key challenges should be addressed:
+purposes is granted provided that copies bear this notice and the full citation
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author • Semantic Consistency The split and mergence of
+(for reproduction of an entire paper only), and the author’s employer if the firewall rules in virtual firewall scaling must not
+paper was prepared within the scope of employment. change the semantics of security policies. Otherwise
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+safety is violated (see §II B for examples). Keeping
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23013 the semantic consistency after rounds of splits andmergences is non-trivial, because firewall rules are and implement the core components of VFW Controller
+often logically entangled with each other resulting on top of ClickOS [38]. Our evaluations in CloudLab [3]
+in complicated rule dependencies. Sometimes rule show that our VFW Controller provides efficient virtual
+dependencies are intentionally introduced by system firewall scaling control. To the best of our knowledge, VFW
+administrators to obtain fewer firewall rules [29] [49]. Controller provides the first solution for the safety and
+efficiency of virtual firewall elasticity control.
+• Correct Flow Update When migrating firewall rules
+and states to new/remaining firewall instances, net- The rest of the paper is organized as follows. Section II
+work flow rules in SDN switches must be cor- presentsthemotivationandchallengesofthispaper.SectionIII
+rectly updated to re-route corresponding traffic to givesanoverviewofVFW Controller.Thefollowingfour
+new/remaining instances. Incorrect flow update may sectionspresenthowVFW Controllerguaranteessemantic
+cause some traffic is missent to an instance that does consistency, finds correct update, avoids buffer overflows,
+not have the firewall rules intended for the traffic, and achieves optimal scaling, respectively. We describe the
+hence violates safety. Finding correct flow update is implementation of VFW Controller and our experiments
+difficult, since flow rules in an SDN switch may inSectionVIII.SectionIXdiscussesrelatedwork.Conclusion
+be dependent [31] [32] and the traffic space defined and future work are addressed in Section X.
+by the flow rules often does not exactly match that
+defined by the firewall rules.
+II. BACKGROUNDANDCHALLENGES
+• Buffer Overflow Avoidance A safe scaling also
+A. New Networking Paradigms
+requires buffering in-flight traffic during a migra-
+tion [27] [28]. In-flight traffic refers to the traffic that Network functions (NFs) are systems that examine and
+arriveatthesourceinstanceafterthematchingfirewall modify packets or flows in a sophisticated fashion. Hardware-
+rules and states have been migrated, or the traffic that based NFs have become fundamental elements in enterprise
+arrive at the destination instance before correspond- networks [38] [48]. They are expensive, often vendor pro-
+ing firewall rules and states become ready. However, prietary, difficult to manage, and inflexible with respect to
+buffer space is not unlimited. We also observe that location and capacity. These demerits hinder the evolution of
+migration of different firewall rules incurs different network architecture and new service introduction. Network
+amount of in-flight traffic. Therefore, care must be Function Virtualization (NFV) aims to overcome these limita-
+taken while selecting firewall rules to migrate so that tionsleveragingvirtualizationandcloudtechnologies[6].NFV
+buffer overflow 1 can be avoided. shifts NF from hardware appliances to virtualized instances
+runningonstandardhighvolumeresource(servers,storageand
+• Optimal Scaling Compute and network resources for
+switches). Built on cloud platforms for resource management,
+buildingvirtualfirewallsareneitherunlimitednorfree.
+NFV shares resource across services and different customer
+Resource optimization is an important goal that needs
+base. In addition, NFV promises the benefits of low cost,
+to be achieved in virtualized environments. Creations
+management ease, scalability, openness, convenient service
+of virtual firewalls consume compute resource, and
+introduction, etc.
+flow rule updates are constrained by the limited ca-
+pacity of the Ternary Content Addressable Memories Traditional network devices have the control plane, which
+(TCAMs) used for holding rules in each SDN switch. makes decision on traffic forwarding, and the data plane,
+ItisNP-hardtoachieveoptimizationofresourceusage which forwards traffic, tightly coupled. This makes them very
+during virtual firewall scaling. difficult to implement network policies and introduce new
+services or protocols. Also, it is impossible to automatically
+Inthispaper,weproposeanovelvirtualfirewallcontroller, respondtonetworkfaultsorloadchanges[34],[41].Bydecou-
+VFW Controller, that enables safe, efficient, and optimal pling forwarding hardware from control decisions, Software-
+virtual firewall scaling. To address the challenge of semantic Defined Networking (SDN) centralizes network intelligence
+consistency,VFW Controllerappliespacketspaceanalysis in software-based controller, making network devices sim-
+to identify intra-dependencies of firewall rules. A group-based ple packet forwarding devices. Network devices can be pro-
+migrationstrategyisappliedtoguaranteethesemanticconsis- grammed via an open interface, such as OpenFlow [39].
+tency. To find correct flow update, intra-dependencies of flow
+rules and inter-dependencies between firewall rules and flow Giventheirbenefits,NFVandSDNhaverecentlyattracted
+rules are identified, which help locate the subset of flow rules significant attentions from both academia and industry. A re-
+to update and the correct update operations (e.g., change, in- cent survey indicates that 97% of the major network operators
+sertion).Toavoidbufferoverflow,wemodelmigrationprocess plan to deploy SDN and 93% plan to deploy NFV [46].
+and predict the amount of in-flight traffic generated during the Google, Amazon, AT&T, and Intel have announced their
+migration. Firewall rules that may cause buffer overflow when deployment plans [12]–[14], [19], [42]. NFV does not rely on
+migrating them are not selected to move. To achieve optimal SDN to exist, but the programmable feature of SDN greatly
+scaling-out of virtual firewalls, VFW Controller adopts a facilitate NFV [26] [45].
+three-step heuristic approach to minimize resource usage. To
+achieveoptimalscaling-in,integerlinearprogramming(ILP)is B. Challenges in Virtual Firewall Elasticity Control
+usedtoensuremaximumresourcescanbereleased.Wedesign
+Recent research efforts, notably Split/Merge [44] and
+1In this paper, we use the term ‘buffer overflow’ to refer to the situation OpenNF [28], have laid the groundwork for supporting the
+whenbufferspaceisinadequatetobufferin-flighttraffic,causingtrafficdrop. elastic scaling of a variety of virtualized network functions.
+2Firewall#Rules#on#VFW1## taken with respect to firewall rule dependencies so that the
+v2###tcp##10.10.2.*###any###192.1.1.*###80##allow semantics of the rules are unchanged after the split. Changes
+v v v v1 2 3 4# # # ## # # ## # # #t t t tc c c cF p p p pir # # # ## # # #e 1 1 1 1w 0 0 0 0. . . .a 1 1 1 1l 0 0 0 0l# . . . .R 2 2 1 1u . . . .* * * 5l # # #e ## # # ## # #s #a a a a# n n no ny y yn y# # ## ## # #V ## # # #1 1 1 1F 9 9 9 9W 2 2 2 2. . .1 .1 1 1 1## . . . .1 1 1 1. . . .9 * 9 *## # ## ## ## ## a88 8n0 00 y## ## ## #a # dd dle el eo nn nwy yy v v v v v3 4 5 6 7# # # # ## # # # ## # # # #t t t a tc c c cnp p p py# # # ### # # ##1 1 1 110 0 0 00. . . ..1 1 1 110 0 0 00. . . ..1 1 1 31. . . ..* 5 * **# # ## ## # ## ## # ## #a a aa an n nn ny y yy y# # ## ## # ## ## # ## #1 1 11 19 9 99 92 2 22 2. . .. .1 1 11 1. . .. .1 1 21 1. . .. .9 * 7* 9### ## ### ## #a # #8 88 8n 0 00 0y # ## ### ## #d# dd ad e leee ln n onn y wyyy # # i Vn Ft Wh Fe i 1g ,s ue ir sm e sa c1n at li s ec h ds ow om usa ty .a Fl ne ira eed wxat ao m lls p ra ulef le et 2y
+v
+1wvi aho nel da reti vo 2an os v. nir Vtu Fa Wl 1fir be ew foal rl e,
+v5###tcp##10.10.1.*###any###192.1.1.*###80##deny# Firewall#Rules#on#VFW2## scaling (Figure 1(a)) are dependent. Together they express a
+v v v v6 7 8 9# # # ## # # ## # # #a t t tc c cn p p py # # ## # # ## 1 1 11 0 0 00 . . .. 1 1 11 0 0 00 . . .. 3 3 41 . . .. * * 1* # # ## # # ## # # ## a a aa n n nn y y yy # # ## # # ## # # 1# 1 11 99 99 22 22 .. . 1. 1 11 .. . 1. 2 21 .. . 9. 7 *9 # ## # ## # # ## # 8 88 8 0 00 0 # ## # # ## # d ad a lele ll n on o y wwy ## # v v v1 8 9# # ## # ## # #t t tc c cp p p# # ## # #1 1 10 0 0. . .1 1 10 0 0. . .2 3 4. . .* * 1# # ## # ## # #a a an n ny y y# # ## # ## # 11 1 99 9 22 2 .. . 11 1 .. . 11 2 .. . 99 *# ## # ## # ## 8 88 0 00 # ## # ## d ad lee ln on y wy ## s c se eac rn vu er a ri cty c 1e 9p s 2so .l 1ai 6c ny 8y .1d H .i 9c T .t ”Tat P Cin og s ne srth v ida e et r r“ in aan n sy pe lth iw to os et r xki an m19n p2e le.t 1w 6 wo 8r h.k 1 er.*1 e,0 v. e1 x0 c. a2 e np.* dt
+1
+VFW1 VFW1 VFW2 v 8 are migrated to VFW 2, and others stay put (Figure 1
+(b)). After split, VFW grants any host in 10.10.2.* access to
+1
+192.168.1.9, which should be denied. Thus, safety is violated.
+10.10.*.* 192.1.*.* 10.10.*.* 192.1.*.*
+A remedy is to rely on the SDN switch to be aware of the
+SDN#Switch SDN#Switch
+dependency of v and v and route traffic from 10.10.2.* to
+Flow#Rules# Flow#Rules# 1 2
+192.168.1.9 to VFW . The remedy, while seems plausible, is
+f f f f1 2 3 4# # # ## # # ## # # #t t t tc c c cp p p p# # # #1 1 1 10 0 0 0. . . .1 1 1 10 0 0 0. . . .3 3 2 4. . . .* * * 1# # # ## # # #a a a an n n ny y y y# # # #1 1 1 19 9 9 92 2 2 2. . . .1 1 1 1. . . .2 2 1 1. . . .* 7 * 9# ### # ### # ##8 8 #8 80 00 0# ### # ##s s sse e een n nnd d dd# # ##t t tto o oo# # ##V V VVF F FFW W WW1 1 11 , ## #I ##D ####S ###1 ########################################################### f f f f f1 2 3 3 4’# # # ### # # ### # # #tt t t tcc c c cpp p p p## # # #11 1 1 100 0 0 0.. . . .11 1 1 100 0 0 0.. . . .23 3 2 4.. . . .** * * 1## # # ### # # #aa a a ann n n nyy y y y## # # #11 1 1 199 9 9 922 2 2 2.. . . .11 1 1 1.. . . .12 2 1 1.. . . .9* 7 * 9# #### # #### # #8#8 8 #8 800 00 0## #### # #s#s s ss ee e ee nn n nn dd d dd ## # #t#t t tt oo o oo ## # #V#V V VV FF F FF WW W WW 22 1 21 , ## #I ##D ####S ###1
+###########################################################
+i d wm e epp re er nac td ot ei nc ma cl i oe vf so e.r dTa eo pl ea s nerg2 e de ew ns te ht fiy, ro ef c wofi anr lse liw d ruea r ll el sar nu vole t ,hs e vw r ,i eth vxac ,mo apm nl depli vic fat w oed ne
+3 4 5 6
+(a) Before scaling out. (b) After scaling out. VFW tofourdifferentinstances.Itrequiresverycomplicated
+1
+routing support. For every flow that matches more than one
+Fig.1:Exampleofvirtualfirewallscalingout.Notethatafirewall
+rulerisa6-tupleof{protocol,sourceIP,sourceport,destination rule, the SDN switch must remember its first matching rule,
+IP, destination port, action}. A flow rule in an SDN switch may in order to compensate the reckless split that disrespects the
+have more than 40 fields [39]. Here, we only show the fields that dependencies.
+are pertinent to our illustration.
+Overlooking rule dependencies may also create safety
+issues for later mergence. For example, suppose VFW and
+1
+VFW in Figure 1 (b) are going to be merged back into
+BothSplit/MergeandOpenNFmainlyfocusoncontrollingthe 2
+one. Without care, the mergence may produce a rule order
+state migration of virtualized network functions. Especially,
+where v precedes v , in which case it falsely grants access
+OpenNF provides APIs that help migrate given internal states 2 1
+to http server 192.1.1.9, leading to safety violation. In reality,
+ofthesourceinstancetothedestinationinstancewhenscaling
+a firewall comprises hundreds of firewall rules with logical
+out an overloaded instance. The state migration mechanism
+intertwinement[29][40][49].Andtheymayundergoanumber
+provided by OpenNF satisfies two properties: loss-free and
+of splits and mergences. This makes maintaining semantic
+order-preserving. Loss-free property guarantees that all in-
+consistency a challenge in virtual firewall scaling.
+flight traffic generated during the state migration are buffered
+and processed. Order-preserving property guarantees that in- 2)Correct Flow Update: When migrating firewall rules,
+flight traffic are processed in the order of their arrival. Even
+flowrulesinSDNswitchesareupdatedalongside.Findingthe
+thoughstatemigrationisalsoanecessaryoperationinenabling
+correctflowupdateischallengingduetoanumberofreasons.
+the elastic scaling of virtual firewalls, more critical challenges
+areneededtobeaddressedinvirtualfirewallelasticitycontrol. First,anSDNswitchgenerallycomprisesthousandsofflow
+rulesthataredependent[31].Modificationofaflowrulewhich
+When a virtual firewall is overloaded, one option for has dependency relations with others is error-prone. Consider
+solving the overload is to copy the whole set of firewall rules again the split example in Figure 1. Flow rules f and f are
+1 2
+on the overloaded firewall to each new instance and distribute dependent. To account for the migration of firewall rule v
+8
+traffic. However, the copy option has a major drawback of from VFW to VFW , we search the flow rule space and find
+1 2
+performance degradation. A firewall processes a packet by thefirstflowrulef exactlymatchesv .Therefore,wechange
+1 8
+sequentially searching its rule space until the first-matching the action of f to ‘send to VFW ’. Because f overshadows
+1 2 1
+rule is found. Larger the firewall rule size is, larger the search f ,f willnevertakeeffect.Inthiscase,whentrafficmatching
+2 2
+overhead is and hence lower the processing capacity is. Exist- v arrives at the switch, f applies and the traffic is wrongly
+7 1
+ingresearcheffortshavebeendevotedtocompressingfirewall sent to VFW . But v is actually on VFW .
+2 7 1
+rule set in order to improve firewall performance [35] [36].
+We have also conducted experiments to quantify the effect Second, a flow rule in an SDN switch may be used by
+of firewall rule size on virtual firewall performance (see more than one applications. Update of flows to account for
+§ VIII-B1). Our experimental results show a linear decrease firewall rule migration may undesirably change the routing
+in virtual firewall processing capacity as the firewall rule size intentionsofotherapplications.Forexample,f 3inFigure1(a)
+increases (see Figure 7). Therefore, we prefer to split firewall serves both firewall and IDS. To account for the migration of
+rules to deal with the overload, enabling each new instance firewall rule v 1, f 3 needs to be updated. The correct update is
+to hold only a subset of the firewall rules and thus achieving toinsertf 3(cid:48) rightbeforef 3(Figure1(b)).Togethertheyexpress
+higherprocessingcapacity.Belowwearticulatenewchallenges the correct routing for migrating v 1. But this changes routing
+in virtual firewall scaling. intentionsofIDS 1,becausetrafficmatching“tcp10.10.2.*any
+1)Semantic Consistency: When splitting a set of firewall 2For the elucidation purpose, we use stateless firewalls here. The same
+rules across multiple virtual firewall instances, care must be challengesalsoapplytostatefulfirewalls.
+3VFW Controller Resource III. VFWCONTROLLEROVERVIEW
+Condition Detection
+Virtual The components and workflow of VFW Controller
+Migration Firwalls
+Dependency Analysis and Update are shown in Figure 2. VFW Controller monitors each
+Control Virtualization Layer
+virtual firewall and detects traffic overload and underload
+Flow Update Buffer Cost
+P Cro ov nis tri oo ln Servers conditions. Once a condition is detected, VFW Controller
+Analysis Analysis first performs Dependency Analysis, Flow Update Analysis,
+SDN and Buffer Cost Analysis. Those analysis results are utilized
+Optimal Scaling Calculation Swtiches
+by Optimal Scaling Calculation. Then, Provision Control and
+Migration and Update Control interact with the compute and
+Fig. 2: VFW Controller components and workflow.
+network resources and execute virtual firewall scaling.
+Dependency Analysis (§IV) in VFW Controller identi-
+192.1.1.9” is not sent to IDS 1, as intended, instead it is sent fies three dependency relations: (1) the dependency relations
+to VFW 2. of firewall rules on the virtual firewalls; (2) the dependency
+relations of the flow rules in SDN switches; and (3) the inter-
+Third,flowrulesdonotalwaysexactlymatchfirewallrules. dependency relations between the firewall rules and the flow
+This requires split of flow rules or insertion of new flow rules rules. Understanding the dependency relations of the firewall
+do handle traffic steering. For example, we inserted f 3(cid:48) for rulesiscriticaltoensurethesemanticconsistencyafterscaling.
+migratingv 1.Thesplitorinsertionoperationisnon-trivialand The dependency relations of the flow rules and the inter-
+alsoincreasesthenumberofflowrulesinSDNswitches,which dependencyrelationsservetofindtheflowrulestobeupdated.
+are limited by the number of flow rules they can support 3. DependencyAnalysisdividesbothfirewallrulesandflowrules
+into groups based on their dependency relations. Flow Update
+3)Buffer Overflow Avoidance: A safe migration must
+Analysis (§V) determines the correct update of flow rules
+be loss-free, meaning in-flight traffic must be buffered [28].
+and the update cost for each firewall rule group. Buffer Cost
+Existing systems, such as Split/Merge and OpenNF, buffer
+Analysis(§VI)predictstheamountofin-flighttrafficgenerated
+all in-fight traffic at the central controller, which could lead
+by the migration of each firewall rule group. This prediction
+to serious scalability issue. In particular, they assume infinite
+is necessary to avoid buffer overflow.
+buffer space at the controller and ignore the potential problem
+of buffer overflow. Therefore, a preferable migration control Optimal Scaling Calculation (§VII) component considers
+methodshouldadoptdistributedbufferingthatbuffersin-flight previous analyses and uses a three-step heuristic approach to
+traffic at each destination instance, as a way to lower the risk determine, in the case of overload, (1) the minimum number
+of buffer overflow [27]. In addition, we observe that different of new instances to be created; (2) selective firewall rule
+firewall rules incur different amounts of in-flight traffic. For groups to be migrated to each new instance; and (3) flow
+example, migrating a firewall rule with hit rate of 0 4 does rules to be updated. This approach also achieves minimum
+not incur any in-flight traffic, while migrating a firewall rule update cost and no buffer overflow. In the case of underload,
+with high hit rate requires large buffer space. To avoid buffer OptimalScalingCalculationcomponentusesanILPapproach
+overflow,weneedapriorcalculationoftheamountofin-flight to determine (1) which instances are to be killed among all
+trafficforeachfirewallrule,anddesignafirewallruleselection underloaded instances; (2) how to redistribute firewall rule
+mechanism so that only firewall rules that do not cause buffer groups; and (3) corresponding flow rule updates. The ILP
+overflow are selected for the migration. approach guarantees that the most resources are released after
+the mergence of instances.
+4)Optimal Scaling: Resources for creating virtual fire-
+walls are valuable and limited, hence must be optimally used. ProvisionControlcreatesordeletesinstancesaccordingthe
+Whenavirtualfirewallisoverloaded,solvingtheoverloadwith calculation results from Optimal Scaling Calculation compo-
+a minimum number of new virtual firewall instances is prefer- nent.MigrationandUpdateControlcoordinatesthemigration
+able.Whenmultiplevirtualfirewallinstancesareunderloaded, of firewall rules and states, and flow rule updates.
+amergeoperationshouldkillasmanyvirtualfirewallinstances
+as possible. Also, updating flow rules may entail insertions of
+new flow rules, which consume limited TCAM space in SDN IV. DEPENDENCYANALYSISANDSEMANTIC
+switchesasdiscussedabove.Somefirewallruleismatchedby CONSISTENCY
+only one flow rule, migration of such firewall rule only needs
+toupdateoneflowruleanddoesn’tneedtoaddnewflowrules. Firewall policies used in enterprise networks are known to
+However, since some wildcard firewall rules can be matched be complex due to their large rule sizes 5 and complicated
+by multiple flow rules, the migrations of those firewall rules rule dependencies [24] [29]. Flow rules in SDN switches are
+involve modifying multiple flow rules and possibly creating complex as well [31] [32]. In this section, we first analyze
+new flow rules. Therefore, the firewall rules that incur high the intra-dependency relations of firewall rules and flow rules
+update costs should be given low priority to be migrated. respectively, and the inter-dependency relations between fire-
+wall rules and flow rules. We then discuss our approach for
+maintaining semantic consistency in virtual firewall scaling.
+3These rules are in TCAM and an SDN switch can only support a few
+thousandrules(e.g.,1.5kTCAMentriesin5406zlswitch[23]).
+4Hit rate of a firewall rule is the rate that rule is matched. A 0 hit rate 5Arecentstudyuncoveredthattheaveragenumberoffirewallrulesinan
+meansthereisnoflowmatchingtherule. enterprisenetworkis793[22].
+4A. Dependency Relation Algorithm1:Partitioningofarulesettodisjointgroups.
+We start by giving the following definitions. Note that the Input:R,asetoforderedrulestobepartitioned;
+definitionsofdirectdependencyandindirectdependencyapply G=∅,aset,initiallysettobeempty,tostore
+rulegroups.
+to both firewall rules and flow rules. Output:G,thesetofrulegroups;
+1 foreachr∈Rdo
+Definition1(Packetspace). Packetspaceofaruler,denoted 2 Γ= d∅ e; p/ e* ndA ens ce yt rt eo las tt io or ne wp ir te hce rdi .ng Inr iu tl ie as llt yha ∅t . has */
+as PS(r), is defined as a 5-dimensional hyperspace with 3 ifG=∅then
+dimensions being protocol, source IP, source port, destination /* That is to say r is the first rule in R */
+4 Γ.Append(r);
+IP, destination port. 5 else
+6 PS(r)←−PacketSpace(r);
+For a firewall rule, which is generally represented as a 7 foreachG∈Gdo
+6-tuple of {protocol, source IP, source port, destination IP, 8 foreachri∈Gdo
+9 PS(ri)←−PacketSpace(ri);
+destination port, action} with either ‘deny’ or ‘allow’ action, 10 ifPS(r)∩PS(ri)(cid:54)=∅then
+finding its packet space is straightforward and just needs to 11 Γ.Append(G);/* Sequentially append
+use the first 5 fields of the firewall rule. For a flow rule,
+each rule in group G to Γ. */
+12 G.Remove(G);/* Remove group G from
+we must consider various Set-Field actions, which can G. */
+rewrite the values of respective header fields in packets [15]. 13 break;
+For example, if a flow rule f has “protocol = tcp, source IP
+= 10.10.3.*, source port = any, destination IP = 192.1.2.7,
+/* Now all the rules that precede r and have
+dependency relation with r are stored in Γ.
+destination port = any” without a Set-Field action, its */
+packet space can be represented with these five fields as < 14 Γ.Append(r);/* Append r to Γ. */
+tcp,10.10.3.∗,any,192.1.2.7,any >. However, if a flow rule 15 G.Add(Γ);/* Add Γ as a new group to G. */
+hasSet-Fieldactions,whichrewritesomeheaderfields,its 16 returnG;
+packetspacemustberepresentedusingtherewrittenvaluesof
+fields. For instance, if the above f has a Set-Field action,
+“Set destination IP = 192.1.2.10”, its packet space should be firewall rule groups, which we denote as V = {V ,...,V }
+1 m
+represented as <tcp,10.10.3.∗,any,192.1.2.10,any >. throughout this paper.
+Definition 2 (Direct dependency). Two rules r and r in a Applying Algorithm 1 to a set of flow rules on an SDN
+i j
+rule set R are directly dependent iff PS(r )∩PS(r ) (cid:54)= ∅, switch produces a set of flow rule groups, which we denote
+i j
+where PS(r i) is the packet space defined by r i, and PS(r j) as F = {F 1,...,F n} throughout this paper. We identify the
+is the packet space defined by r . relationbetweenafirewallrulegroupV andaflowrulegroup
+j
+F is one of the following:
+Definition 3 (Indirect dependency). Two rules r and r in a
+i j • Independency iff PS(V)∩PS(F) = ∅. We denote
+rule set R are indirectly dependent iff PS(r i)∩PS(r j) = ∅ independency as V indF.
+and there exists a subset R ⊆ R\{r ,r } such that PS(r )∩
+i j i • Congruenceiff PS(V)=PS(F).Wedenotecongru-
+PS(R)(cid:54)=∅ and PS(r )∩PS(R)(cid:54)=∅.
+j ence as V conF.
+• Superspace iff PS(V) ⊃ PS(F). We denote super-
+Note that indirect dependency is associative, that is, if rule
+r andr areindirectlydependent,andr andr areindirectly space as V supF.
+i j j l
+dependent, then r and r are indirectly independent. • Subspace iff PS(V) ⊂ PS(F). We denote subspace
+i l
+as V subF.
+VFW Controller uses Algorithm 1 to partition a rule
+• Intersection iff PS(V) ∩ PS(F) ⊂ PS(V) and
+set R to disjoint groups. Rules inside a group are in the same
+PS(V)∩PS(F) ⊂ PS(F). We denote intersection
+order as they are in R, and are either directly or indirectly
+as V intF.
+dependent. Across groups, there is no dependency relation.
+The inputs of Algorithm 1 are the rule set R to be partitioned
+Definition4(Inter-dependency).AfirewallrulegroupV anda
+andasetGthatisusedtostorerulegroupsandinitiallysetto
+flowrulegroupF areinter-dependentifPS(V)∩PS(F)(cid:54)=∅.
+be empty. Algorithm 1 sequentially examines each rule r ∈R
+againsteachexistingrulegroupG∈G.WeuseasetΓtostore
+When V and F are inter-dependent, they are related by
+all the rules in R that precede r and have dependency relation
+one of Congruence, Superspace, Subspace and Intersection
+with r, and Γ is initially set to be empty. If G is empty (i.e. r
+relation.
+is the first rule in R), then we append r to Γ, add Γ as a new
+group to G, and move the next rule in R. Otherwise, if there
+B. Association and Class
+exists a rule r ∈G that has dependency relation with r, then
+i
+all the rules in G are appended to Γ, and group G is removed Wenextintroduceassociationrelationbetweentwofirewall
+from G. After all existing groups in G have been checked, all rule groups, and the concept of firewall rule class. We will
+therulesinRthatprecederandhavedependencyrelationwith show in §V that class-based migration serves to achieve less
+r are now stored in Γ. We append rule to r to Γ. At last Γ is update cost.
+addedasanewgrouptoG.AfterRhasbeeniteratedthrough,
+all the rule groups are stored in G. Applying Algorithm 1 to Definition 5 (Direct association). Two firewall rule groups V
+i
+a set of firewall rules on a virtual firewall produces a set of and V in a firewall rule set V are directly associated iff there
+j
+5Based on the association relations, the firewall rule set
+PS(V1) PS(V2) PS(V3) PS(V4) PS(V5) V = {V 1,...,V 8} is further divided into four classes V =
+{V¯ ,...,V¯ }, where class V¯ = V ∪V , V¯ = V ∪V ∪V ,
+PS(F1) PS(F2) PS(F3)
+V¯
+1
+=V
+∪4
+V , V¯ =V .
+1 1 2 2 3 4 5
+3 6 7 4 8
+VFW Controller uses Algorithm 2 to classify firewall
+PS(V8) rule groups V = {V 1,...,V m} into classes V = {V¯ 1,...,V¯ m¯}.
+PS(V6) PS(V7) PS(F5) PS(F6) F ini dre irw ea cl tl lyru asle socg ir ao tu edp .s Ti hn esi rd ee isa nocla as ss soa cr ie atioei nth ae cr rod si sre cc lt aly sseo sr
+.
+PS(F4)
+The inputs of Algorithm 2 are V (the set of firewall groups to
+beclassified),F(thesetofflowrulegroupsofanSDNswitch),
+Fig. 3: Example of firewall rule associations and classes.
+andC(asettostorefirewallruleclasses).Thealgorithmhas2
+steps. First, it identifies all the direct association relations. For
+each flow rule group F ∈ F, the algorithm finds the firewall
+Algorithm 2: Classification of firewall rule groups to
+rule groups that are directly associated via F, unites these
+classes.
+firewall rule groups together to make a class, and adds this
+Input:V={V1,...,Vm},asetoffirewallrulegroups;F={F1,...,Fn}, class to C. Now each class in C contains firewall rule groups
+asetofflowgroups; that are directly associated. Take for example the firewall rule
+C=∅,asetoffirewallruleclasseswhichisinitiallyset
+tobeempty; set and flow rule set in Figure 3, the first step will generate
+Output:C; 6 classes: V¯(cid:48) = V ∪ V , V¯(cid:48) = V ∪ V , V¯(cid:48) = V ∪ V ,
+/* Identify direct associations. */ V¯(cid:48) =V ∪V1 , V¯(cid:48) =1 V , a2 nd V2 ¯(cid:48) =V3 . Sec4 ond,3 the alg4 orithm5
+1 foreachF ∈Fdo 4 6 7 5 8 6 8
+2 V¯ =∅;/* A set to store firewall rule groups that unites the classes that intersect. This is to identify the indirect
+are directed associated via F, initially set to associations.ForexampleasV¯(cid:48) andV¯(cid:48) bothhaveV ,theywill
+be empty; */ 1 2 4
+beunited.Inthisway,theindirectassociationbetweenV and
+4 53 foreac ifh VV V¯∈ an .AdV pFd po ea nre di (n Vte )r ;- /de *pe En ade cn htt fh ien
+rewall rule in V is
+V So5 a thre
+e
+sid ee cn ot ni dfie sd t. epSi wm ii ll lar gly enV e¯ r5(cid:48) atean 4d cV¯ l6 a(cid:48) ssw ei sl :l V¯be
+(cid:48)
+=also Vu ∪n3 it Ved.
+,
+sequentially appended to V¯. */ V¯(cid:48) =V ∪V ∪V , V¯(cid:48) =V ∪V , V¯(cid:48) =V . 1 1 2
+2 3 4 5 4 6 7 5 8
+6 ifV¯ (cid:54)=∅then
+7 C.Add(V¯);/* V¯ is added to C as a class. */
+C. Semantic Consistency
+/* Identify indirect associations. Any two classes that
+intersect are united to make a bigger class. */ Semantic consistency of firewall rules must be maintained
+8 foreachV¯ i∈CandV¯ j ∈Cdo in virtual firewall scaling, otherwise safety violations may
+109 ifV¯ j V¯∩ i.V¯ Aj p(cid:54)= pe∅ ndth (Ve ¯n j);/* Each firewall rule in V¯ j is occur. Two causes lead to semantic inconsistency (see §II for
+sequentially appended to V¯ i. */ examples). First, firewall rules that are dependent are split
+11 C.Remove(V¯ j); across multiple virtual firewall instances. Second, the order
+12 returnC; offirewallrulesthataredependentischangedaftermigration.
+Therefore, we propose the following group-based strategy to
+maintain semantic consistency in VFW Controller:
+existsaflowrulegroupF inaflowrulesetFsuchthatV and
+i Group-Based Migration Strategy: To guarantee semantic
+F are inter-dependent, and V and F are inter-dependent. We
+j consistency, firewall rules in a group are migrated to the
+dir-asso
+usethenotationV i V j todenoteV i andV j aredirectly same destination virtual firewall instance and are in the same
+associated. order as they are in the source virtual firewall instance. The
+destination virtual firewall instance can only start to process
+Definition6(Indirectassociation).TwofirewallrulegroupsV
+i traffic matching rules in a group until all the rules and flow
+andV inafirewallrulesetVareindirectlyassociatediffthey
+j states associated with the group are ready on the destination
+are not directly associated and there exists V¯ ⊆ V\{V ,V },
+i j instance.
+such that V and V¯ are directly associated, and V and V¯ are
+i j
+directly associated. We have studied a number of real-world firewall policies
+(see § VIII-B2) and found that rule dependencies are common
+Definition 7 (Firewall Rule Class). A firewall rule class is the in firewalls policies. Hence, dependency analysis is necessary
+union of firewall rule groups that are directly or indirectly in VFW Controller. We also found that it is a very rare
+associated. case in reality that a firewall policy only contains one big
+group. Therefore, we ignore the discussion of such a special
+Figure3demonstratesassociationrelationandfirewallrule case in this paper.
+class using an example where the firewall rule set is V =
+{V 1,...,V 8} and the flow rule set is F = {F 1,...,F 6}. In the V. FLOWUPDATEANALYSIS
+example,
+In this section, we analyze how to update flow rules in
+dir-asso dir-asso
+• Direct association: V V , V V , SDN switches to provide the required traffic steering support
+1 2 3 4
+V dir-asso V , V dir-asso V for the migration of a firewall rule group. We identify a set of
+4 5 6 7
+necessary update operations and define update cost. Strategy
+ind-asso
+• Indirect association: V V to reduce update cost is presented as well.
+3 5
+6Core Switch Core Switch Core Switch (2) If PS(v)⊇PS(f), then CHANGE operation
+10.10.*.* 192.1.*.* 10.10.*.* 192.1.*.* 10.10.*.* 192.1.*.*
+is performed to change the ‘send to VFW ’
+Ag Sgr we ig tca htion Ag Sgr we ig tca htion A Sg wg tir ce hg a (Sti Won ) action of f to ‘send to VFW 2’. 1
+ToR Switch ToR ( SS Ww )itch SwT ito cR h es (3) If PS(v) ⊂ PS(f), then INSERT operation
+Server Open (S v WSw )tich Servers Servers is performed. A new flow rule f(cid:48) is inserted
+VFW1 VFW2 VFW1 VFW2 VFW1 VFW2 right before f to express that traffic matching
+v is sent to VFW . Take the v and f below
+Case (a) Case (b) Case (c) 2
+for example.
+Fig.4:SW inthreedifferentcaseswithrespecttoaclassic3-tire
+cloud architecture.
+v tcp 10.10.2.* * 192.1.1.9 80 deny
+A. Update Operations
+send to VFW
+f * 10.10.2.* * 192.1.1.* 80 1
+Let V i ∈V be the firewall rule group to be migrated from and IDS 1
+asourcevirtualfirewallVFW toadestinationvirtualfirewall
+1 Then f(cid:48) below is inserted right before f.
+VFW . The key SDN switch is the last SDN switch, through
+2
+which all the traffic matching V will pass before diverging
+i
+on their paths to reach VFW 1 and VFW 2. In what follows, f(cid:48) tcp 10.10.2.* * 192.1.1.9 80 send to VFW 2
+we denote such key SDN switch as SW. Figure 4 shows SW and IDS 1
+switches in different cases: (a) VFW and VFW are on the
+1 2 (4) If PS(v) ∩ PS(f) ⊂ PS(v) and PS(v) ∩
+same server; (b) VFW and VFW are in different servers on
+1 2 PS(f) ⊂ PS(f), INSERT operation is per-
+thesamerack;and(c)VFW andVFW areindifferentracks.
+1 2 formed. A new flow rule f(cid:48) is inserted right
+In case (a), the SW is an open vSwitch on the server. In case
+before f. Each field of f(cid:48) is the same as f,
+(b), the SW is the Top-of-Rack (ToR) switch that connects the
+exceptthattheprotocol,sourceIP,sourceport,
+twoservers.Incase(c),theSW istheAggregationSwitchthat
+destination IP, destination port fields of f(cid:48) are
+connects the two racks. We consider case (a) will be the most
+theintersectionoftherespectivefieldsofvand
+common, as it introduces the least traffic overload and update
+f, and the forwarding action of f(cid:48) is ‘send
+efforts. Only when two virtual firewalls cannot be placed on
+to VFW ’. For example, for the following v
+thesameseverduetoresourceinadequacy,theywillbeplaced 2
+and f
+on separate servers.
+To update the SDN switches on the path from SW to
+v * 10.10.2.* * 192.1.1.9 80 deny
+VFW , the existing flow rules that route the matching traffic
+1
+to VFW 1 will be deleted. To update the SDN switches on f * 10.10.2.1 * 192.1.1.* 80 send to VFW 1
+the path from SW to VFW 2, new flow rules to route the and IDS
+1
+matchingtraffictoVFW willbeadded.TheupdatesonSW is,
+2
+however,lessstraightforward,hencewefocusontheupdateof the new flow rule f(cid:48) is:
+SW in this paper. VFW Controller tracks SWs, leveraging
+the capability provided by SDN where a central controller send to VFW
+f(cid:48) * 10.10.2.1 * 192.1.1.9 80 2
+maintains a panoramic view of the entire network. and IDS
+1
+Let F = {F ,...,F } be the set of flow groups (obtained
+1 n After all the groups in F = {F ,...,F } have been
+usingthepartitionalgorithmin§IV)onSW.Tofindtheupdates 1 n
+examined, VFW Controller obtains the update of SW to
+on F, VFW Controller iterates through F = {F ,...,F }
+1 n supportthemigrationofV .WhencomparingV witheachF
+sequentially, and compares the inter-dependency relation be- i i j
+as above, VFW Controller also keeps track of the number
+tween V and each F ∈F to determine the updates. We iden-
+i j of new flow rules that are INSERTed. In what follows we
+tify two types of update operations: CHANGE and INSERT.
+denote that number as α .
+ij
+• If V indF , no update is required.
+i j
+• If V conF or V supF , only CHANGE operation is B. Update Cost and Cost Reduction
+i j i j
+required.Foreveryflowrulef ∈F ,ifitsforwarding
+j Aspresentedabove,updatesoftheflowrulesonSW consist
+actionscontain‘sendtoVFW ’,theforwardingaction
+1 ofINSERTandCHANGEoperations.EachINSERToperation
+ischangedto‘sendtoVFW ’.Notethatthesameflow
+2 causes an increase in the number of flow rules in the SW
+rule may contain forwarding actions for the routing
+switch. The TCAM space for holding flow rules in an SDN
+intentions of other applications (see the example flow
+switch is valuable and limited, therefore increases in the size
+rule f in Figure 1). Flow update should not change
+3 of flow rules must be tracked. We define the update cost of
+any of those actions.
+firewall rule group V as follows.
+i
+• If V subF or V intF , both CHANGE and INSERT
+i j i j
+operationsarerequired.ComparisonsbetweenPS(v), Definition 8(UpdateCost). Theupdatecostofafirewallrule
+the packet space defined by each v ∈V , and PS(f), group is the total number of new flow rules inserted in SW
+i
+the packet space defined by each f ∈ F , will be during its update to support the migration of V .
+j i
+performed in order to find the correct update.
+(1) If PS(v)∩PS(f)=∅, f needs no update. Let γ be the update cost of V , then we have
+i i
+7Controller
+tran2. s f fC e sra ( all V
+p
+F cW e)2 , accep1 t.
+(
+VC Fa Wll
+1 )
+3. Export firewall Buffers
+rules and states
+VFW1
+SW
+4.
+Update
+SW VFW1 VFW2
+t0-d1 t0: transfer begins
+t1: update finishes
+t1+d1
+t1+d2: begins to buffer packets
+process time b1
+t1+d1+b1 VFW2 t1+d1+b1+d3
+reprocess time b2
+t1+d1+b1+d3+b2: begins to
+process buffered packets
+Fig. 5: Workflow of migration control.
+Fig. 6: Packet paths during the migration.
+n
+γ =(cid:88) α Duringthemigration,in-flighttrafficwillbegeneratedand
+i ij
+need to be buffered until the installation completes. Then, in-
+j=1
+flight traffic will be flushed to VFW for processing. Prior
+2
+knowledge on the amount of in-flight traffic is crucial to
+Given a large number of virtual firewalls in a virtualized
+avoid buffer overflow. We observed that the migration of each
+environment and the fact that constant firewall rule migrations
+firewallrule(group)incursdifferentamountofin-flighttraffic.
+are expected, the total update cost must be reduced. There are
+Based on the prior knowledge, we can select firewall rule
+two ways to reduce the total update cost:
+groups to migrate in order to avoid overflowing the buffers
+• Select firewall rule groups that cause smaller update of the destination virtual firewalls.
+cost for migration.
+Wedefinethebuffercostofafirewallrulegroupasfollows:
+• Analyze the relationships between firewall rule class
+and flow rule group. The comparison we have per-
+formed in §V-A is pairwise between a firewall rule Definition 9 (Buffer Cost). The buffer cost of a firewall
+group V i and a flow group F j. rule group is the amount of in-flight traffic that are generated
+during the migration of the group.
+We observed that new flow rules are inserted only when
+V subF or V intF . If there is a class V¯ that consists of V
+i j i j i
+and other firewall rule groups and V¯supF j, then no new flow We next present the migration control mechanism used
+rules will be inserted. To see why, consider a simple case as in VFW Controller, followed by how to calculate buffer
+follows.TwofirewallrulegroupsV 1 andV 2 aretobemigrated. cost. The challenge is to model the migration control and
+F j ∈ F is one flow rule group in SW and we have V 1intF j quantify the time period from the start of buffering to the
+andV 2intF j,andV 1∪V 2supF j.BothINSERTandCHANGE releaseofthebufferedtraffic.Factorsaffectingthetimeperiod
+operationsarerequiredforthemigrationofV 1 andV 2.Letα 1j include delays introduced by end-host (OS, compute resource
+be the number of new flow rules that will be inserted to F j in assigned to a virtual firewall, etc.), which depend on cloud
+order to support the migration of V 1, and α 2j be the number infrastructure.
+of new flow rules needed in order to support the migration of
+V 2. Thus the total number of new flow rules to be inserted to As shown in Figure 5, VFW Controller adopts dis-
+F j is α 1j +α 2j. Let V¯ =V 1∪V 2, because V¯supF j, then no tributed buffering mechanism derived from [27] to buffer in-
+INSERT operation is required to support the migration of V¯, flight traffic at each destination instance. First, the central
+hence the total number of new flow rules to be inserted is 0. controller invokes API function accept(VFW ) on VFW to
+1 2
+Based on such observation, we propose the following class- inform on the upcoming export of firewall rules and flow
+based migration strategy in VFW Controller to reduce the statesfromVFW .Second,thecontrollerinvokesanotherAPI
+1
+total update cost: function transfer(VFW , fspace) to instruct VFW to transfer
+2 1
+the firewall rules and the flow states defined in fspace to
+Class-Based Migration Strategy: If the update cost of VFW . Then VFW transfers the specified firewall rules and
+2 1
+migrating a class V¯ =∪m(cid:48) V is smaller than the sum of the states to VFW . After receiving them, VFW installs them
+i=1 i 2 2
+update cost of each V that constitutes V¯, then V¯ is migrated immediately. The controller waits for the installation to be
+i
+asabiggrouptothesamedestinationvirtualfirewalltoreduce completedandissuesupdatestoSW switch.Beforetheupdate
+update cost. finishes, SW keeps sending traffic to VFW , and VFW
+1 1
+continues processing these traffic. If any traffic, which VFW
+1
+processesafterthetransferofthefirewallrulesandflowstates,
+VI. BUFFERCOSTANALYSIS
+causes the state of a flow to evolve, then the traffic is sent by
+Migration of a firewall rule group V from a source virtual VFW to VFW . VFW reprocesses this traffic to bring its
+i 1 2 2
+firewall VFW to a destination virtual firewall VFW consists state up to date. After the updates on SW complete, VFW
+1 2 2
+ofthefollowingkeyprocedures:movingV andcorresponding receives traffic directly from SW. The traffic directly from SW
+i
+flow states on VFW to VFW , installing of V and the states must be buffered at VFW . VFW can only start to process
+1 2 i 2 2
+on VFW , and updating the flow rules in the involved SDN the buffered traffic until it has received and processed all the
+2
+switches to reroute traffic matching V to VFW , and deleting traffic from VFW . This is to ensure that VFW has the most
+i 2 1 2
+V and the states on VFW . updated states before process the buffered traffic.
+i 1
+8A. Buffer Cost Calculation VII. OPTIMALSCALING
+Figure 6 shows the packet paths during the migration of In this section, we present an three-step heuristic approach
+V i. In Figure 6, VFW Controller uses to solve for optimal scaling-out
+and the ILP approach for optimal scaling-in. We start with
+• t0:isthetimethatVFW startstotransferthefirewall
+1
+modeling a virtual firewall.
+rules and flow states specified in fspace;
+• t1: is the time that SW finishes the update;
+A. Virtual Firewall Modeling
+• d1:isthetransmissiondelaybetweenSW andVFW ;
+1
+The processing capacity c of a virtual firewall depends on
+• d2:isthetransmissiondelaybetweenSW andVFW ;
+2 the resource granted and the number of loaded firewall rules.
+• d3:thetransmissiondelaybetweenVFW 1 andVFW 2; For easier management, each virtual firewall created by VFW
+Controller is granted the same resource. Therefore, we
+• b1: is the average time that VFW spends processing
+1 model c as a function of S, i.e. c(S) where S is the number
+a packet; and
+of loaded firewall rules. As S increases, c decreases. Because
+• b2: is the average time that VFW spends processing
+2 when processing a packet, a firewall search through its rule
+a packet.
+space until the first matching rule is found. Then the packet
+At SW, the traffic matching V that arrives before t1 is is processed according to the first matching rule. Larger S
+i
+sent to VFW , and after t1 it is sent to VFW . Let Γ be a set meanslargertheaveragesearchoverhead,hencesmallerc.Our
+1 2
+comprisingthematchingtrafficthatarrivesduring(t0−d1,t1). experiments in §VIII-B1 validate such a relationship between
+Γ is shown as the blue part in Figure 6. Traffic in Γ is sent to c and S.
+VFW .
+1 Theruntimethroughputofavirtualfirewall,η,isafunction
+At VFW , the firewall rules and flow states defined in of Λ, the aggregated rate of the incoming traffic flows.
+1
+fspace are sent to VFW . Traffic in Γ starts to arrive after
+2 (cid:26)
+Λ if Λ≤c
+t0, and the last packet in Γ arrives before t1 + d1. VFW 1 η(Λ)=
+processes all the traffic in Γ. VFW finishes processing Γ c if Λ>c
+1
+beforet1+d1+b1.IfanytrafficinΓwhoseprocessingcauses
+the state of a flow to evolve, VFW 1 will send the traffic to WhenΛ>c,packetlossmaybeexpectedatavirtualfirewall,
+VFW 2 for reprocessing in order to keep state consistency. For becausetherateoftrafficcomingtothevirtualfirewallexceeds
+generality, we assume all the traffic in Γ are sent to VFW 2 the rate of traffic leaving. Service Level Agreement (SLA) on
+for reprocessing. This assumption will lead to an estimate of performance generally requires the processing capacity of a
+buffer cost that is larger than the actual cost in some cases. virtualfirewalltomeetapredefinedvalueΦ,thatis,c(S)≥Φ.
+Given that we want to avoid buffer overflow, over-estimates SincecdecreasesasS increases,Φessentiallyplacesanupper
+are preferable. boundonS.Theupperboundisc−1(Φ).Therefore,c(S)≥Φ
+is equivalent to S ≤c−1(Φ).
+AtVFW ,trafficdirectlysentfromSW startstoarriveafter
+2
+t1+d2.However,thetrafficdirectlyfromSW mustbebuffered
+until VFW has received and reprocessed all the traffic in Γ. B. Optimal Scaling-Out
+2
+The last packet in Γ arrives at VFW before t1+d1+b1+d3
+2 Accurate overload detection is not the focus of this paper.
+and it is processed before t1+d1+b1+d3+b2. Therefore,
+VFW Controller simply deems a virtual firewall over-
+trafficthatisdirectlysentfromSW andarrivesatVFW during
+2 loaded if one of the following conditions occurs: (i) η >0.9c;
+(t1+d2,t1+d1+b1+d3+b2) is buffered.
+(ii) c(S) < Φ (or equivalently S < c−1(Φ)). Condition
+Suppose there are k flows matching V and the rate (bits (i) states that a virtual firewall is using above 90% of its
+i i
+per second) of flow j is λ . Then we estimate the buffer cost processingcapacity.10%remnantisintentionaltoavoidpacket
+j
+of V as loss. Condition (ii) states that the processing capacity of a
+i
+virtual firewall fails to meet the SLA agreement.
+(cid:88)ki
+β =( λ )×{(t1+d1+b1+d3+b2)−(t1+d2)}
+i j To solve an overload, new virtual firewall instances, each
+j=1 ofwhichhasalimitedbufferspaceofB,arecreated,selective
+(cid:88)ki firewall rule groups and the associated flow states on the
+=( λ )×(d1+b1+d3+b2−d2) overloaded virtual firewall are migrated to the new instances.
+j
+j=1 The migration of each firewall rule group causes both a
+(1) buffer cost and a update cost. VFW Controller solves
+VFW Controller can leverage the capability of SDN the overload using the minimum number of instances while
+to conveniently obtain λ , d1, d2 and d3. SW periodically incurring the least total update cost and no buffer overflow.
+j
+reports the statistics of flows to VFW Controller, which
+After a virtual firewall is detected overloaded, VFW
+are used to obtain λ . d1, d2 and d3 are transmission delays,
+j ControllerrunsDependencyAnalysis,FlowUpdateAnal-
+which can be measured in practice and collected by VFW
+ysis, Buffer Cost Calculation, and has the following parame-
+Controller. b1 and b2 depend on the resource assigned to
+ters:
+VFW and VFW , and can be obtained through experiments
+1 2
+(see Figure 7(b)). For simplicity, VFW Controller assigns • A set of m firewall rule groups V={V ,V ,...,V }
+1 2 m
+the same resource to each virtual firewall, hence b1=b2. with group V having a rule size of s , an update cost
+i i
+9ofγ ,abuffercostofβ ,andk matchingtrafficflows virtual firewall. If the above ILP formulation has no solution,
+i i i
+with the flow rates of λ , λ , ..., λ . which implies that the estimate of n at Step 1 is smaller than
+i1 i2 iki
+• A processing capacity of c((cid:80)m s ), and a runtime required, then go to Step 3.
+i=1 i
+throughput of η. Step 3: Increase n by one and perform Step 2 again until
+• An overload condition that
+c((cid:80)m
+s ) < Φ or η > a solution is found.
+0.9c((cid:80)m
+s ).
+i=1 i
+i=1 i
+C. Optimal Scaling-In
+Then, VFW Controller adopts a three-step heuristic ap-
+proach to work out the minimum number of new instances to VFW Controller deems a virtual firewall underloaded,
+create and the firewall rule group distribution. if its runtime throughput is 50% smaller than its processing
+capacity.Whenmorethanonevirtualfirewallareunderloaded,
+Step 1: VFW Controller estimates the minimum
+VFW Controller merges them. VFW Controller ap-
+number of new instances to create. Let n be the number.
+pliesthefollowingILPformulationtodeterminethemaximum
+number of virtual firewalls to be killed while meeting the
+ (cid:98)(cid:80)m i=1(cid:80)k
+j=i
+1λij−0.9c((cid:80)m
+i=1si)
+(cid:99) if η
+>0.9c((cid:80)m
+s )
+following constraints:
+n= (cid:98)(cid:80)m i=1si−c−1(ΦΦ
+)
+(cid:99) if S
+<c−1(Φ)i=1 i • E afa tc eh
+r
+tr he em main erin gg env ci er .tualfirewallmustnotbeoverloaded
+c−1(Φ)
+• Each remaining virtual firewall must not have its
+Inthecasewhenη >0.9c((cid:80)m s ),theamountoftrafficthat buffer space overflowed.
+i=1 i
+should be shunted away from the overloaded virtual firewall • Each remaining virtual firewall must satisfy the SLA.
+is
+(cid:80)m (cid:80)ki
+λ −η, which will be undertaken by the new
+i=1 j=1 ij
+instances,eachofwhichmustguaranteeaprocessingcapacity • The total update cost in the mergence is bounded by
+ofΦasdictatedbytheSLA.InthecasewhenS <c−1(Φ),the a predefined value γ.
+number of firewall rules that must be migrated is
+(cid:80)m
+s −
+c−1(Φ), which will be split among the new instancei= s,1 eai ch Suppose there are n underloaded virtual firewalls. under-
+of which is constrained by an upper bound c−1(Φ). The floor loaded virtual firewall j has:
+operation in the estimate above implies that the estimate may • A set of mj firewall rule groups Vj =
+be smaller than required. {Vj,Vj,...,Vj } with group Vj having a rule
+1 2 mj i
+Step 2: VFW Controller applies ILP to solve for fire- size of sj i, an update cost of γ ij, a buffer cost of β ij,
+wall rule distribution. Let x = {x ,...,x } be a set of and kj matching traffic flows with the flow rates of
+11 mn i
+unknown variables, where x ∈ {0,1} is an indicator of λj , λj , ..., λj .
+ij i1 i2 ikj
+migrating firewall rule group V to new instance j. The ILP i
+formulation to solve x is belowi : • A processing capacity of c((cid:80)mj sj), and a runtime
+i=1 i
+throughput of ηj.
+min
+(cid:80)m (cid:80)n
+x γ
+i=1 j=1 ij i Let x = {x ,...,x } be a set of unknown variables, where
+11 nn
+s.t. x qj ∈ {0,1} is an indicator of merging underloaded virtual
+firewall j onto q. The ILP formulation to solve x is presented
+(1) x ∈{0,1} for 1≤i≤m,1≤j ≤n
+ij below:
+(2)
+(cid:80)n
+x ≤1 for all 1≤i≤m
+(3)
+(cid:80)mj=1 xij
+β ≤ B for all 1 ≤ j ≤ n // Prevent
+max
+(cid:80)n j=1(cid:80)n
+q=1x
+qj
+i=1 ij i
+buffer overflow on each new instance. s.t.
+(4) (cid:80)m x s ≤ c−1(Φ) for all 1 ≤ j ≤ n // Each
+i=1 ij i (1) x qj ∈{0,1} for all 1≤q ≤n,1≤j ≤n
+new instance must satisfy the SLA.
+(2) x =0 for all 1≤q ≤n
+(5)
+(cid:80)m
+i=1x
+ij((cid:80)k
+l=i 1λ il) ≤
+0.9c((cid:80)m
+i=1s ix ij) for all 1 ≤ (3)
+(cid:80)qq
+n x ≤1 for all 1≤j ≤n
+j ≤ n // Each new instance must not be over- q=1 qj
+loaded. (4) (cid:80)mq sq +(cid:80)n (cid:80)mj x sj ≤ c−1(Φ) for all 1 ≤
+(6) ((cid:80)m (cid:80)ki λ −(cid:80)m (cid:80)n (cid:80)ki x λ )≤ q ≤i= n1 i j=1 i=1 qj i
+i=1 j=1 ij i=1 j=1 l=1 ij i,l
+0.9c((cid:80)m i=1s i−(cid:80)m i=1(cid:80)n j=1x ijs i) // After scale (5) (cid:80)mq (cid:80)k iq λq +(cid:80)n (cid:80)mj (cid:80)k ij λjx ≤
+out, the old firewall is not overloaded. This constraint i=1 l=1 il j=1 i=1 l=1 il qj
+is used when overload condition (i) occurs. 0.9c((cid:80)m i=q 1sq
+i
++(cid:80)n j=1(cid:80)m i=j 1x qjsj i) for all 1≤q ≤n
+or
+(6’) ((cid:80)m i=1s
+i
+−(cid:80)m i=1(cid:80)n j=1x ijs i) ≤ c−1(Φ) //After (6) (cid:80)n j=1(cid:80)m i=j 1x qjβ ij ≤B for all 1≤q ≤n
+scaling out, the old virtual firewall must satisfy the (7) (cid:80)n (cid:80)n (cid:80)mj x γj ≤γ
+SLA. This constraint is used when overload condition q=1 j=1 i=1 qj i
+(ii) occurs. SolvingtheaboveILPformulation,weobtainallx .Ifx =
+qj qj
+Solving the above ILP formulation, we obtain x. If x = 1 1, then virtual firewall j is merged onto q. If
+(cid:80)n
+x =
+ij q=1 qj
+thenfirewallrulegroupV istobemigratedtonewinstancej. 0, then virtual firewall j remains. The maximum number of
+i
+Ifx =0forallj,thenfirewallrulegroupV staysontheold virtual firewall to be killed is
+(cid:80)n (cid:80)n
+x .
+ij i j=1 q=1 qj
+10In reality, there may be cases where conditions of scaling- B. Evaluation
+out or scaling-in occur frequently thus requiring frequent
+VFW Controller achieves safe, efficient and optimal
+scaling-out or scaling-in. To avoid thrashing, a potential solu-
+virtual firewall scaling. We evaluate VFW Controller with
+tionistosetathresholdoffrequency,abovewhichthescaling
+the following goals:
+process is not allowed. The suggested threshold depends on
+the scaling performance of VFW Controller, which can • Demonstrationoftherelationshipbetweenvirtualfire-
+be measured in practice. wall performance and the rule size (Figure 7). This
+justifies VFW Controller’s choice of rule split
+over rule copy.
+VIII. IMPLEMENTATIONANDEVALUATION
+• Study of the rule dependency relations in firewall
+A. Implementation policies (Table I). This justifies the necessity of de-
+pendency analysis in VFW Controller.
+We have implemented a prototype of VFW Controller
+ontopofClickOS[38].ClickOSisaXen-basedNFVplatform • Demonstration of VFW Controller’s capability to
+optimized for fast provision of virtualized network functions quickly scale (Figure 8).
+in large scale. ClickOS creates small VMs (each less than • Quantifying the impact of firewall rule migration on
+12MB) and boots one instance within 30 milliseconds. We virtual firewall throughput (Figure 9).
+have enhanced ClickOS to provide stateful virtual firewalls
+• Evaluating the performance of VFW Controller’s
+using Click modular router software [33]. Click provides
+optimal scaling calculation (Figure 10).
+rich networking processing elements, which can be leveraged
+to construct a wide range of virtual middleboxes. We have Setup and Methodology: Our experiments were conducted
+used three elements, IPfilter, IPClassifier and IPFragmenter, usingCloudLab[3],anopencloudplatformprovidingvarious
+provided by Click to implement firewall packet processing resources (server, storage, and network) for experimenters to
+function. We have also developed new Click elements for run cloud software stacks such as OpenStack and CloudStack.
+firewall rule management, buffer management, and interfaces In our experiments, we deployed a client machine that gen-
+formigratingrulesandstates.Inparticular,wehavedeveloped erated traffic, a server machine that received traffic, and a
+a programming interface on top of XL [10] 6, which VFW firewallmachinecreatedbyVFW Controllertoprocessthe
+Controller uses to exert migration controls on individual traffic between the client and the server. The client generated
+virtual firewalls. Such a control automation is essential to synthetic workloads using scapy 7, a powerful interactive
+fully take advantage of virtual firewall benefits [6]. Our VFW packet manipulation program.
+implementation provides useful insights to implement and
+1)Performance of Virtual Firewalls: In this experiment,
+control other virtualized network functions as well.
+weexaminedtherelationshipbetweentheprocessingcapacity,
+Key functions of VFW Controller have been realized c, of a virtual firewall and its firewall rule size S. We
+as individual modules. In particular, we have implemented a used three traffic datasets captured from real-world networks:
+Dependency Analysis module based on Header Space Library 1) the CAIDA UCSD anonymized Internet trace [16] is a
+(Hassel) [4], which is a tool for static header space analysis, a representative of Internet traffic; 2) the LBNL/ICSI enterprise
+Flow Update Analysis module to find the correct flow updates trace [5] is a typical traffic collected from an enterprise
+and calculate update costs, a Buffer Cost Analysis module network; and 3) the Campus network trace that was collected
+to calculate buffer costs, and an Optimal Scaling Calculation fromourcampusnetworkgateway.Againsteachofthedataset,
+modulethatrealizestheapproachesforoptimalscalingbycall- we conducted experiments to study how the firewall rule
+ing a Matlab ILP solver. VFW Controller also includes a size affects the performance of a virtual firewall. In each
+Floodlight module that implements Floodlight SDN controller experiment, we let S increase from 1 to 3000, which we
+functions[8].VFW ControllerusesFloodlightRESTAPIs considered as a maximum number of rules in a single VFW.
+to communicate flow updates to Floodlight module, which Then we measured the processing capability for each S value
+programs SDN switches through an OpenFlow interface. The and repeated each measurement 100 times to calculate the
+same channel is also used by SDN switches to send network average processing capacity, as shown in Figure 7(a). The
+traffic statistics back to VFW Controller. average processing capacity linearly decreases as S increases
+overalldatasets.TheLBNLenterprisetrafficcontainspackets
+To improve the performance of VFW Controller, our
+with greater length of payload, thus bares a more significant
+implementation uses both online and prior processing. All the
+impact on performance. We applied polynomial curve fitting
+analyses, including dependency analysis, flow update analy-
+linear regress on the CAIDA trace, which was captured by
+sis, update cost calculation, and buffer cost calculation are
+April 2016 and represents the most up-to-date characteristic
+carried out prior. VFW Controller maintains a copy of
+of today’s Internet traffic, and obtained the function c(S) as
+firewall rules for each virtual firewall and the flow rules in
+its database for prior analyses. Results from the analyses are c(S)=−0.0043S+6.2785 (2)
+storedandretrievedwheneverscalingistobeperformed.Over-
+load/underload detection, optimal scaling calculation, virtual This function fits the corresponding CAIDA curve in Fig-
+firewallcreation/deletion,migrationsoffirewallrulesandflow ure 7(a) with R2 = 0.9864. R2 is a measure of goodness of
+states, and flow updates are carried out online. fit with a value of 1 denoting a perfect fit. c(S) will be used
+by the evaluation of optimal scaling calculation (§ VIII-B5).
+6XL is a toolstack that provides the capability to provision guest VM in
+Xen. 7http://www.secdev.org/projects/scapy/.
+111200
+1000
+800
+600
+400
+200
+0 0 600 1200 1800 2400 3000
+Number of firewall rules
+)spbM(
+yticapaC
+gnissecorP
+Campus
+LBNL
+CAIDA
+(a) P(rao) cPeroscseisnsgingc caappaacciittyy.
+0.10
+0.08
+0.06
+0.04
+0.02
+0.00 0 600 1200 1800 2400 3000
+Number of firewall rules
+)dnocesorcim(
+emiT
+gnissecorP
+TABLE I: Rule dependencies in real-world firewall policies.
+Largest Group Policy Rule(#) Group(#)
+Member(#)
+A 12 2 3
+B 18 3 5
+C 25 3 6
+D 52 7 7
+E 83 9 7
+F 132 10 9
+G 354 10 12
+H 926 13 18
+firewalls were created to work in parallel process the same
+traffic. The 400 firewall rules in scenario (1) were split and
+installed in those two virtual firewalls. In both scenarios, the
+virtualfirewallsworkedinstandalonemode,whichmeantthey
+Campus
+LBNL were not connected to VFW Controller and no scaling
+CAIDA would be performed. In scenario (3), a single virtual firewall
+withthesameconfigurationasthatinscenario(1)wascreated
+toworkinstandalonemodeatfirst,thenswitchedtoconnected
+mode, which meant the virtual firewall was connected to VFW
+Controller and was scaled out. We compared the runtime
+throughput of the virtual firewalls in the three scenarios as
+shown in Figure 8.
+Figure 8(a) shows the runtime throughput of the three
+scenarios when the client generated 4 UDP flows with an
+aggregated traffic rate of about 2.8 Gbps. In scenario (1), the
+(b) Proce(sbs)i Pnrgocteismsineg ptiemrepacket. single virtual firewall achieved a maximum throughput (i.e.
+processing capacity) of about 1.5 Gbps. Significant packet
+Fig. 7: Relationship between virtual firewall performance and
+loss was experienced. In scenario (2), the two virtual firewall
+rule size.
+were able to handle the incoming traffic, producing a runtime
+throughput of about 2.8 Gbps. No packet loss occurred. In
+scenario (3), we intentionally let a single virtual firewall to
+In the experiment, we also recorded the average time a
+work from time t = 0s to t = 5s. Packet loss occurred
+virtual firewall instance spent to process a packet for each of
+duringthistimeperiod.Thenweconnectedthisvirtualfirewall
+thereal-worlddataset,asshowninFigure7(b).AsS increases,
+to VFW Controller and it was scaled into two virtual
+the average processing time shows an linear increase, which
+firewall instances. The scaling-out took a short period of time
+eventually incurs the latency of the passed packets. These re-
+(¡ 1 second), after which we observed the aggregated runtime
+sultsofthisexperimentcanbeusedforbuffercostcalculation
+throughput increased to around 2.8 Gbps.
+(§ VI-A).
+WealsoevaluatedVFW ControlleragainstTCPtraffic.
+2)Rule Dependencies in Firewall Policies: In this experi- Figure 8(b) shows the runtime throughput of the three scenar-
+ment, we studied 8 real-world firewall policies from different ios when the client established 2 TCP connections with the
+resources. Most of them are from campus networks and some server. We observed a boost of runtime throughput between
+are from major ISPs. We partitioned each policy to disjoint t=5s and t=6s.
+groups using the partition algorithm given in Section IV. The
+In summary, the above results demonstrated that VFW
+experimentalresultsarelistedinTableI.Thefirsttwocolumns
+Controller can quickly scaled out an overloaded virtual
+of the table show the policies we used and their rule numbers.
+firewall and solved the overload condition.
+Thethirdcolumngivesthenumberofgroupsidentifiedineach
+policy,andthefourthcolumnshowsthenumberofthefirewall 4)ImpactofMigration: Duringthemigration,thein-flight
+rules in the largest group of each policy. This experiment trafficarebuffereduntilthemigrationcompletes,thereforethe
+demonstratesthatruledependenciesarecommoninreal-world runtime throughput of a virtual firewall is expected to degrade
+firewall policies. Therefore, the dependency analysis in VFW duringthemigration.Accordingtoequation(1)in§VI,ifmore
+Controller is necessary. We also noticed from our study traffic flows are associated with the migrated firewall rules,
+thatthelargestgroupweencounteredcontainsonly18firewall more in-flight traffic will be buffered. Therefore larger the
+rules (from Policy H in Table I). degradationwillbeandlongerthedegradationwilllast.Inthis
+experiment, we quantified both the duration and magnitude of
+3)Elasticity of VFW Controller: In this experiment, we
+throughput degradation. We set up two scenarios to test UDP
+demonstratedVFW Controller’sabilitytoelasticallyscale
+and TCP flows, respectively.
+outanoverloadedvirtualfirewall.Wedesignedthreescenarios.
+In scenario (1), a single virtual firewall was created and Inscenario(1),theclientkeptsendingUDPtrafficdestined
+configuredwith400firewallrulestoprocessthetrafficbetween to the server. The UDP packets were routed through a virtual
+the client and the server. In scenario (2), two single virtual firewall created by VFW Controller. In Figure 9(a), the
+123.0
+2.5
+2.0
+1.5
+1.0
+0.5
+0.0 0 2 4 6 8 10
+Data Transfer Elapsed Time (seconds)
+)spbG(
+tuphguorhT
+emitnuR
+Single VFW
+With VFW Split
+Two Paralell VFWs
+(a) SplitwithUDPflowoverload.
+3.0
+2.5
+2.0
+1.5
+(a) Split with UDP flows overload
+1.0
+0.5
+0.0
+0 2 4 6 8 10
+Data Transfer Elapsed Time (seconds)
+)spbG(
+tuphguorhT
+emitnuR
+With VFW Split
+Two Paralell VFWs
+Single VFW
+(b) SplitwithTCPflowoverload.
+Fig. 8: VFW Controller for VFW elasticity.
+2.0
+1.5
+(b) Split with TCP flows overload
+1.0
+0.5
+0.0
+1 2 3 4 5 6 7 8 9 10
+Data Transfer Elapsed Time (seconds)
+)spbG(
+tuphguorhT
+PDU 200 flows
+600 flows
+1200 flows
+Without migration
+(a) ImpactonUDPthroughput.
+2.0
+1.5
+1.0
+(a) Impact on UDP Throughput
+0.5
+0.0
+1 2 3 4 5 6 7 8 9 10
+Data Transfer Elapsed Time (seconds)
+)spbG(
+tuphguorhT
+PCT
+0.12
+0.10
+0.08
+0.06
+0.04
+0.02
+0.00 0 100 200 300 400 500 600 700 800 900 1000
+Number of Groups
+200 flows
+600 flows
+1200 flows
+Without migration
+(b) ImpactonTCPthroughput.
+Fig. 9: Performance overhead of migration.
+(b) Impact on TCP Throughput
+)dnoces(
+emiT
+2 3
+4
+5
+6
+(a)
+0.10
+0.08
+0.06
+0.04
+0.02
+0.00
+0 10 20 30 40 50 60 70 80 90 100
+Number of Under-loaded VFWs
+)dnoces(
+emiT
+(b)
+Fig. 10: Performance of provision plan calculation.
+solid black line, as a base line, shows the throughput of the
+virtualfirewallwhennomigrationoccurred.Thedottedlinesin
+Figure9(a)showtheruntimethroughputofthevirtualfirewall
+when migrating 200, 600, 1200 firewall rules, respectively.
+The migrations were scheduled at t = 6s. We fabricated
+firewall rules so that each firewall rule has one matching
+flow. The duration and magnitude of throughput degradation
+increased as the number of migrated firewall rules (or the
+number of UDP flows) increased. However, the degradation
+lasted for a very short period of time (≈0.75s with 1200
+flows) and the throughput bounced back very quickly. In
+scenario (2), the client sent TCP traffic. Figure 9(b) shows
+that the degradation of throughput of the virtual firewall when
+processing TCP traffic. As the number of firewall rules (or
+TCP flows) increases, the degradation lasted longer and was
+bigger. The degradation in the case of TCP traffic lasted
+slightly longer than that of UDP, because TCP depends on
+congestion avoidance mechanisms to control its traffic rate,
+which means TCP flows take more time to recover from a
+throughput degradation than UDP flows. For both UDP and
+TCP flows, the throughput began to bounce back in less than
+0.1 second after it reaching the lowest point (see Figures 9(a)
+and (b)).
+To sum up, the duration and magnitude of throughput
+degradation increase as the number of migrated firewall rules
+(or the number of flows) increase. And the degradation shows
+an bigger impact on TCP flows than UDP flows.
+5)Performance ofOptimal Scaling Calculation: We intro-
+duced a three-step heuristic approach in VFW Controller
+to calculate an optimal solution for scaling out an overloaded
+virtual firewall. The performance of this approach depends
+almost fully on the ILP formulation and solving used in the
+second step. Therefore, we mainly tested the performance of
+our ILP formulation and solving. The ILP performance is
+influenced by (i) m, the number of firewall rule groups on
+the overloaded virtual firewall; and (ii) n, the number of new
+virtual firewall instances to be created. In our experiment, we
+measuredthetimetofindtheoptimalsolutionforvariedmand
+n values. We let n range from 2 to 6, and m range from 100
+up to 1000. Figure 10(a) shows our experiment results. The
+timetofindanoptimalsolutionincreasesasmornincreases,
+however, the time is very short. Even for m = 1000, our
+approach needs less than 0.11 second.
+13Figure 10(b) depicts the time that our approach consumed X. CONCLUSIONANDFUTUREWORK
+to find an optimal solution for scaling in when the number
+The hardware-based firewall is limited by its inflexible
+of underloaded virtual firewall instances is changed. Our
+nature with regard to fixed capacity and fixed deployment
+approach is very efficient. Even when 100 virtual firewall
+location. We observed two emerging networking paradigms,
+instances are detected to be underloaded, our approach takes
+NFVandSDN,offertheopportunitytoaddressthelimitations
+less than 0.08 second to find an optimal scaling-in solution.
+by implementing firewall functions as virtual firewalls. In
+this paper, we have proposed VFW Controller, a virtual
+firewall controller, which enables safe, efficient and optimal
+IX. RELATEDWORK
+virtual firewall scaling. To demonstrate the feasibility of our
+Several recent research efforts, such as Pico Replica- approach, we have implemented the core components of VFW
+tion [43], Split/Merge [44] and OpenNF [28], have been Controller on top of ClickOS. In the future, we plan to
+devoted to designing control systems to address scaling issues implement VFW Controller in other popular open-source
+of virtualized network functions. Pico Replication provides NFV platforms, such as OPNFV [7] and CORD [1]. We
+APIs that NFs can use to create, access, and modify internal also plan to generalize the buffer cost analysis and optimal
+states. Split/Merge achieves load-balanced elasticity of virtual scalingapproachesintroducedinthispaperandintegratethem
+middleboxes,viasplittinginternalstatesofNFsamongvirtual withotherexitingNFcontrolsystems,suchOpenNF.Besides,
+middlebox replicas and re-routing flows. However, both Pico we will investigate solutions to address specific challenges
+Replication and Split/Merge cannot achieve loss-free during in the elastic scaling of other network security functions.
+NFstatemigration.OpenNFprovidesfine-grainedcontrolover For example, data and control dependencies [21] need to be
+themoveofinternalNFstatesfromoneNFinstancetoanother, addressed in building virtual intrusion detection systems.
+and enables loss-free and order-preserving state migration.
+Whilethosecontrolsystemsattemptedtoaccommodateawide ACKNOWLEDGMENT
+rangeofvirtualizednetworkfunctions,semanticconsistencyis
+specifictovirtualfirewallsandremainsunsolvedbythosesys- This work was partially supported by grants from National
+tems. Besides, neither do existing control systems address the Science Foundation (NSF-ACI-1642143, NSF-ACI-1642031,
+challenge of correct flow update, nor do they support optimal NSF-IIS-1527421, and NSF-CNS-1537924).
+scaling. In addition, most of existing control systems, such
+as OpenNF, use centralized buffers at the controller to buffer REFERENCES
+in-flight traffic. Such a solution has significant drawbacks,
+[1] CentralOfficeRe-architectedasaDatacenter(CORD).http://opencord.
+since it consumes valuable bandwidth between the controller
+org/.
+and virtualized functions, and lacks an effective mechanism
+[2] Check Point virtual appliance for AWS. https://aws.amazon.com/
+to avoid buffer overflow. In comparison with those exiting
+marketplace/pp/B00CWNBJOY.
+systems, VFW Controller is specifically designed as a
+[3] CloudLab. http://www.cloudlab.us/.
+controllertoaddresschallengesinvirtualfirewallscalingwith
+[4] Header Space Library (Hassel). http://stanford.edu/∼kazemian/hassel.
+respect to semantic consistency, correct flow update, buffer
+tar.gz.
+overflow avoidance, and optimal scaling.
+[5] LBNL/ICSI Enterprise Tracing Project. http://www.icir.org/
+enterprise-tracing/.
+NFV and SDN techniques have been recently used to
+[6] Network Function Virtualisation - Introductory White Paper. https://
+solve the inflexibility and inelasticity limitations of hardware-
+portal.etsi.org/nfv/nfv white paper.pdf.
+based DDoS defense appliances. Particularly, Fayaz et al. [25]
+[7] OPENFV. https://www.opnfv.org/.
+proposed Bohatei, a flexible and elastic virtual DDoS defense
+[8] ProjectFloodlight. http://www.projectfloodlight.org/projects/.
+system, for effectively defending DDoS attacks. In contrast,
+[9] Scalable Firewall Services with Virtual Systems. https://www.
+weaddresstheuniquechallengespresentedbyhardware-based
+paloaltonetworks.com/products/features/virtual-systems.html.
+firewalls, leveraging the features provided by NFV and SDN
+[10] XenToolstack. http://wiki.xen.org/wiki/XL.
+as well.
+[11] OverviewofvirtualfirewallsonVBLOCKTM infrastructureplatforms.
+http://www.vce.com/asset/documents/virtual-firewall-whitepaper.pdf,
+Hu et al. [30] proposed FlowGuard, a framework for
+2012.
+building SDN firewalls, to protect OpenFlow-based networks.
+[12] AT&T Vision Alignment Challenge Technology Survey. http://www.
+FlowGuard-based firewalls are actually SDN applications run- att.com/Common/about us/pdf/AT&TDomain2.0VisionWhitePaper.pdf,
+ning on top of SDN controllers. Challenges in designing SDN 2013.
+firewall applications were addressed in FlowGuard. However, [13] HowSDNenabledinnovationswillimpactAT&T’splanstotransform
+the work presented in this paper investigates solutions for the it’s infrastructure. https://www.youtube.com/watch?v=tLshR-BkIas,
+safe and efficient management of a new type of firewalls, 2014.
+virtual firewalls, in the context of both NFV and SDN. [14] http://www.prweb.com/releases/opennetsummit/20150217/
+prweb12592239.htm,2015.
+Zhangetal.[50]demonstratedthatcarelesspolicyupdates [15] OpenFlow Switch Specification Version 1.5.1. https:
+may result in security violations. They presented safe and //www.opennetworking.org/images/stories/downloads/sdn-resources/
+onf-specifications/openflow/openflow-switch-v1.5.1.pdf,2015.
+efficient policy update algorithms for firewall policy updates.
+[16] The CAIDA UCSD Anonymized Internet Traces 2016-0406. http://
+However, the proposed algorithms are only able to deal with
+www.caida.org/data/passive/passive 2016 dataset.xml,2016.
+policy updates on a single firewall, while the rule migration
+[17] T.Benson,A.Akella,andD.A.Maltz. Networktrafficcharacteristics
+mechanism introduced in VFW Controller coordinates
+ofdatacentersinthewild.InProceedingsofthe10thACMSIGCOMM
+firewall rules across multiple firewalls. conferenceonInternetmeasurement,pages267–280.ACM,2010.
+14[18] T. Benson, A. Anand, A. Akella, and M. Zhang. Understanding data InProceedingsofthe11thUSENIXConferenceonNetworkedSystems
+centertrafficcharacteristics.InProceedingofSIGCOMMWorkshopon DesignandImplementation(NSDI’15),pages459–473,2014.
+ResearchonEnterpriseNetworking,Barcelona,Spain,2009. [39] N.Mckeown,T.Anderson,H.Balakrishnan,G.Parulkar,L.Peterson,
+[19] P. Bernier. Google implements NFV, SDN as part of its J.Rexford,S.Shenker,andJ.Turner.OpenFlow:enablinginnovationin
+Andromeda Effort. http://www.nfvzone.com/topics/nfv/articles/ campusnetworks.ACMSIGCOMMComputerCommunicationReview,
+376827-google-implements-nfv-sdn-as-part-its-+andromeda.htm, 38(2):69–74,2010.
+2014. [40] G. Misherghi, L. Yuan, Z. Su, C.-N. Chuah, and H. Chen. A general
+[20] P.Busschbach. Networkfunctionsvirtualization:challengesandsolu- framework for benchmarking firewall optimization techniques. IEEE
+tions. http://www.tmcnet.com/tmc/whitepapers/documents/whitepapers/ TransactionsonNetwork&ServiceManagement,5(4):227–238,2008.
+2013/9377-network-functions-virtualization-challenges-+solutions.pdf, [41] A. Nunes, M. Mendonca, X. Nguyen, and K. Obraczka. A survey of
+2013. software-definednetworking:past,present,andfutureofprogrammable
+[21] L. D. Carli, R. Sommer, and S. Jha. Beyond pattern matching: A networks. IEEE Communications Surveys & Tutorials, 16(3):1617–
+concurrencymodelforstatefuldeeppacketinspection.InProceedingof 1634,2014.
+the2014ACMSIGSACConferenceonComputerandCommunications [42] R. Ozdag. The day Amazon ended the hardware-
+Security,Scottsdale,AZ,2014. defined network. http://www.cyaninc.com/blog/2013/11/26/
+[22] M. Chapel. Firewall rules are meant to be managed, not the-day-amazon-ended-the-hardware-defined-network#.VbehsxNViko,
+broken. http://www.biztechmagazine.com/article/2012/08/ 2013.
+firewall-rule-management-key-network-security,2012. [43] S. Rajagopalan, D. Williams, and H. Jamjoom. Pico Replication: A
+[23] A.R.Curtis,J.C.Mogul,J.Tourrilhes,P.Yalagandula,P.Sharma,and highavailabilityframeworkformiddleboxes. InProceedingsofthe4th
+S.Banerjee.DevoFlow:scalingflowmanagementforhigh-performance annualSymposiumonCloudComputing,page1.ACM,2013.
+networks. In ACM SIGCOMM Computer Communication Review, [44] S.Rajagopalan,D.Williams,H.Jamjoom,andA.Warfield.Split/merge:
+volume41,pages254–265.ACM,2011. System support for elastic execution in virtual middleboxes. In
+[24] Q. Duan and E. S. Al-Shaer. Traffic-aware dynamic firewall policy Proceedings of the 10th USENIX Symposium on Networked Systems
+management: techniques and applications. IEEE Communications DesignandImplementation(NSDI’13),pages227–240,2013.
+Magazine,51:73–79,2013. [45] S. K. N. Rao. SDN and its Use-Cases-NV and NFV. http://www.
+[25] S.Fayaz,Y.Tobioka,andV.Sekar. Bohatei:flexibleandelasticDDoS nectechnologies.in/en TI/pdf/NTI whitepaper SDN NFV.pdf,2014.
+defense. In Proceedings of the 24th USENIX Conference on Security [46] I. Scales. Survey indicates NFV/SDN deploy-
+Symposium,2015. ments in 2015. http://www.telecomtv.com/articles/sdn/
+[26] O.N.Foundation. OpenFlow-enabledSDNandnetworkfunctionsvir- survey-indicates-nfv-sdn-deployments-in-2015-11062/,2015.
+tualisation. https://www.opennetworking.org/images/stories/downloads/ [47] J. Sherry, S. Hasan, C. Scott, A. Krishnamurthy, S. Ratnasamy, and
+sdn-resources/solution-briefs/sb-sdn-nvf-solution.pdf,2014. V.Sekar. Makingmiddleboxessomeoneelse’sproblem:networkpro-
+[27] A.Gember-JacobsonandA.Akella. Improvingthesafety,scalability, cessingasacloudservice.ACMSIGCOMMComputerCommunication
+andefficiencyofnetworkfunctionstatetransfers. InACMSIGCOMM Review,42(4):13–24,2012.
+WorkshoponHotTopicsinMiddleboxesandNetworkFunctionVirtu- [48] J.SherryandS.Ratnasamy. Asurveyofenterprisemiddleboxdeploy-
+alization,2015. ment. In Technical Report UCB/EECS-2012-24. EECS Department,
+[28] A.Gember-Jacobson,R.Viswanathan,C.Prakash,R.Grandl,J.Khalid, UniversityofCalifornia,Berkeley,2012.
+S. Das, and A. Akella. OpenNF: Enabling innovation in network [49] L. Yuan, H. Chen, J. Mai, C.-N. Chuah, Z. Su, and P. Mohapatra.
+function control. In Proceedings of the 2014 ACM Conference on Fireman: A toolkit for firewall modeling and analysis. In 2006 IEEE
+SIGCOMM,pages163–174,2014. Symposium on Security and Privacy (S&P’06), pages 15–pp. IEEE,
+[29] H.Hu,G.-J.Ahn,andK.Kulkarni. DetectingandResolvingFirewall 2006.
+Policy Anomalies. IEEE Transactions on Dependable & Secure [50] C.C.Zhang,M.Winslett,andC.A.Gunter.Onthesafetyandefficiency
+Computing,9(3):318–331,2012. of firewall policy deployment. In 2007 IEEE Symposium on Security
+[30] H. Hu, W. Han, G.-J. Ahn, and Z. Zhao. FlowGuard: building robust andPrivacy(S&P’07),pages33–50.IEEE,2007.
+firewallsforsoftware-definednetworks.InProceedingsofthe3rdACM
+SIGCOMM workshop on Hot Topics in Software Defined Networking
+(HotSDN’14),pages97–102.ACM,2014.
+[31] P.Kazemian,G.Varghese,andN.Mckeown. HeaderSpaceAnalysis:
+Static Checking For Networks. In Proceedings of the 9th USENIX
+conferenceonNetworkedSystemsDesignandImplementation,2012.
+[32] A. Khurshid, X. Zou, W. Zhou, M. Caesar, and P. B. Godfrey. Veri-
+flow: Verifying network-wide invariants in real time. In Proceedings
+of the 10th USENIX Symposium on Networked Systems Design and
+Implementation(NSDI’13),pages15–27,2013.
+[33] E. Kohler, R. Morris, B. Chen, J. Jannotti, and M. F. Kaashoek. The
+clickmodularrouter. ACMTrans.Comput.Syst.,18(3):263–297,2000.
+[34] D.Kreutz,F.M.V.Ramos,P.Verissimo,C.E.Rothenberg,S.Azodol-
+molky, and S. Uhlig. Software-defined networking: a comprehensive
+survey. ProceedingsoftheIEEE,13:14–76,2015.
+[35] A.X.LiuandM.G.Gouda.CompleteRedundancyRemovalforPacket
+Classifiers in TCAMs. IEEE Transactions on Parallel & Distributed
+Systems,21(4):424–437,2010.
+[36] A. X. Liu, E. Torng, and C. R. Meiners. Firewall Compressor: An
+Algorithm for Minimizing Firewall Policies. In Proceedings of the
+27thConferenceonComputerCommunications(INFOCOM’08),pages
+176–180,2008.
+[37] R. Maddipudi. vCloud networking and security 5.1
+app firewall. http://blogs.vmware.com/vsphere/2013/04/
+vcloud-networking-and-security-5-1-+app-firewall-part-1.html,2013.
+[38] J. Martins, M. Ahmed, C. Raiciu, V. Olteanu, M. Honda, R. Bifulco,
+and F. Huici. ClickOS and the art of network function virtualization.
+15

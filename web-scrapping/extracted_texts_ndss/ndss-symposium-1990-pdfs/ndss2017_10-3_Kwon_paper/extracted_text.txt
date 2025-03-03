@@ -1,0 +1,1506 @@
+A2C: Self Destructing Exploit Executions via Input Perturbation
+Yonghwi Kwon*, Brendan Saltaformaggio*, I Luk Kim*, Kyu Hyung Lee†, Xiangyu Zhang*, and Dongyan Xu*
+*Department of Computer Science, Purdue University
+{kwon58, bsaltafo, kim1634, xyzhang, dxu}@cs.purdue.edu
+†Department of Computer Science, University of Georgia
+kyuhlee@cs.uga.edu
+Abstract—Malicious payload injection attacks have been a victim program. Further, some defense techniques may entail
+serious threat to software for decades. Unfortunately, protec- non-trivial overhead (e.g., [6]) or require hardware support
+tion against these attacks remains challenging due to the ever (e.g., [41]), which affects their application in practice. Based
+increasing diversity and sophistication of payload injection and on this trend of attack-specific defense, we are motivated
+triggering mechanisms used by adversaries. In this paper, we
+to look for an entirely new, more fundamental weakness of
+develop A2C, a system that provides general protection against
+software exploits to provide an attack vector independent
+payload injection attacks. A2C is based on the observation that
+protection mechanism.
+payloads are highly fragile and thus any mutation would likely
+break their functionalities. Therefore, A2C mutates inputs from It turns out that all software exploit attacks invariably
+untrusted sources. Maliciouspayloads that reside in these inputs
+have two common characteristics: First, they all need to inject
+are hence mutated and broken. To assure that the program
+an exploit payload into the target application. This payload
+continuestofunctioncorrectlywhenbenigninputsareprovided,
+couldbeapieceofexecutablecode(shellcode)orinformation
+A2C divides the state space into exploitable and post-exploitable
+that allows constructing the malicious instruction sequence at
+sub-spaces, where the latter is much larger than the former, and
+decodesthemutatedvaluesonlywhentheyaretransmittedfrom runtime (e.g., a ROP chain that contains the entry addresses
+the former to the latter. A2C does not rely on any knowledge of of gadgets). Second, these payloads are famously brittle.
+maliciouspayloadsortheirinjectionandtriggeringmechanisms. Specifically, exploit payloads are designed with very strict
+Hence, its protection is general. We evaluate A2C with 30 real- semantic assumptions about the environment (e.g., memory
+worldapplications,includingapacheonareal-worldwork-load, layout, libraries, or known binary instructions) which require
+and our results show that A2C effectively prevents a variety of each byte of the payload to be carefully tailored to a victim.
+payloadinjectionattacksontheseprogramswithreasonablylow
+overhead (6.94%). Inthispaper,wewillshowthattheseinvariantcharacteris-
+tics of exploit attacks make it possible to protect applications
+I. INTRODUCTION
+from exploit injections independent of the attack vector they
+Attacks which exploit software vulnerabilities are among use. Specifically, we leverage the observation that exploit
+the most prevalent cyber-security threats to date. This is due, payloads (regardless of their attack vector) are so brittle that
+in part, to many complex combinations of potential attack any mutation would break their execution — i.e., cause the
+vectors: Buffer overflow attacks, Return-to-libc attacks [58], execution to crash. For example, even simple mutation of
+ROP [50], Jump-oriented programming (JOP) [10], and Heap x86 shellcode results in invalid instructions. Similarly, most
+spraying[60],[27]tonamejustafew.Unfortunately,thisever sequences of ROP addresses no longer form an executable
+expandingvarietyofexploitattackvectorshasledtoaconstant gadget chain if even a single byte is changed. Secondly,
+“catandmousegame”ofbuildingdefensesaseachnewattack since these exploit payloads must be injected into a victim
+is released. application, their behavior eventually diverges from that of
+the application’s legitimate inputs. Therefore, we propose that
+Inlightofthis,manyexistingprotectionmechanismsfocus
+exploit payloads may be easily disabled via a “shoot first
+on specific attack vectors and become less effective (or even
+and ask questions later” policy, whereby all input to a victim
+completelyineffective)forothers.Forexample,non-executable
+program is immediately mutated and only those that are
+stack and heap have difficulty preventing code reuse (e.g.,
+beyond the control of the adversary are decoded.
+ROP) attacks because the executable payload is constructed
+from the original code of the application. Shellcode detec- Based on the above observations, we have developed the
+tion techniques are only effective against injection of binary A2C (or “Attack to Crash”) technique. A2C naturally exploits
+executable code and are often bypassable [32], [26], [39], the brittleness of attack payloads by setting these attacks on
+[65]. Control Flow Integrity [66], [31], [73], [43] prevents track to crash before malicious logic is executed. First, any
+attacks which exhibit certain abnormal control flows within a buffer inputs from untrusted sources are securely encoded
+usingA2C’sOne-TimeDictionary,whichvariesforeachinput
+buffer to prevent memory disclosure/value guessing based
+Permission to freely reproduce all or part of this paper for noncommercial attacks. Since all the untrusted inputs are mutated, malicious
+purposes is granted provided that copies bear this notice and the full citation
+payloads that reside in these inputs are also mutated, resulting
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author in broken payloads which will induce crashes when executed.
+(for reproduction of an entire paper only), and the author’s employer if the Later, A2C must undo the mutation in the buffer inputs,
+paper was prepared within the scope of employment. when the program begins using these inputs to compute new
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+values, so that our mutation does not cause any exceptions for
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23476 legitimate input.Uncontrollable
+Un St pr eu cs it fe icd a tI in op nut Constr Sa ti an tt
+i
+cS olver UO np tre ura stt eio dn Is
+n
+S pe ut
+t
+Flow/ SC eo nn sit te ix vt e/ Field Dec So ed tsi n (g D/ EE n Sc eo tsd )ing In Tst hr eu m De En t S A etc sc. In Pst rr ou gm re an mted
+Taint Analysis Specification Static Analysis Instrument Calling One-Time Dictionary
+Targ Pe rt o ( gO rr ai mginal) CD oe mco pd ui tn ag t iF onro Pn hti ae sr e Target (Original) Static Analysis Phase Targ Pe rt o ( gO rr ai mginal) InstC ro un mte ex nt t E atn ic oo nd Pin hg ase B Ra us ne td i mE en c Po hd ain sg e
+Program
+Fig.1. OverallprocedureofA2C.
+Our evaluation shows that A2C is able to protect a variety
+write(Input,
+of applications against a wide spectrum of exploit attacks
+Comparative
+regardless of their injection methods, without affecting the c Inh pa ur t I =np ru et a[. d.. (] .; ..); Input[...] == 'C'; ...
+normal functionalities of the program. Further, because A2C Uncontrollable requires no knowledge of the specific attacks (only leveraging Transformative
+thetwoinvariantcharacteristicsmentionedabove)itmayeven x = (int) Input[...];
+x = Input[...] & 1; preventcurrentlyunknowninjectionattacktypesinthefuture. x = Input[...] * y / ... ;
+Thedetailedthreatmodelconsideredinthispaperispresented ...
+in Section V.
+Our contributions are summarized in the following:
+• We propose the novel idea of partitioning program
+state space into the exploitable and post-exploitable
+sub-spacessothatweonlyneedtoprotectthesmaller
+exploitable sub-space, which is critical to A2C’s effi-
+ciency and effectiveness.
+• Wedevelopanovelconstraintsolvingbasedapproach
+thatcandeterminetheboundaryofthetwosub-spaces.
+This serves as the basis to compute the execution
+points where the mutation can be safely undone.
+• Wedevelopaflow-,context-,andfield-sensitivestatic
+analysis to identify the places at which A2C needs
+to undo the mutation so that execution on legitimate
+inputs is not affected.
+• We develop an efficient runtime that leverages a One-
+Time Dictionary, which projects a value to another
+unique value. The dictionary varies for each input
+buffer to prevent memory disclosure based attacks.
+A2C also features efficient calling context encoding
+to support undoing input mutation.
+• We develop a prototype A2C. The evaluation results
+showthatA2Ceffectivelypreventsanumberofknown
+payload injection attacks with low overhead (6.94%).
+II. SYSTEMOVERVIEW
+In this section, we present an overview of A2C, which is
+based on the following two observations. (1) Most malicious
+payloads reside in buffers and they only go through copy
+operations or simple transformations before the attack is
+launched.Itisveryrareforthesepayloadstoundergocomplex
+transformations in the victim program before being executed.
+This is due to the difficulty in controlling the transformations
+(in the victim program) to generate meaningful payloads. (2)
+Malicious payloads are very fragile. Any mutation often leads
+to an unsuccessful attack. For example, changing a few bits at
+thebeginningofashellcodecaneasilythrowoffthesequence
+of executed instructions, leading to a crash.
+The overarching idea of A2C is to protect a program
+from malicious injection attacks by perturbing or encoding
+inputsfromuntrustedsources.However,inputsfromuntrusted
+sources (e.g., packets from remote IPs) are not necessarily
+malicious. We need to ensure that our perturbation does not
+fail executions based on non-exploit inputs. According to ob-
+servation(1),weaimtoundotheperturbationwhenthebuffer
+✁
+Terminal
+); ...
+memcpy(..., Input);
+strcpy(
+Decoding
+Frontiers
+✁
+Controllable
+Transformative
+(Copy operations)*
+... exit
+, Input); toupper(Input);
+iconv(..., Input, ...);
+mbtowc(..., Input, ...);
+x = Input[...] + 3; x = Input[...] * 2; ...
+Exploitable space Post-exploitable space
+Fig.2. Decodingfrontiers.
+data goes beyond copy operations/simple transformations and
+starts being used in benign computation.
+In the following, we use the diagram in Fig. 2 to illustrate
+the life cycle of buffer data and hence the intuition behind
+A2C. After the buffer data are loaded through input functions,
+theymayundergoanumberoftransformations,includingcopy
+operations(e.g.,memcpy()andstrcpy())thatcopyabufferto
+another target buffer, constant table lookup (e.g., in iconv(),
+toupper(), mbtowc(), and wctomb()), and simple transfor-
+mative operations (e.g., additions with a constant). Then, the
+bufferdatawilleventuallyencounteroneofthefollowingthree
+kinds of operations: (1) Comparative operations, in which
+elements in the buffer are used in comparisons; (2) Terminal
+operations, in which the buffer data are passed to output
+library functions (e.g., write(), send(), and printf()); (3)
+Uncontrollable transformative operations, in which elements
+inthebufferundergotransformationsthatdisallowtheattacker
+tocontrolthevaluesbeyondthesetransformationstoconstruct
+meaningful payloads. For instance, type widening copies a
+value of smaller type (e.g., char) to an array element of larger
+type (e.g., integer) so that each element in the array is padded
+withleading0’s.Assuch,theresultingbytesequencedenoted
+by the array cannot serve as a meaningful payload.
+We call these three kinds of operations the decoding
+frontier (DF) because A2C should undo the perturbation for
+the buffer elements involved before executing the operations.
+Intuitively, we consider the space before the frontier the
+exploitable space where the malicious payloads are supposed
+to take effect and without perturbation would successfully
+exploittheprogram.Therefore,weuseperturbationtoachieve
+protectioninthisspace.Thespaceafterthefrontierisreferred
+toasthepost-exploitablespace.Thisisbecausecontrollingthe
+payloadbecomesinfeasibleifithasgonethroughthesebenign
+transformationsconductedbythevictimprogram.Therefore,it
+issafetoundoourperturbationbeforethedecodingfrontierso
+that benign inputs can be used in computation as usual1. The
+core technical challenge for A2C is hence to identify the DF
+ofasubjectprogramandperforminstrumentationaccordingly.
+More discussion about the decoding frontier can be found in
+Section IV-A.
+Another interesting observation that makes our solution
+1Hereweassumethatoutputlibraryfunctionsarehardenedandthuscannot
+beexploitedbythedecodedbuffers.
+2Original Program Encoding/Decoding a request Instrumented Program
+File: ngx_recv.c File: ngx_recv.c
+1. Encoding a request
+ssize_t ngx_unix_recv( … ) { ssize_t ngx_unix_recv( … ) {
+POST /index.php HTTP/1.1\r\nHost:...
+… …
+136: n = recv( c->fd, buf, size, 0); ONRS..hmcdw-ogo.GSSO.0-0 . .Gnrs9... 136: n = recv(c->fd, buf, size, 0); Encode(buf, n);
+File: ngx_http_parse.c File: ngx_http_parse.c
+139: for (p = b->pos; p < b->last; p++) { 2. Comparing the first byte ('P') 139: for (p = b->pos; p < b->last; p++) {
+140: ch = *p; POST /index.php HTTP/1.1\r\nHost:... 140: ch = *p;
+… PNRS..hmcdw-ogo.GSSO.0-0 . .Gnrs9... …
+160: if ( ch == ' ' ) { 160: if ( Decode(ch, 1) == ' ' ) {
+... ...
+179: case 4: 3. Comparing the first 4 bytes ("POST") 179 case 4:
+... ...
+POST /index.php HTTP/1.1\r\nHost:...
+182: if ( ngx_str30_cmp( m, 'P','O','S','T' ) ) { 182: if ( ngx_str30_cmp( Decode(m, 4) , 'P','O','S','T') ) {
+183: r->method = NGX_HTTP_POST; POST..hmcdw-ogo.GSSO.0-0 . .Gnrs9... 183: r->method = NGX_HTTP_GET;
+File: ngx_http_request_body.c File: ngx_http_request_body.c
+int ngx_http_do_read_client_request_body( … ) { int ngx_http_do_read_client_request_body( … ) {
+4. Injected Code by Heap overflow/spraying
+… …
+302: n = c->recv(c, rb->buf->last, size); \x90\x90\x90\x90\x90\x90\x90\x90\x90... 302: n = c->recv(c, rb->buf->last, size); Encode(rb->buf->last, n);
+\x89\x89\x89\x89\x89\x89\x89\x89\x89... …
+File: ngx_http_request.c File: ngx_http_request.c
+int ngx_http_request_handler( … ) { 5. Jump to the injected code int ngx_http_request_handler( … ) {
+… call r->read_event_handler (= 0x00b7c010) …
+2133: r->read_event_handler(r); 2133: r->read_event_handler(r);
+call r->read_event_handler (= 0xffb6bf0f)
+Fig.3. Originalandinstrumentedprogramsofdemonstrativeexample.
+feasible is that the exploitable space is usually much smaller contexttodetermineiftheinstrumentedversionortheoriginal
+than the post-exploitable space as most computation happens version of the statement should be executed. Therefore, part
+in the post-exploitable space. As such, the frontier tends to be oftheinstrumentationphasehandlestheproblemofefficiently
+small and shallow and as explained above, operations beyond tracking the current calling context.
+the frontier do not need our attention.
+Lastly, the runtime supports execution of the instrumented
+Overall Procedure. Fig. 1 shows the complete procedure of program.ItfeaturesencodingbasedonaOne-TimeDictionary,
+A2C.Therearefourphases:constraintsolvingbaseddecoding which projects a plaintext value to a unique encoded value.
+frontier computation, static analysis for determining encoding Different input buffers use different dictionaries to prevent
+and decoding places which are a superset of the decoding memory exposure based exploits.
+frontier, instrumentation, and runtime.
+First, we leverage constraint solving to determine the
+III. ILLUSTRATIVEEXAMPLE
+uncontrollable operations. These operations, together with the
+In this section, we use a real-world example to illustrate
+comparative and terminal operations, form the decoding fron-
+A2C’s operation. We use the nginx 1.4.0 web-server as the
+tier.Thisphasesimplymarksalltheoperationsonthefrontier.
+subject program. It has two known heap buffer overflow and
+Second, a flow-, context-, and field-sensitive analysis is integeroverflowvulnerabilities,whichcanbetriggeredbypro-
+applied to determine the places to instrument. It takes three viding crafted HTTP requests containing malicious payloads.
+inputs: the LLVM IR of the program, the decoding frontier Fig.3showstwocodesnippetswithpartoftheoriginalnginx
+from the first phase, and the untrusted input specification that program on the left and the corresponding instrumented ver-
+identifies a set of library functions that read inputs, such as sion on the right. The column in the middle shows how the
+recv() for network inputs and read() for file streams. In this two code snippets process the request differently.
+phase, A2C produces two outputs. Specifically, the decoding
+First,bothprogramsreceiveaPOSTrequestatLine136in
+set is a superset of the decoding frontier and the encoding
+ngx_recv.c. Since the request is from an untrusted source,
+set contains the statements to encode (input) values, such
+theinstrumentedprogramencodesthebuffer.Forsimplicityof
+as recv() in network programs. Interestingly, the encoding
+discussion, the encoding here is to subtract 1 from every byte.
+set may also contain instructions that load constant values.
+Encode() denotes this modification. The HTTP request “PO
+Explanations about why we need to encode constants can
+ST /index.php HTTP/1.1\r\nHost:...” is hence
+be found in Section IV-C. The computation of decoding and
+encoded as “ONRS..hmcdw-ogo.GSSO.0-0..Gnrs9.
+encodingsets(DEsetsforshort)isiterativeasnewelementson
+..”. The request is parsed at Lines 160 and 182 in ngx_
+encoding sets may introduce additional decoding operations.
+http_parse.c, which contain comparative operations on
+Third, the instrumentation phase statically instruments the some buffer data and are hence part of the decoding frontier.
+program according to the DE sets. An important observation Therefore, the instrumented program calls Decode() to undo
+is that the decoding frontier is context sensitive. Different the perturbation so that the program can parse and process the
+inputs may lead to different calling contexts of a function request correctly. Note that it only decodes a few bytes (of
+invocation. The membership of a statement in the DE set may fixed length) at a time so that the decoded data cannot be
+change with those contexts. As such, upon the execution of a run as any meaningful payload. Also observe that the original
+statement in the DE set, we need to know the current calling bufferremainsencoded.Thisisachievedbyonlydecodingthe
+3values after they are loaded into variables of primitive types constitutes a valid payload, we use the following procedure to
+(e.g., bytes and words). determine if operations are controllable.
+Next, the ngx_http_do_read_client_request_ Procedure to Determine Decoding Frontier. Given a pro-
+body() function stores the contents of the request into a gram to protect, A2C identifies all memory regions larger
+different heap buffer. Notice that without A2C this becomes than or equal to 16 bytes that can be affected by inputs
+vulnerabletoheapsprayingattackswhichcanbefurtherlever- (throughastandardstatictaintanalysis).Theseregionsinclude
+aged to launch attacks such as ROP. Also, the same function buffers, consecutive local variables (on stack), consecutive
+hasaheapbufferoverflowvulnerabilitythatallowsoverwriting global variables (in data section), as well as structures. For
+a function pointer, read_event_handler, which will be example, four consecutive local integer variables related to
+calledinsidengx_http_request_handler().However,
+inputs constitute a region for testing. For these regions, A2C
+since the instrumented program encodes all external requests, createsconstraintsaccordingtotheoperationsthatcomputethe
+the payload at Line 302 and the address accessed at Line valuesintheregionsfromprograminputs.Othervariablesthat
+2133 are mutated. Assume the malicious shellcode contains are not related to inputs are considered as free variables. This
+a sequence of nop instructions (0x90*n) for the nop-sled makesouranalysisaconservativeoneasfreevariablescantake
+portion of a heap spray attack and the malicious address anyvaluesduringconstraintsolving,whereasinpracticethese
+injected is 0x00b7c010. In the instrumented program, the variables may have various restrictions. After we generate the
+nop instructions (0x90*n) are encoded to “0x89*n”, which constraints,weusetheZ3solver[25]totestwhetherpayloads
+denotes a sequence of mov instructions that write to invalid can be generated through these operations. In particular, we
+memory locations (e.g. mov ecx, ecx(-76767677h)). collected 1.4GB binary codes, 200MB shellcode, and 200MB
+At this point, even though the shellcode is successfully in- ROP gadgets from Internet [1], [3], [51], [53], [52]. We also
+jected, due to the mutation, it crashes upon execution. Simi- generate 1.0G random numbers. We further break the data
+larly,theinjectedfunctionpointeratLine2133isalsobroken. sets down to sequences based on the size of the region under
+Note that if the request is valid, despite it being encoded by testing. If the size is unknown, we use 16-byte sequences.
+the instrumented program, it will be decoded at the frontier We then assert the values of the region equal to each of
+and will not affect normal execution. these sequences one by one. If the constraint solver yields
+SAT, TIMEOUT, or UNKNOWN for any of the sequences,
+IV. DESIGN which implies that an attacker may be able to construct some
+malicious payload through the operations, then the operations
+A. Decoding Frontier Computation via Constraint Solving. are considered controllable. If the constraints are UNSAT for
+all these sequences, the operations that define the values of
+ThefirstphaseofA2Cistodeterminethedecodingfrontier
+the memory region are considered uncontrollable.
+that will be used to identify the encoding and decoding sets
+in the next analysis phase. As we will see in the next section, Essence. Intuitively, we use the large pool of binary code and
+A2Cneedstodecodeatmoreplacesthaninputrelatedbuffers. shell code snippets to model the distribution of executable
+payloads and the large pool of ROP gadget subsequences to
+According to the definition in Section II, the decoding
+model the distribution of address-based payloads (for code
+frontier consists of three kinds of operations: comparative,
+reuse attacks). We further use a large set of random number
+terminal, and uncontrollable. While the identification of the
+sequences to model the distribution of other arbitrary pay-
+first two is straightforward, we focus on the third in this
+loads. Since we only consider operations uncontrollable when
+section.
+allthesesequencesyieldUNSATresults,A2Cprovidesstrong
+We first define controllable operations as follows: if valid probabilisticguaranteesthatthevaluesbeyondtheseoperations
+payloads can be generated in a memory region (e.g., a buffer) are not exploitable.
+rightafterasetofoperationsbymanipulatingprograminputs,
+Note that for complex programs, it may be difficult to
+theseoperationsarecontrollable.Anexampleofacontrollable
+modeltheentiredataflowfromprograminputstothememory
+operationisthetoupper()transformationthatturnsalower
+region of interest due to various reasons such as unmodeled
+case character into its upper case. Assume an application
+library calls and uncertainty of data flow caused by aliasing.
+transforms a text input buffer A into another buffer B using
+A2C leverages backward slicing, starting from the memory
+toupper(). The attacker can carefully prepare the input so
+region of interest and traverses backward along data depen-
+that after the transformation, buffer B contains the intended
+dencies until the traversal becomes infeasible (e.g., due to
+payload. It was indeed reported that existing operations in a
+unmodeled library calls). If program inputs cannot be reached
+program could be leveraged to compute/decode payloads [5].
+by the traversal, A2C treats the farthest variables that it
+We further formulate the determination of controllable op- can reach as free variables. Note that this yields an over-
+erationsasaconstraintsolvingproblem.Weconsiderprogram approximation, which is safe. The decoding frontier analysis
+inputs as symbolic variables. We further model the operations marks all the operations on the decoding frontier. Since the
+that compute the values for a memory region (at a given algorithms in this phase are standard, details are omitted.
+programpoint)fromtheprograminputsasasetofconstraints.
+Inthefollowing,weuseanumberofexamplestofacilitate
+We then assert the values (of the memory region) to be some
+understanding of decoding frontier.
+valid payload and query a solver if there is a satisfying (SAT)
+solution. If so, one may be able to manipulate the input (e.g., UncontrollableOperationExampleOne.Fig.4showsacode
+using the SAT solution generated by the solver) to induce the snippet from 464.h264ref (i.e., a video decoding program) in
+given payload. While it is difficult to precisely define what SPEC 2006.
+4(a) Code snippet from 464.h264ref (b) Constraints from the code snippet
+(nop-sled)inexploits.A2Calsodeterminesunicodeconversion
+// Declarations (Data Types) ; Constraints for Operations (img - mpr) functions (e.g., mbtowc()) as controllable. This is because
+1. unsigned int m7[...][...]; 7. m7[0,1,2,3] = img[0,1,2,3] - mpr[0,1,2,3] /\
+2. unsigned short img[...][...]; whileunicodeconversiontranslatesanASCIIcharactertotwo
+3. unsigned short mpr[...][...]; ; Constraints for the range of unsigned short
+... 8. 0 <= img[0,1,2,3] /\ 0 <= mpr[0,1,2,3] /\ bytes with an additional byte (0x00), it also translates two
+// Transformative Operations 9. img[0,1,2,3] <= 65535 /\ mpr[0,1,2,3] <= 65535 /\ bytecharacterssuchasChinese,Japanese,andKoreancharac-
+4. for (int x = 0; ...; x++ )
+5. for (int y = 0; ...; y++ ) ; Constraints for Payloads (i will select a payload) ters to two bytes [63], making payload construction feasible.
+6. m7[x][y] = img[...][...] - mpr[...][...]; 10. m7[0,1,2,3] = payload[i, i+1, i+2, i+3]
+Our results echo the message conveyed in [5] that Unicode
+Fig.4. Uncontrollableoperationsduetotypewideningin464.h264ref.
+conversion function can be leveraged to construct payloads.
+Fig. 4 (a) shows three arrays m7, img, and mpr with Infact,allthedataconversion/encryption/decryption/encoding
+m7 a temporary array that stores intermediate values during via table lookup (e.g., iconv(), mbtowc(), wctomb(),
+encoding, img holding raw input values and mpr calculated and Inflate (Huffman Coding) Algorithm) are recognized as
+by the program and not related to inputs. Observe that m7 controllable by A2C.
+is an int array whereas the other two are arrays of short int. (a) Code snippet from 456.hmmer (b) Constraints from the code snippet
+Fig. 4 (b) shows the constraints generated. Lines 7-9 denote // Declarations (Data Types) ; Constraints for Operations
+the constraints representing the operations. Line 7 denotes the 1. float v[...], sum; 10. sum = vold[0] + vold[1] + vold[2] + vold[3] /\
+subtraction at Line 6. Line 9 denotes the range constraints of 2 //. Tin rat nx s, fn o; rmative Operations 1 11 2. . ( (v vn ne ew w[ [0 1] ] = = ( (v vo ol ld d[ [0 1] ] / / s su um m) ) o or r ( (1 1. .0 0 / / n n) )) ) / /\ \
+img and mpr. We use “0,1,2,3” to represent that the same 3. sum = FSum(v, n); 13. (vnew[2] = (vold[2] / sum) or (1.0 / n)) /\
+constraint applies to four respective elements. Line 9 denotes 4 . / if/ F (sS uu mm ! =re t 0u .r 0n )s a sum of all elements. ;1 4 C. o n(v sn tre aw i[ n3 t] s = f o( rv o Pld a[ y3 l] o / a dsu sm) or (1.0 / n)) /\
+the payload assertion. We iterate this test with i from 0 to the 5. for (x = 0; x < n; x++) ; (i will select a payload to test)
+number of sequences in our test data set. 6 7. . e l s e v [x] /= sum; 1 15 6. . v vn ne ew w[ [0 1] ] = = p pa ay yl lo oa ad d[ [i i] + 1 ] / /\ \
+8. for (x = 0; x < n; x++) 17. vnew[2] = payload[i+2] /\
+The test result shows that the constraints are always 9. v[x] = 1. / n; 18. vnew[3] = payload[i+3]
+UNSAT. This is mainly because the assignment of short Fig.6. Controllableoperationsin456.hmmerprogram.
+to int (called type widening) requires payloads to have two Interestingly, we also observe that some operations of
+zero bytes in every four bytes. As such, Line 6 is on the complex types and performing complex computations are
+decoding frontier. Type widening is one of the major reasons determined as controllable by our analysis. Consider the
+for uncontrollability. Another popular form of type widening following example that leverages existing floating point op-
+is through bit operations, namely, only a few bits of a word erations to construct malicious payloads. According to the
+are set. Examples are omitted. IEEE-754 floating point representation standard, even a very
+small floating point value can affect all the 4 bytes of its
+Uncontrollable Operation Example Two. Another common presentation. For example, a floating point variable 0.0001 is
+kind of uncontrollable operation is one that induces intensive encoded as 0x38d1b717 in memory. Fig. 6 shows FNorm()
+correlations between values. For example, Fig. 5 (a) shows a in 456.hmmer from SPEC. It first adds all elements in v
+code snippet from 429.mcf in SPEC. into sum using FSum(), and then each element is divided
+(a) Code snippet from 429.mcf (b) Constraints from the code snippet by the sum if the sum is not 0.0. If the sum is 0.0, all
+the elements in v have 1.0 / n where n is the size of v.
+// Declaration (Data Types) ; Constraints for Operations
+1. typedef struct network{ 11. net[0] = (2 * in[0] + 1) /\ Note that when there are multiple definitions of a variable
+2. long n, n_trips, max_m, m; 12. net[1] = in[0] /\ (e.g.,v[x]),A2Cdisjoinstheconstraintsforthesedefinitions,
+... 13. ( (net[2] = (3 * in[0] + in[1])) \/
+3. } network_t; 14. (net[2] = 0xA10001)) /\ which are represented in the SSA form. The solver returns
+... 15. net[3] = (3 * in[0] + in[1]) /\ SAT for the constraints. The exploit input is a sequence
+4. network_t* net;
+5. in[2] = read( InputFile ); ; Constraints for Payloads of values (e.g., −12068,−18966,−14108,−13991,...) whose
+// Transformative Operations ; (i will select a payload to test) binary representations do not denote any meaningful payload.
+6. net->n_trips = in[0]; 16. net[0] = payload[i] /\
+... 17. net[1] = payload[i+1] /\ But they are transformed to a meaningful payload by the
+7. net->n = (in[0]+in[0]+1); 18. net[2] = payload[i+2] /\ operations in Fig. 6. The payload issues a system call through
+8. net->m = (in[0]+in[0]+in[0]+in[1]); 19. net[3] = payload[i+3]
+int 0x80 with arguments.
+9. if ( ... ) net->max_m = net-> m;
+10. else net->max_m = 0xA10001;
+Fig.5. Uncontrollableoperationsin429.mcfprogram.
+B. Static Analysis to Compute Decoding and Encoding Sets
+Fields n, n_trips, max_m, and m are consecutive in the
+In this section, we discuss the second phase, i.e., the
+structure network and they are all related to inputs (in[0]
+computation of decoding and encoding sets.
+and in[1]). As such, A2C needs to test if the operations
+on these fields are controllable. The constraints are shown in Language.A2CworksontheSingleStaticAssignment(SSA)
+Fig.5(b).Observethatthenet→max_m(i.e.,net[3]inthe LLVM IR, which is generated from program source code.
+constraint) and net→m (i.e., net[4]) are identical except To facilitate precise discussion, we introduce a simplified
+when net→max_m has a constant value 0xA10001. The language which models the LLVM IR in Fig. 7.
+other 8 bytes are also closely correlated through in[0] and
+Memory loads and stores are denoted by LOAD(x ) and
+in[1]. Consequently, the solver returns UNSAT for all the a
+STORE(x , x ), respectively, with x holding the address and
+payload tests. a v a
+x the value. The address of a field access is explicitly
+v
+Controllable Operation Examples. Most controllable oper- computed by x := x → f with x the base pointer
+base base
+ations are straightforward, such as copy operations. Method and f the field. Array accesses can be considered as a special
+toupper() is another example of a controllable operation. kind of field accesses. F(x ) models a call to function F with
+a
+The solver returns SAT for many payload sequences, such x the actual argument and x the formal argument. Function
+a f
+as consecutive 0x90’s, which represent the NOP instructions return is modeled by ret.
+5Program P ::= s assumes all branches are possible. In the presence of loops,
+Stmt s ::= s1; s2 | skip | x:=(cid:96)e | x:=(cid:96)LOAD(ra) | the interpretation may go through the loop bodies multiple
+STORE(cid:96)(xa,xv) | F(cid:96)(xa) | ret(cid:96) | goto(cid:96)((cid:96)) | times until a fix point is reached. If the abstract domain is
+if(x(cid:96))thengoto((cid:96)1) | strcat(cid:96)(xa1,xa2) |
+well designed, the interpretation procedure is guaranteed to
+x:=lib(cid:96)(x1,x2,...) | x:=malloc(cid:96)(xs) |
+x:=φ(cid:96)(y,x1,x2) | input(cid:96)(xbuf,xsize) terminate.
+Operator op::= + | − | ∗ | / | < | > | == | ...
+Expr e::= x | c | xopc | x1opx2 | x→f Beforetheabstractinterpretation,constantsarepropagated
+Var x::= {x1,x2,x3,...} during preprocessing using an existing LLVM pass (e.g.,
+Const c::= {true,false,0,1,2,...}
+x ∗x is rewritten to x ∗c if x is determined to hold a
+Label (cid:96)::= {(cid:96)1,(cid:96)2,(cid:96)3,...} 1 2 1 2
+constant c). During the analysis, A2C iteratively goes through
+Fig.7. Language. program statements following the control flow and updating
+the corresponding abstract states (e.g., the decoding set) until
+Conditional or loop statements are not directly modeled. a fix point is reached. Specifically, A2C taints input buffers
+Instead we define jumps using goto and guarded goto. from untrusted sources. The taints are propagated through
+Conditional and loop statements can be constructed by com- controllable operations, which may be conducted through
+bining jumps and guarded jumps. strcat(x , x ) denotes a library functions (e.g., memcpy(), toupper(), and icon
+a1 a2
+function that concatenates two strings. It appends the second v()), linearoperations (e.g., y =x and y =3∗x), andso on.
+stringdenotedbypointerx tothefirststringx .Wedefine Ifataintedvaluereachesanoperationonthedecodingfrontier
+a2 a1
+lib(x ,x ,...) to model library calls. It takes several x ’s as computed in the previous phase, which includes comparative,
+1 2 n
+arguments and returns a value in another variable. Function uncontrollable, and terminal operations, taint propagation is
+input(x , x ) models library calls that read inputs such terminated and the operation is added to the decoding set.
+buf size
+asread()andrecv().Thex:=φ(y,x ,x )denotestheφ However, the decoding set may be context-sensitive and path-
+1 2
+function in SSA that determines the value of a variable at the sensitive. To handle such cases, statements that load constant
+joint point of two branches. In particular, if y is true, x:=x values may need to be considered as sources and hence
+1
+otherwise x := x . We also explicitly model heap allocation encoded. As a result, more statements may be added to the
+2
+through the malloc() function. encoding set and the decoding set.
+Operatordenotesuncontrollable(computedbytheprevious Definitions. To facilitate discussion, we introduce a few defi-
+phase) or comparative operations. Each statement is annotated nitions in Fig. 8. Our analysis computes four kinds of abstract
+with a label, which can be intuitively considered as the line information: the points-to set, the taint set, and the encoding
+number of the statement in the program. and decoding sets. The points-to set σ is a mapping from
+an abstract address a (representing some memory location)
+or a variable x, together with the calling context, to a set of
+Addr a ::=(cid:96) | x | a.f abstract addresses denoting the memory locations that may be
+PointsTo σ ::=(Addr | Var)×Context→P(Addr)
+Source SRC ::=CONST((cid:96), x) | MARKED((cid:96), x) pointed-tobyaorx.AbstractaddressAddrisdenotedbysome
+TaintStore τ ::=(Addr | Var)×Context→P(Source) variable representing an abstract global/stack array/buffer or a
+Context C ::=(cid:96) labeldenotinganabstractheapbuffer,followedbyasequence
+DecodeSet DEC ::=P(<Context,Label,Var>)
+EncodeSet ENC ::=P(<Label,Var | Const>) offields.Intuitively,onecanconsideritasthereferencepathto
+someabstractmemorylocation.Theroleofabstractaddresses
+ChkSrc((cid:96), x) ::=
+in our static analysis is similar to that of concrete addresses
+ifMARKED((cid:96)m, xm) ∈τ(cid:96)(x,C)then
+DEC:=DEC ∪ {<C,(cid:96),x>} in dynamic analysis (e.g., to look up taint values). Since our
+if({C,(cid:96),x}∈DEC)then analysis is context-sensitive and field-sensitive, context is part
+foreachCONST((cid:96)c, c) ∈τ(cid:96)(x,C)then
+of the mapping and fields are explicitly modeled in abstract
+ENC:=ENC ∪ {<(cid:96)c, c>}
+addresses.
+ChkStrcat((cid:96), xa1, xa2) ::=
+if∃a∈ σ(cid:96)(xa1,C), MARKED((cid:96)m,xm) ∈τ(cid:96)(a,C)then Source represents the (taint) source of a value. There are
+if∃b∈ σ(cid:96)(xa2,C), CONST((cid:96)c,c) ∈τ(cid:96)(b,C)then
+two types of Source: CONST and MARKED, meaning a constant
+ENC:=ENC ∪ {<(cid:96)c,c>}
+if∃a∈ σ(cid:96)(xa2,C), MARKED((cid:96)m,xm) ∈τ(cid:96)(a,C)then value and an untrusted input source, respectively. We use the
+if∃b∈ σ(cid:96)(xa1,C), CONST((cid:96)c,c) ∈τ(cid:96)(b,C)then term MARKED to indicate that a value originates from some
+ENC:=ENC ∪ {<(cid:96)c,c>}
+inputbufferandhasonlygonethroughcontrollableoperations.
+TaintConst((cid:96), x, c) ::= Hence it is in the exploitable space (Section II). Such values
+if{<(cid:96),c>∈ENC}then
+τ(cid:96)(x,C):={MARKED((cid:96),c)} shall be in their encoded form at runtime. We track the
+else MARKED value propagation through our analysis. TaintStore
+τ(cid:96)(x,C):={CONST((cid:96),c)} τ stores the (taint) source information for abstract addresses
+and variables. Both σ and τ are flow-sensitive, meaning that
+Fig.8. DefinitionsforAbstractInterpretationRules.
+A2Ccomputesseparateσandτ fordifferentprogramlocations
+C. Static Analysis Phase (i.e.,labels).Forexample,weuseτ(cid:96)todenotetheabstracttaint
+mapping computed at (cid:96). It is implicit in the rest of the paper
+We formulate the static analysis as an abstract inter-
+for simplicity in discussion.
+pretation process. Intuitively, abstract interpretation can be
+consideredas“executing”theprogramontheabstractdomain If MARKED values reach an operation on the decoding
+insteadoftheconcretedomain.Theabstractdomainisspecific frontier, the operation is inserted to the DecodeSet DEC.
+toananalysis.Inabstractinterpretation,itisoftenthecasethat TheEncodeSetENC containsthesetofstatementsatwhich
+branchoutcomescannotbestaticallydetermined.Therefore,it the (input) values ought to be encoded. Context C is denoted
+6TABLEI. ABSTRACTINTERPRETATIONRULES.
+Statement InterpretationRule Name
+input(cid:96)(xb,xs) foreacha∈σ(cid:96)(xb,C) INPUT
+τ(cid:96)(a,C) :=MARKED((cid:96),xb);
+ENC:=ENC ∪{(cid:104)(cid:96),xb(cid:105)};
+x :=(cid:96) x1 σ(cid:96)(x,C):=σ(cid:96)(x1,C); NON-
+(x =(cid:96) x1opc) τ(cid:96)(x,C):=τ(cid:96)(x1,C); DF-OP
+x :=(cid:96) LOAD(xa) σ(cid:96)(x,C):=(cid:83) ∀a∈σ(cid:96)(xa,C)σ(cid:96)(a,C) LOAD
+τ(cid:96)(x,C):=(cid:83) ∀a∈σ(cid:96)(xa,C)τ(cid:96)(a,C)
+STORE(xa,xv) ∀a∈σ(cid:96)(xa,C):σ(cid:96)(a,C)∪:=σ(cid:96)(xv,C) STORE
+∀a∈σ(cid:96)(xa,C):τ(cid:96)(a,C)∪:=τ(cid:96)(xv,C)
+x :=(cid:96) x1opx2 σ(cid:96)(x,C):=⊥; DF-OP
+ChkSrc((cid:96),x1);ChkSrc((cid:96),x2);
+x :=(cid:96)x1→f σ(cid:96)(x,C):={a·f | ∀a∈σ(cid:96)(x1,C)} FIELD
+x:= foreachxi∈{x1,x2,...} DF-TERM
+lib(cid:96)(x1,x2,..) ChkSrc((cid:96),xi);
+x :=(cid:96) c TaintConst((cid:96),x,c); CONST
+strcat(cid:96)(xa1,xa2) ChkStrCat((cid:96),xa1,xa2); STRCAT
+F(cid:96)(xa) C0:=C;C:=C·(cid:96); CALL
+// xf formal arg
+σ(cid:96)(xf,C) := σ(cid:96)(xa,C0);
+τ(cid:96)(xf,C) := τ(cid:96)(xa,C0);
+foreachbuffervary∈F :
+σ(cid:96)(y,C)={y};
+ret C:=C−last(C); RET
+x:=φ(cid:96)(y,x1,x2) σ(cid:96)(x,C):=σ(cid:96)(x1,C)∪σ(cid:96)(x2,C); PHI
+τ(cid:96)(x,C):=τ(cid:96)(x1,C)∪τ(cid:96)(x2,C);
+x:=malloc(cid:96)(xs) σ(cid:96)(x,C):=(cid:96); HEAP
+by a sequence of labels ((cid:96)’s) that models a call stack. Each
+element in the DEC set includes a Context, suggesting that
+we decode input buffers depending on the calling context. For
+example, (cid:104)C,(cid:96),x(cid:105) ∈ DEC suggests that when the statement
+denoted by (cid:96) is encountered under context C at runtime, A2C
+will decode the variable x.
+VOID
+ngt_TrimStr(CHAR *String) {
+. . .
+// String can be either from
+// a configuration file or
+// a network message
+40: start = String;
+. . .
+46: ptr = strchr( start, '\0' )
+✁
+1;
+47: while(((*ptr == ' ') || (*ptr == 9) ||
+(*ptr == 10) || (*ptr == 13) ||
+(cid:0)
+annotatedwithacontextsuchthatdecodingisonlyperformed
+when the same context is encountered at runtime.
+Thedecodingsetisalsopath-sensitive.Considertheexam-
+pleinFig.10(a),whichcontainscodesnippetsfromunrtf,a
+program for converting documents in Rich Text Format (RTF)
+to other formats such as HTML and LaTeX. At (cid:13)2 and (cid:13)3,
+str may hold a constant value or a tainted value ch. At (cid:13)4
+and(cid:13)5,strisinsertedtoahashmap.Stringsinthehashmap
+are loaded and used at (cid:13)6. Depending on whether (cid:13)2 or (cid:13)3 is
+executed,Line336mayormaynotbelongtothedecodingset.
+In other words, if tmp holds a constant string at 336, it does
+not need to be decoded. Note that in this case, the context of
+Line 336 cannot be used to distinguish the different behaviors
+of the line. We cannot afford to track paths at runtime either.
+Hence, our solution is to identify the related constant strings,
+such as that at Line 326, and treat them as input sources so
+that they will be encoded as well. As a result, the behavior at
+Line336becomespathinsensitive,alwaysrequiringdecoding.
+(cid:50)
+Abstract Interpretation Rules. The interpretation procedure
+is formulated by the rules in Table I, which specify how
+the abstract information is updated upon each statement.
+Specifically,whentheprogramreadsdatafromuntrustedinput
+sources through input(x ,x ) with x the buffer address
+b s b
+and x the size, the TaintStore of all the abstract memory
+s
+locations pointed to by x
+b
+are set to MARKED (Rule INPUT).
+Note that using the context C makes our analysis context
+sensitive. The encoding set is also updated. Rule NON-DF-
+OP describes the interpretation of an operation that is not on
+thedecodingfrontier,i.e.,controllableoperationsuchascopy.
+In this case, A2C copies the points-to set and the abstract
+taint set. Rule LOAD describes that for a load instruction,
+the resulting points-to/taint set is the union of all the points-
+to/taint sets of all abstract memory locations pointed-to by the
+conf.c tool/tool.c address x . Similarly, for a store statement, the points-to/taint
+a
+VOID Read_Config(VOID){ set of the value variable x is added to the points-to/taint set
+v
+. . . of any abstract memory location pointed to by x . A2C only
+386: fd = fopen( NGIRCd_ConfFile, "r" ); a
+. . .
+propagatestaintsforcontrollableoperations.RulesDF-OPhan-
+441: if( !fgets( str, ..., fd )) break; dles an uncontrollable operation or a comparative operation.
+442: ngt_TrimStr( str ); It first resets the taint. It then calls function ChkSrc((cid:96),x)
+that checks if variable x is tainted as MARKED. If so, the
+parse.c
+statementtogetherwiththecurrentcontextandthevariableare
+Parse_Request(..., CHAR *Request){ inserted to the decoding set DEC. The context and variable
+. . . /* Request is a user request
+information is needed to indicate which variable should be
+through network. */
+140: ngt_TrimStr( Request ); . . . decoded and under what context. The function further tests if
+Fig.9. AnExampleofContextSensitiveCode. the statement is already in DEC and the variable is currently
+taintedasCONST,suggestingthatthestatementsometimesuses
+Decoding Set is Context-Sensitive and Path-Sensitive. The
+a value from untrusted input and sometimes uses a constant.
+membership of a statement in the decoding set may change
+with the context. Fig. 9 shows an example in ngircd, an This corresponds to the case in which the decoding set is
+path sensitive. To eliminate such path sensitivity, A2C adds
+Internet Relay Chat (IRC) daemon program. In this example,
+the source of the constant to ENC, indicating that the source
+wetreatallnetworkfunctionsasuntrustedinputsources.Thus,
+should be tainted as MARKED in the next round of abstraction
+the input data from these functions are encoded while data
+from files are not. ngt_TrimStr() is a utility function interpretation.
+for trimming a string. It is invoked at different places. For
+Rule DF-TERM handles the other kind of operations in the
+instance, Read_Config() calls it with a string from the
+decoding frontier: the terminal operations.
+configuration file, which is not encoded. On the other hand,
+Parse_Request() also calls it, but with a string from the Rule CONST handles constant assignment, including con-
+network. The string is encoded this time. Hence, A2C may stant string assignment. It tests if the constant assignment has
+or may not decode the value in *ptr at Line 47, depending beeninsertedtotheENC set(byRules DF-OP or DF-TERM),
+on the context. Therefore, each statement in the DEC set is indicatingthattheconstantshouldbeencodedsothatweneed
+7static int read_word (FILE *f) {
+...
+246: ch = getchar(f);
+✁ 266: switch( ch ) {
+✁ 323: case '\t':
+326: strcpy(str, "\\tab");
+327: fprintf (
+(cid:0)
+, str[1]);
+...
+331: case ';': 332: str[0] = ch;
+...
+}
+✁
+parse.c
+void process_font_table (Word *w) {
+454: word_new (str);
+(cid:0) // word_string(w) returns
+// hash[...]
+✂
+convert.c
+ch
+ch
+str
+str stored by word_new str[1]
+335: tmp = word_string( w2 ); hash[
+336: if( !strncmp("\\f", tmp, 2) ) {
+...
+}
+(cid:0)
+]
+✂
+str
+...
+str
+hash[
+(cid:0)
+]
+✂
+str
+tmp (=hash[...]
+✂
+(c) Abstraction interpretation state
+1-2461 {M}
+1-2661 {M}
+2-3261 {C}
+2-3271 {C}
+5-1081 {C}
+... ...
+3-3321 {M}
+5-1081 {C,M}
+6-3351 str) {C,M}
+6-3361 tmp {C,M}
+Word* word_new(char *t){
+✁ 108: hash[
+✁
+]
+✂
+{ch246} {}
+{ch246} {ch266}
+{ch246} {ch266}
+1 {ch246} {ch266}
+{ch246} {ch266}
+6 ... ...
+{ch246} {ch266}
+2 {ch246} {ch266}
+{ch246} {ch266}
+{ch246, "\\tab"326 } {ch266, tmp336}
+3 ...
+str
+str[1]
+hash[
+4
+word.c
+str = my_strdup(t); 5
+}
+(cid:0)
+]
+✂
+str
+...
+str
+hash[
+(cid:0)
+]
+✂
+str
+tmp (=hash[0]
+✂
+(a) unrtf program source (each circled number represents a block index)
+char* word_string (Word* w) { ... ... ... ...
+2-3262 {M} {ch246, "\\tab"326 } {ch266, tmp336}
+2-3272 {M} {ch246, "\\tab"326 } {ch266, tmp336, str[1]327}
+5-1082 {C,M} {ch246, "\\tab"326 } {ch266, tmp336, str[1]327}
+... ... ... ...
+3-3322 {M} {ch246, "\\tab"326 } {ch266, tmp336, str[1]327}
+5-1082 {C,M} {ch246, "\\tab"326 } {ch266, tmp336, str[1]327}
+6-3352 str) {C,M} {ch246, "\\tab"326 } {ch266, tmp336, str[1]327}
+6-3362 tmp {C,M} {ch246, "\\tab"326 } {ch266, tmp336, str[1]327}
+✁ 84: t_str = hash[
+✁
+]
+✂
+str;
+✁
+Ref. Abstract Addr/Var Taint ENC DEC Description
+1st iteration.
+DF-OP
+STORE
+word.c DF-OP
+2nd iteration
+CONST
+DF-TERM
+86: return t_str;
+}
+(b) Abstract interpretation path
+1 2 4 5 1 3 4 5 6
+... ... ... ... ... 3rd iteration
+Fig.10. Anexampleoftheiterativeinterpretationprocedureonunrtf.
+to figure out its decoding places. In this case, it sets the taint in the first round of interpretation. Here, we only show the
+as MARKED, otherwise CONST. Rule STRCAT handles string statements related to our analysis. The next two columns
+concatenations. When a string from an untrusted source is present the abstract address or variable that each statement
+concatenatedwithaconstantstring,weaddtheconstantstring accesses and its taint set. C means the CONST type and M
+to the ENC set to indicate that the string shall be encoded. denotes the MARKED type. The next two columns show the
+Such concatenation happens frequently when a program uses contents of ENC and DEC. The last column presents the
+string formatting functions such as sprintf(). Rule CALL rules applied.
+updates the current context. It further propagates the points-to
+FirstRound.ENC andDEC setsareemptyatthebeginning.
+andtaintsetsfromtheactualargumenttotheformalargument.
+At 1−246 , since ch is loaded from an input source, we add
+At the end, it sets the points-to sets of all the local buffer 1
+ch to ENC to indicate that we should encode ch at Line
+variables to contain themselves. The RET rule pops the last 246
+246. Then, ch is used in a comparison at 1−266 , thus we
+entry in the context. The PHI rule specifies that since x takes 1
+add ch to DEC, meaning that we should decode ch at
+the value of either x or x , its abstract sets are the union of 266
+1 2
+Line 266. For simplicity, we ignore the contexts in the DEC
+those of x and x . A2C does not model path conditions so
+1 2
+set. At 2−326 , a constant string is copied to str, and part
+thatitessentiallyconsidersallpathsarefeasibleandcomputes 1
+of it is printed at 2−327 . Since str has a constant taint at
+merged results along various paths. Rule HEAP describes that 1
+this point, it does not need to be decoded. Later it is stored
+we use the label of the allocation statement to denote the
+into the hash table at 5−108 . Then, a character from a file
+abstract heap region allocated. In addition, the σ and τ entries 1
+is copied to str at 3−332 , and is then stored in the hash
+computed at a location are also propagated to its control flow 1
+table at 5−108 . Since A2C cannot distinguish if the hash
+successors. The rules are omitted as they are standard. The 1
+table write and the previous write access different (abstract)
+abstract interpretation is iterative until a fix point is reached.
+memory locations, it unions the two taints so that the hash
+It is easy to infer that our analysis must terminate as all the
+table is tainted with both CONST and MARKED, according to
+abstract domains are finite.
+Rule STORE.
+Example. Fig. 10 shows how the analysis works for unrtf
+Later, at 6−335 and 6−336 , the stored string is loaded
+that reads an RTF file and transforms it to various formats. 1 1
+andcomparedwithaconstantstring“\\f”.AccordingtoRule
+Fig. 10 (a) shows some code snippets of the program. The
+description of them can be found at the beginning of Sec-
+DF-OP,sinceLine336iscomparativeandtmpistaintedwith
+MARKED, it shall be decoded. An entry is hence inserted to the
+tionIV-C.Theprogramissimplifiedandslightlychangedfrom
+DEC set. Also according to the second if statement inside
+its original version for illustration.
+ChkSrc(), which is invoked by Rule DF-OP, the constant
+The abstract interpretation procedure is equivalent to stringatLine326isaddedtoENC,meaningthattheconstant
+traversing the path in Fig. 10 (b). The real interpretation order string shall be encoded.
+inside A2C is slightly different due to the φ functions that are
+omittedforeasyexplanation,althoughtheoutcomeisidentical. Second and Third Rounds. The second round traverses the
+In the path, the two branches of the switch are traversed in samepath.At2−326 2,theconstantstringisMARKEDasitisin
+twosub-paths:(cid:13)1(cid:13)2(cid:13)4(cid:13)5 and(cid:13)1(cid:13)3(cid:13)4(cid:13)5.Theyinsertstringsto ENC, meaning that we should track its propagation to figure
+the hash table and the strings are later accessed at (cid:13)6. out the decoding places (Rule CONST). As a result, str[1]
+at Line 327 is added to DEC according to Rule DF-TERM.
+Fig. 10 (c) shows the abstract states computed by A2C in
+The rest is similar to the first round. In the third round, none
+multiple rounds. Each round follows the path in (b) during
+of the abstract sets are updated, a fix point is reached. The
+interpretation and corresponds to a sub-table in (c). The first
+analysis terminates.
+column shows the block, line and round numbers of each
+statement. For instance, 2-326 means Line 326 inside (cid:13)2 From the final ENC and DEC sets, we should encode
+1
+8at Lines 246 and 326, and decode ch, str[1] and tmp at we can mitigate the problem by postponing the decoding to
+Lines 266, 327 and 336, respectively. before output syscalls, which requires instrumenting libraries.
+Note that we do not trust all library functions. For example,
+(cid:50)
+D. Runtime we do not decode inputs for functions that copy data such as
+strcpy and memcpy. In practice, such functions are com-
+Supporting Context Sensitivity. Once the analysis phase
+monly exploited by attackers whereas output library functions
+is finished, we have the DEC and ENC sets. Since both
+such as write and send are not.
+DEC and ENC are context sensitive, meaning that decoding
+and encoding should be performed only under certain calling A2C aims to protect against payload injection attacks. It
+contexts, the instrumentation needs to compare at runtime if cannot handle other attacks that do not inject payload. It
+the current context matches with that in DEC/ENC in order also requires the payload injection go through explicit input
+to perform decoding/encoding. channels, which is true for most attacks. A2C currently only
+supportsC/C++programsandhencecannotdealwithpayload
+A straightforward way to obtain the current context is to
+injections for programs in other languages such as JavaScript,
+performstackwalking.However,itincurssignificantoverhead.
+although the idea is general.
+Furthermore,theresultingcontextsareverboseanddifficultto
+compare. To address the problem, we adopt a precise calling Attacks In the Post-exploitable Space. A2C leverages
+contextencodingalgorithm[64].Thealgorithmmaintainsanid constraint solving and a large pool of payload test cases that
+which is a unique number for each context. Given a program models the distribution of valid payloads to determine the de-
+and its call graph, the algorithm automatically determines a coding frontier with strong probabilistic guarantees. However,
+unique id for each context. It further instruments the program it may still be possible to construct some payloads via the
+insuchawaythattheinstrumentation(atcallsites)guarantees very limited controllability of those uncontrollable operations
+toproducethecorrespondingidwhenacontextisreached.The onthedecodingfrontier.Wearguethatsuchpayloadswillhave
+instrumentation only requires simple (and low-cost) additions verylimitedfunctionalities.Moreover,weonlyprotectagainst
+andsubtractionsbeforeandafterasubsetofcallsites.Context payloads that are larger or equal to 16 bytes. While it may
+comparisonbecomessimpleidcomparison.Sincetheencoding be possible to construct payloads smaller than that, we again
+algorithm is not our contribution, details are elided. arguethatsuchpayloadswillhaveverylimitedfunctionalities.
+Note that if a primitive value of four bytes is related to input,
+Encoding Based on One-Time-Dictionary. Simple encod-
+the attacker could inject a four byte payload to that primitive
+ings such as subtract-by-one are easy for the adversary to
+if there existed one. Protecting against such small payloads is
+reverseengineer.He/shecanpreparetheexploitaccordinglyso
+almost impossible and unnecessary. In practice, we have not
+thattheexploitinputsbecometheplain-textpayloadsafterour
+seen any examples of these payloads.
+encoding. To address the problem, we use one-time-cipher. In
+particular, A2C has a large number of pre-generated random Memory Disclosure. Memory disclosure vulnerabilities can
+one-to-one mappings that project a byte to another unique reveal memory contents of a process. Attackers can access
+byte. Whenever the program reads inputs from an untrusted memorypagesthatcontaintheencodedvaluesandthusreverse
+source, A2C selects a mapping to encode the buffer. Since engineer dictionaries. For example, he/she can manipulate the
+the dictionary for each untrusted input buffer is different from inputbyprovidingasequenceofuniquevaluesandthensearch
+others, knowing previous mappings (e.g., through memory in the disclosed memory for regions that have a sequence of
+disclosure) does not help in launching subsequent attacks. unique values of the same length. By contrasting the two,
+More discussion can be found in Section V. Another thing the dictionary can be revealed. However, since A2C uses
+we want to point out is that A2C mutates every byte from an different dictionaries for individual input buffers, disclosing
+untrusted sources. As such, none of the instructions from the previous dictionaries does not help in subsequent attacks.
+original payload can be properly executed. Since A2C uses a random dictionary each time, it is really
+difficulttoguessthenextdictionaryevenknowingtheprevious
+Using different dictionaries for different buffers requires
+dictionaries(i.e.,1outN withN thenumberofpre-generated
+A2C to track the dictionaries for individual buffers so that
+dictionaries). We use N =106 in this paper.
+decoding can be properly performed. This is achieved by
+adding runtime taint propagation logic for controllable op-
+VI. EVALUATION
+erations in the exploitable space. For controllable operations
+that are not simple copies (e.g., y = 3 ∗ x), A2C decodes A2C is implemented on LLVM [2]. We evaluate A2C
+the source operand(s), performs the operation, and encodes on 18 different real world programs shown in Table II. All
+the resulting operand using the same mapping. Since the the experiments were done on a machine with Intel Core i7
+exploitable space is very small, the entailed runtime overhead 3.4GHz, 8GB RAM, and 32-bit LinuxMint 17.
+is low (see Section VI).
+We searched exploit-db.com to choose target pro-
+grams. We tried the listed programs with reported exploits
+V. THREATMODEL
+and selected those which we could reproduce. We have 6
+A2C assumes the subject program is benign but the inputs network programs, with two client programs: prozilla and
+may be malicious. The user specifies which part of the inputs stftp, and four server programs: apache, nginx, yops,
+cannotbetrustedsuchasnetworkinputsand/orlocalfilereads. andngircd.Wehave12userapplications.mupdfreadsand
+It trusts the kernel. It also trusts that the low level output displays pdf documents. unrar is a decompressor program.
+libraries are free of vulnerabilities, as it decodes the buffer mcrypt encrypts and decrypts files. gif2png converts gif
+values before calling these libraries. If they cannot be trusted, to png. unrtf converts RTF files to other formats such as
+9HTML. mp3info reads and modifies meta tags of MP3 seconds. For the programs that require user interactions, we
+files. rarcrack and fcrackzip recover passwords of force them to quit after they load, process, and render the
+compressed files (e.g., zip and rar files) using different inputs,andbeforetheytakeanyuserinteractions.Wemanually
+strategies. vfu is a text-mode file manager. chemtool is identify the locations in the source files that indicate such
+a GUI program for drawing chemical structures. Xerces-C status(e.g.,beforecallingafunctiontochangethestatusbarto
+is an XML parser. Among these programs, we have two show the input is successfully loaded and rendered) and insert
+GUI programs that require user interactions: mupdf, and exit() to these locations. We then measure the overhead
+chemtool. vfu requires text-based user interactions. for these shortened executions. Note that, this usually leads
+to over-approximation of the overhead as our instrumentation
+The first two columns of Table II show the programs and
+largely lies in the initial input loading and parsing logic.
+theirsizeinCsourcecodelines(CLOC).Thethirdandfourth
+columns present the number of entries in DEC and ENC
+10% 6.11%
+computed by our analysis. They are essentially LLVM IR
+statements annotated with contexts. The fifth column shows 8%
+the number of statements in DEC that behave differently
+depending on the context. One such statement has multiple 6%
+entries in the DEC set (for different contexts). The sixth
+4%
+column represents the number of instrumented IR statements
+for calling context encoding. The last two columns show the 2%
+time spent on computing the decoding frontier, and the static
+analysis for DEC/ENC set computation and instrumentation, 0%
+respectively. The overhead of decoding frontier computation
+includes the running time of Z3 constraint solver. We use one Fig.11. NormalizedOverheadonProgramsinTableII.
+minuteasthetimeoutthreshold.Wealsoavoidtestingidentical
+payload sequences.
+Fig. 11 shows the result. The average overhead is 6.11%.
+From the table, we have the following observations. A2C In most cases, the overhead is less then 6%. There are a
+can handle large and complex programs such as mupdf and few exceptions. Programs dedicated to processing and parsing
+apache. The number of entries in ENC/DEC is small with inputfilessuchasmake,Xerces-C,unrtf,andgif2png
+respect to the program size. This supports our speculation that have relatively higher overhead. This is because the instru-
+theexploitablespaceissmall.Thedatainthefifthcolumnalso mented statements are being executed throughout the execu-
+supportsthatcontextsensitivityisneeded.Finally,theanalysis tion.Also,theprogramsthatrequireinteractions,e.g.,mupdf,
+overheadisacceptable.Somelargeprogramstakeafewhours. chemtool, and vfu, have relatively higher overhead. This
+However, we argue that this is one-time cost. is because of the way we measure the overhead. apache has
+the highest overhead (9.84%) due to the complex structure of
+TABLEII. EVALUATIONRESULTSFORANALYSIS. inputfiltersthatleadstomanyconstantstringsbeingencoded.
+Program Size |ENC| |DEC| CS1 CCE2 DFCA on mal py .3sisTim Se
+A4 14% 8.18%
+mupdf 483K 598 2283 241 172 1h5m 12m11s 12%
+prozilla 54K 98 754 391 104 9m49s 2m43s
+10%
+stftp 18K 42 144 42 37 6m51s 1m58s
+8%
+yops 9,215 49 153 4 12 24s 13s
+nginx 335K 151 1005 37 72 34m14s 17m22s 6%
+ngircd 119K 123 391 113 249 7m39s 10m1s 4%
+unrar 99K 36 239 44 164 17m21s 7m11s 2%
+mcrypt 36K 83 278 40 35 12m41s 4m20s 0%
+gif2png 16K 32 129 28 22 8m19s 1m38s
+mp3info 17K 33 91 23 19 6m9s 2m17s
+fcrackzip 48K 18 37 23 11 8m17s 2m58s
+chemtool 176K 100 388 27 39 20m35s 7m41s
+vfu 180K 64 129 49 318 12m51s 8m21s Fig.12. NormalizedOverheadonSPECCPU2006.
+unrtf 25K 31 220 291 178 14m5s 2m43s
+rarcrack 1,364 7 19 39 9 0s 5s SPEC CPU2006. We also evaluate the performance of A2C
+make 124K 106 719 125 94 31m14s 1h40m
+onSPECCPU2006.Werunboththeoriginalandinstrumented
+Xerces-C 415K 121 1137 102 213 1h28m 6h21m
+apache 208K 364 1586 98 63 1h56m 5h41m programs 10 times using the reference inputs. Fig. 12 shows
+1#ofContextSensitiveStatements. theresult.Theaverageoverheadis8.18%.401.perlbench,
+2#ofinstrumentationsforCallingContextEncoding.
+403.gcc,and483.xalancbmkhaverelativelyhigherover-
+3DecodingFrontierComputationPhase. 4StaticAnalysisPhase
+headbecausetheyprocessinputsintensively.456.hmmerhas
+A. Performance 9.94% overhead as it processes inputs even during the execu-
+Performance for Programs with Vulnerabilities (i.e., those tionofitsmainalgorithm.429.mcfand462.libquantum
+in Table II). To evaluate the runtime overhead of A2C, we have extremely low overhead, less than 1.5%. This is because
+runboththeoriginalprogramandtheinstrumentedversion10 they process inputs once at the very beginning. As such, A2C
+times and take the average. We use large inputs. For example, only needs to decode at the beginning and the rest of the
+we use document files that are larger than 10MB to test file execution does not cause any overhead. The average overhead
+processing programs unrtf, Xerces-C, and gif2png. As for all 30 programs including programs in Table II and SPEC
+such, the native executions usually last for more than a few CPU2006 is 6.94% and the geometric mean is 5.94%.
+10TABLEIII. EVALUATIONRESULTSFORATTACKPREVENTION.
+#ofInputs #of #ofPayloads #ofCrashes #ofins.exec. #ofROPGadgets
+Program Precision/Recall
+(Mal./Benign) Vulnerabilities (Shellcode/ROP) (Mal./Benign) inPayloads Exec.inPayloads
+mupdf 10/20 1(CVE-2014-2013) 50/50 1000/0 3.62 0.1 100%/100%
+mcrypt 10/20 21 50/50 1000/0 3.62 0.18 100%/100%
+sftp 10/20 1(EDB-ID:9264) 50/50 1000/0 3.6 0.08 100%/100%
+yops 10/20 1(EDB-ID:14976) 50/50 1000/0 3.62 0.05 100%/100%
+nginx 10/20 1(CVE-2013-2028)* 50/50 1000/0 3.62 0.09 100%/100%
+ngircd 10/20 22 50/50 1000/0 3.62 0.11 100%/100%
+unrar 10/20 1(EDB-ID:17611) 50/50 1000/0 3.62 0.18 100%/100%
+prozilla 10/20 23 50/50 1000/0 3.6 0.09 100%/100%
+gif2png 10/20 1(CVE-2009-5018) 50/50 1000/0 3.62 0.09 100%/100%
+mp3info 10/20 1(CVE-2006-2465) 50/50 1000/0 3.62 0.05 100%/100%
+fcrackzip 10/20 1(EDB-ID:14904) 50/50 1000/0 3.62 0.05 100%/100%
+chemtool 10/20 1(EDB-ID:36024) 50/50 1000/0 3.6 0.18 100%/100%
+vfu 10/20 1(EDB-ID:35450) 50/50 1000/0 3.61 0.18 100%/100%
+unrtf 10/20 1(CVE-2004-1297) 50/50 1000/0 3.62 0.18 100%/100%
+rarcrack 10/20 24 50/50 1000/0 3.62 0.05 100%/100%
+make 10/20 1(EDB-ID:34164) 50/50 1000/0 3.62 0.18 100%/100%
+Xerces-C 10/20 1(CVE-2015-0252) 50/50 1000/0 3.62 0.07 100%/100%
+apache# 10/20 25 50/50 1000/0 3.6 0.13 100%/100%
+1(CVE:2012-4409,2012-4527) 2(CVE:2005-0226,2005-0199) 3(CVE:2005-0523,2004-1120)
+4(EDB-ID:15062,15054) 5(CVE:2004-0940,2006-3747) *ThisCVEincludesmultiplevulnerabilities #Version1.3.31
+B. Effectiveness A2C first copies the original buffer to a temporary buffer, and
+then decodes the temporary buffer. Also, after the terminal
+To evaluate the effectiveness of A2C in preventing attacks
+operation, A2C releases the temporary buffer to minimize
+andallowingbenignexecutions,foreachprogram,weprepare
+the attack window. Third, we also identify a few kinds of
+10exploitsand20otherbenigninputs.Foreachexploitinput,
+Uncontrollable Transformative Operations. In particular, Type
+we prepare 100 different malicious payloads, including 50
+Widening expands each element in a buffer by padding it
+shellcodes and 50 ROP payloads.
+with some specific byte(s) such as 0x00. Note that we use
+The shellcodes are generated from [51], and we use ROP the constraint solver to determine whether each case of type
+attackcreators[52],[53]togenerate50differentROPpayloads widening is controllable as not all type widening cases are
+for each vulnerable application. Thus, we have 1,000 attack uncontrollable. In fact, casting a one-byte data type to a two-
+executions and 20 benign executions for each program. Note bytedatatypeissolvableinmanycases.Notethatsomebinary
+that, as shown in Table III Column 3, some programs have operations (e.g., multiplication) of values with smaller types
+more than one vulnerability, which require unique exploit yieldavalueofalargetype.Thesearenottype-wideningasthe
+inputs. The table also shows the results. Observe in the fifth bits in the resulting value are often fully/largely controllable.
+column, A2C successfully crashes all the attacks and allows Irreversible Calculation means arithmetic transformations that
+all the benign inputs to proceed to normal termination and cause intensive correlations among values so that the solver
+produce the expected outcomes. The next two columns show returns UNSAT for all tests. An example can be found in
+the average number of payload/gadget instructions that got SectionIV-A.Primitivetypeconversionmeansthatabufferel-
+executed before crashing. They are all in very small numbers. ementisconvertedtoavalueofprimitivetype(e.g.,atof())
+As such, they can hardly cause any damage to the system. and this value is not stored to any array/buffer. Since single
+primitive values can hardly be exploited to inject payloads
+Decoding Frontier (DF) Operation Classification. We fur-
+due to the size, decoding is safe. Note that A2C protects
+theranalyzetheDFoperationsforallthesubjectprogramsand
+consecutive primitive values if they can form a region larger
+classify them into a few categories. Fig. 13 shows the results, than 16 bytes. Indexing means that an encoded value is used
+from which we have the following observations.
+to index a non-constant array. It is safe to decode the value
+becausethedecodedvalueisofaprimitivetypeandsoondies
+100%
+after the operation. The entire buffer is never decoded.
+80%
+Comparative
+(63%) Decoding Frontier (DF) Computation. Table. IV shows
+60% the evaluation results of decoding frontier computation. The
+Uncontrollable transformative
+(18%) first column shows the programs. The next three columns
+40%
+Terminal show the numbers of controllable operations, uncontrollable
+20% (19%) Type Irreversible Primitive Type operations,andtheirsum,respectively.Thelastcolumnshows
+Wi (d 5e %ni )n g Ca l c (u 5%lat )i on Con (5ve %rs ) ion In (d 3e %xi )n g the average number of constraints for each memory region
+0% under test. Recall that if the solver returns SAT, TIMEOUT
+Fig.13. DifferentTypesofDecodingFrontiers.
+or UNKNOWN for a constraint in any payload sequence test,
+First,63%operationsonDFsareComparativeOperations. the corresponding operations are considered controllable.
+Note that comparative operations are mostly conducted on
+individual buffer elements (of primitive types), A2C only We make the following observations. First, in most cases,
+decodes the element needed by the operation. The decoded therearemoreUNSATcasesthanSATcases.Thismeansthat
+value is dead (e.g., overwritten) right after the operation. most input related computations are not controllable. There
+Such DF operations cannot be exploited. Second, 19% DF are a few exceptions. gif2png, apache, and chemtool
+operations are Terminal Operations. For a terminal operation, have more SAT cases as our modeling of the external library
+11TABLEIV. RESULTSFORDECODINGFRONTIERCOMPUTATION.
+462. Note that the function xps_read_dir_part() is not
+#ofOperations Avg.#of vulnerable.Butstill,theattackercanprovideacraftedxpsfile
+Program
+Controllable Uncontrollable Total Constraints thatcontainsamaliciouspayload.Thepayloadwillbeinjected
+mupdf 9 141 150 16.4
+through the normal file read in the benign function. Thus,
+Prozilla 4 20 24 15.9
+stftp 2 8 10 11.5 most existing protection schemes including CFI, DFI, ASLR,
+yops 0 1 1 8 and boundary checkers cannot prevent such injection. While
+nginx 4 41 45 17.2 malicious payload detection methods can identify the injected
+ngircd 2 12 14 14.1
+unrar 6 33 39 14.2 shellcode by scanning the input file at the fread function,
+mcrypt 4 24 28 18.3 theattackercanuseobfuscationtechniquestocircumventsuch
+gif2png 13 10 23 16.9 detection.
+mp3info 4 9 13 15.3
+fcrackzip 4 4 8 13.6 Totriggerthepayload,theattackerexploitsanintegerover-
+chemtool 29 22 51 14.1
+flow vulnerability. The integer overflow happens as follows.
+vfu 3 25 28 15.5
+unrtf 2 22 24 14.5 It reads input from a file at Line 91 in lex_number().
+rarcrack 0 0 0 0 Then the input is propagated to Line 97 where the integer
+make 9 53 62 15.4
+overflow occurs. The program assumes the input c is between
+Xerces-C 14 75 89 14.8
+apache 145 129 274 17.7 ‘0’ to ‘9’, and converts it into an index (i). At Line 106,
+Average 14.1 34.9 49 14.05 the converted index is stored into buf->i. Later, the index
+is used to write elements into a structure (at Lines 176-178
+calls is not complete and the modeling of floating point
+in pdf_repair_obj_stm()). Note that the earlier index
+functions is conservative. For example, we assume exp()
+is propagated to variable n which is also used as an index.
+function can return any positive floating point values while
+This integer overflow can be leveraged to overwrite some
+the parameter of the exp() function may have constraints,
+criticaldatafieldssuchasfunctionpointersinordertochange
+hence it may not be able to produce some floating point
+control flow of the program to the injected shellcode. Note
+values. Note that such a conservative assumption only causes
+that the exploit may not be detected by address sanitizers as
+over-approximation. Second, the total number of operations
+the attacker can manipulate the offset n to directly overwrite
+for testing is not large (apache has the largest number
+thetargetmemoryaddressesthatmayfallintootherlegitimate
+274).Thisisbecausethecontrollabilityclassificationformost
+memory regions, without overwriting the canaries.
+operationsisstraightforward(e.g.,comparativeoperationsand
+copyoperations)andhencedoesnotrequireconstraintsolving. Incontrast,A2Cdefeatstheattackbybreakingitsweakest
+Third, the average number of constraints in our tests is not link, which is the injected payload itself. In particular, A2C
+large,suggestingthatcontrollableoperationsareoftenshallow mutatestheinputincludingtheshellcodeatthefreadinLine
+in the data flow, meaning that they are close to program 462. The original shellcode is shown in Fig. 14 (a), and the
+inputs. This supports our assumption that most computation corresponding mutated shellcode in Fig. 14 (b). Observe that
+happens in the post-exploitable space. Note that we do not the mutated shellcode is broken and not executable.
+need to test controllability of operations if their operands are
+not controllable.
+C. Case Studies
+Running Web Servers on Real-world Traffic. To further
+evaluate the robustness of A2C, we run the instrumented web
+serversonareal-worldtrafficlog.Weobtainedourinstitution’s
+server access log from November 2015 to January 2016. The
+log contains 5.6 million requests with 4.2 million unique
+requests, including some suspicious requests with binary pay- static int lex_number (
+loads(about100ofthem).Wealsorandomlyinject300exploit
+inputs to the access log. We ran three servers (apache,
+nginx, and yops) with these requests. The results show that
+the instrumented versions produce the same expected results
+as the original versions except for the attacks. All attacks are
+prevented. The throughput is only reduced by 8.83%, 7.37%,
+and 5.49%, respectively.
+Code Injection Through Benign Functions and Payload
+Triggered Through Integer Overflow. In this case study,
+we show how a payload can be injected through benign and
+non-vulnerableprogramlogicandlatertriggeredbyaninteger
+overflow vulnerability. Such a combination makes it difficult
+fortraditionaldefensetechniques.Fig.14showscodesnippets
+of the victim program, mupdf. First, observe that the xps_
+read_dir_part() function reads a file. It opens a file at
+Line 455, then gets the size of file at Line 458. Later, it reads
+the file and puts it into a heap buffer (part->data) at Line
+✁
+) {
+...
+91: int c = fz_read_byte(f);
+...
+case RANGE_0_9:
+97: i = 10*i + Decode( c )
+- '0';
+✁
+pdf/pdf_lex.c
+static void
+pdf_repair_obj_stm (...) {
+...
+172: n = buf.i;
+106: buf->i = i;
+✁
+static xps_part* xps_read_dir_part(...) {
+pdf/pdf_repair.c
+// Triggering the shellcode
+176: xref->table[n].ofs = num;
+177: xref->table[n].gen = i;
+178: xref->table[n].stm_ofs = 0;
+(a) Injected Shellcode (b) Mutated Shellcode
+push 0x2e2e2e62 ret 0x84c8
+mov edi, esp test
+xor eax, eax in eax, dx
+... ...
+Hex: 68 62 2e 2e 2e 89 e7 33 ... Hex: c2 c8 84 84 84 23 4d 99 ...
+✁
+xps/xps_zip.c
+455: file = fopen(buf, "rb");
+...
+458: fseek(file, 0, SEEK_END);
+459: size = ftell(file);
+...
+462: fread(part->data, 1, size, file); // Shellcode Injection
+Fig.14. IntegerOverflowinmupdf.
+Note that A2C does not prevent the integer overflow. Even
+through it encodes the input value at Line 91, it decodes the
+value right before the overflow (at Line 97) because that is an
+operation of primitive type. In other words, the attacker can
+12still exploit integer overflow vulnerabilities. However, when
+the control flow of the program is redirected to the injected
+shellcode,theexecutioncrashesalmostimmediatelyasthefirst
+instructionofthemutatedshellcodeis“ret 0x84c8”,which
+does not have a valid return address.
+One might think the attacker can exploit the integer over-
+flow to direct the control flow to some buffer in the post-
+exploitable space. However, as we pointed out in Section V,
+the transformations performed by the subject programs are
+complex enough that the attackers cannot generate plain-text
+payloads in the post-exploitable space.
+Preventing ROP attacks. As DEP (Data Execution Preven-
+tion)becomesmoreandmorepopular,attackersnowuseROP
+to bypass such protection. In this case study, we show how
+A2C prevents ROP attacks using an example.
+void process_font_table (...) {
+...
+331: char name[255];
+✁
+English Shellcode and Mutated English Shellcode
+Assembly Opcode ASCII
+push esp 54 There is a
+push 0x20657265 68 65 72 65 20 majorcenter of
+... ... economic activity, ...
+inc dl fe c2 No ASCII character
+iret cf found
+... ...
+Fig.16. EnglishShellcodeExample.
+one example, in practice attackers also use other various
+shellcode obfuscation and compression techniques [38], [59]
+to avoid shellcode identification. A2C mutates all untrusted
+inputs including shellcodes as they are part of the inputs. The
+mutated English Shellcode includes those shaded in Fig. 16.
+For demonstration, we again apply the xor with 0xAA muta-
+tion.Observethatthemutatedshellcodeiscompletelydifferent
+from the original shellcode. While the first instruction is exe-
+cutable, it does not help attackers to achieve anything useful.
+convert.c (a) Injected ROP gadgets
+More importantly, the second instruction is iret, which can
+Address Instructions
+only be executed in a kernel mode. Executing iret results
+0x804d820 mov ebx,0x0; ret
+0x804ec7d mov eax,0x806275c; ret in a segmentation fault. One interesting observation is that
+... ... the first a few instructions in the mutated shellcode are often
+341: while (w2) { (b) Mutated ROP gadgets executable. The fifth column of Table III shows the average
+342: tmp = word_string(w2); Address Instructions number of instructions executed in the mutated payload is
+343: if ( tmp && 0xa2ae728a Invalid address
+Decode( tmp[0] ) != '\\' ) 0xa2ae46d7 Invalid address very small (<4). It is also important to note that such a
+344: strcat( name, tmp ); ... ... few (mutated) instructions do not have the same semantics
+Fig.15. StackBufferOverflowinunrtf. as the original malicious logic. They often immediately lead
+Fig. 15 shows unrtf which has a stack buffer overflow to crashes and do not cause any damage to the system.
+vulnerability. It can be leveraged to inject a malicious payload
+Buffer Overflow In Structure. AddressSanitizer [56] is an
+thatallowsconstructingaROPgadgetchain.Theprogramfirst
+important technique to prevent various buffer overflow attacks
+gets a user provided string at Line 342. Then, it compares the
+including heap and stack overflows. It works by placing
+string with a constant at Line 343. As it is a comparative op-
+canaries before and after a buffer. One of the limitations of
+eration, A2C decodes the value, allowing proper comparison.
+the technique is that it cannot handle buffer overruns within a
+Thebufferoverflowhappenswhentheprogramcopiestheuser
+structure.
+provided buffer (tmp) to a local buffer name at Line 344 in
+process_font_table(). Observe that the size of name
+is only 255. Thus, providing a long enough input to the tmp void process(RECORD* p) {
+buffer will result in a stack overflow. 1: fread( p->name,
+Fig. 15 (a) shows the injected ROP payload and the
+correspondinggadgets.Theaddresscolumnshowsthepayload
+that contains the raw addresses of the ROP gadgets. The
+instructions column shows the instructions from the ROP
+gadgets. Observe that they all end with a ret instruction.
+These chains of instructions are essentially the ones that get
+executed once the attack is launched. Fig. 15 (b) shows the
+mutated payload. For demonstration purpose, we use a simple
+encoding/decoding scheme even though our implementation
+usesone-time-dictionary.Inparticular,themutationistoxora
+valuewith0xAA.Observethatalltheaddressesintheoriginal
+payloadareencodedandpointtoinvalidaddresses.Hence,the
+attack fails. Note that since A2C prevents attacks by mutating
+payloads, the injection methods do not affect our protection.
+Preventing English Shellcode. As a counter attack to shell-
+code detection techniques, Mason et al. proposed an auto-
+matic way to generate shellcode which is similar to English
+prose [39]. Such technique can be used to avoid existing
+shellcode identification techniques [67], [37], [45], [18].
+Fig. 16 shows an example of English Shellcode presented
+in [39]. As shown in the ASCII column, the shellcode is an
+English statement. The corresponding assembly instructions
+are listed in the first column. While we are just showing
+✁
+Program.c Program.h
+typedef struct tag_RECORD {
+); char name[255];
+2: printf("Name: %s\n", void (*handler)(int);
+Decode( p->name )); int privilege;
+3: p->handler( p->privilege ); } RECORD;
+Fig.17. BufferOverruninStructure.
+Fig.17showsabufferoverflowvulnerabilityinastructure.
+Specifically, buffer name in the structure RECORD can affect
+adjacent data fields including a function pointer handler.
+At Line 1, it reads a file to fill the name buffer. By provid-
+ing an input string longer than 255 bytes, it can overwrite
+handler. Note that A2C mutates the input in fread at
+Line 1, the handler is overwritten with a mutated address.
+Then, the program calls printf to display the name on
+the screen. As printf is an external call, A2C decodes
+the input buffer name. Specifically, in our implementation
+of the decoding function, when A2C decodes a buffer for
+a library call, it allocates a new buffer, copies the original
+encoded buffer, and then decodes it in the new buffer before
+passing it. Since A2C does not decode the original buffer,
+the injected malicious payload remains mutated. At Line 3,
+the program calls handler. Although it is overwritten, the
+function pointer no longer points to the injected shellcode.
+Note that the privilege field can also be overwritten to
+launchnon-controldataattacks[16].A2Cmitigatestheattacks
+byencodingtheinputsfromuntrustedsources.Asaresult,the
+attacker cannot control the overwritten value.
+13VII. RELATEDWORK can be defeated through information leak attacks that reveal a
+canary value [49], [12]. Compile-time code analysis [69], [35]
+Control-flow Integrity (CFI). Recent advances in control-
+havebeenproposedtodetectunsafearrayandpointeraccesses.
+flowintegrityhavedevelopedveryrobustsystemsforprevent-
+However, they often generate many false positives and focus
+ingmalicious/abnormalcontrolflowswithinavictimprogram.
+onspecifickindsofvulnerabilities.Cling[4]andAddressSan-
+These typically monitor execution to enforce pre-determined
+itizer [56] provide pointer safety to prevent exploiting pointer
+control flow paths [44], [9], [66], [31], [73], [74], [72], [43],
+related bugs such as use-after-free. However, as shown in our
+[68], [40]. In contrast, A2C provides protection by corrupting
+case study, they can hardly handle advanced attacks [71]. In
+input payloads, which is a perspective orthogonal to the en-
+contrast,A2Caimstobreaktheweakestlinkofattacks,which
+forcementofaprogram’slegitimatecontrolflowgraph.There-
+is the payload itself.
+fore,A2Ciscomplementarytoandcanbedeployedalongside
+CFI, e.g., to prevent exploit injection attacks that may employ VIII. CONCLUSION
+indirect calls or not violate control flow integrity [24], [29],
+We present A2C that provides general protection against a
+[15], [55], [54], [40], [19], [14].
+widespectrumofpayloadinjectionattacks.Itmutatesallinput
+Malicious Payloads Detection. In [67] and [37], researchers buffersfromuntrustedsourcestobreakmaliciouspayloads.To
+proposed analyzing inputs to detect malicious payloads with assure the program functions correctly on legitimate inputs, it
+little runtime overhead. However, Fogla at el. [28] demon- decodesthemrightbeforetheyareusedtoproducenewvalues.
+strated that polymorphism techniques can defeat these ap- A2C automatically identifies such places at which it needs to
+proaches. Dynamic analysis using emulation [46], [61] have decode using a novel constraint solving based approach and a
+been proposed to uncover polymorphic payload injection at- sophisticated static analysis. Our experiments on a set of real-
+tacks,buttheycausenon-negligibleperformancepenalty.A2C world programs show that A2C effectively prevents known
+mutates all input buffers from untrusted sources and thus is payload injection attacks on these programs with reasonably
+resilient to polymorphism. It does not require emulation and low overhead (6.94%).
+causes low overhead. Nozzle [48] proposed a novel technique
+to detect heap spraying attacks at runtime. It uses runtime ACKNOWLEDGMENT
+interpretation and static analysis to analyze suspicious objects We thank the anonymous reviewers for their construc-
+in the heap. While Nozzle focuses on detecting heap spraying tive comments. This research was supported, in part, by
+on JavaScript, A2C takes a more general approach to prevent DARPAundercontractFA8650-15-C-7562,NSFunderawards
+a wider range of input injection attacks. 1409668 and 0845870, ONR under contract N000141410468,
+and Cisco Systems under an unrestricted gift. Any opinions,
+Randomization Approaches. Address space layout random-
+findings,andconclusionsinthispaperarethoseoftheauthors
+ization (ASLR) is one of the most widely deployed defense
+only and do not necessarily reflect the views of our sponsors.
+mechanismtomitigatepayloadinjectionandtriggering.ASLR
+randomizes the memory layout of a program when the OS REFERENCES
+loads the binary and dynamic libraries. ASLR is already a de-
+[1] Exploitsdatabasebyoffensivesecurity. https://www.exploit-db.com/.
+fault defense mechanism in most operating systems including
+[2] Thellvmcompilerinfrastructure. http://llvm.org/.
+Linux,MacOS,BSD,andWindows.Addressspacelayoutper-
+[3] Penetrationtestingsoftware.metasploit. https://www.metasploit.com/.
+turbation[34]andfine-grainedrandomizationtechniques[70],
+[4] P.Akritidis,C.Cadar,C.Raiciu,M.Costa,andM.Castro. Preventing
+[42], [7], [22], [17], [30] have been developed to provide
+memoryerrorexploitswithwit. InS&P’08.
+higher entropy. Instruction set randomization [33], [47], [41]
+[5] C. Anley. Creating arbitrary shellcode in unicode expanded strings,
+aims to change the underlying instruction set to prevent
+the “venetian” exploit. https://www.helpnetsecurity.com/dl/articles/
+executing injected code. However, it was shown recently that unicodebo.pdf,2002.
+randomization could be evaded by brute-force attacks [58], [6] S.BhatkarandR.Sekar. Dataspacerandomization. InDIMVA’08.
+[8], memory disclosure attacks [11], [57], [36], and just-in- [7] D.Bigelow,T.Hobson,R.Rudd,W.Streilein,andH.Okhravi. Timely
+time code reuse attacks [62]. In [23], researchers presented a rerandomizationformitigatingmemorydisclosures. InCCS’15.
+noveldefensetechniquetomitigatecounterfeitobject-oriented [8] A. Bittau, A. Belay, A. Mashtizadeh, D. Mazie`res, and D. Boneh.
+programming(COOP)attacks[54].Theyrandomizethelayout Hackingblind. InS&P’14.
+of the code pointer table and plant booby-traps to prevent [9] T.Bletsch,X.Jiang,andV.Freeh. Mitigatingcode-reuseattackswith
+brute-force attacks. Compared to these techniques, A2C pro- control-flowlocking. InACSAC’11.
+videsprotectionbyworkingfromtheinputperspective,which [10] T. Bletsch, X. Jiang, V. W. Freeh, and Z. Liang. Jump-oriented
+programming:Anewclassofcode-reuseattack. InASIACCS’11.
+is complementary to randomization. Data randomization [6],
+[11] E. Buchanan, R. Roemer, H. Shacham, and S. Savage. When good
+[13] dynamically decrypts a buffer upon each buffer access
+instructionsgobad:Generalizingreturn-orientedprogrammingtorisc.
+and encrypts it again after the access. It encrypts all buffers
+InCCS’08.
+including those not related to inputs. It also uses different
+[12] Bulba and Kil3r. Bypassing stackguard and stackshield. http://
+keys for various buffers. A2C shares a similar idea of buffer phrack.org/issues/56/5.html,2000.
+encoding with data randomization. The differences lie in that [13] C. Cadar, P. Akritidis, M. Costa, J.-P. Martin, and M. Castro. Data
+A2Cfocusesoninputrelatedbuffers;itencodesonlyoncefor randomization. TechnicalReportMSR-TR-2008-120.
+eachinputanddecodesonlyatthedecodingfrontier.Assuch, [14] N.Carlini,A.Barresi,M.Payer,D.Wagner,andT.R.Gross. Control-
+A2C has relatively lower overhead. PointGuard [20] encrypts flowbending:Ontheeffectivenessofcontrol-flowintegrity.InSEC’15.
+pointer values at runtime. [15] N. Carlini and D. Wagner. Rop is still dangerous: Breaking modern
+defenses. InSEC’14.
+Bounds Checking. Stackguard [21] inserts a secret value (ca-
+[16] S.Chen,J.Xu,E.C.Sezer,P.Gauriar,andR.K.Iyer.Non-control-data
+nary)beforeeachreturnaddressandframepointer.However,it attacksarerealisticthreats. InSEC’05.
+14[17] Y. Chen, Z. Wang, D. Whalley, and L. Lu. Remix: On-demand live [45] M. Polychronakis, K. G. Anagnostakis, and E. P. Markatos. Compre-
+randomization. InCODASPY’16. hensiveshellcodedetectionusingruntimeheuristics. InACSAC’10.
+[18] R.ChinchaniandE.vandenBerg. Afaststaticanalysisapproachto [46] M.Polychronakis,K.G.Anagnostakis,andE.P.Markatos.Emulation-
+detectexploitcodeinsidenetworkflows. InRAID’05. based detection of non-self-contained polymorphic shellcode. In
+RAID’07.
+[19] M. Conti, S. Crane, L. Davi, M. Franz, P. Larsen, M. Negro,
+C.Liebchen,M.Qunaibit,andA.-R.Sadeghi. Losingcontrol:Onthe [47] G.PortokalidisandA.D.Keromytis. Fastandpracticalinstruction-set
+effectivenessofcontrol-flowintegrityunderstackattacks. InCCS’15. randomizationforcommoditysystems. InACSAC’10.
+[20] C. Cowan, S. Beattie, J. Johansen, and P. Wagle. Pointguardtm: [48] P.Ratanaworabhan,B.Livshits,andB.Zorn.Nozzle:Adefenseagainst
+Protectingpointersfrombufferoverflowvulnerabilities. InSEC’03. heap-sprayingcodeinjectionattacks. InSEC’09.
+[21] C.Cowan,C.Pu,D.Maier,H.Hintony,J.Walpole,P.Bakke,S.Beattie, [49] G. Richarte et al. Four different tricks to bypass stackshield and
+A. Grier, P. Wagle, and Q. Zhang. Stackguard: Automatic adaptive stackguardprotection. WorldWideWeb,1,2002.
+detectionandpreventionofbuffer-overflowattacks. InSEC’98. [50] R.Roemer,E.Buchanan,H.Shacham,andS.Savage. Return-oriented
+programming: Systems, languages, and applications. ACM Trans. Inf.
+[22] S.Crane,C.Liebchen,A.Homescu,L.Davi,P.Larsen,A.-R.Sadeghi,
+Syst.Secur.,15(1):2:1–2:34,Mar.2012.
+S.Brunthaler,andM.Franz. Readactor:Practicalcoderandomization
+resilienttomemorydisclosure. InS&P’15. [51] J.Salwan. Shellcodesdatabaseforstudycases. http://shell-storm.org/
+shellcode/.
+[23] S.J.Crane,S.Volckaert,F.Schuster,C.Liebchen,P.Larsen,L.Davi,
+A.-R.Sadeghi,T.Holz,B.DeSutter,andM.Franz. It’satrap:Table [52] S. Schirra. ROPgadget - Gadgets finder and auto-roper. http://shell-
+randomizationandprotectionagainstfunction-reuseattacks.InCCS’15. storm.org/project/ROPgadget/.
+[24] L. Davi, A.-R. Sadeghi, D. Lehmann, and F. Monrose. Stitching the [53] S. Schirra. Ropper - rop gadget finder and binary information tool.
+gadgets:Ontheineffectivenessofcoarse-grainedcontrol-flowintegrity https://scoding.de/ropper/.
+protection. InSEC’14. [54] F. Schuster, T. Tendyck, C. Liebchen, L. Davi, A.-R. Sadeghi, and
+[25] L. De Moura and N. Bjørner. Z3: An efficient smt solver. T. Holz. Counterfeit object-oriented programming: On the difficulty
+TACAS’08/ETAPS’08,Berlin,Heidelberg.Springer-Verlag. ofpreventingcodereuseattacksinc++applications. InS&P’15.
+[55] F.Schuster,T.Tendyck,J.Pewny,A.Maaß,M.Steegmanns,M.Contag,
+[26] T. DETRISTAN, T. ULENSPIEGEL, Y. MALCOM, and V. UN-
+andT.Holz. Evaluatingtheeffectivenessofcurrentanti-ropdefenses.
+DERDUK. Polymorphic shellcode engine using spectrum analysis.
+InRAID’14.
+http://phrack.org/issues/61/9.html,2003.
+[56] K.Serebryany,D.Bruening,A.Potapenko,andD.Vyukov. Address-
+[27] Y.Ding,T.Wei,T.Wang,Z.Liang,andW.Zou.Heaptaichi:Exploiting
+sanitizer:Afastaddresssanitychecker. InATC’12.
+memoryallocationgranularityinheap-sprayingattacks. InACSAC’10.
+[57] F. Serna. Cve-2012-0769, the case of the perfect info leak. http://
+[28] P.Fogla,M.Sharif,R.Perdisci,O.Kolesnikov,andW.Lee. Polymor-
+zhodiac.hispahack.com/my-stuff/security/Flash ASLR bypass.pdf.
+phicblendingattacks. InSEC’06.
+[58] H.Shacham,M.Page,B.Pfaff,E.-J.Goh,N.Modadugu,andD.Boneh.
+[29] E.Go¨ktas¸,E.Athanasopoulos,M.Polychronakis,H.Bos,andG.Por-
+Ontheeffectivenessofaddress-spacerandomization. InCCS’04.
+tokalidis. Sizedoesmatter:Whyusinggadget-chainlengthtoprevent
+[59] M. I. Sharif, A. Lanzi, J. T. Giffin, and W. Lee. Impeding Malware
+code-reuseattacksishard. InSEC’14.
+AnalysisUsingConditionalCodeObfuscation. InNDSS’08.
+[30] J.Hiser,A.Nguyen-Tuong,M.Co,M.Hall,andJ.W.Davidson. Ilr:
+[60] Skylined.http://www.edup.tudelft.nl/b˜jwever/advisory iframe.html.php.
+Where’dmygadgetsgo? InProceedingsoftheS&P’12.
+[61] K. Snow, S. Krishnan, F. Monrose, and N. Provos. Shellos: Enabling
+[31] D.Jang,Z.Tatlock,andS.Lerner. SafeDispatch:SecuringC++virtual
+fastdetectionandforensicanalysisofcodeinjectionattacks.InSEC’11.
+callsfrommemorycorruptionattacks. InNDSS’14.
+[62] K.Z.Snow,F.Monrose,L.Davi,A.Dmitrienko,C.Liebchen,andA.-
+[32] K2. Admmutate documentation. http://www.ktwo.ca/ADMmutate-
+R.Sadeghi.Just-in-timecodereuse:Ontheeffectivenessoffine-grained
+0.8.4.tar.gz,2003.
+addressspacelayoutrandomization. InS&P’13.
+[33] G.S.Kc,A.D.Keromytis,andV.Prevelakis.Counteringcode-injection
+[63] M. Suenaga. Evolving shell code. Whitepaper, Symantec Security
+attackswithinstruction-setrandomization. InCCS’03.
+Response,Japan,2006.
+[34] C.Kil,J.Jun,C.Bookholt,J.Xu,andP.Ning. Addressspacelayout [64] W.N.Sumner,Y.Zheng,D.Weeratunge,andX.Zhang.Precisecalling
+permutation(aslp):Towardsfine-grainedrandomizationofcommodity contextencoding. InICSE’10.
+software. InACSAC’06.
+[65] M.D.Team. Metasploitproject. http://metasploit.com,2006.
+[35] D.LarochelleandD.Evans. Staticallydetectinglikelybufferoverflow
+[66] C. Tice, T. Roeder, P. Collingbourne, S. Checkoway, U. Erlingsson,
+vulnerabilities. InSEC’01.
+L.Lozano,andG.Pike. Enforcingforward-edgecontrol-flowintegrity
+[36] B.Lee,L.Lu,T.Wang,T.Kim,andW.Lee. Fromzygotetomorula: ingcc&llvm. InSEC’14.
+Fortifyingweakenedaslronandroid. InS&P’14.
+[67] T.TothandC.Kruegel.Accuratebufferoverflowdetectionviaabstract
+[37] Z. Liang and R. Sekar. Fast and automated generation of attack payloadexecution. InRAID’02.
+signatures:Abasisforbuildingself-protectingservers. InCCS’05. [68] V. van der Veen, D. Andriesse, E. Go¨ktas¸, B. Gras, L. Sambuc,
+[38] C. Linn and S. Debray. Obfuscation of executable code to improve A. Slowinska, H. Bos, and C. Giuffrida. Practical context-sensitive
+resistancetostaticdisassembly. InCCS’03. cfi. InCCS’15.
+[39] J.Mason,S.Small,F.Monrose,andG.MacManus. Englishshellcode. [69] D.Wagner,J.S.Foster,E.A.Brewer,andA.Aiken.Afirststeptowards
+InCCS’09. automateddetectionofbufferoverrunvulnerabilities. InNDSS’00.
+[40] B.NiuandG.Tan. Per-inputcontrol-flowintegrity. InCCS’15. [70] R. Wartell, V. Mohan, K. W. Hamlen, and Z. Lin. Binary stirring:
+Self-randomizing instruction addresses of legacy x86 binary code. In
+[41] A. Papadogiannakis, L. Loutsis, V. Papaefstathiou, and S. Ioannidis.
+CCS’12.
+Asist: architectural support for instruction set randomization. In
+CCS’13. [71] E. Wimberley. Bypassing AddressSanitizer. https://packetstormsecu-
+rity.com/files/123977/Bypassing-AddressSanitizer.html.
+[42] V. Pappas, M. Polychronakis, and A. D. Keromytis. Smashing the
+[72] Y.Xia,Y.Liu,H.Chen,andB.Zang. Cfimon:Detectingviolationof
+gadgets: Hindering return-oriented programm ing using in-place code
+randomization. InS&P’12. controlflowintegrityusingperformancecounters. InDSN’12.
+[73] C. Zhang, T. Wei, Z. Chen, L. Duan, L. Szekeres, S. McCamant,
+[43] V. Pappas, M. Polychronakis, and A. D. Keromytis. Transparent rop
+D.Song,andW.Zou.Practicalcontrolflowintegrityandrandomization
+exploitmitigationusingindirectbranchtracing. InSEC’13.
+forbinaryexecutables. InS&P’13.
+[44] P. Philippaerts, Y. Younan, S. Muylle, F. Piessens, S. Lachmund, and
+[74] M. Zhang and R. Sekar. Control flow integrity for cots binaries. In
+T.Walter. Codepointermasking:Hardeningapplicationsagainstcode
+SEC’13.
+injectionattacks. InDIMVA’11.
+15

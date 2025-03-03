@@ -1,0 +1,1181 @@
+Towards Implicit Visual Memory-Based
+Authentication
+Claude Castelluccia Markus Du¨rmuth and Maximilian Golla Fatma Deniz
+Inria Grenoble Ruhr-University Bochum University of California, Berkeley
+claude.castelluccia@inria.fr {markus.duermuth,maximilian.golla}@rub.de fatma@berkeley.edu
+Abstract—Selecting and remembering secure passwords puts Thispaperexploresanewtypeofknowledge-basedauthen-
+a high cognitive burden on the user, which has adverse effects tication scheme that eases the high cognitive load of explicit
+on usability and security. Authentication schemes based on passwords and thus has the potential to improve the usability
+implicit memory can relieve the user of the burden of actively and security of knowledge-based authentication. In particular,
+remembering a secure password. In this paper, we propose a
+westudyhowimplicitmemorycanbeusedtodesignausable,
+newauthenticationscheme(MooneyAuth)thatreliesonimplicitly
+deployable, and secure authentication scheme.
+remembering the content of previously seen Mooney images.
+These images are thresholded two-tone images derived from Currentknowledge-basedauthenticationschemesarebased
+images containing single objects. Our scheme has two phases:
+on explicit memory, where users are asked to create a random
+Intheenrollmentphase,auserispresentedwithMooneyimages,
+combination of characters as their authentication secret and
+their corresponding original images, and labels. This creates an
+to explicitly provide this secret at the time of authentication.
+implicit link between the Mooney image and the object in the
+Such secrets are usually very difficult to remember as one
+user’s memory that serves as the authentication secret. In the
+authenticationphase,theuserhastolabelasetofMooneyimages, has to work consciously to remember the specific secret. In
+a task that gets performed with substantially fewer mistakes if contrast, with an implicit memory-based scheme, users first
+the images have been seen in the enrollment phase. We applied learn an association between a task and its solution. This
+an information-theoretical approach to compute the eligibility of learned association is then used as the authentication secret.
+theuser,basedonwhichimageswerelabeledcorrectly.Thisnew Because recalling a situation that is stored in the implicit
+dynamic scoring is substantially better than previously proposed memory is remembered with less effort [36], [37], almost
+staticscoringbyconsideringthesurprisaloftheobservedevents.
+unconsciously, such an authentication scheme relieves users
+We built a prototype and performed three experiments with
+of the high cognitive burden of remembering an explicit
+230 and 70 participants over the course of 264 and 21 days,
+password. This has the potential to offer usable, deployable,
+respectively. We show that MooneyAuth outperforms current
+and secure user authentication.
+implicit memory-based schemes, and demonstrates a promising
+newapproachforfallbackauthenticationproceduresontheWeb.
+In this work, we built a novel, operational authentica-
+tion scheme utilizing implicit memory based on Mooney
+images [31]. A Mooney image is a degraded two-tone image
+of a single object. This object is usually hard to recognize at
+I. INTRODUCTION
+first sight and becomes easier to recognize when the original
+image was presented to the user.
+User authentication is an essential requirement for modern
+websites as more and more access-controlled services move
+Our scheme is composed of two phases: In the enrollment
+online. Existing user authentication schemes are commonly
+phase,theuserlearnstheassociationbetweenasetofMooney
+based on something you know, such as passwords, something
+images, their original versions, and labels describing the con-
+you have, such as secure tokens, or something you are, such
+tentoftheimage.Thisprocessisalsocalled“priming”.During
+as biometry. These authentication schemes suffer from the
+the authentication phase, a larger set of Mooney images, in-
+competing requirements of security and usability [8], which
+cludingtheprimedMooneyimagesfromtheenrollmentphase,
+are hard to fulfill simultaneously. Furthermore, users seem
+are displayed to the user. The user is then asked to provide a
+to disfavor password-based authentication [32], [23], hence
+label for the hidden object in each Mooney image. Using our
+alternative schemes are becoming necessary [1]. Despite sub-
+dynamic scoring algorithm, the system computes an authenti-
+stantialresearchefforttoimprovethestate-of-the-art,currently
+cation score and provides or denies access accordingly. Due
+deployed authentication methods are far from optimal.
+to relatively slow enrollment and authentication, the current
+scheme seems particularly suited for fallback authentication,
+also known as account recovery.
+Permission to freely reproduce all or part of this paper for noncommercial
+purposes is granted provided that copies bear this notice and the full citation
+We conducted three experiments to identify practical pa-
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author rameters, to measure long-term effects, and to determine the
+(for reproduction of an entire paper only), and the author’s employer if the performance of the scheme. We conducted Experiment 1 over
+paper was prepared within the scope of employment. the course of 25 days with 360 participants of which 230
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+finished both phases. The results of this experiment were used
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23292 for parameter selection. To identify long-term priming effectsofMooneyimageswere-invitedtheparticipantsafter264days The proposed scheme is based on a crafted computer game.
+in Experiment 2. To validate the overall performance of the Whilethesecretcanbeusedforauthentication,theparticipant
+scheme, we performed Experiment 3 with 70 new participants cannot be forced to reveal it since the user has no conscious
+over the course of 21 days. knowledgeofit.Theauthorsperformanumberofuserstudies
+using Amazon’s Mechanical Turk to validate their scheme.
+A. Contributions Although the proposed idea is very interesting, performance
+results show that their scheme is not practical and cannot be
+Our contributions include:
+used for real-world applications: the registration phase takes
+1) We present a novel authentication scheme, based on more than 45 minutes for a single password and put a lot of
+implicit visual memory, that outperforms existing ones cognitive burden on users.
+in terms of false acceptance and false rejection rates, as 2)GraphicalAuthenticationSchemes: Anumberofgraph-
+well as the time required for authentication. ical password schemes share the idea of identifying trained
+2) To decide whether a user successfully passes the au- images from a set of decoy images. Probably the most well-
+thentication phase, the inputs have to be evaluated, i.e., knownschemeisPassFaces[34],whichisbasedonthehuman
+“scored.” We propose an alternative scoring technique, capabilitytorecognizefamiliarfaces.Duringauthentication,a
+dynamic scoring, which is inspired by the notion of set of faces is shown to a user, where the user selects known
+self-information, also known as surprisal. We show that ones.However,userbiasintheselectionoftheimagesrenders
+our scoring technique substantially outperforms the static the system vulnerable to guessing attacks [14].
+scoringproposedinpreviousworkbyDenningetal.[16].
+3) We demonstrate the practicability of our scheme by TheauthenticationschemeUseYourIllusion[22]alsouses
+implementing it and conduction three experiments. degraded versions of images, i.e., blurred images, but still
+The results show that MooneyAuth substantially out- reliesonexplicitmemory.Inthisscheme,usersarerequiredto
+performs current implicit memory-based authentication generateanimageportfolio,explicitlylearnandmemorizethe
+schemes [16]. images belonging to the portfolio, i.e., via spaced repetitions,
+4) We are the first to study long-term priming effects of and finally authenticate by re-identifying the set of images
+Mooneyimagesoveraperiodaslongas8.5months.The that were distorted by an oil-painting filter. In contrast to
+results reveal a substantial long-term priming effect for our evaluation, their user study did not test the long-term
+Mooneyimages,whichimpliesthatMooneyAuthissuited performance,soitisunknownhowthisschemeperformsover
+for fallback authentication with long intervals between time and whether it decreases the user’s cognitive burden.
+enrollment and authentication. Furthermore,thesecurityofUseYourIllusionheavilydepends
+on the image degrading algorithm and its parameters, which
+might be identifiable by a computer vision algorithm. In
+B. Related Work
+contrast, we assume all images and their Mooney versions
+1)Implicit Memory-Based Authentication Schemes: Ap- including the labels are known to the attacker and show
+plying the knowledge about how humans store and recall in- that even in this case MooneyAuth is secure. Hence, the
+formationwasfirstappliedtouserauthenticationbyWeinshall security of MooneyAuth does not rely on the fact that there
+andKirkpatrick[43].However,theproposedschememadeuse is no algorithm, which can recover the original image and
+of the explicit characterization of images that were stored in its label. Other graphical authentication schemes, based on
+human memory, not implicit memory, and the performance of explicit memory, are surveyed in [4].
+the proposed scheme is unsuitable for deployment.
+3)Fallback Authentication Schemes: One prominent use
+The scheme that comes closest to MooneyAuth, using caseforMooneyAuthisfallbackauthentication.Suchschemes
+implicit memory and the priming effect, was proposed by are used to help users recover their forgotten passwords.
+Denning et al. [16]. They presented an authentication scheme Depending on the deployed system, the effort (authentication
+based on implicitly learning associations between degraded time, and workload) can be higher than in primary authen-
+drawings of familiar objects (e.g., animals, vehicles, or tools) tication systems, which are used on a daily basis. However,
+and their complete drawings. Each degraded drawing was cre- the authentication secret obviously requires to be memorable
+ated by using fragmented lines instead of continuous lines. In for longer timeframes, since it must still be available in the
+their paper, the authors presented a preliminary authentication case the primary means of authentication, e.g., the password
+scheme and performed a user study. Their results show that is forgotten.
+manyofthesedrawingsshowa(small)primingeffect,butthis
+The range of currently proposed or deployed fallback
+effect is too small for using it in an authentication scheme for
+authentication systems is not truly satisfying. The most fre-
+all but two images they tested. As agreed by the authors, the
+quent systems are based on password reset via out-of-band
+viability of such system concept is dependent upon being able
+communicationorpersonalknowledgequestions.Intheformer
+to systematically identify or create images with a sufficiently
+case, a registered email address, a mobile phone number, or
+strongprimingeffect.Ourpaperbuildsonthisworktopropose
+a mobile app on a smartphone of the user [18] is used to
+acompleteandefficientsystem.WeshowthatMooneyimages
+send the original password, a new password, or a time-limited
+provide a strong priming effect necessary to implement such
+password reset link. However, receiving such password reset
+a practical scheme, and we build a real prototype.
+messages can be risky if not correctly implemented [10] and
+Bojinovetal.alsoproposedtheconceptofimplicitlearning can be error-prone if the contact details on record are out of
+to design a scheme that resists coercion attacks where the date.Furthermore,notallusersliketheideaofgivingouttheir
+user is forcibly asked by an attacker to reveal the key [6]. cellphone number or email address due to privacy concerns.
+2Even worse, receiving messages is not always possible, i.e., security properties in Section VII, and conclude with some
+using mobile data while abroad, or the receiving device is not final remarks in Section VIII.
+available.
+Ifcommunicatingoverasecondarychannelisnotpossible,
+II. BACKGROUND
+personal knowledge questions, sometimes called cognitive A. Explicit vs. Implicit Memory
+passwords, are used. The security of such systems is well
+studied[45].However,asdemonstratedbyanumberofrecent Explicit memory is a type of memory that is based on
+work [7], [9], [38], [21], their security is rather low, as the intentionalrecollectionofinformationwiththepurposetocon-
+secret answers to the asked questions can be easily guessed. sciouslyrecallthisinformationatalatertime.Weusethistype
+of memory, also referred to as declarative memory, constantly
+Renaud et al. [35] introduced a scheme based on asso- in our daily life [20]. For example when we remember the
+ciations between images and text (selected by the user) as time of our flight the next day, recall our address, or a chain
+a potential replacement for security questions. However, their of strings that forms our passwords.
+approachsuffersfromthedrawbacksofexplicitmemory-based
+schemes. In contrast, implicit memory relies on the unintentional
+recollection of information. In this case, we are not aware
+Authentication using information about the social graph of the specific information we stored in our memory, but we
+of a user, so-called social authentication, has been demon- can easily recall the information. This type of memory, also
+strated [12], [39]. Facebook deployed such a social scheme referredtoasnondeclarativememory,canusuallybeobserved
+called Trusted Contacts. As a secondary fallback-mechanism in habitual behavior, such as riding a bicycle or playing an
+users can choose up to five friends that receive parts of a instrument [20]. The cognitive and neural mechanisms of
+recovery code via email in the case the user has forgotten explicit and implicit memory are not entirely understood [19].
+the password. By collecting three or more parts of the code Some studies suggest a distinct mechanism for explicit and
+one is able to reset the password. However, typical recovery implicit memory [36], [30], whereas others suggest a joint
+timescanquicklyrisefromhourstodays,whichisapotential mechanism [3], [42]. One way to trigger implicit memory is
+drawback of this approach. an effect called priming [29], [13]. Priming occurs when the
+previousexposure(consciousorunconscious)toastimulusaf-
+4)Associative and Repetitive Memory-Based Authentica-
+fectstheperformanceofasubsequenttask.Forexample,when
+tion Schemes: Recent work by Bonneau and Schechter [11]
+a series of images with specific objects (primes) are presented
+demonstrated that users are capable of remembering
+to the participants, their recognition performance (e.g., time
+cryptographically-strong secrets via spaced repetition. In their
+and correctness) of a similar object in another or the same
+experiment, they enabled users to learn a limited number of
+image that is presented later improves. Throughout this paper,
+strong authentication secrets by displaying an additional code
+we use such priming effects that are based on repetition and
+that was required to login. This code did not change and was
+association.Inafirstenrollmentphase,wepresentparticipants
+only shown after an annoying delay which was increased at
+an association between a thresholded Mooney image and the
+every login attempt. The users were motivated to accelerate
+original image with a label. In a second authentication phase,
+the login procedure and not wait for the code to display, by
+we repeat the previously primed Mooney image (among other
+entering the code, which they subliminally learned by heart,
+non-primed Mooney images) and measure the recognition
+due to its continuous repetition. After some of such fast and
+performance of the repeated image. In some cases, priming
+successful logins, the code was extended.
+has been shown to have long-lasting effects [13].
+Asimilaruserstudy,realizedbyBlockietal.[5],improved
+the repetition idea. Based on so-called Person-Action-Object
+B. Mooney Images
+(PAO) stories they were able to combine associative and
+repetitive memory to improve the concept. They asked their AMooneyimageisathresholded,two-toneimageshowing
+participants to invent a story based on a shown photo, a user- a single object. This object is hard to recognize at first sight
+chosen famous person, and a randomly selected action-object withrecognitiontimesinsecondtominuterange[25].Insome
+pair that served as authentication secret. In contrast to [11], cases, the recognition is abrupt and gives rise to a feeling
+the users were able to see the complete secret at once and of having solved a difficult problem (also known as the aha-
+were told that they are required to learn the secret. Finally, feeling or Eureka-effect) [27]. This abrupt recognition can
+the users were able to remember their secrets for longer times happen intrinsically [25], after the contour of the object is
+with fewer rehearsals due to the PAO story mnemonic. marked [41], or after presenting the subject with the original
+image [28], [24], [17]. Once a subject has seen the original
+grayscale image from which the Mooney is generated, recog-
+C. Outline
+nition is much accelerated. An example of a Mooney image is
+This paper is structured as follows: Section II introduces presented in Figure 11.
+the concept of implicit memory and Mooney images. Our
+The value of using Mooney images for authentication
+schemeisdescribedinSectionIII.Then,wepresentdetailson
+is that they are very likely to trigger brain processes that
+the three experiments we performed. First, the pre-study for
+are involved in implicit memory [2]. Implicit memory, as
+estimating the required parameters in Section IV, a long-term
+study proving that the priming effect of Mooney images last
+1TounderstandtheeffectofMooneyimages,wesuggestthereadertospend
+over time in Section V, and the main study demonstrating the
+sometimetryingtoidentifytheobjectinFigure1,andthenlookatFigure7
+general performance of the scheme in Section VI. We discuss attheendofthispaper.
+3stated above, does not require direct conscious involvement the images are automatically downloaded and thresholded,
+buthappenswithlesseffortincomparisontoexplicitmemory. a manual clean up session by human subjects needs to be
+Triggering the implicit memory for authentication is therefore done.Thismanualcleaningsessionisnecessarybecausesome
+desirable as it reduces the cognitive load for users. Priming is images that are automatically downloaded from the web may
+one way to trigger implicit memory and Mooney images are not include the object that corresponds to the search word
+excellent example that can be used to prime participants to (e.g.,cat),hence,needtoberemovedfromtheimageset[15].
+specific concepts. Subsequently, a selection of suitable Mooney images took
+place. While the original Mooney image database contained
+330 images [25], for our experiments we considered images
+withameanrecognitionrateof5secondsandlongerresulting
+in 250 images. We further reduced this set to 120 images to
+obtain enough samples per image for an estimated 100 partic-
+ipants.
+A suitable Mooney image for the purpose of this appli-
+cation is an image that is difficult to recognize without a
+previous explicit presentation of the original image. At the
+same time, if the user has seen the original image then the
+user should be able to correctly identify and label the hidden
+object. This procedure makes use of implicit memory as the
+usersfirstlearntheassociationbetweentheoriginalimageand
+Fig. 1. Example of a Mooney image. To understand the effect of Mooney thecorrespondingMooneyimagewithoutanexpliciteffort.As
+images,wesuggesttospendsometimetryingtoidentifythehiddenobject,
+intheexampleofridingabike,usersusuallydonotremember
+andthentolookatFigure7attheendofthispaper.
+the details of the original image but can name the hidden
+object in the Mooney image when they have previously seen
+III. THEMOONEYAUTHSCHEME the original image. For some images, the object shown in the
+Mooney image can be recognizable by a non-primed user as
+In the next section, we describe the basic construction
+well, but only after a relatively long time, whereas primed
+of our authentication scheme. We first describe how Mooney
+users will recognize it almost instantly. Therefore, within this
+images are generated, and then present the two phases, enroll-
+work, we will treat images with a recognition time beyond a
+ment, and authentication, of our protocol.
+set threshold as “likely not primed”.
+A. Mooney Image Generation
+B. Description
+In this work, we use an extended set of two-tone, Mooney
+images that contain not only faces as used originally [31], We use a (large) set of images I and their corresponding
+but also objects (e.g., animals, fruits, or tools) of different Mooney images.
+types [17], [25].
+We selected our Mooney images from an automatically Enrollment (Priming) Phase
+generated two-tone, Mooney image database [25]. This data-
+• When a new user is enrolled, the server first assigns two
+base is based on a large number of images collected from
+disjoint subsets I ,I ⊂ I with |I | = |I | = k to the
+P N P N
+the Web. First, concrete nouns were selected from a linguistic
+user. I reflects the primed images, I the non-primed
+P N
+database [44] (based on the directness of reference to sense
+images.
+experience,andcapacitytoarousenonverbalimages,cf.[25]).
+• The subset I is then used to prime the user. During this
+P
+These words were used as search terms to automatically
+session,firstaMooneyimage,thentheoriginalimageand
+download images from an online image database. Second, the
+a label that describes the object in the image is presented
+images were converted to grayscale and were smoothed using
+totheuser.Thisprocedurecreatesanassociationbetween
+a 2D smooth operation with a Gaussian kernel (σ = 2 pixels
+the original image, the correct label of the image and the
+and full width at half maximum (FWHM) = 5 pixels). Third,
+corresponding Mooney image.
+imageswereresizedtohaveasizeof350×350pixels(subsam-
+pled with an appropriate scale factor). These parameters were
+Authentication (Recall) Phase
+selected to create Mooney images that are hard to recognize
+byauseratfirstsight[26].Thesmoothingoperationisinpar- • Atthebeginningoftheauthenticationphase,thetwosub-
+ticular important for the results as the thresholding algorithm sets I ,I for this user are retrieved from the database.
+P N
+applied in the next stage operates better on smoothed images The primed and non-primed Mooney images (I ∪I )
+P N
+than on not smoothed ones. Lastly, the smoothed and resized are then presented to the user in a pseudo-randomized
+imageswerethresholdedusingahistogrambasedthresholding order. For each Mooney image presentation, the user is
+algorithm (Otsu’s thresholding method [33]) to generate the requested to type in the label of the object that the image
+Mooney images. This thresholding method assumes that each contains, or skip the image if the user is not able to
+image has two classes of pixel properties: A foreground and recognize any object.
+a background. For each possible threshold, the algorithm • Two metrics are then computed for each image:
+iteratively computes the separability of the two classes and (i)Thecorrectnessofthelabeliscomputedbycomparing
+converges when the maximum separability is reached. Once the typed label to a list of previously defined labels. This
+4isachievedbyadistancemetricthatmeasureshowsimilar getting approximations is relatively easy, and one should
+thelabelprovidedbytheusermatchedthedefinedlabels. not rely on an assumed bound on their correctness.
+(ii)Therecognitiontime,i.e.,thetimebetweendisplaying 3) Theadversaryisfreetoanswerthequestionsatanytime,
+the image and the first keystroke. If the recognition time i.e., the answer times can be freely manipulated. (Even
+is longer than 20 seconds, we treat the image as if the though the adversary cannot gain any advantage from
+label were incorrect, i.e., “likely non-primed”. (We chose this with the current prototype, this may be relevant for
+20 seconds as threshold as we expect the recognition alternative implementations that more carefully take the
+for primed images to occur almost instantaneous, but answer time into account.)
+then allow the user to hesitate a couple of seconds
+Consequently, the security of the scheme solely relies on
+before starting to type the label. From our experience,
+the partition of the shown images into the primed and non-
+recognition without being primed takes closer towards a
+primed images, i.e., the sets I and I .
+minute to happen.) P N
+• Authentication is based on the hypothesis that the user
+E. Static Scoring
+labelstheprimedimagesmoreoften(andfaster)correctly
+than those Mooney images that the user was not primed One straightforward scoring strategy, used by Denning et
+on. Sometimes primed images will be labeled incorrectly al. [16], is what we call static scoring. We briefly describe
+and vice versa. To tolerate some of these errors, we static scoring here so later we can compare our new scoring
+compute a score from the correct and incorrect labels strategy, dynamic scoring, with it. There are four basic events
+and accept a user if the reached score is above a specific that can occur for a single image:
+threshold. There are several possibilities to perform this
+scoring. After the necessary terminology is introduced in • A primed image (with index i) is
+◦ labeled correctly:
+the next section, we will discuss two scoring methods.
+Occurs with probability p , assigned score s .
+i p,c
+◦ labeled incorrectly:
+C. Terminology
+Occurs with probability 1−p , assigned score s .
+i p,f
+Thissectionintroducessomeofthenotationsthatareused • A non-primed image (with index i) is
+throughout this paper. For one specific image with index i ◦ labeled correctly:
+(which is displayed to the user) there are four possible events Occurs with probability n , assigned score s .
+i n,c
+that we need to consider: the image was/was not primed for ◦ labeled incorrectly:
+the user (i.e., it is in I or in I ), and the user provides Occurs with probability 1−n , assigned score s .
+P N i n,f
+a correct or an incorrect label for the image. We denote the
+Now static scoring assigns the value 1 to the two “good”
+probability that a (randomly chosen) user correctly labels a
+events, i.e., s =1, s =1 and 0 to the two “bad” events
+primedimagewithp ,andtheprobabilitythatausercorrectly p,c n,f
+i s =0,s =0.Inotherwords,thisscoringstrategycounts
+labels a non-primed image with n . We expect p to be larger p,f n,c
+i i the “good” events that happened.
+than n , and we denote the difference with d := p −n . A
+i i i i
+positive d indicates that priming is working for this image.
+i
+F. Dynamic Scoring
+For a reasonably well-working priming, images should have
+d i > 0.5. (Those are called “ideal” in [16], which is slightly Static scoring does not differentiate between different
+misleadingas“ideal”inastrictsenseisd i =1.)InSectionIV probability values, thus loses information. We propose an
+we will see that 1/3 of the total images have d i > 0.5, i.e., alternative method, dynamic scoring, which takes inspiration
+we can identify a good amount of images that work well for from the notionof self-information or surprisal, a well-known
+our authentication scheme. concept in information theory [40]. Self-information denotes
+the information content associated with a single event, as
+D. Adversary Model opposedtoentropywhichisapropertyofanentiredistribution.
+We consider a strong adversary that has detailed informa- Theself-informationI(E∗)ofaneventE∗withprobability
+tion about the image database I, but has no information about p is defined as
+i
+the subsets I and I . I(E∗)=−log(p ),
+P N i
+1) We assume the adversary knows the correct labels for all where we use logarithms to base e throughout this work. For
+images in I. This is a strong assumption, as a substantial dynamic scoring, score each event with its surprisal, i.e.,
+fraction of images are hard to label for humans if not
+s =ln(p ), s =ln(1−p ),
+primed. The rationale is that a motivated attacker may p,c i p,f i
+spend substantial effort to label the images, automated s n,c =ln(n i), s n,f =ln(1−n i).
+image search facilities might reveal the source image, or
+Note that we invert the sign of I(E∗) so that a higher score
+algorithmic classifiers may be able to label images. (We
+refers to a better match, i.e., “less surprisal”. Consequently,
+are unaware of any algorithm that can identify objects
+the scores are negative.
+in Mooney images, but we cannot guarantee that such
+algorithm does not exist; thus we assume the attacker Foranintuitiononwhydynamicscoringimprovesonstatic
+(artificially) knows all labels.) scoring consider the event E∗ that the user wrongly labels a
+2) We assume the adversary knows the probabilities n and primed image. Let us assume a fixed “priming effect”, i.e.,
+i
+p . While knowing the exact values requires substantial the difference d = p − n = 0.5 is constant. We first
+i i i i
+work by the attacker (basically replicating our study), consider an image where p =0.5 (and thus n =0), i.e., the
+i i
+5primedimageislabeledcorrectlyandincorrectlywiththesame The data we collected about a participant cannot be linked
+probability.ThentheeventE∗ doescarrylittleinformation,as back to a respondent, as the data is in quite broad categories
+itisaplausibleoutcomeforalegitimate(primed)user.Second, only. We did not collect any personal identifiers (IP address,
+we consider the case where p = 1 (and thus n = 0.5), then deviceidentifier,name,orsimilar),anddidnotusethird-party
+i i
+everyprimedimagewillbelabeledcorrectlybythelegitimate components that may still log such data. Before any data was
+(primed) user. Thus, if event E∗ happens, we can be certain recorded, the respondents were informed about the purpose of
+that it’s not the legitimate user participating in the protocol. theexperimentandhowthecontributeddatawillbemanaged,
+Static scoring gives the same score 0 in both cases, while and that they can leave the experiment at any time.
+dynamic scoring gives a score of −∞ and thus indicates that
+this event can only be caused by an impostor. A. Experimental Setup
+Legitimate (Primed) User Score. For the legitimate user, the We used a total of 120 images. For each participant, we
+expected value of the score S for a single image with index used 10 primed images |I |=10 and 20 non-primed images
+i P
+i equals |I | = 20, i.e., an asymmetric distribution of primed and
+N
+non-primed images, randomly selected from the 120 images.
+Choosing |I | to be larger than |I | helps to speedup the
+N P
+1
+enrollmentprocess.Wedevelopedawebapplicationtoconduct
+E(S ) = ·(p ·ln(p )+(1−p )·ln(1−p ))
+i 2 i i i i the experiment and measured the parameters p ,n .
+i i
+1
++ ·(n ·ln(n )+(1−n )·ln(1−n )),
+2 i i i i Enrollment (Priming) Phase. For the enrollment phase, a
+random subset of |I | = 10 Mooney images was selected
+P
+which equals the average of the Shannon entropies of for each participant. Priming consisted of four steps:
+Bernoulli-distributed random variables B and B with
+1,pi 1,ni (i) Introduction: The experiment started with a brief intro-
+mean p and n , respectively,
+i i
+duction and explanation of how the experiment will pro-
+ceed.Weprovidedparticipantswiththenecessarywritten
+1 explanationonthewebpagethatthisstudywasaboutan
+E(S ) = (H(B )+H(B )),
+i 2 1,pi 1,ni alternativeweb-basedauthenticationscheme.Participants
+wereinformedaboutthetwoexperimentalphases(enroll-
+where H(X) denotes the Shannon entropy, which is the ment and authentication). They were further informed to
+expected value of the self-information H(X) = E[I(X)]. becontactedviaemail,aftertheenrollmentphase,totake
+part in the authentication phase. Besides, we provided a
+Adversary Score. The adversary does not know whether the link with further information about Mooney images and
+image was primed or not (this is what the security of the implicit memory for the interested participant.
+scheme rests on). Recall that we assume the adversary knows (ii) Priming 1: For each image from the subset I , we
+P
+the labels and knows the probabilities p i and n i. We assume first presented the Mooney image for 3.5 seconds, then
+that the same number of images is primed and non-primed so the original gray-scale image for another 3.5 seconds,
+that a single random image is primed with probability 1. An then again the Mooney image. To make the shifting
+2
+adversary can basically decide to give the correct label or the between the images more comprehensible, we gradually
+wronglabel,basedontheknownprobabilities.Iftheadversary transitioned between the images, i.e., fading out the first
+gives the correct label, the score (for that single image) will image, while fading in the second image. A label (a
+be single English word) that described the hidden object
+(s p,c+s n,c)/2=(ln(p i)+ln(n i))/2, in the image was displayed during the original gray-
+scale image presentation. We consider this approach a
+and if the adversary gives the incorrect label the score will be
+reasonabletradeoffbetweengivingenoughtimetoprime
+(s +s )/2=(ln(1−p )+ln(1−n ))/2. the image and spending time on the enrollment process.
+p,f n,f i i
+(iii) Survey: After the first priming phase, the participants
+So an adversary can calculate both values and pick the one
+were asked to fill out a short questionnaire with basic
+that has a higher expected score.
+questionssuchasage,fieldofwork,gender,andopinion
+abouttheusabilityofcurrentwebauthenticationsystems.
+IV. EXPERIMENT1:PRE-STUDY This survey was intended to provide the participants
+with a short break before the second priming phase. In
+A pre-study was performed to identify the critical param-
+addition, we used the data collected from this survey for
+eters of the MooneyAuth scheme. The critical parameters are:
+a statistical assessment of the participants.
+(1) p , the probability that a primed image is correctly labeled
+i
+(iv) Priming 2: In the second priming phase, we repeated
+and (2) n , the probability that a non-primed image is labeled
+i
+the first priming phase for the same 10 images in a
+correctly. From these values, we can then derive (3) the size
+new pseudo-randomized order. Overall, users saw each
+k of the sets I and I . These parameters were then used in
+P N
+Mooney image and its corresponding gray-scale image
+the following experiments.
+twice.
+While there is no ethics committee covering this type of
+studies at the organizations involved in this research, there Authentication (Recall) Phase. Participants were invited via
+are strict laws and privacy regulations in place that must be emailtotakepartintheauthenticationphase.Eachparticipant
+obeyed. The experiments comply with these strict regulations. was provided with an individual link. In order to test how
+6long the effects of priming and authentication performance B. Implementation
+lasted, we performed the authentication phase in two separate
+To perform the experiments, we implemented a web ap-
+groups at two different points in time (approximately two
+plication based on the Model, View, Controller (MVC) de-
+weeks apart). The authentication phase was composed of two
+sign pattern. The front-end (View) is based on the Bootstrap
+main steps:
+framework to accelerate development, the back-end (Model
+and Controller) is written in PHP, and data is stored in a
+(i) Introduction: Before the authentication started the task MySQL database. To compute an edit distance during the
+was described. Each participant was asked to view the authentication phase, we used a C implementation of the
+Mooney image, and to label the hidden object in the Damerau-Levenshtein algorithm which was included as exter-
+image as fast as possible. Participants were specifically nal PHP module. Data was transmitted using transport layer
+asked to label each image using a single English word. security (TLS) to protect the privacy of the participants. To be
+Importantly, participants were asked to label the images compliantwiththefederaldataprotectionactandprivacylaws,
+regardless of what they have seen in the priming phase. userswereinformedaboutwhatdatawascollectedandhadto
+If the participants could not identify the hidden object consent to the processing and storing of the data. Collected
+(possiblybecausethisimagewasnotusedinthepriming data was stored in encrypted form. We used the free web
+phase), they were asked to press the “I don’t know” analytics software Piwik on the web server to derive statistics
+button. These instructions were provided in a written aboutthewebapplication’susage.Everyuserwasabletoopt-
+form on the web page. out and the usage of the Do Not Track (DNT) HTTP header
+(ii) Authentication: For each returning participant, we se- was honored.
+lected a subset I ⊂ I \ I of size |I | = 20.
+N P N
+All Mooney images from the entire set I ∪I were
+P N C. Matching Labels
+presentedtotheparticipantsforlabelinginrandomorder.
+The interface used for this labeling task can be seen in For each image, we created a small set of correct labels
+Figure 2. (typically two to five labels). All labels were converted to
+lowercase before comparison. We computed the Damerau-
+Levenshtein distance (string edit distance considering inser-
+tion, deletion, substitution, and transposition of adjacent let-
+ters) between the provided label and all given labels for that
+image. If one label had a distance less or equal to 1, we
+marked it to be correct. This ensures that a variety of typical
+deviations is accepted, such as simple spelling errors, plural
+endings, British/American spelling differences, and such.
+Although, the use of an open text field to provide answers
+hasdrawbacksconsideringentrytimeanderrorrate(especially
+on mobile devices), we decided not to use alternative methods
+such as selecting the correct answer from multiple choice.
+Previous work has shown that using multiple choice answers
+leads to higher recognition rates for non-primed Mooney
+images [28]. First, the number of choices gives us a lower
+bound for the n and second providing a choice of labels
+i
+already exhibits priming effects.
+D. User Participation
+Fig.2. Screenshotoftheuserinterfaceduringtheauthenticationphase.
+Participants were recruited via several email distribution
+listsandsocialmedia.Tomotivateparticipants,weraffledgift
+Please note that the website as used in Experiment 1 had cards to those who finished both phases. For this experiment,
+a bug, which led to a layout change caused by an information 360peoplestartedtheenrollmentphase.Wesentout323invite
+banner fading out during the labeling process in the authen- emailsfortheauthenticationphasebecause37participantshad
+tication phase. This could have led participants to click the not finished their enrollment (6 stopped at the introduction
+“Idon’tknow”buttonaccidentallyinsteadofselectingthetext tutorial, 16 during the first priming, 6 during the survey,
+entry field. It seems very unlikely that this bug has affected 9 during the second priming). From those re-invited to the
+the results: we have not received any feedback from the authentication phase 230 finished, 6 started but have not
+participants mentioning this issue, the fading out related miss- finished, and 87 never tried to start the phase. A high dropout
+clickcouldhaveonlyoccurredinspecificinstanceswithaslow rate between enrollment and authentication was expected, as
+Internet connections, and when we filtered the participants we have not verified email addresses during the enrollment
+that may have been affected based on the text input time the of Experiment 1 nor have we filtered obviously fake email
+overall results even slightly improved. Furthermore, we fixed addresses. Furthermore, misclassification of our invite email
+this potential issue for Experiments 2 and 3, and these report as spam might have occurred, as well, which would explain
+very similar results. This confirms that the bug had minimal the high number of users that not even tried to start the
+or no influence on the results. authentication phase.
+7We collected, with users’ consent, basic statistics such as
+country of origin and timing from the server logs, as well as
+the results from a survey; a summary of the statistics can be
+foundinAppendixA.Pleasenote,thereportednumbersofthe
+questionnaireintheappendixdifferfromtheactualnumberof
+participants, as providing answers was not mandatory. About
+four out of five participants were between 20 and 30 years
+old, but all age groups were represented, and about four out
+of five were male. Most participants were from France and
+Germany due to the mailing lists we used, but people from
+over 30 countries participated. The majority of them liked to
+use the MooneyAuth scheme.
+As a result of the sampling process, the participants in
+this and the following experiments are skewed towards young
+and male participants working in the sciences. Previous work
+found no evidence indicating differences in recognition rates
+of Mooney images for gender or occupation of the primed
+participants [25], [26], [27], [28]. Unfortunately, there is no
+data available on priming effects in different age groups. Fig. 3. Priming effect comparison: pi versus ni plot for our scheme after
+20days(points,blue)andpreviouswork[16]after28days(stars,black).
+E. Results
+3)Strictvs.RelaxedLabeling: Thewayweusefortesting
+We now present the results of our first experiment that the labels for correctness may obviously affect the measured
+helped us to estimate and test parameters (e.g., labeling). values (and thus the performance of the scheme). To evaluate
+if the strict labeling, as described in Section IV-C, gives
+1)Estimating p , n , and d : The main result of Ex-
+i i i reasonable results, or whether more sophisticated measures
+periment 1 is the estimation of the parameters p and n
+i i (e.g., a lexical database that includes synsets to find related
+for the tested images. We find that the average difference d
+words)neededtobetaken,weadditionallyassessedthequality
+over the individual d = p −n , which is a good indicator
+i i i of the comparison by hand. We tested all labels that were
+for the overall performance, is 0.43. This is a fundamental
+classified as “wrong” in the automatic test. In this manual
+improvement over the previous work [16], which achieved an
+“cleanupsession”,weaddedsomelabelstothesetofaccepted
+average difference of d=0.07.
+labels that were synonymous to existing labels, which we
+A more detailed view is given in the plot in Figure 3, missed in the original creation of the labels (e.g., we added
+whichshowstheseparametersforeachindividualimage.Each “carafe” for an image showing a “pitcher”), we added some
+data point indicates one image, with the positions on the x- generalized terms (e.g., “animal” instead of “tiger”), and very
+axis(y-axis)representingtheempiricalvaluesforp (n ).The similar species that were easy to confuse in the images (e.g.,
+i i
+plot shows our main result for the full dataset. To improve “bee” and “ant”). We grouped those labels as “similar”, and
+comparability with previous findings, we printed our results everything else as “wrong” as before.
+as an overlay on top of the plot from previous work [16]. One
+Contrarytoourexpectation,relaxedlabelingslightlywors-
+might reason that the compared time frames are not the same
+ens the performance. While for strict labeling we have d =
+(20 days and 28 days). However, we show in Section V that
+0.43, for the relaxed labeling we have d = 0.42, a small
+our Mooney image priming effect declines only moderately
+but noticeable difference. This might be explained by the fact
+over time allowing one to consider this a fair comparison.
+that some “similar” cases, in particular generalizations, are so
+general that they can be guessed (e.g., 77 of the 120 images
+The(diagonal)linesareintendedtohelpinthecomparison
+were showing animals). Consequently, in all following studies
+of the results in the layered graph. The small solid line in the
+we used the strict labeling, which in addition is computable
+top of the graph (p =0.07+n ) indicates the average value
+i i
+without human intervention.
+of the difference d of the previous work [16], it corresponds
+to the bold solid line in the bottom of the graph. This line
+represents the average for our system (p i =0.43+n i), while V. EXPERIMENT2:LONG-TERMBEHAVIORSTUDY
+the third solid line (p = 0.5 + n ) indicates the line with
+i i
+d =0.5. It is well-known that, in principle, priming can last over
+i
+very long times [13]. However, this is not known for priming
+2)Response Time: A summary is given in Table II. The on Mooney images. In a second experiment, we measured the
+average time to label an image is around 10 seconds with long-term effects of the priming.
+a high standard deviation. (Maximum timing can be more
+than 10 minutes). Median values are more robust to outliers.
+A. Experimental Setup
+They are closely grouped together (7.25−7.89 seconds). The
+only exception can be seen in the correctly labeled primed This experiment is an extension of the first experiment.
+images. These images were substantially faster (a median of It extends Experiment 1 in two aspects: first, we divided
+6.30 seconds). the data gathered in Experiment 1 into two batches by the
+8TABLEI. STATISTICSONTHEDURATIONANDAVERAGEEVENTPROBABILITYPEREXPERIMENT.
+Duration(indays) Results
+Mean SD Median Averagepi Averageni Averagedi
+Experiment1 18.0 8.8 20 0.648 0.219 0.429
+Experiment2
+–Batch 1 8.7 2.2 9 0.726 0.226 0.500
+–Batch 2 25.1 4.2 25 0.586 0.215 0.371
+–Batch 3 264.3 3.8 264 0.499 0.252 0.247
+Experiment3 19.9 4.7 21 0.642 0.203 0.439
+TABLEII. STATISTICSONTHETIMINGFORTHELABELING
+A. Experimental Setup
+OPERATION,ALLVALUESAREINSECONDS.
+The experimental setup was very similar to the setup for
+Class Median Mean SD
+our first experiment as described in Section IV-A.
+Primed/correct 6.30 8.62 8.76
+Primed/false 7.25 10.24 12.54 The main difference is the reduced set of images. We used
+Non-primed/correct 7.89 11.17 24.83
+a subset of 20 images of the original image database, the
+Non-primed/false 7.30 9.55 15.38
+same subset for all users, and computed a random partition of
+this reduced database for each participant. We selected those
+images with the best performance in the first experiment, i.e.,
+time between enrollment and authentication; second, we re-
+thoseimageswiththehighestvaluesd =p −n .Theselected
+invited the participants of Experiment 1 after approximately i i i
+imageshadvaluesd between0.79and0.57,onaverage0.643.
+8.5 months again and measured the p ,n decline over time. i
+i i For each user, we used 10 primed and 10 non-primed images,
+Therefore, we can compare three different batches (9, 25, and
+i.e., |I |=|I |=10.
+264 days), details are listed in Table I. P N
+There were no changes to the enrollment phase. The
+B. User Participation authentication phase worked as before, but as we learned in
+Experiment 1 that the strict labeling outperforms the relaxed
+People from the first batch were invited to authentication
+labeling, we only used the strict labeling. The goal of this
+approximately 10 days after the first invitation to the enroll-
+experiment was to evaluate the suitability of the authentica-
+ment,peoplefromthesecondbatchafteraboutthreeandahalf
+tion method, including potential cross-contamination of the
+weeks. For each participant, we measured the time between
+memory when several images with good priming effects were
+priming and authentication. For the first batch, this difference
+learned by a single user (an effect we could not study in the
+has a median of 9 days, for the second batch, it has a median
+first experiment). Also, the measured and presented statistics
+of25days.Forthethirdbatch,themedianis264days.Further
+are tailored towards this goal.
+details on the participants are given in the Appendix A.
+B. User Participation
+C. Results
+Participants were recruited via email distribution lists. We
+Detailed information is provided in Figure 4 and Table I.
+took several measures to avoid that participants of the first
+We see a moderate decline of the priming effect over the first
+or second experiment also participated in the third: we used
+couple of weeks: the average value of the d is 0.500 for
+i (mostly)disjointmailinglists,askedusersinthequestionnaire
+the first batch and 0.371 for the second batch, both for strict
+iftheyparticipatedbefore,filteredallemailsusedforthelogin
+labeling. However, over longer times, the decline becomes
+that have participated in the first, and placed a cookie that
+much less pronounced; in fact, 264 days after the initial
+allowed us to detect multiple participations. Participating in
+priming we still measure an average d of 0.247.
+i both studies has to be prevented as the images in the third
+This is shown in more detail in Figure 4, which shows experiment are a subset from the first experiment, so being
+scatter plots for p and n , separated for the first batch primed on some images in the first experiment can disturb the
+i i
+(top), second batch (center), and third batch (bottom). We resultsofthethirdexperiment.However,theeffectofduplicate
+can additionally see that even in the third batch, there is a participants is small, as the overlap of primed images and the
+substantialnumberofimageswithad greaterthan0.5(dashed 20 images in the third experiment is less than two on average.
+i
+line on the lower right). Again,weraffledgiftcardstothosewhofinishedbothphases.
+Additionally, Table I shows the average p and n for each About half of the 70 participants in this experiment were
+i i
+batch. As expected, the values for n do not vary over time between20and30years,butallagegroupswererepresented.
+i
+(as no priming took place), but the values for p do change. About 3 out of 4 were male. Most participants were from
+i
+France and Germany, because of the mailing lists we used.
+The results of the questionnaire are shown in Appendix B.
+VI. EXPERIMENT3:MOONEYAUTHSTUDY
+Based on the findings of our first study, we conducted
+C. Results
+a third study with the estimated parameters p and n . This
+i i
+experiment is designed as a realistic test of the overall perfor- The main result of this experiment is a precise estimation
+mance of the authentication scheme. of the performance of the proposed authentication scheme.
+91
+After 9 days Previous average
+p = n + 0.07
+0.8
+0.6
+Our average
+p = n + 0.5
+0.4
+0.2
+0
+0 0.2 0.4 0.6 0.8 1
+)segami
+demirp-non
+rof
+lebal
+tcerroc(
+in
+pi (correct label for primed images)
+1
+After 25 days Previous average
+p = n + 0.07
+0.8
+Our average
+p = n + 0.371 0.6
+Ideal
+p = n + 0.5
+0.4
+0.2
+0
+0 0.2 0.4 0.6 0.8 1
+)segami
+demirp-non
+rof
+lebal
+tcerroc(
+in
+pi (correct label for primed images)
+1
+After 264 days Previous average
+p = n + 0.07
+0.8 Our average
+p = n + 0.247
+0.6
+Ideal
+p = n + 0.5
+0.4
+0.2
+0
+0 0.2 0.4 0.6 0.8 1
+)segami
+demirp-non
+rof
+lebal
+tcerroc(
+in
+0.5
+0.45
+0.4
+0.35
+0.3
+0.25
+0.2
+0.15
+0.1
+0.05
+0
+-25 -20 -15 -10 -5 0
+pi (correct label for primed images)
+Fig.4. Primingeffectdeclineovertime:piversusniplotforthefirstbatch
+after9days(top),thesecondbatchafter25days(center),andthethirdbatch
+after264days(bottom).
+ytilibaborP
+Measured user
+Simulated user
+Optimal attacker
+Score
+0.5
+0.45
+0.4
+0.35
+0.3
+0.25
+0.2
+0.15
+0.1
+0.05
+0
+5 10 15 20 25 30
+ytilibaborP
+Measured user
+Simulated user
+Optimal attacker
+Score
+Fig. 5. Distribution of measured (bar, blue) and estimated (solid line, red)
+scoresfordynamicscoring(top)andstaticscoring(bottom).
+In addition, we compare the static and the dynamic scoring
+strategy.
+1)Performance: The complete graphs illustrating the dis-
+tribution of scores are shown in Figure 5, both for dynamic
+scoring (top), and static scoring (bottom). The x-axes give the
+scoresassignedtoarun(roundedtointegersifnecessary),and
+they-axestherelativefrequency.Thebluebarsgivetheactual
+measured distribution determined in the third experiment,
+while the red solid line gives the estimated distribution of
+score values for a legitimate user (see Section VI-C2, using
+the estimated parameters p and n from above). The green
+i i
+dashed line gives the distribution of an impostor using the
+optimal strategy as described in Section III-F.
+Wemeasuretheperformanceoftheschemeintermsofthe
+false acceptance and false reject rates. The false acceptance
+rate (FAR) is an indicator for the security of the protocol; it
+gives the likelihood that an impostor is (falsely) classified as
+a legitimate user, i.e., “accepted”. For fallback authentication
+10TABLEIII. PERFORMANCEOFTHESCHEMEFORPARAMETERS TABLEIV. STATISTICSONTHEOVERALLTIMING(INSECONDS)FOR
+|IP|=|IN|=10. EXPERIMENT3.
+Target Score ResultingFRR Mean Median Max Min SD Var
+FAR Thres. Sim. Meas.
+Enroll-Tutorial 24 23 58 13 8 58
+Static 0.1% 17 48.9% 76% Enroll-Priming1 113 107 170 99 15 221
+scoring 0.5% 16 27.6% 67% Enroll-Survey 51 47 143 23 20 390
+1.0% 15 13.0% 56% Enroll-Priming2 105 101 186 94 14 196
+Total-Enroll 294 (5minutes)
+Dynamic 0.1% -16 0.30% 2.86%
+scoring 0.5% -16 0.30% 2.86% Auth-Tutorial 28 24 97 3 16 262
+1.0% -16 0.30% 2.86% Auth-Labeling 177 163 472 70 75 5597
+Total-Auth 206 (3.5minutes)
+schemes (which can apply strict rate-limiting and other tech-
+niques to limit the capabilities of an impostor) FARs in the approx. 18 days vs. 20 days). (ii) Being primed on several
+rangeof0.01and0.001canbeconsideredacceptable(Denning images with good priming properties in parallel may cross-
+et al. [16] considered a FAR of 0.005). For a given FAR, contaminate the participant’s memory and thus worsen the
+we can determine the threshold that meets this FAR, which overallrecall.However,fromthisexperimentweseethateven
+providesuswiththefalserejectrate(FRR),i.e.,theprobability if this effect plays a role, its influence is relatively small.
+that a legitimate user is denied access to the system. Denning
+We can also see that the dynamic scoring substantially
+et al. [16] considered an FRR of 0.025 to be acceptable.
+outperforms the static scoring. Table III lists, for several
+Figure 5 and Table III depict the basic performance of the target FARs, the resulting FRRs, both for dynamic and static
+proposedscheme.Wecanseethatforthedynamicscoring,the scoring. We see that for all listed FARs, the resulting FRRs
+scheme achieves simulated FRRs of 0.3% for FARs between are substantially better with dynamic scoring, both for the
+1% and 0.1%, and measured FRRs of 2.86%. (While it measured data and for the simulated values.
+may be surprising that the measured FRR are higher than
+the simulated FRRs, please note that only two participants
+achievedadynamicscoreof−16,whicharesolelyresponsible VII. SECURITYANALYSIS/DISCUSSION
+for the relatively high FRR.) Still, an FRR of 2.86% is pretty
+In the proposed authentication scheme, the priming effect
+much within the bounds of previous work.
+of Mooney images is used to help users memorizing their au-
+Some statistics about the duration of the experiments and thentication secret, using implicit instead of explicit memory.
+the properties of the used Mooney images are summarized in However, it is important to note that, similarly to graphical
+Table I. Some statistics about the duration of each phase is authenticationschemesbasedonexplicitmemory,thesecurity
+given in Table IV. For example, it shows that the enrollment of this scheme relies on the subset I P only, and does not
+phase took 5.0 min on average (including tutorial and ques- depend on the properties of Mooney images. In fact, our
+tionnaire), and the authentication phase 3.5 min. security model considers a powerful attacker who (artificially)
+knows the solution (label) for every image and still fails to
+2)The Simulation: Besides the measured data from the
+authenticate. (There is an indirect dependency, however, as a
+user experiment, we use simulated numbers to provide addi-
+weak priming effect will typically be compensated by a lower
+tional insights. These simulations are based on the estimated
+threshold to control the false acceptance rate and thus make
+parametersp ,n determinedinthefirstexperiment,wherewe
+i i attacks easier.) Once a catalog of images with good priming
+selectedthe20bestimagesandusedthosep ,n .Wesimulated
+i i properties is used (e.g., d >0.5, see Figure 6), the scheme is
+100000 authentication attempts as follows: i
+resilient to rate limited guessing attacks. Note that all users of
+• Choose random subsets I and I from the available the authenticating service share the same set I of such images
+P N
+images. (I P,I N ⊂I). Thus, selecting the images is a one-time task.
+• Simulate a user (primed on I ) logging in, based on the
+P The secret used for authentication is the set of primed
+collected probabilities p , n , and compute the score.
+i i images I , which is a subset of all images presented to the
+• Simulate an optimal adversary (as defined above), and P
+user in the authentication phase I ∪I . Effectively, I is
+compute the score. P N P
+a randomly chosen subset, so there is no bias of user choice
+An interesting observation is that the simulation based involved (in contrast to passwords and many other schemes),
+on the probability values from the previous experiment is whichfacilitatesthesecurityanalysis.Theauthenticationscore
+relatively accurate. We can see that the shape of the simulated computed by our scheme is not only based on the primed
+distribution (red solid line) closely resembles the shape of imagestheusercanidentify,butalsoonthenon-primedimages
+the measured distribution (blue bars). The only substantial that an adversary is not able to determine. As a consequence,
+difference is that the distribution is shifted towards lower an adversary that can decode Mooney images without going
+values, i.e., the mean changes from −8.45 to −9.6 (for the through the priming phase has no advantage for breaking the
+dynamic scoring), and from 16.5 to 14.4 (for the static scor- security of the proposed scheme, if it is unknown on which
+ing). In other words, the performance we measured is slightly images the victim was primed on. Also, a user connecting to
+worsethanpredictedbythesimulation,whichcanhaveseveral the server under a false username and obtaining the presented
+plausible reasons: (i) The time difference between enrollment images does not affect the security. To avoid intersection
+and authentication for Experiment 1 (when estimating the d ) attacks,itismandatorythatthesamesetofnon-primedimages
+i
+was slightly shorter than for Experiment 3 (mean duration of I is presented at each login attempt.
+N
+11can get harder when more images are primed. An experiment
+by Ludmer et al. has used Mooney images to explore memory
+retrievalinthehumanbrainbypriminguserswith30randomly
+selected images [28]. They have shown that if the solution to
+a primed Mooney image is retained one week after priming,
+it is essentially retained to the same degree also three weeks
+afterward. This suggests that even when a larger sample size
+of Mooney images is used retrieval of primed Mooney images
+are likely to retain after longer periods of time.
+VIII. CONCLUSION
+Authentication schemes based on implicit memory relieve
+the user of the burden of actively remembering a secret (such
+as a complicated password). This paper presents a new im-
+plicit memory-based authentication scheme that significantly
+improves previous work by using a more efficient imprinting
+mechanism, namely Mooney images, and optimizing the scor-
+ing mechanism. We implemented a comprehensive prototype
+and analyzed the performance and security of our proposal in
+Fig.6. Exampleimageswithlongtime(264days)low(top,blue)andhigh a series of experiments. Results are promising and show that
+(bottom,red)primingeffects. our scheme is particular suited for applications where timing
+is not overly critical, such as fallback authentication.
+Just like most other schemes, our scheme is susceptible
+to phishing attacks: An attacker can query the authentication
+server for the images, present them to the legitimate user,
+recordthetimings,andreplaythosetotheserver.Allstandard
+measures to prevent phishing attacks apply here as well.
+Furthermore, an active phishing attack is required, i.e., the
+attacker needs to query the server to get the correct set of
+images, which may be detected on the server’s side.
+While passwords can be stored (relatively) secure on the
+login server using iterated password hashes and random salts
+topreventguessingattacks,thisisnotfeasibleforalargerange
+Fig.7. Mooneyimageandthecorrespondingoriginalimage.
+of fallback authentication methods, e.g., as for knowledge
+questions also approximate answers should be counted, which
+typically requires storing the solution in plaintext. Similar,
+there is no (obvious) way to store the secret information (i.e., ACKNOWLEDGMENT
+the indices describing the set I for our scheme).
+P Maximilian Golla is supported by the German Research
+Guessing attacks against our scheme can be avoided just Foundation (DFG) Research Training Group GRK 1817/1.
+as for other fallback authentication schemes. For example,
+by putting substantial limits on the guessing rate (e.g., one
+attempt per day), and a lock-out period, i.e., if account
+recovery is initiated, the original owner is notified, e.g., via
+REFERENCES
+the stored mail, and has 24 hours to abort the recovery if
+[1] A.AdamsandM.A.Sasse,“UsersAreNottheEnemy,”Communica-
+it was started by somebody else. All of these measures are tionsoftheACM,vol.42,no.12,pp.40–46,Dec.1999.
+implemented for other schemes as well. [2] M. D. Barense, J. K. W. Ngo, L. H. T. Hung, and M. A. Peterson,
+“Interactions of Memory and Perception in Amnesia: The Figure-
+We did not study interference properties, i.e., how well a GroundPerspective,”CerebralCortex,vol.22,no.11,pp.2680–2691,
+user can remember a secret if the user is using the system Nov.2012.
+on several servers in parallel (with different sets of primed [3] C. J. Berry, D. R. Shanks, M. Speekenbrink, and R. N. A. Henson,
+images I ). However, most smaller websites use fallback “Models of Recognition, Repetition Priming, and Fluency: Exploring
+P
+authentication by email or use a single-sign-on solution. Thus
+aNewFramework,”PsychologicalReview,vol.119,no.1,pp.40–79,
+Jan.2012.
+a more involved fallback authentication scheme like ours will
+[4] R. Biddle, S. Chiasson, and P. Van Oorschot, “Graphical Passwords:
+mostlybeofinteresttolargeemailprovidersorsocialnetwork
+Learning from the First Twelve Years,” ACM Computing Surveys,
+sites,andthusauserwillonlyuseveryfewparallelinstances. vol.44,no.4,pp.19:1–19:41,Aug.2012.
+[5] J.Blocki,S.Komanduri,L.F.Cranor,andA.Datta,“SpacedRepetition
+Our experiments are conducted on a limited set of
+and Mnemonics Enable Recall of Multiple Strong Passwords,” in
+20 Mooney images out of which 10 were primed. This might
+SymposiumonNetworkandDistributedSystemSecurity,ser.NDSS’15.
+open the question whether retrieval of primed Mooney images SanDiego,California,USA:TheInternetSociety,Feb.2015.
+12[6] H. Bojinov, D. Sanchez, P. Reber, D. Boneh, and P. Lincoln, “Neu- [25] F. Imamoglu, T. Kahnt, C. Koch, and J.-D. Haynes, “Changes in
+roscience Meets Cryptography: Designing Crypto Primitives Secure FunctionalConnectivitySupportConsciousObjectRecognition,”Neu-
+Against Rubber Hose Attacks,” in USENIX Security Symposium, ser. roImage,vol.63,no.4,pp.1909–1917,Dec.2012.
+SSYM’12. Bellevue,Washington,USA:USENIXAssociation,Aug. [26] F. Imamoglu, C. Koch, and J.-D. Haynes, “MoonBase: Generating a
+2012,pp.129–141. Database of Two-Tone Mooney Images,” Journal of Vision, vol. 13,
+[7] J. Bonneau, E. Bursztein, I. Caron, R. Jackson, and M. Williamson, no.9,pp.50–50,Jul.2013.
+“Secrets, Lies, and Account Recovery: Lessons from the Use of [27] J. M. Kizilirmak, J. Galvao Gomes da Silva, F. Imamoglu, and
+PersonalKnowledgeQuestionsatGoogle,”inInternationalWorldWide A. Richardson-Klavehn, “Generation and the subjective feeling of
+Web Conference, ser. WWW ’15. Florence, Italy: ACM, May 2015, “aha!”areindependentlyrelatedtolearningfrominsight,”Psychologi-
+pp.141–150. calResearch,vol.80,no.6,pp.1059–1074,Aug.2016.
+[8] J.Bonneau,C.Herley,P.C.vanOorschot,andF.Stajano,“TheQuestto [28] R.Ludmer,Y.Dudai,andN.Rubin,“UncoveringCamouflage:Amyg-
+ReplacePasswords:AFrameworkforComparativeEvaluationofWeb dala Activation Predicts Long-Term Memory of Induced Perceptual
+Authentication Schemes,” in IEEE Security and Privacy, ser. SP ’12. Insight,”Neuron,vol.69,no.5,pp.1002–1014,Mar.2011.
+SanJose,CA,USA:IEEE,May2012,pp.553–567.
+[29] D.E.MeyerandR.W.Schvaneveldt,“FacilitationinRecognizingPairs
+[9] J.Bonneau,M.Just,andG.Matthews,“What’sinaName?Evaluating of Words: Evidence of a Dependence Between Retrieval Operations,”
+Statistical Attacks on Personal Knowledge Questions,” in Financial JournalofExperimentalPsychology,vol.90,no.2,pp.227–234,Oct.
+CryptographyandDataSecurity,ser.FC’10. Tenerife,CanaryIslands, 1971.
+Spain:Springer,Jan.2010,pp.98–113. [30] D. B. Mitchell, A. S. Brown, and D. R. Murphy, “Dissociations
+[10] J. Bonneau and S. Preibusch, “The Password Thicket: Technical and BetweenProceduralandEpisodicMemory:EffectsofTimeandAging,”
+Market Failures in Human Authentication on the Web,” in Workshop PsychologyandAging,vol.5,no.2,pp.264–276,Jun.1990.
+ontheEconomicsofInformationSecurity,ser.WEIS’10,Cambridge, [31] C. M. Mooney, “Age in the Development of Closure Ability in
+Massachusetts,USA,Jun.2010. Children,”CanadianJournalofPsychology,vol.11,no.4,pp.219–226,
+[11] J. Bonneau and S. Schechter, “Towards Reliable Storage of 56-bit Dec.1957.
+Secrets in Human Memory,” in USENIX Security Symposium, ser. [32] R.Nieva,“YahooWantstoKillPasswords,”Oct.2015,http://www.cnet.
+SSYM’14. SanDiego,California,USA:USENIXAssociation,Aug. com/news/yahoo-wants-to-kill-passwords-with-revamped-mail-app/,
+2014,pp.607–623. asofDecember20,2016.
+[12] J.Brainard,A.Juels,R.L.Rivest,M.Szydlo,andM.Yung,“Fourth- [33] N.Otsu,“AThresholdSelectionMethodfromGray-LevelHistograms,”
+FactorAuthentication:SomebodyYouKnow,”inACMConferenceon IEEETransactionsonSystems,Man,andCybernetics,vol.9,no.1,pp.
+Computer and Communications Security, ser. CCS ’06. Alexandria, 62–66,Jan.1979.
+Virginia,USA:ACM,Nov.2006,pp.168–178. [34] Real User Corporation, “The Science Behind Passfaces,” Jun. 2004,
+[13] C.B.Cave,“VeryLong-LastingPriminginPictureNaming,”Psycho- http://www.realuser.com/published/ScienceBehindPassfaces.pdf, as of
+logicalScience,vol.8,no.4,pp.322–325,Jul.1997. December20,2016.
+[14] D.Davis,F.Monrose,andM.K.Reiter,“OnUserChoiceinGraphical [35] K. Renaud and M. Just, “Pictures or Questions? Examining User
+PasswordSchemes,”inUSENIXSecuritySymposium,ser.SSYM’04. Responses to Association-Based Authentication,” in BCS Conference
+SanDiego,California,USA:USENIXAssociation,Aug.2004,pp.151– on Human-Computer Interaction, ser. HCI ’10. Dundee, UK: ACM
+164. Press,Sep.2010,pp.98–107.
+[15] J.Deng,W.Dong,R.Socher,L.-J.Li,K.Li,andL.Fei-Fei,“ImageNet: [36] M.D.Rugg,R.E.Mark,P.Walla,A.M.Schloerscheidt,C.S.Birch,
+A Large-Scale Hierarchical Image Database,” in IEEE Conference on and K. Allan, “Dissociation of the Neural Correlates of Implicit and
+Computer Vision and Pattern Recognition, ser. CVPR ’09. Miami, ExplicitMemory,”Nature,vol.392,no.6676,pp.595–598,Apr.1998.
+Florida,USA:IEEE,Jun.2009,pp.248–255. [37] D.L.SchacterandR.D.Badgaiyan,“NeuroimagingofPriming:New
+[16] T.Denning,K.Bowers,M.vanDijk,andA.Juels,“ExploringImplicit Perspectives on Implicit and Explicit Memory,” Current Directions in
+MemoryforPainlessPasswordRecovery,”inACMSIGCHIConference PsychologicalScience,vol.10,no.1,pp.1–4,Feb.2001.
+on Human Factors in Computing Systems, ser. CHI ’11. Vancouver, [38] S.Schechter,A.J.B.Brush,andS.Egelman,“It’sNoSecret.Measuring
+BritishColumbia,Canada:ACM,May2011,pp.2615–2618. theSecurityandReliabilityofAuthenticationvia“Secret”Questions,”
+inIEEESymposiumonSecurityandPrivacy,ser.SP’09. SanJose,
+[17] R. J. Dolan, G. R. Fink, E. Rolls, M. Booth, A. Holmes, R. S.
+California,USA:IEEE,May2009,pp.375–390.
+Frackowiak,andK.J.Friston,“HowtheBrainLearnstoSeeObjects
+andFacesinanImpoverishedContext,”Nature,vol.389,no.6651,pp. [39] S.Schechter,S.Egelman,andR.W.Reeder,“It’sNotWhatYouKnow,
+596–599,Oct.1997. ButWhoYouKnow:ASocialApproachtoLast-ResortAuthentication,”
+inSIGCHIConferenceonHumanFactorsinComputingSystems,ser.
+[18] S. L. Garfinkel, “Email-Based Identification and Authentication: An
+CHI’09. Boston,USA:ACMPress,Apr.2009,pp.1983–1992.
+AlternativetoPKI?”IEEESecurityandPrivacy,vol.1,no.6,pp.20–
+26,Dec.2003. [40] C. E. Shannon, “A Mathematical Theory of Communication,” Bell
+SystemTechnicalJournal,vol.27,no.3,pp.379–423,Jul.1948.
+[19] M. S. Gazzaniga, Cognitive Neuroscience: The Biology of the Mind,
+4thed. NewYork,NY,USA:W.W.Norton&Company,Inc,2013. [41] C.Tallon-Baudry,O.Bertrand,C.Delpuech,andJ.Permier,“Oscilla-
+toryGamma-Band(30-70Hz)ActivityInducedbyaVisualSearchTask
+[20] M.A.Gluck,LearningandMemory:FromBraintoBehavior,2nded. inHumans,”TheJournalofNeuroscience,vol.17,no.2,pp.722–734,
+NewYork,NY,USA:WorthPublishers,2014.
+Jan.1997.
+[21] V.GriffithandM.Jakobsson,“Messin’withTexas:DerivingMother’s [42] N.B.Turk-Browne,D.-J.Yi,andM.M.Chun,“LinkingImplicitand
+Maiden Names Using Public Records,” in Conference on Applied ExplicitMemory:CommonEncodingFactorsandSharedRepresenta-
+CryptographyandNetworkSecurity,ser.ACNS’05. NewYork,NY, tions,”Neuron,vol.49,no.6,pp.917–927,Mar.2006.
+USA:Springer,Mar.2005,pp.91–103.
+[43] D.WeinshallandS.Kirkpatrick,“PasswordsYou’llNeverForget,But
+[22] E.Hayashi,R.Dhamija,N.Christin,andA.Perrig,“UseYourIllusion: Can’tRecall,”inACMSIGCHIExtendedAbstractsonHumanFactors
+Secure Authentication Usable Anywhere,” in USENIX Symposium on in Computing Systems, ser. CHI ’04. Vienna, Austria: ACM, Apr.
+UsablePrivacyandSecurity,ser.SOUPS’08. Pittsburgh,PA,USA: 2004,pp.1399–1402.
+ACM,Jul.2008,pp.35–45.
+[44] M. Wilson, “MRC Psycholinguistic Database: Machine-Usable Dic-
+[23] A. Hern, “Google Aims to Kill Passwords,” May 2016, https://www. tionary, Version 2.00,” Behavior Research Methods, Instruments, &
+theguardian.com/technology/2016/may/24/google-passwords-android, Computers,vol.20,no.1,pp.6–10,Jan.1988.
+asofDecember20,2016.
+[45] M.ZviranandW.J.Haga,“AComparisonofPasswordTechniquesfor
+[24] P.-J.Hsieh,E.Vul,andN.Kanwisher,“RecognitionAlterstheSpatial MultilevelAuthenticationMechanisms,”TheComputerJournal,vol.36,
+Pattern of fMRI Activation in Early Retinotopic Cortex,” Journal of no.3,pp.227–237,Mar.1993.
+Neurophysiology,vol.103,no.3,pp.1501–1507,Jan.2010.
+13APPENDIXA
+DETAILSOFTHEPRE-STUDY(EXPERIMENT1)ANDTHELONG-TERMSTUDY(EXPERIMENT2)
+(9days) (25days) (264days)
+1stbatch 2ndbatch 3rdbatch
+No. Percent No. Percent No. Percent
+Age 97 100.0% 129 100.0% 124 100.0%
+20-30 61 62.9% 66 51.2% 69 55.6%
+31-40 27 27.8% 40 31.0% 38 30.6%
+41-49 6 6.2% 14 10.9% 12 9.7%
+50+ 3 3.1% 9 7.0% 5 4.0%
+Gender 97 100.0% 129 100.0% 124 100.0%
+male 81 83.5% 101 78.3% 97 78.2%
+female 16 16.5% 27 20.9% 27 21.8%
+other - - 1 0.8% - -
+Country 97 100.0% 129 100.0% 124 100.0%
+France 40 41.2% 55 42.6% 54 43.5%
+Germany 41 42.3% 44 34.1% 45 36.3%
+other 16 16.5% 30 23.3% 25 20.2%
+NativeEnglishspeaker 97 100.0% 129 100.0% 124 100.0%
+Yes 6 6.2% 4 3.1% 7 5.6%
+No 91 93.8% 125 96.9% 117 94.4%
+Profession 97 100.0% 129 100.0% 124 100.0%
+Administration 4 4.1% 3 2.3% 4 3.2%
+Arts - - - - - -
+Engineering 38 39.2% 55 42.6% 52 41.9%
+Humanities - - 2 1.6% - -
+Lifescience 1 1.0% 1 0.8% 1 0.8%
+Science 53 54.6% 66 51.2% 65 52.4%
+other 1 1.0% 2 1.6% 2 1.6%
+HeardofMooneyimages 97 100.0% 129 100.0% 124 100.0%
+Workedwithbefore - - - - - -
+Heardofbefore 10 10.3% 11 8.5% 8 6.5%
+none 87 89.7% 118 91.5% 116 93.5%
+Passwordsareeasytoremember 97 100.0% 129 100.0% 124 100.0%
+Stronglyagree 4 4.1% 3 2.3% 4 3.2%
+Agree 30 30.9% 32 24.8% 36 29.0%
+Neitheragreenordisagree 33 34.0% 46 35.7% 38 30.6%
+Disagree 27 27.8% 39 30.2% 39 31.5%
+Stronglydisagree 3 3.1% 9 7.0% 7 5.6%
+Passwordsaresecure 97 100.0% 129 100.0% 124 100.0%
+Stronglyagree 2 2.1% 2 1.6% 2 1.6%
+Agree 29 29.9% 35 27.1% 37 29.8%
+Neitheragreenordisagree 36 37.1% 38 29.5% 37 29.8%
+Disagree 25 25.8% 42 32.6% 38 30.6%
+Stronglydisagree 5 5.2% 12 9.3% 10 8.1%
+Mooneyimagesareinterestingtoworkwith 96 100.0% 129 100.0% 124 100.0%
+Stronglyagree 8 8.3% 5 3.9% 9 7.3%
+Agree 46 47.9% 70 54.3% 57 46.0%
+Neitheragreenordisagree 36 37.5% 39 30.2% 48 38.7%
+Disagree 6 6.3% 13 10.1% 9 7.3%
+Stronglydisagree - - 2 1.6% 1 0.8%
+UsingMooneyimagesisfunny 97 100.0% 129 100.0% 124 100.0%
+Stronglyagree 6 6.2% 7 5.4% 7 5.6%
+Agree 37 38.1% 52 40.3% 42 33.9%
+Neitheragreenordisagree 40 41.2% 56 43.4% 59 47.6%
+Disagree 13 13.4% 10 7.8% 14 11.3%
+Stronglydisagree 1 1.0% 4 3.1% 2 1.6%
+14APPENDIXB
+DETAILSOFTHEFINALSTUDY(EXPERIMENT3)
+(21days)
+No. Percent
+Age 70 100.0%
+20-29 39 55.7%
+30-39 22 31.4%
+40-49 6 8.6%
+50-59 2 2.9%
+60+ 1 1.4%
+Gender 70 100.0%
+male 54 77.1%
+female 15 21.4%
+other 1 1.4%
+Nationality 70 100.0%
+France 29 41.4%
+Germany 12 17.1%
+USA 9 12.9%
+other 20 28.6%
+Countryyoucompletingthisin 70 100.0%
+France 37 52.9%
+USA 16 22.9%
+Germany 13 18.6%
+other 4 5.7%
+NativeEnglishspeaker 70 100.0%
+Yes 10 14.3%
+No 60 85.7%
+Profession 70 100.0%
+Arts 2 2.9%
+Business 2 2.9%
+Engineering 24 34.3%
+Humanities 1 1.4%
+Lifescience 6 8.6%
+Science 35 50.0%
+other - -
+HeardofMooneyimages 70 100.0%
+Workedwithbefore 3 4.3%
+Heardofbefore 18 25.7%
+none 49 70.0%
+Mooneyimagesareeasytoremember 70 100.0%
+Stronglyagree 1 1.4%
+Agree 25 35.7%
+Neitheragreenordisagree 35 50.0%
+Disagree 9 12.9%
+Stronglydisagree - -
+15

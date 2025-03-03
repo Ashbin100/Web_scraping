@@ -1,0 +1,1171 @@
+(Cross-)Browser Fingerprinting via OS and
+Hardware Level Features
+Yinzhi Cao Song Li Erik Wijmans†
+Lehigh University Lehigh University Washington University in St. Louis
+yinzhi.cao@lehigh.edu sol315@lehigh.edu erikwijmans@wustl.edu
+Abstract—In this paper, we propose a browser fingerprinting restore lost cookies. Both first and second generation tracking
+technique that can track users not only within a single browser are constrained in a single browser, and nowadays people
+but also across different browsers on the same machine. Specif- are developing third-generation tracking technique that tries
+ically, our approach utilizes many novel OS and hardware level to achieve cross-device tracking [16].
+features, such as those from graphics cards, CPU, and installed
+writing scripts. We extract these features by asking browsers The focus of the paper is a 2.5-generation technique in
+to perform tasks that rely on corresponding OS and hardware
+between the second and the third, which can fingerprint a
+functionalities.
+user not only in the same browser but also across different
+Our evaluation shows that our approach can successfully browsers on the same machine. The practice of using multiple
+identify 99.24% of users as opposed to 90.84% for state of the browsers is common and promoted by US-CERT [42] and
+art on single-browser fingerprinting against the same dataset. other technical people [12]: According to our survey,1 70%
+Further, our approach can achieve higher uniqueness rate than
+of studied users have installed and regularly used at least two
+the only cross-browser approach in the literature with similar
+browsers on the same computer.
+stability.
+The proposed 2.5-generation technique, from the positive
+I. INTRODUCTION
+side, can be used as part of stronger multi-factor user au-
+Web tracking is a debatable technique used to remember thentications even across browsers. From another angle, just
+and recognize past website visitors. On the one hand, web as many existing research works on new cyber attacks, the
+tracking can authenticate users—and particularly a combina- proposed 2.5-generation tracking can also help to improve
+tionofdifferentwebtrackingtechniquescanbeusedformulti- existing privacy-preserving works, and we will briefly discuss
+factorauthenticationtostrengthensecurity.Ontheotherhand, the defense of our cross-browser tracking in Section VII.
+webtrackingcanalsobeusedtodeliverpersonalizedservice—
+Now, let us put aside the good, the bad and the ugly
+iftheserviceisundesirable,e.g.,someunwanted,targetedads,
+usages of web tracking, and look at the technique itself. To
+such tracking is a violation of privacy. No matter whether we
+fingerprint different browsers installed on the same machine,
+like web tracking or whether it is used legitimately in the
+onesimple approachisto useexistingfeatures thatfingerprint
+current web, more than 90% of Alexa Top 500 websites [39]
+single browser. Because many existing features are browser
+adopt web tracking, and it has drawn much attention from
+specific, the cross-browser stable ones are not unique enough
+general public and media [6].
+even when combined together for fingerprinting. That is why
+Web tracking has been evolving quickly. The first- the only cross-browser fingerprinting work, Boda et al. [14],
+generation tracking technique adopts stateful, server-set iden- adopts IP address as a main feature. However, IP address,
+tifiers, such as cookies and evercookie [21]. After that, as a network-level feature, is excluded from modern browser
+the second-generation tracking technique called fingerprint- fingerprinting in the famous Panopticlick test [5] and many
+ing emerges, moving from stateful identifiers to stateless— otherrelatedworks[10,20,26,32,34,36].ThereasonisthatIP
+i.e., instead of setting a new identifier, the second-generation addresschangesifallocateddynamically,connectedviamobile
+technique explores stateless identifiers like plug-in versions network, or a laptop switches locations such as from home to
+and user agent that already exist in browsers. The second- office—and is unavailable behind an anonymous network or a
+generation technique is often used together with the first to proxy.
+†TheauthorcontributedtothepaperwhenhewasaREUstudentatLehigh
+In the paper, we propose a (cross-)browser fingerprinting
+University.
+based on many novel OS and hardware level features, e.g.,
+these from graphics card, CPU, audio stack, and installed
+Permission to freely reproduce all or part of this paper for noncommercial writing scripts. Specifically, because many of such OS and
+purposes is granted provided that copies bear this notice and the full citation hardwarelevelfunctionsareexposedtoJavaScriptviabrowser
+on the first page. Reproduction for commercial purposes is strictly prohibited APIs, we can extract features when asking the browser to per-
+without the prior written consent of the Internet Society, the first-named author
+form certain tasks through these APIs. The extracted features
+(for reproduction of an entire paper only), and the author’s employer if the
+paper was prepared within the scope of employment. can be used for both single- and cross-browser fingerprinting.
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23152 1MoredetailsaboutourexperimentcanbefoundinAppendixA.Let us take WebGL, a 3D component implemented in thenintroducesomefeaturesthatneedmodificationespecially
+browser canvas object, for example. While canvas, especially for cross-browser fingerprinting. Next, we present our newly-
+the 2D part, has been used in single-browser fingerprinting [9, proposed features.
+32], WebGL is actually considered as “too brittle and un-
+Although there are no restrictions for features on single-
+reliable” even for a single browser by a very recent study
+browser fingerprinting, our cross-browser features need to
+calledAmIUnique[26].Thereasonforsuchconclusionisthat
+reflect the information and operation of the level below the
+AmIUniqueselectsarandomWebGLtaskanddoesnotrestrict
+browser, i.e., the OS and hardware level. For example, both
+many variables, such as canvas size and anti-aliasing, which
+vertexandfragmentshadersexposethebehaviorsofGPUand
+affect the fingerprinting results.
+its driver in the OS; the number of virtual cores is a CPU
+ContrastingwiththisconclusiondrawnbyAmIUnique,we feature; the installed writing scripts are OS-level features. The
+showthatWebGLcanbeusednotonlyforsingle-butalsofor reason is that these features in the OS and hardware level are
+cross-browser fingerprinting. Specifically, we ask the browser relative more stable across browsers: all browsers are running
+to render more than 20 tasks with carefully selected computer on top of the same OS and hardware.
+graphics parameters, such as texture, anti-aliasing, light, and
+Note that if an operation, especially the outputs of the op-
+transparency, and then extract features from the outputs of
+eration, is contributed by both the browser and the underlying
+these rendering tasks.
+(OS and hardware) levels, we can use it for single-browser
+Our principal contribution is being the first to use many fingerprinting, but need to get rid of the browser factor in
+novelOSandhardwarefeatures,especiallycomputergraphics cross-browser fingerprinting. For example, when we render an
+ones,inbothsingle-andcross-browserfingerprinting.Particu- image as a texture on a cube, the texture mapping is an GPU
+larly, our approach with new features can successfully finger- operation but the image decoding is a browser one. Therefore,
+print 99.24% of users as opposed to 90.84% for AmIUnique, we can only use PNG, a lossless format, for cross-browser
+i.e., state of the art, on the same dataset for single-browser fingerprinting. For another example, the dynamic compression
+fingerprinting. Moreover, our approach can achieve 83.24% operation of audio signals is performed by both the browser
+uniqueness with 91.44% cross-browser stability, while Boda and the underlying audio stack, and we need to extract the
+et al. [14] excluding IP address only have 68.98% uniqueness underlying features. Now let us introduce these features used
+with 84.64% cross-browser stability. in the paper.
+Our secondary contribution is that we make several inter-
+A. Prior Fingerprintable Features
+esting observations for single- and cross-browser fingerprint-
+ing. For example, we find that the current measurement of In this part of the section, we introduce fingerprintable
+screen resolution, e.g., the one done in AmIUnique, Panop- features that we adopted from state of the art. There are 17
+ticlick [5,17] and Boda et al. [14], is unstable, because the featurespresentedintheTableIoftheAmIUniquepaper[26],
+resolution changes in Firefox and IE when the user zooms and we have all of them for our single-browser fingerprinting.
+in or out the web page. Therefore, we take the zoom level More detailed can be found in their paper. Because many of
+into consideration, and normalize the width and height in such features are browser specific, we adopt a subset with
+screen resolution. For another example, we find that both 4 features for cross-browser fingerprinting, namely screen
+DataURL and JPEG formats are unstable across different resolution, color depth, list of fonts, and platform. Some of
+browsers,becausetheseformatsarewithlossandimplemented these features need modifications and are introduced below.
+differently in multiple browsers and the server side as well.
+Therefore, we need to adopt lossless formats for server-client
+B. Old Features with Major Modifications
+communications in cross-browser fingerprinting.
+One prior feature, screen resolution, needs refactoring
+Our work is open-source and available at https://github.
+for both single- and cross-browser fingerprinting. Then, we
+com/Song-Li/cross browser/, and a working demo is at http:
+introduce another fingerprintable feature, the number of CPU
+//www.uniquemachine.org.
+virtual cores. Lastly, two prior features need major modifica-
+The rest of the paper is organized as follows. We first tions for cross-browser fingerprinting.
+present all the features including old ones adopted and mod-
+Screen Resolution. The current measurement of screen resolu-
+ified from AmIUnique and new ones proposed by us in
+tion is via the “screen” object under JavaScript. However, we
+Section II. Then, we introduce the design of our browser
+findthatmanybrowsers,especiallyFirefoxandIE,changethe
+fingerprinting including the overall architecture, rendering
+resolution value in proportion to the zoom level. For example,
+tasks, and mask generation in Section III. After that, we talk
+if the user enlarges the webpage with “ctrl++” in Firefox and
+aboutourimplementationinSectionIV,anddatacollectionin
+IE, the screen resolution is inaccurate. We believe that the
+SectionV.Weevaluateourapproachandpresenttheresultsin
+zoom level needs to be considered in both single- and cross-
+Section VI. Next, we discuss the defense of our fingerprinting
+browser fingerprinting.
+in Section VII, some ethics issues in Section VIII, and related
+work in Section IX. Our paper concludes in Section X. Specifically, we pursue two separate directions. First, we
+adoptexistingwork[13]onthedetectionofzoomlevelsbased
+on the size of a div tag and the device pixel ratio, and then
+II. FINGERPRINTABLEFEATURES
+adjust the screen resolution correspondingly. Second, because
+In this section, we introduce fingerprintable features used the former method is not always reliable as acknowledged by
+in this paper. We start from features used in prior works, and the inventors, we adopt a new feature, i.e., the ratio between
+2screenwidthandheight,whichdoesnotchangewiththezoom obtainthefontlist.Instead,weadopttheside-channelmethod
+level. mentioned by Nikiforakis et al. [36], where the width and
+height of a certain string is measured to determine the font
+In addition to screen resolution, we also find that some
+type. Note that not all fonts are cross-browser fingerprintable
+other properties, such as availHeight, availWidth, availLeft,
+becausesomefontsarewebspecificandprovidedbybrowsers,
+availTop, and screenOrientation, are useful in both single-
+and we need to apply a mask shown in Section III-C to select
+and cross-browser fingerprinting. The first four represents the
+a subset. Another thing worth noting is that we are aware that
+availablescreensforthebrowserexcludingsystemareas,such
+Fifieldetal.[20]provideasubsetof43fontsforfingerprinting,
+as the top menu and the tool bar of a Mac OS. The last one
+however their work is based on single-browser fingerprinting
+shows the position of the screen, e.g., whether the screen is
+and not applicable in our cross-browser scenario.
+landscape or portrait, and whether the screen is upside down.
+Number of CPU Virtual Cores. The core number can be ob- C. Newly-proposed Atomic Fingerprintable Features
+tained by a new browser feature called hardwareConcurrency,
+which provides the capability information for Web Workers. In this and next subsection, we introduce our newly-
+Now,manybrowserssupportsuchfeature,butsome,especially proposed fingerprintable features. We first start with atomic
+earlyversionsofbrowsers,donot.Ifnotsupported,thereexsits features, and by atomic, we mean that the browser exposes
+a side channel [1] to obtain the number. Specifically, one can either an API or a component directly to the JavaScript. Then,
+monitor the finishing time of payload when increasing the we will introduce composite features, which usually requires
+number of web workers. When the finishing time increases more than one API and component to collaborate.
+significantly at a certain level of web workers, the limit of
+Line, curve, and anti-aliasing. Line and curve are 2D features
+hardware concurrency is reached, making it useful to finger-
+supportedbybothCanvas(2Dpart)andWebGL.Anti-aliasing
+print the number of cores. Note that, some browsers, such as
+is a computer graphics technique used to diminish aliasing
+Safari, will cut the number available cores to Web Workers
+by smoothing jaggies, i.e., jagged or stair-stepped lines, in
+by half, and we need to double the number for cross-browser
+either single line/curve object or the edge of a computer
+fingerprinting.
+graphics model. There are many existing algorithms [4] for
+The number of cores is known by the inventor to be anti-aliasing, such as first-principles approach, signal pro-
+fingerprintable [2] and this is one of the reasons that they cessing approach, and mipmapping, which make anti-aliasing
+call it hardwareConcurrency rather than cores. However, the fingerprintable.
+featureisneverbeingusedormeasuredinpriorartsofbrowser
+Vertex shader. A vertex shader, rendered by GPU and the
+fingerprinting.
+driver, converts each vertex in a 3D model to its coordinate in
+AudioContext.AudioContextprovidesabundleofaudiosignal a 2D clip-space. In WebGL, a vertex shader may accept data
+processing functionalities from signal generation to signal in 3 ways: attributes from buffers, uniforms that always stay
+filtering with the help of audio stack in the OS and the the same, and texture from fragment shader. A vertex shader
+audio card. Specifically, existing fingerprinting work [18] uses is usually combined with a fragment shader described below
+OscillatorNode to generate a triangle wave, and then feed when rendering a computer graphics task.
+the wave into DynamicsCompressorNode, a signal processing
+Fragment shader. A fragment shader, rendered by GPU and
+module that suppresses loud sounds or amplifies quiet sounds,
+the driver as well, processes a fragment, such as a triangle
+i.e., creating a compression effect. Then, the processed audio
+outputted by the rasterization, into a set of colors and a single
+signalisconvertedtothefrequencydomainviaAnalyserNode.
+depth value. In WebGL, fragment shader takes data in the
+Thewaveinthefrequencydomaindiffersfromonebrowser following ways:
+to another on the same machine. However, we find that peak • Uniforms. A uniform value stays the same for every pixel
+valuesandtheircorrespondingfrequenciesarerelativelystable inafragmentduringasingledrawcall.Therefore,uniforms
+across browsers. Therefore, we create a list of bins with small are non-fingerprintable features, and we list it here for
+steps on both the frequency and value axes, and map the peak completeness.
+frequencies and values to the corresponding bins. If one bin • Varyings. Varyings pass values from the vertex shader to
+contains a frequency or value, we mark the bin as one and the fragment shader that interpolates between these values
+otherwise zero: such list of bins serve as our cross-browser and rasterizes the fragment, i.e., drawing each pixel in the
+feature. fragment. The interpolation algorithm varies in different
+computer graphics cards, and thus varyings are fingerprint-
+In addition to the wave processing, we also obtain the fol-
+able.
+lowing information from the destination audio device: sample
+• Textures. Given a setting of mapping between vertexes
+rate,maxchannelcount,numberofinputs,numberofoutputs,
+and texture, a fragment shader calculates the color of each
+channelcount,channelcountmode,andchannelinterpretation.
+pixel based on the texture. Due to the limited resolution
+Note that to the best of our knowledge, none of existing
+of the texture, the fragment shader needs to interpolate
+fingerprinting works have used such audio device information
+values for a target pixel based on these pixels in the texture
+for browser fingerprinting.
+surroundedbythetarget.Thetextureinterpolationalgorithm
+List of Fonts. The measurement in AmIUnique is based on alsodiffersfromonegraphiccardtoanother,makingtexture
+Flash plugin, however Flash is disappearing very fast, which fingerprintable.
+isalsomentionedandacknowledgedintheirpaper.Atthetime Textures in WebGL can be further classified into several
+ofourexperiment,Flashhasalreadybecomelittlesupportedto categories: (1) normal texture, i.e., the texture that we
+3introduced above; (2) depth texture, i.e., a texture that
+Fingerprints
+contains depth values for each pixel; (3) animating texture, Task
+Manager Store
+i.e., a texture that contains video frames instead of static
+images; and (4) compressed texture, i.e., a texture that Masks Composition
+Server
+accepts compressed format. Tasks
+Transparency via Alpha Channel. Transparency, a feature Client
+Browser Info
+provided by GPU and the driver, allows the background to be
+intermingled with the foreground. Specifically, alpha channel Rendering Processing Hashes
+with a value between 0 and 1 composites background and
+foregroundimagesintoasingle,finaloneusingacompositing
+algebra. There are two fingerprinting points in an alpha chan- Fig. 1: System Architecture
+nel. First, we can use one single alpha value to fingerprint the
+providesdirectAPIsforlightsandshadows,andsomeWebGL
+compositing algorithm between background and foreground.
+libraries (such as three.js) provides high-level APIs built on
+Second,wecanfingerprintthechangesoftransparencyeffects
+top of WebGL’s vertex and fragment shaders for lights and
+when the alpha value increases from 0 to 1. Because some
+shadows.
+graphics cards adopt discrete alpha values, some jumps may
+be observed in the changes of transparency effects. Camera. Camera, or specifically pinhole camera model, maps
+3D points in a space onto 2D points in an image. In WebGL,
+Image encoding and decoding. Images can be encoded and
+acameraisrepresentedbyacameraprojectionmatrixhandled
+compressed in different formats, such as JPEG, PNG, and
+by the vertex and fragment shaders, and can be used to rotate
+DataURL. Some of the formats, such as PNG, are lossless,
+and zoom in and out an object.
+while some, such as JPEG, are compressed with loss of
+information. The decompression of a compressed images is Clipping Planes. Clipping restricts the rendering operations
+afingerprintablefeature,becausedifferentalgorithmsmayun- withinadefinedregionofinterest.In3Drendering,aclipping
+cover different information during decompression. According plane is some distance away from and perpendicular to the
+to our study, this is a single-browser feature, and cannot be camera so that it can prevent rendering surfaces that are too
+used for cross-browser. farfromthecamera.InWebGL,clippingplanesareperformed
+by the vertex and fragment shaders with additional provided
+Installedwritingscripts(languages).Writingscripts(systems),
+algorithms.
+or commonly known as written languages, such as Chinese,
+Korean,andArabic,requiretheinstallationofspeciallibraries
+to display due to the size of the libraries and locality of the III. DESIGN
+languages. Browsers do not provide APIs to access the list of
+installedlanguages,howeversuchinformationcanbeobtained A. Overall Architecture
+via a side channel. Specifically, a browser with a particular
+Figure 1 shows the system architecture. First, the task
+language installed will display the language correctly, and
+manager at the server side sends various rendering tasks, such
+otherwise show several boxes. That is, the existence of boxes
+as drawing curves and lines, to the client side. Note that the
+can be used to fingerprint the presence of that language.
+rendering tasks also involve obtaining OS and hardware level
+information, like screen resolution and timezone. Then, the
+D. Newly-proposed Composite Fingeprintable Features client-side browser renders these tasks by invoking a specific
+API or a combination of APIs, and produces corresponding
+Now, let us introduce our newly-proposed composite fin-
+results, e.g., images and sound waves. Then, these results,
+geprintable features, which are rendered by more than one
+especially images, are converted into hashes so that they can
+browser API or component, and sometimes with additional
+beconvenientlysenttotheserver.Meantime,thebrowseralso
+algorithms built atop of browser APIs.
+collects browser-specific information, such as whether anti-
+Modeling and multiple models. Modeling, or specifically 3D aliasing and compressed textures are supported, which will be
+modelinginthispaper,isacomputergraphicsprocessofmath- used at the server side for fingerprints composition.
+ematicallydescribinganobjectviathree-dimensionalsurfaces.
+Next, when the server collects all the information from
+The vertexes of a model are handled by the vertex shader,
+the client side, the server will start to composite fingerprints.
+and the surface by the fragment shader. Different objects are
+Specifically, a fingerprint is generated from a list of hashes
+represented by different models, and may interact with each
+from the client side and a mask that is a list of one or zero
+otherespeciallywhentechniquesbelow,suchaslighting,exist.
+correspondingtothehashlist—weperforman“and”operation
+Lighting and shadow mapping. Lighting is the simulation of between the list of hashes and the mask, and then generate
+light effects in computer graphics, and shadow mapping is to another hash as the fingerprint. The mask for single-browser
+testwhetherapixelisvisibleunderacertainlightandaddcor- fingerprintingisstraightforward,alistofallones.Themaskfor
+respondingshadows.Therearemanytypesoflighting,suchas cross-browser fingerprinting is composited from two sources.
+ambientlighting,directionallighting,andpointlighting,which First, the collected browser information will contribute to the
+differinthesourcesofthelight.Additionally,manyeffectsare mask: if the browser does not support anti-aliasing, the bit
+accompanied by lights, such as reflection, translucency, light values in the mask for all tasks that involve anti-aliasing are
+tracing,andindirectillumination,whenlightsinteractwithone zero. Second, we will have a different mask for each browser
+computergraphicsmodelormultiplemodels.WebGLdoesnot pair,e.g.,Chromevs.FirefoxandChromevs.WindowsEdge.
+4In the next two sections, we first introduce our rendering camera is placed at the location of [0, 0, -5] for the purpose
+tasks at client side, and then our fingerprints composition, of comparison with Task (c).
+especially how to generate the masks.
+Task (b’): Anti-aliasing+Varyings. The task in Figure 2(b’) is
+to test the anti-aliasing feature, i.e., how browsers smooth the
+B. Rendering Tasks
+edge of models. Specifically, we adopt the same task in Task
+In this section, we introduce different rendering tasks (b), and add anti-aliasing. If we enlarge Figure 2(b’), we will
+proposed in this work. Before that, let us first present the find that the edges of both models are smoothed.
+basiccanvassettingbelow.Thesizeofthecanvasis256×256.
+The axes of the canvas are defined as follows. [0, 0, 0] is the
+Task(c):Camera.ThetaskinFigure2(c)istotestthecamera
+middle of the canvas, where x-axis is the horizontal line that feature, i.e., a projection matrix fed into the fragment shader.
+increases to the right, y-axis is the vertical line that increases Every setting in this task is the same as Task (a) except for
+to the bottom, and z-axis increases when moving far from the the camera, which is moved to a new location of [-1, -4, -10].
+screen. An ambient light with the power of [R: 0.3, G: 0.3, B: ThesamecubelookssmallerthantheoneinTask(a),because
+0.3] on a scale of 1 is present, and a camera is placed at the the camera is moved further from the cube (the z-axis is -10
+location of [0, 0, -7]. These two components are necessary, as opposed to -5).
+because otherwise the model is entirely black. In the rest of
+Task (d): Lines and Curves. The task in Figure 2(d) is to
+the paper, unless specified, such as Task (d) with 2D features
+test lines and curves. One curve and three lines with different
+and other tasks with additional lights, we use the same basic
+angles are drawn on a canvas. Specifically, the curve obeys
+settings in all the tasks.
+the following function: y = 256 − 100cos(2.0πx/100.0) +
+NotethatunlikethesettingsinAmIUnique[26],ourcanvas 30cos(4.0πx/100.0) + 6cos(6.0πx/100.0), where [0, 0] is
+setting is reliable when the condition of the current window the left and top of the canvas, x-axis increases to the right,
+changes. Specifically, we tested three different changes: win- and y-axis increases to the bottom. The starting and ending
+dow size, side bar, and zoom-level. First, we manually change points of three lines are {[38.4, 115.2], [89.6, 204.8]}, {[89.6,
+thewindowsize,andfindthatthecontentsinthecanvasremain 89.6], [153.6, 204.8]}, and {[166.4, 89.6], [217.6, 204.8]}.
+the same both visually and computationally in terms of hash We choose these specific lines and curves so that we can test
+value. Second, we zoom in and out the current window, and different gradients and shapes.
+find that the contents change visually according to definition,
+Task(d’):Anti-aliasing+LinesandCurves.Task(d’)isananti-
+butthehashvalueremainthesame.Lastly,weopenabrowser
+aliasing version of Task (d).
+console as a side bar, and find that the canvas contents also
+remain the same similar to changing window size. Now let us
+Task (e): Multi-models. The task in Figure 2(e) is to test how
+introduce our rendering tasks from Task (a) to (r).
+different models influence each other in the same canvas. In
+Task (a): Texture. The task in Figure 2(a) is to test the regular addition to the Suzanne model, we introduce another model
+texture feature in the fragment shader. Specifically, a classical thatlookslikeasingle-personarmedsofa(calledsofamodel),
+Suzanne Monkey Head model [19] is rendered on a canvas and put two models in parallel. Another randomly-generated
+with a randomly-generated texture. The texture, a square with texture following the same procedure described in Task (a) is
+a size as 256×256, is created by randomly picking a color for mapped to the sofa model.
+eachpixel.Thatis,wegeneratethreerandomvaluesuniformly
+Task(f):Light.ThetaskinFigure2(f)istotesttheinteraction
+between 0 and 255 for three primary colors—red, green and
+ofadiffuse,pointlightandtheSuzannemodel.Adiffuse,point
+blue—at one pixel, mix three primary colors together, and use
+light causes diffuse reflection when illuminating an object.
+it as the color for the pixel.
+Specifically, the light is white with the same values across
+We choose this randomly-generated texture rather than RGB, the power of the light is 2 for each primary color, and
+a regular one, because this texture has more fingerprintable the light source is located at [3.0, -4.0, -2.0].
+features. The reasons are as follows. When a fragment shader
+maps a texture to a model, the fragment shader needs to We choose a white light source in this task because the
+interpolate points in the texture so that the texture can be textureiscolorful,andasingle-colorlightmaydiminishsome
+mapped to every point on the model. The interpolation al- subtledifferencesonthetexture.Thepowerofthelightisalso
+gorithm differs from one graphic card to another, and the carefullychosen,becauseaveryweaklightwillnotilluminate
+difference is amplified when the texture changes drastically theSuzannemodel,makingitinvisible,butaverystronglight
+in color. Therefore, we generate this texture in which colors willmakeeverythingwhiteanddiminishallthefingerprintable
+change greatly between each pair of adjacent pixels. features. In a small scale experiment with 6 machines, when
+increasing the power from 0 to 255, we find that when the
+Task(b):Varyings.Thistask,showninFigure2(b),isdesigned light power is 2, the pixel differences among these machines
+to test the varying feature of the fragment shader on a canvas. are the maximum. The light position is randomly chosen and
+Different varying colors are drawn on six surfaces of a cube does not affect the feature fingerprinting results.
+model with a specification of the color of four points on each
+surface. We choose this varying color to enlarge the color Task (g): Light and Models. The task in Figure 2(g) is to test
+differences and changes on each single surface. For example, theinteractionofasingle,diffuse,pointlightandtwomodels,
+when blue is abundant (such as 0.9 with a scale of 1) on because one model may create a shadow on another when
+one vertex of a surface, the other vertex will lack blue (such illuminated by a point light. Every setting of light is the same
+as 0.1) and have more green or red color. Additionally, a as Task (f), and the models are the same as Task (e).
+5(a)Texture (b)Varyings (b’)Anti-aliasing (c)Camera (d)Lines&Curves (e)Multi-models (f)Light
+(g)Light&Models (h)SpecularLight (i)TwoTextures (j)Alpha(0.09–1) (k)ComplexLights (l)ClippingPlane (m)CubemapTexture
+(n)DDSTextures (o)PVRTextures (p)FloatTexture (q)Video (r)WritingScripts(Systems)
+Fig. 2: Client-side Rendering Tasks for the Purpose of Fingerprinting
+Task (h): Specular Light. The task in Figure 2(h) is to test augmentedin0.01,becausemanyGPUsdonotacceptsmaller
+the effects of a diffuse point light with another color and a steps. Second, the Suzanne and sofa models are positioned so
+specular point light on two models. Similar to diffuse point that they are partially overlapped and the hidden structure of
+light, a specular point light will cause a specular reflection on thesofamodelisvisiblewhenthemodelbecomestransparent.
+an object. Specifically, both lights are located at [0.8, -0.8, - For example, the arm of the sofa model is partially visible
+0.8], the RGB of the diffuse point light is [0.75, 0.75, 1.0], when viewing from the back of the model.
+and the RGB of the specular light is [0.8, 0.8, 0.8].
+Task (k): Complex Lights. The task in Figure 2(l) is to test
+There are two things worth noting. First, we choose the complex light features, such as reflection, moving lights, and
+specific camera location because it is closer to the models and lighttracingamongmultiplemodels.Specifically,wegenerate
+hasbiggereffects.Particularly,onemaynoticethespotonthe 5,000 metallic ring models with different angles randomly
+backofthesofamodelilluminatedbythespecularpointlight. placedonthegroundandpiledtogether.Forreliability,weuse
+Second,althoughthecolorofthediffusepointlightistowards aseededrandomnumbergeneratorwiththesamerandomseed
+blue, but still has much red and green. We want to test other everytimesothatthetestcanberepeatedondifferentbrowsers
+colors, but white light is still the best for fingerprinting given andmachines.Twopointlightsources,yellowandred,towards
+that the texture is colorful. the bottom are circling around in the right top corner of the
+entirescene.Whenlightsilluminatetheringsunderneath,other
+Task (h’): Anti-aliasing+Specular Light. Task (h’) is an anti-
+rings also get illuminated through reflection and two colors
+aliasing version of Task (h).
+from different sources are intermingled together.
+Task (h”): Anti-aliasing+Specular Light+Rotation. Task (h’)
+Note that we choose single-color light sources because the
+is the same as Task (h’) but with 90 degree rotation.
+models are not colorful, and lights with colors will illuminate
+Task (i): Two Textures. The task in Figure 2(i) is to test the more details on the rings. Furthermore, lights with different
+effects of mapping two different textures to the same objects. colors will interact with each other and create more detailed
+On top of Task (h), i.e., every other setting is the same, we effects.
+map another layer of randomly-generated texture to both the
+Suzanne and sofa model. Task (k’): Anti-aliasing+Complex Lights. Task (k’) is an anti-
+aliasing version of Task (k).
+Task(j):Alpha.ThetaskinFigure2(j)consistedof8sub-tasks
+is to test the effects of different alpha values. Specifically, we Task (l): Clipping Plane. The task in Figure 2(n) is to test
+put the Suzanne and sofa models in parallel, and change the the movement of a clipping plane and the FPS. Specifically,
+alpha values chosen from this specific set, {0.09, 0.1, 0.11, we put a static positive tetrahedron on the ground, illuminate
+0.39,0.4,0.41,0.79,1},where0meanscompletelytransparent it with collimated light, and move the clipping plane so that
+and 1 no transparency. theobserverfeelsthatthetetrahedronismoving.Thecaptured
+image in Figure 2(n) is upside down when the clipping plane
+Again, there are two things worth noting. First, we choose
+moves to that position.
+this value set carefully to reflect different alpha values and
+small value changes: three representative values {0.1, 0.4, Task (m): Cubemap Texture+Fresnel Effect. The task in Fig-
+0.8} as well as their nearby values are selected. Values are ure 2(n) is to test cubemap texture and fresnel effect in
+6light reflection. Particularly, cubemap texture [7] is a special Algorithm 1 Cross-browser Mask Generation
+texture that utilizes the six faces of a cube as the map Input:
+shape, and fresnel effect is an observation that the amount M :thesetofallpossiblemasks.
+of reflected light depends on the viewing angle. We create a
+Hbrowser,machine={Hashtask1,Hashtask2,Hashtask3,...}:thehash
+listforalltherenderingtasksononebrowserofaspecificmachine.
+cubemap texture with a normal campus scene, and put several Hbrowser ={Hbrowser,machine1,Hbrowser,machine2,...}:thehashlist
+transparent bubbles on top of the texture for the fresnel effect. forabrowser.
+All the bubbles are moving randomly and bumping to each
+HS={Hchrome,Hfirefox,Hopera,..}:theoverallhashlist.
+Process:
+other in animation. 1: forallpossible{hbrowser1,hbrowser2}⊂HSdo
+2: Maxuniq←0
+Task (n): DDS Textures. DDS Textures refer to those that use 3: Maxmask←null
+DirectDraw Surface file format, a special compressed data 4: formaskinM do
+5: FS←{}
+format with the S3 Texture Compression (S3TC) algorithm. 6: Count←0
+There are five different variations of S3TC from DXT1 to 7: form1∈hbrowser1andm2∈hbrowser2do
+DXT5, and each format has an option to enable mipmapping,
+8: ifm1&mask==m2&maskandm1&mask∈/FSthen
+9: Count++
+a technique to scale high-resolution texture into multiple 10: FS.add(m1&mask)
+resolutions within the texture file. Because DXT2 is similar 11: endif
+12: endfor
+to DXT3 and DXT4 similar to DXT5, Task (p) only tests 13: Uniq←Count/size(hbrowser1)
+DXT1, DXT3, and DXT5 with and without mipmapping in 14: ifUniq>Maxuniq then
+each column as shown in Figure 2(p). For comparison, we
+15: Maxuniq←Uniq
+16: Maxmask←Mask
+also include an uncompressed texture with ARGB format in 17: endif
+therightmostcolumn.TherearetwograycubesinFigure2(p) 18: endfor
+becauseDXT3andDXT5withmipmappingisunsupportedon
+19: Maxmask isthemaskforbrowser1and2.
+20: endfor
+that specific machine.
+Task(o):PVRTextures.PVRtexture,orcalledPVRTCtexture,
+is another texture compression format adopted mostly by each writing script in its own language is rendered in the
+mobile devices, such as all iPhone, iPod Touch, and iPad as browser. If the writing script is supported, the rendering will
+well as some Android products. Based on the size of data succeed; otherwise, a set of boxes will be shown instead of
+blocks, there are two modes: 4 bit mode and 2 bit mode. the script. Therefore, we can detect the boxes to test whether
+Further, there are two popular versions, v1 and v3, and we thebrowsersupportsthescript:Forexample,Figure2(t)shows
+can choose to enable mipmapping as well. In total, Task (q), thatJavanese,Sudanese,LontaraandThaanaarenotsupported
+shown in Figure 2(q), has 8 subtasks that enumerate different in that specific tested browser. Our current test list has 36
+combinationsofbitmode,version,andmipmapping.Similarly, writing scripts obtained from Wikipedia [8] and ranked by
+a gray cube means that the format is not supported. their popularity.
+Task (p): Float Textures. Float texture, or called floating point
+C. Fingerprints Composition
+texture, uses floating points instead of integers to represent
+color values. A special type of floating point texture is depth
+In this section, we present how to form a fingerprint
+texture that contains the data from the depth buffer for a
+at the server side based on the hashes from the client-side
+particular scene. Task (r), shown in Figure 2(r), is adopted
+renderingtasks.Asmentioned,afingerprintisahashcomputed
+from an existing online test [15] for the purpose of rendering
+from an “and” operation of the hash list of all the tasks and
+float and depth textures.
+a mask. The mask is straightly all ones for single-browser
+Task (q): Video (Animating Textures). The task in Figure 2(s) fingerprinting, and computed from two sub-masks for cross-
+is to test the decompression of videos. Specifically, we create browserfingerprinting.Wehavetalkedaboutthefirstsub-mask
+a two-second static scene video from a PNG file with three computed from the fact whether a browser support certain
+different compression formats (namely WebM, high quality functionalities in Section III-A, and now will discuss the
+MP4, and standard MP4), maps the video as an animating second sub-mask, which differs for every browser pair.
+texture to a cube, and capture six consecutive frames from the
+The generation of the mask for every two browsers is a
+video.
+training-basedapproach.Specifically,weuseasmallsubsetto
+Note that although all the videos are created with one obtain a mask that optimizes both the cross-browser stability
+single PNG file, the captured frames are different because the and the uniqueness. Note that similar to false positive and
+compressionalgorithmiswithloss.Wechoosesixconsecutive negative, these two numbers, i.e., cross-browser stability and
+frames because JavaScript only provides an API to obtain uniqueness, are two sides of a coin: When the cross-browser
+frames at a certain time but not with certain frame numbers— stability increases, uniqueness decrease, and vice versa. Let
+six consecutive frames can make sure that the target frame is us think about two extreme examples. If we use single-
+within the set based on our experiment. browser features, the cross-browser stability is zero but the
+uniqueness is the highest. At contrast, if we use only one
+Task (r): Writing Scripts. The task in Figure 2(t) is to obtain
+feature, e.g., platform, the cross-browser stability is 100% but
+the list of supported writing scripts, such as Latin, Chinese,
+the uniqueness is very low.
+and Arabic, in a browser. Because none of existing browsers
+provide an API to obtain the list of supported writing scripts, Algorithm 1 shows the training procedure of the mask for
+we adopt a side channel to test the existence of each writing every browser pair. We adopt a brute-force search: though not
+script. Specifically, the method is as follows. The name of the most efficient but the most effective and complete. Due to
+7TABLEI:NormalizedEntropyforSixAttributesoftheDataset
+the small size of the training data, we realize that brute force Collected by Our Approach, AmIUnique, and Panopticlick
+is possible and produces the best result. Specifically, we first (The last two columns are copied from the AmIUnique paper)
+enumerateeverybrowserpair(Line1),andtheneverypossible
+mask(Line4).Foreachmask,wegothroughthetrainingdata Ours AmIUnique Panopticlick
+(Line 7), and make sure to select the mask that maximizes the
+UserAgent 0.612 0.570 0.531
+cross-browser stability multiplying the uniqueness (Line 8–11
+ListofPlugins 0.526 0.578 0.817
+and 14–17).
+ListofFonts(Flash) 0.219 0.446 0.738
+ScreenResolution 0.285 0.277 0.256
+IV. IMPLEMENTATION
+Timezone 0.340 0.201 0.161
+Our open-source implementation, excluding all the open- CookieEnabled 0.001 0.042 0.019
+source libraries (e.g., three.js, a JavaScript 3D library, and
+glMatrix, a JavaScript library for matrix operations), has
+withonebrowseranddoesnotfinishthetwo-browsertask.We
+approximately 21K Lines of Code (LoC). Specifically, our
+use all the fingerprints directly for single-browser fingerprint-
+approach involves approximately 14K lines of JavaScript, 1K
+ing. For cross-browser fingerprinting, the dataset is divided
+lines of HTML, 2.4K lines of Coffeescript, 500 lines of C
+equally into ten parts for each browser pair if there is enough
+code, and 3.7K lines of Python code.
+data: one for the generation of masks, and the other nine for
+Wenowdivideourcodeintoclientandserver,anddescribe testing.
+below.Theclient-sidecodehasamanagerinJavaScriptthatis
+generatedfromCoffeescript.Themanagerperformsthreejobs:
+A. Comparing Our Dataset with AmIUnique and Panopticlick
+(1)loadingalltherenderingtasks,(2)collectingalltheresults
+from the rendering tasks as well as browser information, and The purpose of this part of the section is to compare
+(3) sending the results to a snippet of JavaScript that performs our dataset with AmIUnique and Panopticlick in the metrics
+hashesandthencommunicateswiththeserver-sidecode.Tasks of normalized Shannon’s entropy invented in the AmIUnique
+(n) and (o) are written in C and converted to JavaScript via paper. Specifically, Equation 1 shows the definition according
+Emscripten.AllotherrenderingtasksarewritteninJavaScript to their paper:
+directly:Tasks(k)–(m)arewrittenwiththehelpofthree.js,and
+the rest tasks are directly using either WebGL or JavaScript H(X) −(cid:80) P(x )log P(x )
+APIs. All rendering tasks have used glMatrix for vector and NH = = i i 2 i (1)
+H log (N)
+matrix operations. M 2
+TheserversideofourimplementationiswritteninPython, H(X)istheShannon’sentropywhereX isavariablewith
+servingasamoduleofanApacheserver.Ourserver-sidecode possible values {x ,x ,..} and P(X) a probability function.
+1 i
+can be further divided into two parts: the first with 1.2K LoC H is the worse case scenario in which every fingerprint has
+M
+forcommunicatingwiththeclient-sidecodeandstoringhashes the same probability and we have the maximum entropy. N is
+into a database and images into a folder, and the second with the total number of fingerprints.
+2.5K LoC for the analysis such as generating and applying
+masks on the collected fingerprints. Table I shows the comparison result where the statistics
+forAmIUniqueandPanopticlickareobtainedfromTableIIIof
+V. DATACOLLECTION theAmIUniquepaper.Weobservethatthenormalizedentropy
+values of our dataset are very similar to datasets used in past
+We collect data from two crowdsourcing websites, namely approaches except for list of fonts and timezone.
+Amazon Mechanical Turks and MacroWorkers. Specifically,
+we instruct crowdsourcing workers to visit our website via First, the normalized entropy of list of fonts drops 0.22
+two different browsers at their own choice, and if they visit from AmIUnique and 0.52 from Panopticlick. The reason as
+the website via three browsers, they will get paid by a bonus. explained by AmIUnique is that Flash is disappearing. By
+Aftervisiting,ourwebsitewillprovideauniquecodeforeach the time that we collect data, the percentage of browsers
+worker so that she can input it back to the crowdsourcing with Flash support decreases even more when compared with
+website to get paid and optional bonus. Note that in our data AmIUnique. To further validate our dataset, we also calculate
+collection, in addition to hashes, we also send all the images the normalized entropy for the list of fonts collected by
+data to the server—such a step is not needed if deploying our JavaScript. The value is 0.901, very close to the one from
+approach. Panopticlick.
+To ensure that we have the ground truth data, we insert a Second, the normalized entropy of timezone increases
+unique identifier as part of the URL that each crowdsourcing 0.139 from AmIUnique and 0.179 from Panopticlick. The
+worker visits, e.g., http://oururl.com/?id=ABC. The unique reason is that our crowdsourcing workers from MicroWorkers
+identifier is stored at the client-side browser as a cookie so are very international, spanning from Africa and Europe to
+that if the user visits our website again, she will get the same Asia and Latin America. Specifically, MicroWorkers allow us
+identifier.Additionally,weallowonecrowdsourcingworkerto to create campaigns targeting different regions all over the
+take the job only once. For example, the number of Human world, and we did create campaigns for each continental.
+Intelligence Tasks (HITs) in MTurks is one for each worker.
+Another thing worth noting is that the normalized entropy
+In total, we have collected 3,615 fingerprints from 1,903 of cookie enabled is almost zero for our dataset. The reason
+users within three months. Some users just visit our website is that we collect data from crowdsourcing websites, where
+8TABLEII:OverallResultsComparingAmIUnique,Bodaetal.
+excludingIPAddress,andOurApproach(“Unique”meansthe the percentage of fingerprints that are stable across different
+percentage of unique fingerprints out of total, “Entropy” the browsers on the same machine. Although we select features
+Shannonentropy,and“Stability”thepercentageoffingerprints that are stable across browser most of time, fingerprints
+that are stable across browsers. We do not list cross-browser from different browsers might still differ. For example, screen
+number for AmIUnique and single-browser number for Boda resolutions could be different for Boda et al., if the user
+etal.inthetable,becausethesenumberareverylowandtheir chooses different zoom levels in two browsers. For another
+approaches are not designed for that purpose. ) example, GPU rendering might be different for our approach,
+ifonebrowseradoptshardwarerenderingbutanothersoftware
+Single-browser Cross-browser rendering.
+Unique Entropy Unique Entropy Stability Now let us look at the cross-browser fingerprinting results
+for Boda et al. and our approach. Table II shows that our
+AmIUnique[26] 90.84% 10.82
+approach can identify 83.24% of users as opposed to 68.98%
+Bodaetal.[14] 68.98% 6.88 84.64%
+forBodaetal.Thisisahugeincreasewith14.26%difference.
+Ours 99.24% 10.95 83.24% 7.10 91.44%
+The cross-browser stability also increases from 84.64% for
+Boda et al. to 91.44% for our approach. One of the reasons is
+workers need to get paid with cookie enabled. If they disable that we make existing features, such as screen resolution and
+cookies, they cannot even log into the crowdsourcing website. the list of fonts, more stable across different browsers. The
+At contrast, both AmIUnique and Panopticlick attract general entropy also increases from 6.88 for Boda et al. to 7.10 for
+webusersinwhichasmallpercentagemaydisablecookies.In our approach.
+general, there are very few people disabling cookies, because
+cookies are essential for many modern web functionalities.
+B. Breakdown by Browser Pairs
+VI. RESULTS In this part of the section, we break down our results by
+differentbrowserpairsshowninTableIII.Therearesixdiffer-
+In this section, we first give an overview of our results,
+ent types of browsers, and a category called others including
+and then break down the results by different browser pairs
+some uncommon browsers, such as Maxthon, Coconut, and
+and features. Lastly, we present some interesting observation.
+UC browser. The table is a lower triangular matrix due to
+its symmetric property: If we list all the numbers, the upper
+A. Overview
+triangleisexactlythesameasthelower.Themaindiagonalof
+We first give an overview of our results for both single- thetablerepresentssingle-browserfingerprinting,andtheother
+andcross-browserfingerprinting.Specifically,wecompareour partcross-browser.TherearetwoN/AbecauseApplegivesup
+single-browserfingerprintingwithAmIUnique,stateoftheart, thesupportofSafarionWindows,andMicrosoftneversupport
+andourcross-browserfingerprintingwithBodaetal.excluding Internet Explorer and Edge Browser on Mac OS, i.e., Safari
+IP address. Note that although many new features, e.g., these does not co-exist with IE and Edge. There are two dashes as
+in AmIUnique, emerge after Boda et al., these features are wellforothersandEdge/IE/Safari,becausewedonotobserve
+browser specific and we find that the features used in Boda et any such pairs in our dataset.
+al. are still the ones with the highest cross-browser stability.
+Let us first look at the main diagonal. The stability for
+We now introduce how we reproduce the results for these single browser is obviously 100% because we are comparing
+twoworks.AmIUniqueisopen-source[3],andwecandirectly a browser to itself. The browser with lowest uniqueness is
+download the source code from github. Boda et al. provides Mozilla Firefox, because Firefox hides some information,
+an open testing website (https://fingerprint.pet-portal.eu/), and e.g., the WebGL render and vendor, for privacy reasons. The
+we can download the fingerprinting JavaScript directly. We uniqueness for IE and Edge is 100%, showing that both
+believe that the direct usage of their source code minimizes browsersarehighlyfingerprintable.TheuniquenessforOpera,
+all the possible implementation biases. Safari, and other browsers is also 100%, but due to the small
+number of samples in our dataset, we cannot draw further
+The overall results of AmIUnique, Boda et al., and our conclusions for these browsers.
+approach are shown in Table II. Let us first take a look at
+single-browser fingerprinting. We compare our approach with Then,welookatthelowertriangleofthematrixexceptthe
+AmIUnique in terms of uniqueness and entropy. Uniqueness main diagonal, which shows the uniqueness and stability for
+means the percentage of unique fingerprints over the total cross-browser fingerprinting. First, the cross-browser stability
+number of fingerprints, and entropy is the Shannon entropy. for all pairs is very hight (> 85%) except for other browsers
+The evaluation shows that our approach can uniquely identify andOperavs.IE.Becausethenumberofsuchpairsissmall,it
+99.24% of users as opposed to 90.84% for AmIUnique, ishardforustogenerateamaskwithreasonablecross-browser
+counting to 8.4% increase. For the entropy, the maximum stability.
+value is 10.96, and both approaches, especially ours, are very
+Second,theuniquenessforIEandEdgevs.therestisrela-
+closetothemaximum.Thatis,non-uniquefingerprintsinboth
+tively low when compared with other pairs. The reason is that
+approaches are scattered in small anonymous groups.
+bothIEandEdgeareindependentlyimplementedbyMicrosoft
+Then, let us look at the metrics for cross-browser finger- with fewer open-source libraries. That is, the common part
+printing. In addition to uniqueness and entropy, we also cal- shared between IE/Edge and the rest is much less than these
+culate another metrics called cross-browser stability, meaning among the rest browsers. At contrast, the uniqueness between
+9TABLE III: Cross-browser Fingerprinting Uniqueness and Stability Break-down by Browser Pairs
+Browser Chrome Firefox Edge IE Opera Safari Other
+Chrome 99.2%(100%)
+Firefox 89.1%(90.6%) 98.6%(100%)
+Edge 87.5%(92.6%) 97.9%(95.9%) 100%(100%)
+IE 85.1%(93.1%) 91.8%(90.7%) 100%(95.7%) 100%(100%)
+Opera 90.9%(90.0%) 100%(89.7%) 100%(100%) 100%(60.0%) 100%(100%)
+Safari 100%(89.7%) 100%(84.8%) N/A N/A 100%(100%) 100%(100%)
+Other 100%(22.2%) 100%(33.3%) - - 100%(50%) - 100%(100%)
+Note:Theformatofeachcellisasfollows–Uniqueness(Cross-browserStability).
+IEandEdgeisveryhigh:100%uniquenesswith95.7%cross- more fingerprintable contents; at contrast, (k) contains many
+browser stability, meaning that IE and Edge probably share a smalledgesoneachofthebeans,andanti-aliasingwilloccupy
+considerable amount of code. the contents of the beans and diminish some fingerprintable
+contents inside of the beans.
+Third, it is interesting to compare IE and Edge. The
+uniqueness of Edge Browser is higher than IE for all browser Nowletuslookatcross-browserfingerprinting.Thecross-
+pairs. The reason is that Edge Browser introduces more func- browserstabilityistheoppositeofthesingle-browserentropy:
+tionalities, such as a full implementation of WebGL obeying it decreases for (b), (d) and (h), but increases for (k). The
+the standard, which exposes more fingerprinting aspects. reasonisthatanti-aliasingisnotsupportedforallbrowserson
+thesamemachine,makingthestabilitydecreasefor(b),(d)and
+C. Breakdown by Features (h). For similar reason, because anti-aliasing diminishes some
+fingerprintable contents inside the bean, the cross-browser
+In this part of the section, we break down our results stability increases for (k).
+by different features and show it in Table IV. Specifically,
+Table IV can be divided into two parts: the first part above 4)Line&Curves: Task (d) tests the effects of line and
+AmIUniquerowshowingthefeaturesadoptedbyAmIUnique, curves.Theentropyislow(1.09)andthecross-browserstabil-
+the second part below the first showing all the new features ity is high (90.77%), because both lines and curves are simple
+proposed by our approach. Now let us look at different 2Doperationsanddonotdiffertoomuchacrossbrowsersand
+features. machines. We manually compare those cases that are different
+acrossmachinesorbrowsers,andfindthatthemajordifference
+1)Screen Resolution and Ratio: The single-browser en-
+liesinthestartingandendingpointwherethereareoneortwo
+tropy for screen resolution and ratio is 7.41, while the entropy
+pixels shifting.
+for the width and height ratio drops significantly to 1.40.
+The reason is that many resolutions, e.g., 1024×768 and 5)Camera: When comparing the single-browser entropy
+1280×960, share the same ratio. The cross-browser stability for Task (b) and (c), we find that the entropy decreases when
+for screen resolution is very low (9.13%), because users often a camera is added. The reason is that the purpose of the
+zoom in and out the web page as mentioned before. The addedcameraistozoomoutthecube,whichdiminishessubtle
+cross-browser stability for the width and height ratio is high differencesonthesurface.Thecross-browserstabilitiesfor(b)
+(97.57%)butlowerthan100%,becausesomeusersadopttwo and (c) are very similar due to the similarity between (b) and
+screens and put two browsers in separate ones. (c).
+2)ListofFont: DuetotheongoingdisappearanceofFlash,
+6)Texture: Letusfirstcomparenormal,DDS,PVR,cube-
+the entropy for the list of fonts obtained from Flash is as low
+map and float textures. The entropies for float and cubemap
+as2.40,andatcontrasttheentropyforthelistfromJavaScript
+textures are higher than all other textures, because float and
+isashighas10.40.Thatmeansthelistoffontsisstillahighly
+cubemap textures have more information, e.g., the depth in
+fingerprintablefeature,andweneedtoobtainthefeatureusing
+float textures and a cube mapping for cubemap textures.
+JavaScript in the future.
+The entropy for PVR textures is very low (0.14), because
+Note that although the entropy for the font list from PVR textures are mostly supported on Apple mobile devices,
+JavaScript is high, it does not take a significant portion in such as iPhones and iPads. As our dataset is collected from
+our fingerprinting. When we remove this feature, the single- crowdsourcing workers, very few of them will use Apple
+browser uniqueness of our approach only drops from 99.24% mobile devices to perform the crowdsourcing tasks. Another
+to 99.09%, less than 0.2% difference. That is, our approach interesting observation is that the cross-browser stability for
+can still fingerprint users with high accuracy without the font DDS textures is low (68.18%). The reason is that DDS, a
+list feature. Microsoft format, is unsupported on many browsers.
+3)Anti-aliasing: Tasks (b), (b’), (d), (d’), (h), (h’), (k) Second,letuslookattwotextures,i.e.,Task(i).Compared
+and (k’) are related to anti-aliasing. The entropy for single- withTask(h),anotherlayeroftextureisadded,buttheentropy
+browserfingerprintingincreasesfor(b),(d)and(h)whenanti- for both single- and cross-browser fingerprinting decrease.
+aliasing is added, but decreases for (k). The reason is that The reason is that the texture used in our tasks is carefully
+(b), (d) and (h) has fewer edges, and anti-aliasing will add created so that it can contain more fingerprintable features.
+10TABLE IV: Entropy and Cross-browser Stability by Features
+When we add two textures together, some of these features
+Single-browser Cross-browser are diminished, making two-texture task less fingerprintable.
+Feature
+Entropy Entropy Stability 7)Model: Let us compare Tasks (a) and (e) as well as
+Tasks (f) and (g) for the effect of models. Compared to (a)
+Useragent 6.71 0.00 1.39%
+and (f), a sofa model is added to (e) and (g), and the entropy
+Accept 1.29 0.01 1.25%
+increases a little bit, i.e., 0.03 for both tasks. The conclusion
+Contentencoding 0.33 0.03 87.83%
+is that the Sofa model does introduce more fingerprintable
+Contentlanguage 4.28 1.39 10.96%
+features but the increase is very limited.
+Listofplugins 5.77 0.25 1.65%
+Cookiesenabled 0.00 0.00 100.00% 8)Light: Tasks (a), (e), (f), (h), and (k) are related to
+Useoflocal/sessionstorage 0.03 0.00 99.57% lights. Let us first look at Task (f) in which a diffuse, point
+Timezone 3.72 3.51 100.00% light is added to Task (a). The entropy only increases 0.01
+Screenresolutionandcolordepth 7.41 3.24 9.13% forbothsingle-andcross-browserfingerprinting,showingthat
+Listoffonts(Flash) 2.40 0.05 68.00% the diffuse, point light has little impact in fingerprinting. As a
+ListofHTTPheaders 3.17 0.64 9.13% comparison, the effect of a specular light is more apparent
+Platform 2.22 1.25 97.91% because the entropy for Task (h) is an increase of >0.9
+DoNotTrack 0.47 0.18 82.00% when compared to Task (e) in both single- and cross-browser
+Canvas 5.71 2.73 8.17% fingerprinting. Lastly, let us look at Task (k), a complex light
+WebGLVendor 2.22 0.70 16.09% example. The entropy for Task (k) is the highest among all
+WebGLRenderer 5.70 3.92 15.39% tasks except for video, because there are 5,000 models and
+UseofanAdblocker 0.67 0.28 70.78% lights with different colors are reflected among all the models
+and intermingled together.
+AmIUnique 10.82 0.00 1.39%
+9)Alpha: Task (j) tests alpha values from 0.09 to 1. It
+ScreenRatio 1.40 0.98 97.57% is interesting that different alpha values have very different
+Listoffonts(JavaScript) 10.40 6.58 96.52% entropies. In general, the trend is that when the alpha value
+AudioContext 1.87 1.02 97.48% increases, the entropy increases as well but with many fall-
+CPUVirtualcores 1.92 0.59 100.00% backs. We did not test continuous alpha values in our large-
+NormalizedWebGLRenderer 4.98 4.01 37.39% scale experiment, but perform a small-scale one among five
+Task(a)Texture 3.51 2.26 81.47% machines.Specifically,wecomparethedifferedpixelsbetween
+Task(b)Varyings 2.59 1.76 88.25% each Alpha value image and a standard one, and find that
+Task(b’)Varyings+anti-aliasing 3.24 1.66 73.95% the fallbacks are mainly caused by software rendering, which
+Task(c)Camera 2.29 1.58 88.07% approximates alpha values. Additionally, we observe some
+Task(d)Lines&Curves 1.09 0.42 90.77% patterns in the fallbacks, which happens in an approximate
+Task(d’)(d)+anti-aliasing 3.59 2.20 74.88% 0.1 incremental step.
+Task(e)Multi-models 3.54 2.14 81.15%
+10)ClippingPlanes: Task(l)istotesttheeffectofclipping
+Task(f)Light 3.52 2.27 81.23%
+planes, yielding 3.48 single-browser entropy and 1.93 cross-
+Task(g)Light&Model 3.55 2.14 80.94%
+browser entropy with 76.61% stability. The entropy is similar
+Task(h)Specularlight 4.44 3.24 80.64%
+to the one with pure texture, because clipping planes are im-
+Task(h’)(h)+anti-aliasing 5.24 3.71 70.35%
+plemented in JavaScript and do not contribute to fingeprinting
+Task(h”)(h’)+rotation 4.01 2.68 75.09%
+much.
+Task(i)Twotextures 4.04 2.68 75.98%
+Task(j)Alpha(0.09) 3.41 2.36 86.25% 11)Rotation: Task (h”) is a rotation of Task (h’). The
+Task(j)Alpha(0.10) 4.11 3.02 75.31% entropy decreases and the cross-browser stability increases.
+Task(j)Alpha(0.11) 3.95 2.84 75.80% The reason is that the front of the Suzanne model and the
+Task(j)Alpha(0.39) 4.35 3.06 82.75% insideofthesofamodelhasmoredetails.Whenwerotateboth
+Task(j)Alpha(0.40) 4.38 3.10 82.58% models to another angle, the fingerprintable details decreases
+Task(j)Alpha(0.41) 4.49 3.13 81.89% and correspondingly the stability increases.
+Task(j)Alpha(0.79) 4.74 3.12 72.63%
+12)AudioContext: The AudioContext that we measure is
+Task(j)Alpha(1) 4.38 3.07 82.75%
+the cross-browser stable one, i.e., the destination audio device
+Task(k)Complexlights 6.07 4.19 66.37%
+information and the converted waves. The entropy is 1.87,
+Task(k’)(k)+anti-aliasing 5.79 3.96 74.45%
+much smaller than the entire entropy of the entire wave—
+Task(l)Clippingplane 3.48 1.93 76.61%
+which is 5.4 as measured by Englehardt et al. [18].
+Task(m)Cubemaptexture 6.03 3.93 58.94%
+Task(n)DDStextures 4.71 3.06 68.18% 13)Video: Task(q)istestingthevideofeature.Theentropy
+Task(o)PVRtextures 0.14 0.00 99.16% for video is the highest (7.29) among all of rendering tasks,
+Task(p)Floattexture 5.11 3.63 74.41% because decoding video is a combination of the browser, the
+Task(q)Video 7.29 2.32 5.48% driver, and sometimes the hardware as well. At contrast, the
+Task(r)Writingscripts(support) 2.87 0.51 97.91% cross-browser stability for video is very low (5.48%) and the
+Task(r)Writingscripts(images) 6.00 1.98 5.48% entropy alsodrops to2.32. Thereason isthat similar toimage
+encoding and decoding, both WebM and MP4 video formats
+Allcross-browserfeatures 10.92 7.10 91.44%
+are with loss and decoded by the browser. We do not find a
+Allfeatures 10.95 0.00 1.39%
+universal lossless format for videos as we do for images.
+1114)Writing Scripts: Writing scripts are tested in Task (r). Observation1:Ourfingerprintablefeaturesarehighlyreliable,
+We further divide Task (r) into two parts for the purpose of i.e., the removal of one single feature has little impact on the
+cross-browser fingerprinting. The first part, we call it writing fingerprinting results.
+scripts (support), only contains the information of whether
+In this part, we show the impact of removing a single
+certain writing scripts are supported, i.e., a list of zeros and
+feature from both AmIUnique and our approach, and then
+ones where one means supported and zero not. As mentioned,
+measure the uniqueness of both. The results show that the
+we obtain the information via box detection. The second part,
+uniqueness of our fingerprinting is still above 99% when
+we call it writing scripts (images), is the images rendered
+removing any single features in Table IV including all the
+at the client-side. The single-browser entropy for writing
+old ones from AmIUnique and our new ones. At contrast,
+scripts (images) is 3.13 larger than the one for writing scripts
+the uniqueness for AmIUnique drops below 84% if removing
+(support).Thatis,theimagesdocontainmoreinformationthan
+any single one of the following six attributes, namely user
+whether the writing scripts are supported. The cross-browser
+agent,timezone,listofplugins,contentlanguage,listofHTTP
+stabilityforwritingscripts(support)iscalculatedbasedonthe
+headers, and screen resolution and color depth. In sum, our
+results after applying our mask, because some writing scripts
+approach is more reliable than AmIUnique in terms of used
+are shipped with the browser and not cross-browser stable.
+features.
+Correspondingly, the cross-browser entropy for writing scripts
+(support) is lower than the single-browser one.
+Observation 2: Software rendering can also be used for
+15) CPU Virtual Cores: The number of CPU virtual fingerprinting.
+cores, calculated from the HardwareConcurrency value only
+One common understanding for WebGL is that software
+(if not supported, the value is “undefined”), has an entropy
+rendering may diminish all the differences caused by the
+of 1.92 for single-browser fingerprinting. We expect that the
+graphic cards. However, our experiment shows that even soft-
+entropy will increase in the future, because just before our
+warerenderingcanbeusedforfingerprinting.Specifically,we
+submission, Firefox 48 starts to support the new feature.
+select all the data where WebGL is rendered by SwiftShader,
+The cross-browser stability is 100%, because we can detect
+an open source software renderer invented by Google and
+whetherabrowsersupportsHardwareConcurrencyandapplies
+used by Chrome when hardware rendering is unavailable. We
+a customized mask. The cross-browser entropy is different
+calculate a special fingerprint only containing all our GPU
+from the single-browser one due to the size of data, and the
+renderingtasks,i.e.,Task(a)–(p)excludingwritingscriptsand
+normalized entropies for both are very similar.
+video.
+16)Normalized WebGL Renderer: The WebGL renderer
+Due to the high adoption of hardware rendering, we only
+is not cross-browser fingerprintable, partly because different
+collect 88 cases using SwiftShader and find 11 distinct GPU
+browsers provide different levels of information. We extract
+fingerprints with 7 unique ones. The uniqueness of software
+the common information from different browsers, and align
+rendering is definitely much lower than the one of hardware
+the information in a standard format. Compared with the
+rendering but still not zero. That is, we need to be careful
+original WebGL renderer with 5.70 entropy, the entropy for
+when adopting software rendering to mitigate WebGL-based
+the normalized one is 4.98. The reason for the drop is that the
+fingerprinting.
+extraction will discard some information, e.g., for Chrome,
+to align with other browsers, e.g., Edge browser. Correspond-
+Observation3:WebGLrenderingisacombinationofsoftware
+ingly, the cross-browser stability increases from 15.39% for
+andhardwareinwhichthehardwarecontributesmorethanthe
+the original WebGL renderer to 37.39% for the normalized
+software.
+one.
+In this observation, we look at another extreme compared
+There are two things worth noting here. First, the WebGL
+to software rendering, which is Microsoft Basic Rendering.
+vendor does not provide more information than the WebGL
+Microsoft Basic Rendering provides a universal driver for all
+renderer. That is, when we combine both values together, the
+kindsofgraphiccards,i.e.,theuseofMicrosoftBasicRender-
+entropy is the one for WebGL renderer. Second, our GPU
+ing will minimize the effects of software driver and show the
+tasks have much more information than the one provided by
+ones brought by the hardware. Similar to the experiment for
+WebGL vendor and renderer. Some browsers, namely Firefox,
+software rendering, we select these that use Microsoft Basic
+donotprovideWebGLvendorandrendererinformation,which
+Rendering and calculate the fingerprints.
+gives us much room to fill the gap. Furthermore, even when
+a browser provide such information, the entropy for our GPU For similar reasons in software rendering, we only collect
+tasks when combined together is 7.10, much larger than the 32 cases using Microsoft Basic Rendering and find 18 distinct
+5.70 entropy provided by WebGL render. The reason is that GPU fingerprints with 15 unique values. The uniqueness of
+the rendering is a combination of software and hardware, and MicrosoftBasicRenderingislowerthantheoneusingnormal
+WebGL renderer only provides the hardware information for graphic card drivers, meaning that WebGL is rendered by
+hardware rendering. bothsoftwareandhardware.Meanwhile,weconsiderhardware
+makes more contributions, because the uniqueness for Mi-
+crosoftBasicRenderingishigherthantheoneforthesoftware
+D. Observations
+renderer.
+During our experiments and implementations, we have
+observed several interesting facts and shown them below in Observation 4: DataURL is implemented differently across
+this subsection: browsers.
+12Inthisobservation,welookatDataURL,acommonformat VIII. DISCUSSIONSONETHICSISSUES
+used in prior fingerprinting to represent images. Surprisingly,
+We have discussed ethics issues with the institutional
+we find that DataURL is implemented very differently in
+review board (IRB) of our organization, and obtained the
+browsers, i.e., if we convert an image into DataURL, the
+IRB approval.Specifically, although web tracking canbe used
+representationvariesalotacrossbrowsers.Thisisagoodnews
+to acquire private information, the identifiers that we obtain
+forsingle-browserfingerprintingbutbadforcross-browser.As
+from crowdsourcing workers, e.g., the behaviors of computer
+shown in Table IV, the cross-browser rate for Canvas is very
+graphics cards, are not private themselves. Only when the
+low (8.17%), because we adopt the code from AmIUnique
+identifiers are associated with private information, such as
+where DataURL is used to store images.
+browsing history, the combination is considered as private—
+however, this step is out of scope of the research. Our survey
+Observation5:Somedifferencesbetweenrenderingresultsare
+part, i.e., the study about the statistics of multiple browser
+very subtle, i.e., with one or two pixel variance.
+usage in the Appendix A, contains users’ browsing habits. In
+order to ensure privacy, the survey is anonymized and we do
+In this last observation, we manually compare the differ-
+not store user ID from MicroWorkers.
+ences between rendering results, and find that while some
+of them are large, especially between software and hardware
+rendering, some are very subtle, especially when two graphic
+IX. RELATEDWORK
+cards are similar to each other. For example, the Suzanne In this section, we discuss related work on existing web
+model rendered by an iMac and another Mac Pro only differs tracking and anti-tracking techniques.
+one pixel on the texture, and if we rotate the model, the
+difference will be gone.
+A. Web Tracking Techniques and Measurement
+Wefirsttalkaboutthefirstgenerationtracking,i.e.,cookie
+orsuper-cookiebased,andthenthesecondgeneration,browser
+VII. DEFENSEOFTHEPROPOSEDFINGERPRINTING
+fingerprinting.
+In this section, we discuss how to defend our proposed 1)Cookie or Super-cookie based Tracking: There is much
+browser fingerprinting. We will first start from existing de- existingworkfocusingonthemeasurementorstudyofcookie
+fense,thefamousTorbrowser,andthencometosomevisions or super-cookie based web tracking techniques. Mayer et
+of our defense. al.[28]andSanchezetal.[40]conductcomprehensivediscus-
+sionsaboutthird-partytracking,includingtrackingtechniques,
+Tor Browser normalizes many browser outputs to mitigate business models, defense choices and policy debates. Another
+existing browser fingerprinting. That is, many features are important measurement work from Roesner et al. proposes
+unavailable in Tor Browsers—based on our test, only the a comprehensive classification framework for different web
+following features, notably our newly proposed, still exist, tracking deployed in real-world websites [39]. Lerner et al.
+which include the screen width and height ratio, and audio conduct an archaeological study of web tracking, including
+contextinformation(e.g.,samplerateandmaxchannelcount). cookie and super-cookie based as well as browser fingerprint-
+We believe that it is easy for Tor Browser to normalize these ing, from 1996 to 2016 [27]. Soltani et al. and Ayenson
+remaining outputs. et al. measure the prevalence of non-cookie based stateful
+trackingandshowhowtrackingcompaniesusemultipleclient-
+Another thing worth mentioning is that Tor Browser dis-
+sidestatestoregeneratedeletedidentifiers[11,41].Metwalley
+ables canvas by default, and will ask users to allow the usage
+et al. [30] propose an unsupervised measurement of web
+of canvas. If the user does allow canvas, she can still be
+tracking. In addition to tracking behaviors and techniques,
+fingerprinted. The Tor Browser document also mentions a
+Krishnamurthyetal.[22–25]focusontheriskofharmresulted
+unimplemented software rendering solution, however as noted
+from web tracking, showing that not only user’s browsing
+in Section VI-D, the outputs of software rendering also differ
+history, but also other sensitive personal information, such as
+significantly in the same browser. We still believe that this
+name and email, can be leaked out.
+is the way to pursue, but more careful analysis is needed to
+include all the libraries of software rendering. 2)BrowserFingerprinting: Nowletusdiscussbrowserfin-
+gerprinting, the second-generation web tracking. We first talk
+Overall, the idea of defending browser fingerprinting can aboutexistingmeasurementstudies.Yenetal.andNikiforakis
+be generalized as virtualization, and we need to find a correct et al. discuss different second-generation tracking techniques
+virtualization layer. Think about one extreme solution, which used in existing fingerprinting tools and their effectiveness in
+is a browser running inside a virtual machine—everything is theirworks[36,46].Acaretal.[9]performalarge-scalestudy
+normalized in the virtual machine, and the browser outputs of three advanced web tracking mechanisms, one on second-
+are the same across different physical machines. However, the generation web tracking, i.e., canvas fingerprinting, and the
+drawback is that machine virtualization is heavyweight. Tor other two staying on the first-generation web tracking, i.e.,
+browser is another extreme—everything is virtualized as part evercookies and use of ”cookie syncing” in conjunction with
+of a browser. This approach is lightweight, but we need to evercookies. Fifield el al. [20] focus on a specific metric, i.e.,
+find all possible fingerprintable places, such as canvas and the font, of second-generation web tracking. FPDetective [10]
+audio context: If one place is missing, the browser can still conducts a large-scale study of millions of most popular web-
+be somehow fingerprinted. We leave it as our future work to sites by focusing on the font detection with their framework.
+explore the correct virtualization layer. Englehardt et al. [18] also conduct a large-scale study on 1
+13million websites and find many new fingerprinting features, Because PriVaricator is not open source, we could not test
+such as AudioContext. We have used their newly discovered our fingerprinting against their defense.
+fingerprinting features as part of prior ones in Section II of
+our paper as well. X. CONCLUSION
+Now let us talk about browser fingerprinting works. Mow- In conclusion, we have proposed a novel browser finger-
+ery et al. [32] are probably one of the very early works in printingthatcanidentifynotonlyusersbehindonebrowserbut
+proposing canvas-based fingerprinting. Some other works [31, alsothesethatusedifferentbrowsersonthesamemachine.Our
+33]focusonfingerprintingbrowserJavaScriptengine.Nakibly approach adopts OS and hardware levels features including
+et al. [34], a position paper, propose several hardware-based graphic cards exposed by WebGL, audio stack by Audio-
+trackingincludingmicrophone,motionsensorandGPU.Their Context, and CPU by hardwareConcurrency. Our evaluation
+GPU tracking only includes timing-based features, less reli- showsthatourapproachcanuniquelyidentifymoreusersthan
+able than the technique in the paper. Laperdrix et al. [26], AmIUnique for single-browser fingerprinting, and than Boda
+i.e., AmIUnique, perform a most extensive study on browser et al. for cross-browser fingerprinting. Our approach is highly
+fingerprinting with 17 attributes and we have compared with reliable, i.e., the removal of any single feature only decreases
+themthroughoutourpaper.Bodaetal.[14]attemptstoachieve the accuracy by at most 0.3%.
+cross-browser tracking, but their features are old ones from
+single-browser trackingincluding IPaddress. As discussed,IP
+ACKNOWLEDGEMENT
+addresses are unreliable when a machine is using a DHCP,
+behind a NAT, or moved to a new location like a laptop. The authors would like to thank anonymous reviewers for
+their thoughtful comments. This work is supported in part
+Asageneralcomparisonwithexistingworks,ourapproach
+by U.S. National Science Foundation (NSF) under Grants
+introduces many new features on the OS and hardware levels.
+CNS-1646662 and CNS-1563843. The views and conclusions
+For example, we introduce many GPU features such as tex-
+contained herein are those of the authors and should not be
+tures, varyings, lights and models. For another example, we
+interpreted as necessarily representing the official policies or
+alsointroduceasidechanneltodetectinstalledwritingscripts
+endorsements, either expressed or implied, of NSF.
+and some new information in AudioContext. All these new
+features contribute to our high fingerprinting uniqueness and
+cross-browser stability.
+REFERENCES
+[1] Coreestimator.https://github.com/oftn-oswg/core-estimator.
+B. Existing Anti-tracking Mechanisms [2] [email threads] proposal: navigator.cores. https://lists.w3.org/Archives/
+Public/public-whatwg-archive/2014May/0062.html.
+We first talk about existing anti-tracking for the first- [3] [github] Am I Unique? https://github.com/DIVERSIFY-
+generation tracking, and then for the second. project/amiunique.
+[4] [graphics wikia] anti-aliasing. http://graphics.wikia.com/wiki/Anti-
+1)Anti-tracking against Cookie or Super-cookie based Aliasing.
+Techniques: Roesner et al. [39] proposed a tool called Share-
+[5] Panopticlick:Isyourbrowsersafeagainsttracking?https://panopticlick.
+MeNot, defending social media button tracking, such as Face- eff.org/.
+book Like button. Private browsing mode [44,45] isolates [6] Watched: A wall street journal privacy report. http://www.wsj.com/
+normalbrowsingfromprivateoneswithaseparateuserprofile. public/page/what-they-know-digital-privacy.html.
+Similarly, TrackingFree [37] adopts the profile-based isola- [7] [wikipedia] cube mapping. https://en.wikipedia.org/wiki/Cube
+tion and proposes an indegree-bounded graph for the profile mapping.
+creation. The Do Not Track (DNT) [43] header is a opt- [8] [wikipedia] list of writing systems. https://en.wikipedia.org/wiki/List
+of writing systems.
+out approach, which requires tracker compliance. As shown
+by prior works [28,39], DNT cannot effectively protect users [9] G. Acar, C. Eubank, S. Englehardt, M. Juarez, A. Narayanan, and
+C. Diaz, “The web never forgets: Persistent tracking mechanisms in
+from tracking in real world. Users can also disable third-party
+the wild,” in Proceedings of the 2014 ACM SIGSAC Conference on
+cookie, which is supported by most browsers to avoid cookie- ComputerandCommunicationsSecurity,ser.CCS’14,2014,pp.674–
+based tracking. Meng et al. [29] design a policy and empower 689.
+users to control whether to be tracked, but they have to rely [10] G. Acar, M. Juarez, N. Nikiforakis, C. Diaz, S. Gu¨rses, F. Piessens,
+on an existing anti-tracking technique. and B. Preneel, “FPDetective: Dusting the web for fingerprinters,” in
+Proceedings of the 2013 ACM SIGSAC Conference on Computer and
+All the aforementioned works focus on cookies or super- CommunicationsSecurity,ser.CCS’13,2013,pp.1129–1140.
+cookie based web tracking, and can either fully or partially [11] M. Ayenson, D. Wambach, A. Soltani, N. Good, and C. Hoofnagle,
+prevent such tracking. None of them can prevent the proposed “Flashcookiesandprivacyii:Nowwithhtml5andetagrespawning,”
+AvailableatSSRN1898390,2011.
+fingerprinting in this paper, because the proposed belongs to
+[12] S.Berger.Youshouldinstalltwobrowsers.http://www.compukiss.com/
+the second generation, which does not require a server-side,
+internet-and-security/you-should-install-two-browsers.html.
+stateful identifier.
+[13] T. Bigelajzen. Cross browser zoom and pixel ratio detector. https://
+2)Anti-tracking against Browser Fingerprinting: Tor github.com/tombigel/detect-zoom.
+Browser [38] can successfully defend many browser finger- [14] K.Boda,A.M.Fo¨ldes,G.G.Gulya´s,andS.Imre,“Usertrackingonthe
+webviacross-browserfingerprinting,”inProceedingsofthe16thNordic
+printing techniques, including features proposed in our paper.
+Conference on Information Security Technology for Applications, ser.
+Please refer to Section VII for more details. Other than the NordSec’11,2012,pp.31–46.
+normalization technique proposed in Tor Browser, PriVarica-
+[15] F. Boesch. Soft shadow mapping. http://codeflow.org/entries/2013/feb/
+tor [35] adds randomized noise to fingerprint-able outputs. 15/soft-shadow-mapping/.
+14TABLE V: Statistics of Browser Usage
+device fingerprinting,” in IEEE Symposium on Security and Privacy,
+Single >2 >3 Chrome& Chrome& 2013.
+browser browsers browsers Firefox MicrosoftIE/Edge [37] X. Pan, Y. Cao, and Y. Chen, “I do not know what you visited
+last summer - protecting users from third-party web tracking with
+30% 70% 13% 33% 20% trackingfreebrowser,”inNDSS,2015.
+[38] M.Perry,E.Clark,andS.Murdoch,“Thedesignandimplementation
+ofthetorbrowser[draft][online],unitedstates,”2015.
+[39] F. Roesner, T. Kohno, and D. Wetherall, “Detecting and defending
+[16] F. T. Commission. Cross-device tracking. https://www.ftc.gov/news- against third-party tracking on the web,” in Proceedings of the 9th
+events/events-calendar/2015/11/cross-device-tracking. USENIX Conference on Networked Systems Design and Implementa-
+tion,ser.NSDI’12,2012,pp.12–12.
+[17] P. Eckersley, “How unique is your web browser?” in Proceedings of
+the10thInternationalConferenceonPrivacyEnhancingTechnologies, [40] I. Sa´nchez-Rola, X. Ugarte-Pedrero, I. Santos, and P. G. Bringas,
+ser.PETS’10,2010. “Tracking users like there is no tomorrow: Privacy on the current
+internet,”inInternationalJointConference. Springer,2015,pp.473–
+[18] S. Englehardt and A. Narayanan, “Online tracking: A 1-million-site
+483.
+measurementandanalysis,”inProceedingsofthe22NdACMSIGSAC
+ConferenceonComputerandCommunicationsSecurity,ser.CCS’16, [41] A. Soltani, S. Canty, Q. Mayo, L. Thomas, and C. J. Hoofnagle,
+2016. “Flash cookies and privacy,” in AAAI Spring Symposium: Intelligent
+InformationPrivacyManagement,2010.
+[19] A. Etienne and J. Etienne. Classical suzanne monkey from
+blender to get your game started with threex.suzanne. [42] US-CERT. Securing your web browser. https://www.us-cert.gov/
+http://learningthreejs.com/blog/2014/05/09/classical-suzanne-monkey- publications/securing-your-web-browser.
+from-blender-to-get-your-game-started-with-threex-dot-suzanne/. [43] Wikipedia.DoNotTrackPolicy.http://en.wikipedia.org/wiki/Do Not
+[20] D. Fifield and S. Egelman, “Fingerprinting web users through font Track Policy.
+metrics,”inFinancialCryptographyandDataSecurity. Springer,2015, [44] ——.PrivacyMode.http://en.wikipedia.org/wiki/Privacy mode.
+pp.107–124. [45] M. Xu, Y. Jang, X. Xing, T. Kim, and W. Lee, “Ucognito: Private
+[21] S.Kamkar.Evercookie.http://samy.pl/evercookie/. browsing without tears,” in Proceedings of the 22Nd ACM SIGSAC
+[22] B. Krishnamurthy, K. Naryshkin, and C. Wills, “Privacy leakage vs. ConferenceonComputerandCommunicationsSecurity,ser.CCS’15,
+protectionmeasures:thegrowingdisconnect,”inWeb2.0Securityand 2015,pp.438–449.
+PrivacyWorkshop,2011. [46] T.-F.Yen,Y.Xie,F.Yu,R.P.Yu,andM.Abadi,“Hostfingerprinting
+[23] B. Krishnamurthy and C. Wills, “Privacy diffusion on the web: a and tracking on the web: Privacy and security implications,” in Pro-
+longitudinal perspective,” in Proceedings of the 18th international ceedingsofNDSS,2012.
+conferenceonWorldwideweb. ACM,2009,pp.541–550.
+[24] B.KrishnamurthyandC.E.Wills,“Generatingaprivacyfootprinton APPENDIXA
+theinternet,”inProceedingsofthe6thACMSIGCOMMconferenceon SURVEYOFPEOPLE’SUSAGEOFMULTIPLEBROWSERS
+Internetmeasurement. ACM,2006,pp.65–70.
+[25] ——, “Characterizing privacy in online social networks,” in Proceed- In this appendix, we study the statistics of people who
+ingsofthefirstworkshoponOnlinesocialnetworks. ACM,2008,pp. use multiple browsers on the same machine. Note that this
+37–42. is a small-scale, separate study from all other designs and
+[26] P. Laperdrix, W. Rudametkin, and B. Baudry, “Beauty and the beast: experiments of the paper. We perform the study to strengthen
+Divertingmodernwebbrowserstobuilduniquebrowserfingerprints,”
+the motivation of the paper. Our results show that people
+in37thIEEESymposiumonSecurityandPrivacy(S&P2016),2016.
+do use more than one browser on the same machine with a
+[27] A.Lerner,A.K.Simpson,T.Kohno,andF.Roesner,“Internetjonesand
+considerable amount of time.
+theraidersofthelosttrackers:Anarchaeologicalstudyofwebtracking
+from 1996 to 2016,” in 25th USENIX Security Symposium (USENIX
+NowletusintroduceourexperimentsetuponMicroWork-
+Security16),Austin,TX,2016.
+ers, a crowdsourcing website. We conduct a survey with an
+[28] J.R.MayerandJ.C.Mitchell,“Third-partywebtracking:Policyand
+open question that ask survey takers which browser(s) they
+technology,”inSecurityandPrivacy(SP),2012IEEESymposiumon.
+IEEE,2012,pp.413–427. have and normally use as well as how much time in terms of
+[29] W.Meng,B.Lee,X.Xing,andW.Lee,“Trackmeornot:Enablingflex- percentage they spend on each browser. They are free to write
+iblecontrolonwebtracking,”inProceedingsofthe25thInternational anything into a multiple-line text box.
+ConferenceonWorldWideWeb,ser.WWW’16,2016,pp.99–109.
+Here are our experiment results. We have collected 102
+[30] H.MetwalleyandS.Traverso,“Unsuperviseddetectionofwebtrack-
+ers,”inGlobecom,2015. answers with one answer just copying our survey link and an-
+[31] K. Mowery, D. Bogenreif, S. Yilek, and H. Shacham, “Fingerprinting othermentioningabrowserthatdoesnotexist.Afterexcluding
+informationinjavascriptimplementations,”2011. these two invalid answers, we have exactly 100 in total. 95%
+[32] K. Mowery and H. Shacham, “Pixel perfect: Fingerprinting canvas in of the surveyed users have installed more than two browsers
+html5,”2012. because IE or Edge are installed by default. We further count
+[33] M. Mulazzani, P. Reschl, M. Huber, M. Leithner, S. Schrittwieser, the percentage of them using two or more browser regularly,
+E.Weippl,andF.Wien,“Fastandreliablebrowseridentificationwith i.e., they spend at least more than 5% time on one of the
+javascriptenginefingerprinting,”inW2SP,2013.
+browser.
+[34] G. Nakibly, G. Shelef, and S. Yudilevich, “Hardware fingerprinting
+usinghtml5,”arXivpreprintarXiv:1503.01408,2015. TheresultsofpeopleusingbrowsersareshowninTableV.
+[35] N. Nikiforakis, W. Joosen, and B. Livshits, “Privaricator: Deceiving 70%ofthesurveyedtakersusetwoormorebrowsersregularly,
+fingerprinters with little white lies,” in Proceedings of the 24th Inter- and only 30% use a single browser. Browser types in the
+national Conference on World Wide Web, ser. WWW ’15, 2015, pp.
+survey answers include Chrome, Firefox, IE, Edge, Safari,
+820–830.
+Coconut Browser, and Maxthon. The results show that people
+[36] N.Nikiforakis,A.Kapravelos,W.Joosen,C.Kruegel,F.Piessens,and
+G.Vigna,“Cookielessmonster:Exploringtheecosystemofweb-based do use multiple browsers, and cross-browser fingerprinting is
+important and necessary.
+15

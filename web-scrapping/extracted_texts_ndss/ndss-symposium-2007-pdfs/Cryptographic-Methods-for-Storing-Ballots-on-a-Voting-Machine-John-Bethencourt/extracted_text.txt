@@ -1,0 +1,948 @@
+Cryptographic Methods for Storing Ballots on a Voting Machine
+JohnBethencourt DanBoneh BrentWaters
+CarnegieMellonUniversity StanfordUniversity SRIInternational
+Abstract The subliminal-free property ensures that malicious soft-
+wareloadedontheterminalcannotleakcovertinformation
+Adirectrecordingelectronic(DRE)votingmachinemust exposinghowvotersvoted. Notethatwemustassumethe
+satisfyseveralrequirementstoensurevoterprivacyandthe user of the voting machine is actively trying to leak infor-
+integrityoftheelection. Arecent proposal foravotestor- mation about their vote, since they may be under coercion
+age system due to Molnar et al. provides tamper-evidence ortryingtoselltheirvote.
+properties while maintaining voter privacy by storing bal- Molnar et al. [15] propose a vote storage system based
+lots on a programmable, read-only memory (PROM). We on PROM storage, a form of write-once memory. The
+achievethesamepropertiesandprotectagainstadditional data structures used to store the ballots ensure that any il-
+threatsofmemoryreplacementthroughcryptographictech- licit writes to the memory will be detected, thus providing
+niques,withouttheuseofspecialhardware. Ourapproach tamper-evidence. Properties(3)and(4)arealsomaintained
+is based on a new cryptographic primitive called History- bythedatastructuresused. However,thePROMapproach
+HidingAppend-OnlySignatures. does not address the additional threat of one PROM being
+replaced with another. Since the PROM’s must be trans-
+ported from the voting machines to the canvassing facility
+attheendofthepollingperiod,thisthreatmustnotbeun-
+1 Introduction
+derestimated.
+The deployment of electronic voting terminals intro-
+duces the problem of adequately storing votes in digital Ourcontributions. Inthispaper,weproposeanewvote
+form. Avotestoragesystemmuststorevotesonthevoting storage system which builds on the Molnar et al. proposal
+terminal during the election and possibly in archive form byprovidingadditionaltamper-evidenceproperties.Specif-
+long after theend of theelection. Whilethere issomede- ically,itprotectsagainstthethreatofphysicalreplacement
+bateastothepreciserequirementsofavotestoragesystem, of the memory storing the ballots while maintaining the
+somedeployedsystems[12]havebeenshowntobeclearly tamper-evidence, voterprivacy, anddurabilityprovidedby
+inadequate. theprevioussystem. Thenewproposalincursnoadditional
+Molnaretal.[15]recentlyidentifiedsevenrequirements cost in the hardware requirements of the voting machines
+that a vote storage system must satisfy. The four primary and furthermore removes the need for disposable PROM
+requirements are: (1) durable — the storage system must memories (which must be purchased for each election) by
+not lose stored votes if the terminal crashes, (2) tamper- employing cryptographic techniques implemented in soft-
+evident—anauditwilldetectifstoredvotesweremodified ware.
+or deleted, (3) history-hiding — the layout of ballots on The proposed vote storage system is based on a new
+thestoragemediumshouldrevealnoinformationaboutthe cryptographic primitive we call History-Hiding Append-
+order in which ballots were cast, and (4) subliminal-free OnlySignatures(HHAOS),whichisofindependentinter-
+—amaliciousimplementationorusershouldnotbeableto est. We provide two HHAOS schemes and prove them se-
+embedcovertinformationinthevotingrecord. cure.Thefirstisbasedonanyexistingdigitalsignaturesys-
+The history-hiding property is necessary for voter pri- teminastraightforwardmanner,butrequiresthevotingter-
+vacy. The concern is that during the election a coercer minaltostorelargestateanddoesnotsatisfythesubliminal-
+mightkeeptrackoftheorderinwhichvotersvisitedapar- freeproperty. Thesecondsystemisspaceefficientandcan
+ticular voting terminal. Ifthehistory-hiding property does bemadesubliminal-freeatelectionclosetime. Thissecond
+not hold, the coercer could inspect the voting record post- systemmakesuseofaggregatesignaturesingroupswitha
+election and learn how each voter voted. Thus, history- bilinearmap.
+hiding is necessary to prevent coercion and vote buying. The HHAOS primitive builds on an earlier primi-tive called append-only signatures, introduced by Kiltz et and moves on to the signing key for the next time period.
+al.[11]. Thebasicideaisasfollows(wegiveprecisedefi- Unfortunately, most forward secure signatures are inher-
+nitionsinSection2). entlyhistory-preserving. Oneexceptionisaforward-secure
+system due to Itkis and Reyzin [9] which could be made
+• An HHAOS is initialized by generating a public key
+history-independent. The resulting HHAOS, however, is
+PKandan“empty”signatureΦ . Thevotingterminal
+1
+lessefficientthanoursecondconstruction.
+performs this initialization prior to election start. PK
+is printed on paper and stored in a trusted facility. It
+canbereplicatedforhigherassurance. Φ isstoredin 2 History-Hiding,AppendOnlySignatures
+1
+non-volatilememoryinthevotingmachine.
+• LetΦ ibethevalueinnon-volatilememorywhenvoter We start by precisely defining a history hiding append
+number i walks up to the terminal. After the voter onlysignaturesystem. Wethenexplainhowthisdefinition
+casts his vote v i, the terminal runs an append algo- implies the properties discussed in the introduction. For-
+rithm Append(Φ i,v i). This algorithm outputs a new mally,anHHAOSschemeconsistsofthreealgorithms:
+Φ which contains the ballot v . This new Φ is
+i+1 i i+1
+writtentonon-volatilememoryandreplacesΦ . KeyGen(1κ)→PK,Φ
+i
+• At election close the terminal runs algorithm Finalize Givenasecurityparameterκ,produceapublickeyPK
+to update the last Φ and prevent any further appends. and an initial signature Φ, which corresponds to the
+This finalized Φ is published or stored in an archive. emptyset.
+Atanytimepost-election,anyonecanvalidateauthen-
+Append(Φ,x)→Φ′
+ticityofthesetofballotsX ={v ,...,v }usingPK
+1 n
+Given a signature Φ for some set X and a new string
+andthefinalΦ.
+x ∈ {0,1}∗, produce a new signature Φ′ for the set
+To satisfy the tamper-evidence and history-hiding require- X′ =X ∪{x}.
+ments,anHHAOSmustsatisfytwosecurityproperties:
+Verify(PK,X,Φ)→{True,False}
+• Append-only:givenasignatureΦonasetofmessages
+Given a the public key PK and a set X, determine
+X itisdifficulttoremovemessagesfromX. Thatis,
+whetherΦisacorrectsignatureforX.
+itisdifficulttocreateavalidΦ′forasetX′satisfying
+X 6⊆X′. Thesystemmustsatisfythefollowingcorrectnessproperty:
+• History-hiding: given a signature Φ on a set of mes-
+sages X, an adversary cannot determine the order in Definition 1 (Correctness). Let X = {x 1,...x n} ⊆
+whichmessageswereaddedtoX. {0,1}∗. Compute PK,Φ 0 ← KeyGen(1κ) and Φ i ←
+Append(Φ ,x ) for i = 1,...,n. We require that
+i−1 i
+Note that when a new Φ is computed and stored within Verify(PK,X,Φ ) = True. If this holds for all finite
+n
+the voting machine, the previous value is deleted. While X ⊆ {0,1}∗, then the scheme (KeyGen,Append,Verify)
+securely deleting data on a commodity system takes some iscorrect.
+care,itiscertainlypossible[7,5].
+We define security for an HHAOS system using two
+games. Thefirstgamecapturestheappend-onlyproperty.
+Relation to append-only signatures (AOS). Kiltz et
+al. [11] recently introduced the concept of an append-only
+Game1:
+signature (AOS) for the purpose of securing routing pro-
+tocols. They give several elegant constructions and prove Setup The challenger computes PK,Φ 0 ←
+thatAOSisequivalenttohierarchicalidentity-basedsigna-
+KeyGen(1κ)andgivesPKtotheadversary.
+tures. An AOS is closely related to HHAOS — it satisfies Corrupt The adversary sends the chal-
+the same append-only property, but need not be history- lenger an ordered set of strings
+hiding or subliminal-free. Not surprisingly, the construc- X = {x ,x ,...x }. The challenger
+1 2 n
+tionsin[11]arenothistory-hiding. computes Φ ← Append(Φ ,x ) for
+i i−1 i
+each i ∈ {1,...n}, then returns Φ to the
+n
+Relation to forward secure signatures. Forward secure adversary.
+signatures [1] enable one to periodically update the sign-
+Forge TheadversaryreturnsasetY andasigna-
+ing key so that a key compromise at day n does not in-
+tureΦ .
+Y
+validate signatures issued prior to day n. One may be
+tempted to use forward-secure signatures for vote storage: IfVerify(PK,Y,Φ ) = TrueandX 6⊆ Y,thentheadver-
+Y
+aftersigningavotev theterminaldiscardsthesigningkey saryhaswonGame1.Definition2(AppendOnlyUnforgeability). AnHHAOS Setfinalization. Forthevotingapplicationweneedto“fi-
+scheme(KeyGen,Append,Verify)is(t,ǫ)-appendonlyun- nalize” the ballots and prevent any further appends. We
+forgeableifeveryprobabilisticalgorithmwithrunningtime implement this Finalize operation as follows. Let Φ be a
+at most t wins Game 1 with probability at most ǫ. We signatureforasetX. Define
+say the scheme is append only unforgeable if the scheme
+is(t,ǫ)-appendonlyunforgeablewheretisapolynomialin Finalize(Φ)d =ef Append(Φ, “ finalize ”k|X| )
+thesecurityparameterκandǫisnegligibleinκ.
+where |X| is the number of elements in the set X.1 We
+Note that in Game 1 we only give the adversary the
+modifytheVerify(PK,X,Φ)algorithmtoreturnFalseifa
+power to issue a single query X. This captures the vot-
+string “ finalize ” k ℓ is included in X and ℓ 6= |X|−1.
+ingterminalsettingswhereeveryappend-onlychainisused
+Note that without embedding the size of X in the final-
+onlyonce,namelyforonemachineinoneelection.Onecan
+izemessagethereisnothingtopreventadditionalmessages
+extend Game 1 to allow the adversary to adaptively issue
+frombeingappended.
+queriesformultiplesetsX,asin[11]. Sinceherewefocus Now if Φ is a signature for some set X and Φ′ =
+on the application to voting, the definition using Game 1 Finalize(Φ),thenΦ′ maybegiventoVerifybutmaynotbe
+is sufficient. The second game captures the history-hiding
+usedwithAppendtoproducefurthersignatures. Thisfinal-
+property.
+ization operation may optionally be performed after every
+append,thusproducingtwosignatures—onesignatureΦ
+A
+Game2:
+which may be used for further appends and one signature
+Setup The challenger computes PK,Φ 0 ← Φ V whichmayonlybeusedtoverifythecurrentset.
+KeyGen(1κ)andgivesPKtotheadversary.
+Challenge The adversary returns an ordered set Multisetsemantics. Multisetsmaybesupportedbysim-
+X ={x 1,x 2,...x n}andtwopermutations plyappendinganoncetoeachstringadded,thusmaintain-
+λ 0 and λ 1 on X. The challenger flips a ing the uniqueness of each element in the set. Alterna-
+coin b ∈ {0,1} and then computes Φ i ← tively,aserialnumberℓmaybeappendedtoeachelement,
+Append(Φ i−1,λ b(x i)) for i ∈ {1,...n}. whereℓisthenumberofinstancesofthatelementthatare
+ThechallengerreturnsΦ ntotheadversary. already present. Using such a serial number has the ad-
+Guess Theadversaryoutputsaguessb′. vantage of avoiding the additional subliminal channel that
+nonceswouldprovide,butrequirestheappendalgorithmto
+We define the advantage of the adversary in Game 2 to be
+beawareofwhichmessagesthesignaturevalidates.
+|Pr[b′ =b]− 1|.
+2
+Definition 3 (History-Hiding). An HHAOS scheme 3 ASimpleConstruction
+(KeyGen,Append,Verify) is (t,ǫ)-history-hiding if every
+probabilisticalgorithmwithrunningtimeatmostthasad-
+Wenowturntoconstructinghistory-hidingappend-only
+vantage at most ǫ in Game 2. We say that the scheme is
+signatures. We start with a simple construction that builds
+history-hidingifitis(t,ǫ)-history-hidingwheretisapoly-
+an HHAOS from any digital signature system. This con-
+nomialinthesecurityparameterκandǫisnegligibleinκ.
+struction stores large state on the voting terminal and also
+Much related work refers to data structures which are assumesthatanupperboundonthetotalnumberofballots
+history-independent, i.e., independent of the sequence of castisknownaheadoftime.
+operations used to construct them in an information the- Thesystemworksasfollows. LetLbeanupperbound
+oretic sense [15, 14, 16, 4, 8]. Our definition of history- onthenumberofmessagestobesigned. Atsetuptimewe
+hiding is based on a weaker notion of computational prepareLsignaturekeypairs. Thentosigntheithmessage
+indistinguishability. While history-hiding is all that is x i, we pick at random an available key pair, sign x i with
+needed in practice, both our constructions satisfy history- it, and delete the private signing key. The signature con-
+independenceintheinformationtheoreticsense. tainsthelistofmessage-signaturepairsplusalltheunused
+signingkeys.
+2.1 Extensions More precisely, let (G,S,V) be a digital signature sys-
+tem. Here G generates signature key pairs, S signs mes-
+WedescribetwosimplemethodsofadaptinganHHAOS sages, and V verifies signatures. We also need a collision
+scheme. We first show how one can disallow further ap- resistanthashfunctionH (suchasSHA-256). Thegeneric
+pends to a signature. Second, we describe a method for
+1Weassume“finalize”knisaspecialmessagethatcannotappearin
+handlingmultisets,thatis,producingsignaturesthatverify Xforanyn∈Z.WealsoassumethenumberofelementsinXisstored
+thatcertainmessageswereaddedmultipletimes. inΦ.HHAOS,denotedHHAOS , forsigninguptoLmessages Theorem1. If(G,S,V)isexistentiallyunforgeableunder
+S
+worksasfollows: a chosen message attack and H is collision resistant then
+HHAOS isappendonlyunforgeableandhistory-hiding.
+KeyGen(κ)→PK,Φ S
+Run G(κ) L times to generate L signature key pairs The proof is only outlined as the next construction is
+(PK 1,SK 1),...,(PK L,SK L). Output: ourfocus. First, thehistory-hidingpropertyistrivialsince
+thefinalcontentofΦisindependentoftheorderinwhich
+PK←H(PK ,...,PK ) and
+1 L messageswereinserted. Theappendonlypropertyfollows
+Φ← (PK 1,SK 1,null),...,(PK L,SK L,null) from the security of (G,S,V) by a straightforward argu-
+ment. We note that during the append-only unforgeability
+Append(Φ,x)(cid:8) →Φ′ (cid:9)
+game the simulator issues a single chosen-message query
+Let Φ = {(PK ,Y ,Z ),...,(PK ,Y ,Z ) } and
+1 1 1 L L L forPK. Hence,itsufficesthat(G,S,V)isexistentiallyun-
+letx∈{0,1}∗ beastring. Togeneratethenewsigna-
+forgeableagainstasingle-querychosenmessageattack. In
+tureΦ′do:
+particular,(G,S,V)canbeaone-timesignature.
+• Pick a random r ∈ {1,...,L} for which Y 6=
+r
+null. This Y is asigning key forthe public key
+r Performance. ThesizeofΦisalwaysO(L). Thetimeto
+PK .
+r verify a signature is O(L) no matter how many messages
+• Generateasignatureσ ←S(Y ,x)andoutput:
+r wereappendedtoΦ.
+Φ′ ← (PK ,Y ,Z ), ...
+1 1 1
+Subliminal-freeness. We point out that this system is
+(cid:8) PK r, null, (x,σ) , ...
+not subliminal-free. In particular, the machine running
+((cid:0)PK L,Y L,Z L) (cid:1) the Append algorithm could choose the random r pseudo-
+randomly so as to leak the order in which messages were
+TheneteffectonΦisthatthesecretk(cid:9)eySK isdeleted
+r
+added. Forexample,letk beasecretkeyembeddedinthe
+fromtuplerandreplacedbyamessage-signaturepair
+votingterminal. Whenappendingtheithmessage,thevot-
+(x,σ).
+ing terminal can choose the randomness r as r ← F(k,i)
+Verify(PK,X,Φ)→{True,False} whereF isapseudo-randompermutationsuchasAES.The
+Given a public key PK, a set of strings finalsignatureΦwillappeartobeproperlygenerated.How-
+X = {xˆ 1,xˆ 2,...xˆ n}, and a signature Φ = ever, anyone who knows k can recover the exact order in
+{(PK 1,Y 1,Z 1),...,(PK L,Y L,Z L)} do the fol- whichmessageswereappended.
+lowing:
+• If PK 6= H(PK 1,...,PK L), output False and Bounding the number of messages. The system needs
+stop. an a-priori upper bound on the number of messages to be
+• Foralli=1,2 ...,Ldo: signed. Forvotingmachinesthisiseasilyprovided;agen-
+• IfY 6=nullandY isnotavalidsigningkey erousestimatesuggeststhatlessthan3,000votesacrossall
+i i
+forPK ,outputFalseandstop. (∗) individualracesmaybecastinonedayataparticularvot-
+i
+• IfY = nullthenZ isamessage-signature ingmachinebasedonthetimenecessarytocasteach[15].
+i i
+pairZ =(x,σ). Tripling this for safety, we may assume that well under
+i
+9,000 messages will need to be signed at each machine, a
+• If V(PK ,x,σ) = False, output False
+i
+relativelysmallnumber.
+andstop.
+• IfX = {x|∃i,σ : Z =(x,σ)}outputTrue,
+i
+otherwiseoutputFalse. 4 AnEfficientConstruction
+The test on line (∗) is crucial for security — with-
+Oursecondconstruction, HHAOS ,reducesthesizeof
+out it there is a trivial attack on the system. To test E
+Φ so that its size at any moment depends only upon the
+thatY isavalidsigningkeyforPK onecantestthat
+i i numberofmessagessignedsofar. Also,theamountofdata
+V(PK ,m,S(Y ,m))outputsTrueforsomearbitrary
+i i per message is far less than in the previous system. More
+messagem.
+importantly, a further benefit of this construction is that it
+The system clearly satisfies the correctness property for canevadethesubliminalattackonthefirstsystem.
+HHAOS as long as Append is activated no more than L Recall that the system of Section 3 stores in Φ a list of
+times. Securityfollowsfromthesecurityoftheunderlying public-keysplusalistofsignatures.Atahighlevel,oursec-
+signature system (G,S,V) and the collision resistance of ond system improves upon the previous scheme using two
+H. ideas. First, we plan to use an aggregate signature systemto aggregate all the signatures in Φ into a single short sig- (S ,S ) a signature. Then given S ∈ G and S =
+1 2 1 2
+nature. Recallthatanaggregatesignaturesystemcancom- {(x ,z ), (x ,z ), ..., (x ,z )},compute
+1 1 2 2 ℓ ℓ
+press a set of signatures from different public keys and on
+ℓ
+differentmessagesintoasinglesignature. Wewillusethe −1
+v ←e(g,S )· e(H(x ),z ) .
+BGLSaggregatesignaturesystem[2,3]forthispurpose. 1 i i
+Second, and more importantly, we use the fact that a (cid:16)i Y=1 (cid:17)
+BGLS aggregate signature cannot be de-aggregated. That Ifu=vandX ={x 1,...,x ℓ}outputtrue,otherwise
+is,givenanaggregatesignatureitisnotpossibletoremove outputfalse.
+any signature from the aggregate. This in turn means that
+WenotethatifthesetS containedinΦisrepresentedas
+we do not need to pre-generate all the public keys as we 2
+anorderedlistthenAppendmustrandomlypermutetheor-
+didintheprevioussection. Instead, theAppendalgorithm
+deringoftheelementsbeforeoutputtingΦ′. Thisiscrucial
+cangeneratepublic/privatekeypairsontheflyandsimply
+forhistory-hiding.
+append the resulting public-key to Φ. As a result, Φ now
+growsbyonepublic-keypermessagesigned.
+4.3 Properties
+4.1 Background
+Thefollowingthreetheoremscorrespondtothecorrect-
+nessandsecuritypropertiesgiveninSection2. Correctness
+The second construction uses bilinear maps, which we is a matter of simple algebra, append only unforgeability
+nowbrieflyreview. Forfurtherbackgroundsee[2]. LetG followsfromthecomputationalDiffie-Hellmanassumption,
+andG T bemultiplicativegroupsofprimeorderp. Letgbe andhistory-hidingmaybeprovenwithnoassumptions.The
+ageneratorofG. Thenacomputablemape:G×G→G
+T proofs are given in Appendix A. The history-hiding proof
+isabilinearmapif also demonstrates that HHAOS (like HHAOS ) is actu-
+E S
+ally fully history-independent in addition to being history-
+∀x,y ∈G, ∀a,b∈Z, e(xa,yb)=e(x,y)ab (bilinearity)
+hiding.
+and e(g,g) 6= 1 (non-degeneracy). Several efficient im- Theorem2. HHAOS E iscorrect.
+plementations of bilinear maps (e.g., the Weil pairing) are
+Theorem 3. If the computational Diffie-Hellman assump-
+currently available [13]. We also assume a hash function
+tionholdsinG,thenHHAOS isappendonlyunforgeable
+H :{0,1}∗ →Gthatwemodelasarandomoracle. E
+intherandomoraclemodel.
+4.2 Algorithms Theorem4. HHAOS E ishistory-hiding.
+The proof of Theorem 3 uses the fact that a BGLS ag-
+KeyGen(1κ)→PK,Φ
+gregate signature cannot be de-aggregated. That is, given
+Fix groups G and G T of order p, where the size of anaggregatesignatureonasetofmessagesX itisdifficult
+p is a determined by the security parameter κ. Pick to recover an aggregate for a subset of X. This property
+a generator g of the group G and a random exponent wasalreadydiscussedin[2]. CoronandNaccache[6]later
+α←R −Z . Output showedthatde-aggregationisashardastheComputational
+p
+Diffie-Hellmanproblem.
+PK←(g, e(g,g)α) and Φ←(gα, {}) The append-only requirement (Game 1), however, is
+more strict than de-aggregation — we require that the ad-
+HereΦisasignatureontheemptyset. Theexponent versary not be able to produce an aggregate signature on
+αisdiscarded. any set Y where X 6⊆ Y. Hence, append-only security
+isnotdirectlyimpliedbythedifficultyofde-aggregationin
+Append(Φ,x)→Φ′
+BGLS.OurproofofTheorem4.3showsthatthesystemhas
+Given a signature Φ = (S ,S ) and a new string
+1 2 theappend-onlyproperty. Theproofisalittlesimplerthan
+x ∈ {0,1}∗,randomlyselectr ←R − Z p andoutputthe theproofin[6]sinceoursettingsaremoreflexible.
+followingasthenewsignature.
+4.4 Performance
+Φ′ ← S ·H(x)r, S ∪{(x, gr)}
+1 2
+The algorithms KeyGen and Append have very modest
+(cid:0) (cid:1)
+Verify(PK,X,Φ)→{True,False} computationrequirements;Verifyissomewhatmoreexpen-
+Let PK = (g, u = e(g,g)α) be a public key, sive. The KeyGen algorithm requires two modular expo-
+X ={xˆ ,xˆ ,...,xˆ } a set of strings, and Φ = nentiations(thepairingcanbeprecomputed). TheAppend
+1 2 nalgorithmrequirestwomodularexponentiations,onemod- establishedareferenceplatform,wewillthendescribeeach
+ularmultiplication,andoneevaluationofthehashfunction of several isolated modules and their relationships. These
+H.TheVerifyalgorithmrequires|X|+1pairings,|X|mod- may be software modules on the same hardware, or hard-
+ular multiplications, and |X| evaluations of H. The space wareisolationmaybeemployed[17]. Finallywewillcon-
+(inbits)requiredtostoreahistory-hidingappendonlysig- sider the operational procedures that should be carried out
+natureΦforasetX isℓ +(|X|+1)·ℓ ,whereℓ isthe bypollworkersandelectionofficialstoinitializethevoting
+1 2 1
+number of bits required to store the strings in X and ℓ is machines,provideaccesstovoters,andverifyresults.
+2
+thelengthofagroupelementfromG.
+5.1 Hardware
+4.5 SubliminalFreeRerandomization
+AlthoughtheHHAOSschememaybeusedwithawide
+As described, the construction of Section 4.2 contains rangeofpotentialDREequipment,webaseourdiscussion
+subliminal channels that could be used by a malicious oncommodityPCmachinessuchasthosesuggestedbythe
+implementation of the Append algorithm to violate the OpenVotingConsortium(OVC)asapartoftheirarchitec-
+history-hidingproperty. Asintheprevioussection,theval- ture for an open, verifiable electronic voting system [10].
+ues r i can be used to leak the order in which votes were Specifically, the OVC recommends the use of a commod-
+added. ityPCwithalockedcase. Themachinewouldmostlikely
+This situation can be remedied by adding the following not have a hard drive, but instead boot from a publicly re-
+Rerandomizeoperation. viewed CD distributed before the election which contains
+theoperatingsystem(e.g.,astrippeddownLinuxdistribu-
+Rerandomize(Φ)→Φ′
+tion), thevotingmachinesoftware, andlistsofcandidates.
+GivenasignatureΦ=(S ,S ),where
+1 2 Eachmachinewouldincludeaprinterandaremovableflash
+S ={(x ,y ),(x ,y ),...(x ,y )},
+2 1 1 2 2 n n memory(i.e.,aUSBdriveoraSecureDigitalmemorycard)
+selects 1,s 2,...s n ←R −Z pandcompute onwhichtorecordtheelectronicballots. Inputmaybeob-
+tainedthroughatouchscreenorkeypad.
+y′ =y ·gsi foralli∈{1,...n}
+i i In addition, we require that each machine have a small
+S′ =S ·H(x )s1 ·H(x )s2···H(x )sn amount of internal non-volatile memory (e.g. flash) in
+1 1 1 2 n
+S′ ={(x ,y′),(x ,y′),...(x ,y′)} . which to store the initial history-hiding append only sig-
+2 1 1 2 2 n n
+nature when the machine is initialized. We also assume
+OutputΦ′ =(S′,S′). theavailabilityofareasonablysecurerandomnumbergen-
+1 2
+erator, such as the /dev/urandom device provided by
+The signature Φ′ is then another correct signature for the
+the Linux kernel. The hardware assumptions of this PC-
+same set, but with rerandomized values r 1 +s 1,r 2 +s 2, basedarchitectureareconsistentwithrecentworkonhigh-
+etc. As in the Append algorithm, if the set S 2′ within Φ′ assurancevotingmachines[15,18]inadditiontotheOVC
+isproducedasalist,theelementsshouldfirstberandomly
+proposals, although the previously proposed PROM-based
+permuted.
+votestoragemethodonlyrequiresarandomnumbergener-
+If a signature Φ is produced by a potentially malicious atorifthe“randomplacementtable”techniqueisused. The
+server, its subliminal channels may be cleaned by having HHAOS scheme for vote storage could also be employed
+severalpartiesruntheRerandomizealgorithmonit. Ifany withinasystemfarlesscapablethanaPC,suchasthegum
+one of those parties is honest, then the subliminal chan- stick sized motherboards produced by Gumstix, Inc. and
+nels will not contain any of the original information from usedintheprototypesystemofSastry,etal.[17].
+themaliciousserver. Thisre-randomizationcantakeplace
+whentheelectionisclosedandbeforeΦismadepublic.
+5.2 Modules
+5 SecureVoteStorage
+Userinterfacemodule. Figure1depictstherelationship
+between several isolated modules, the first of which is the
+NowthatwehaveintroducedtheHHAOScryptographic user interface module. The user interface module is the
+primitive and given two constructions realizing it, we fur- component of the electronic voting machine that interacts
+ther consider its practical use in a Direct Recording Elec- with a voter to present them with the election choices and
+tronic(DRE) voting machine. We tailorour description to produce their completed ballot. Ideally, its source code
+theuseofthemoreefficientconstruction, HHAOS . First shouldbesmallandeasytopubliclyverify[18].Afterinter-
+E
+wewilllayoutourgeneralassumptionsregardingthehard- acting with the voter, it invokes the InsertBallot procedure
+warearchitectureofanelectronicvotingmachine. Having of the cryptographic vote storage module (CVSM). In de-theCloseprocedureisinvoked,theCVSMusesFinalizeto
+DRE Voting Machine
+prevent any further additions to the signature and copies it
+Open Evolving totheremovablememory.
+User InsertBallot C Vr oy tp et o Sg tora rp agh eic Sig. Φ i
+Interface
+Close Module WriteBlock
+Verificationandaggregationmodule. Toverifythesig-
+natureonasetofballotsstoredonaremovableflashmem-
+ory, we simply check that the public key fingerprint pro-
+Totals Public Key Flash videdmatchesthepublickeystoredonthememoryanduse
+Fingerprint
+(cid:0)(cid:1) Memory theVerifyalgorithmtocheckthatthesignaturematchesthe
+(cid:0)(cid:1)
+(cid:0)(cid:0)(cid:0)(cid:0)(cid:0)(cid:0) (cid:1)(cid:1)(cid:1)(cid:1)(cid:1)(cid:1) (cid:0)(cid:0)(cid:0)(cid:0)(cid:0)(cid:0) (cid:1)(cid:1)(cid:1)(cid:1)(cid:1)(cid:1)
+(cid:0)(cid:0)(cid:0)(cid:0)(cid:0) (cid:1)(cid:1)(cid:1)(cid:1)(cid:1) (cid:0)(cid:0)(cid:0)(cid:0) (cid:1)(cid:1)(cid:1)(cid:1)
+CF20 6A5C D8E6
+comun mtr uu nst ie cd
+ation
+keyandthestoredballots.
+trusted communication or transport
+or transport 5.3 OperationalProcedures
+Verification and
+Aggregation
+Initializationandpolling. Weassumetheelectronicvot-
+ing machines are stored at central municipal facilities be-
+Figure 1. Relationships between modules in forebeingtakentotheindividualpollingplacesonelection
+aDREvotingmachinearchitecture. day. Immediately prior to transport, the election officials
+should invoke the Open procedure on each machine, thus
+storing the initial history-hiding append only signature on
+the internal flash and printing out a sheet with the public
+scribing the CVSM, we consider the ballots received from
+key fingerprint. These sheets are collected for later veri-
+theuserinterfacemoduletobesimplebitstringswhichare
+fication of the electronic ballots. Ideally, the fingerprints
+accumulated in a multiset. Each string which corresponds
+shouldbeimmediatelysenttothecountycanvassingfacili-
+to a vote in a single electoral race.2 Additionally, the user
+tieswheretheywillbeneeded;thiscanbeaccomplishedby
+interfacemoduleprovidespollworkerswithameanstoset
+simplyreadingthehexfingerprintoverthephone. Tomin-
+up the machine before polling begins and close the polls
+imizethepossibilityofthepersonsatthecanvassingfacil-
+at the end of the polling period. These features invoke the
+itybeingtrickedintousingthewrongkeyfingerprints,they
+OpenandCloseproceduresoftheCVSM.
+maybetransmittedinadditionalwayssuchpubliclyposting
+themontheInternetandbringingthesheetstothecanvass-
+Cryptographic vote storage module. The CVSM em- ing facilities in hard copy. Note that from this point until
+ploys the HHAOS scheme of Section 4 to store the multi- the close of polling the machines should not be left unat-
+setofballotsontheremovableflashmemorywhileprovid- tended. Ifsomeoneweretobootamachinewiththeirown
+ingtamperevidenceandmaintaininghistory-independence. softwareandreadtheinitialhistory-hidingappendonlysig-
+Herewegiveahighleveldescriptionofthevaluesstoredin naturestoredinternally,theymaylaterbecapableofreplac-
+theCVSMandhowtheyareupdated. Forconcreteness,we ingalltheresultsreportedbythatmachine. Thisandother
+giveamoredetaileddescriptioninAppendixB. threatscenariosareconsideredindetailinSection6. Once
+theelectronicvotingmachinesareatthepollingplacesand
+When the Open procedure is invoked by the user inter-
+the polls have opened, voters may visit the machines one
+facemodule, theCVSMusestheKeyGenalgorithmofthe
+byoneandhavetheirvotesrecorded. Afterthepollingpe-
+HHAOSschemetocreateapublickeyandinitialsignature.
+riod has ended, poll workers activate the Close procedure
+The public key is saved on the removable memory and a
+on each electronic voting machine and collect the remov-
+fingerprint(i.e.,collisionresistanthash)isprintedusingthe
+ableflashmemoriescontainingtheballots.
+printerattachedtothemachine. Thehandlingofthissheet
+is described in Section 5.3. The initial signature is stored
+onnon-volatilememorywithinthemachine. WhentheIn-
+Canvassing. Theremovablememoriesaretransportedto
+sertBallotprocedureisinvokedwithaballotb,theAppend
+canvassingfacilitieswherethecontentsareread. Usingthe
+algorithm is used to update the internal signature with b
+publickeyfingerprintsreceivedfromthestagingfacility,the
+(overwritingthepreviousvalue). Theballotissavedtothe
+contentsofeachmemoryarechecked.Theballotsmaythen
+removablememory(takingcaretoensurethateveryorder-
+betotaledand theresultspubliclyannounced. Notethatif
+ingoftheballotscurrentlystoredisequallylikely). When
+weassumethepublickeyfingerprintsreachthecanvassing
+facility securely, the integrity of the election does not de-
+2Groupingallthechoicesmadebyavoterintoasingleballotstring
+pendontheintegrityofthecontentsoftheflashmemories.
+wouldprovidesubliminalchannelswhichcouldbeusedbyavoterunder
+coercion[10]. It is therefore reasonable to transmit the signed electronicballotsovertheInternetfromthepollingplacestothecan- a PROM), the internal flash memory on which the initial
+vassingfacilityratherthanphysicallytransportingthemem- history-hidingappendonlysignatureisstored,andthepub-
+ories. This may somewhat reduce expenses. The history- lickeyfingerprint(theselasttwocomponentsonlyexistin
+hiding append only signatures should be rerandomized as thenewlyproposedsystem).
+described in Section 4.5; this may be performed once at An adversary may gain read-only or read /writeaccess
+the polling place before sending the electronic ballots to to the removable or internal memory within a voting ma-
+the canvassing facility and again at the canvassing facility chineeitherbetweenmachineinitializationandfinalization
+beforemakingthesignedballotspubliclyavailable. or after finalization (a compromise prior to initialization
+will have no effect). Note that we may consider replace-
+6 Comparisons mentsofPROM’sandwritestoremovableflashmemories
+to be equivalent operations, since the contents of a PROM
+being replaced may first be read and partly copied over to
+Theuseofhistory-hidingappendonlysignaturesforse-
+thenewPROM,gainingtheeffectofgeneralpurposemem-
+curevotestorageinaDREvotingmachineservesprimarily
+ory. Additionally, we consider the effect of the public key
+as an alternative to the PROM system. While the PROM
+fingerprint printed during machine initialization being in-
+system ensures any illicit writes will be detected, it does
+correctlycommunicatedtothecanvassingfacility(e.g.,asa
+notaddressthethreatofonePROMbeingreplacedwithan-
+resultofsocialengineeringattacks).
+other. Ensuring the integrity of the election requires phys-
+ical tracking and monitored transport of the PROM mem-
+6.2 ThreatEvaluation
+ories. The same considerations apply to the use of other
+write-once media such as recordable CD’s in storing elec-
+tronicballots. Integrity. Given this threat model, we now evaluate the
+Essentially, the use of an HHAOS scheme replaces the integrity properties of the new cryptographic vote storage
+physicaltrackingrequirementbyrequiringsecurecommu- module and the previous PROM vote storage module. In
+nication of a public key fingerprint. A more simplisticap- Table1welistallcombinationsofthepreviouslydescribed
+proach to gain this effect would be to use a normal digital compromisesandtheresultingeffectsonelectionintegrity.3
+signatureschemetosignballotsstoredbythevotestorage ThecolumnforthePROMVSMdependsonlyonthecom-
+module. However,itislikelynecessarytosavethesigning promise to the removable memory, since that system does
+keyonnon-volatilememorywithinthemachineinorderto not include the internal memory or a public key finger-
+transportittothepollingplaceandforfaulttolerance,leav- print. Dashes in the table denote the collapse of several
+ingitvulnerabletocompromise. Theappendonlyproperty rows where the outcome is the same for all values of that
+ofanHHAOSschemelimitsthisthreatbyensuringatleast variable.
+theintegrityofballotscastbeforethepointofcompromise. The key security improvements offered by the CVSM
+We now detail a threat model in which to evaluate the over the PROM VSM manifest in scenarios B and E. In
+cryptographic vote storage module of Section 5 and the these cases the removable memory is swapped or illicitly
+PROM-based vote storage module. After explaining the written either before or after finalization, and the internal
+model, we will highlight the improvements offered by the memoryoftheCVSMandthepublickeyfingerprintarese-
+newtechniques.Finally,wewillcomparetheefficiencyand cure.4 Inbothcases, anyballottamperingwillbedetected
+robustnessofthetwoapproaches. if the CVSM is used, but if the PROM VSM is used, the
+ballotscurrentlystoredatthepointofcompromisemaybe
+6.1 ThreatModel arbitrarilymodified.
+Alesserimprovementisobtainediftheinternalmemory
+DRE voting machines face a wide variety of threats; oftheCVSMisalsocompromised. InscenarioC,ifthead-
+however, we will restrict our attention to the types of at- versaryisabletowritetheinternalmemorywhentheywrite
+tacksrelevanttothenewandpreviouslyproposedsystems theremovablememory,theymayinsertballotsundetected.
+forvotestorage. Wefocusonillicitreadandwritecompro- They may not, however, remove or modify ballots already
+misestothememories involved invotestoragealong with presentwithoutdetection.Similarly,inscenarioF,ifthead-
+key management issues. In particular, we do not consider versarygainsread-onlyorread/writeaccesstotheinternal
+theissueofsoftwareverification. Thatsaid,thealgorithms memory after the first k ballots have been cast, then they
+proposedinSections4and5aresimpleenoughtobeveri- may alter the set of ballots when they compromise the re-
+fiedbyhand,withsomeeffort. Assumingcorrectsoftware,
+3Readsoftheremovablememoryarenotconsideredheresincethey
+the three different components that will be considered in
+affectonlyprivacy,notintegrity.
+our threat model are the removable storage on which the 4Areadoftheinternalmemoryatthetimeofcompromiseofthere-
+electronic ballots are recorded (either a flash memory or movablememoryisalsoacceptableinscenarioB.RemovableMemory InternalMemory
+PublicKey Crypto PROM
+(ElectronicBallots) (EvolvingSig.)
+A secure — — 4 4
+swapped/written secureorread
+B secure 4 8
+duringpolling compromise
+swapped/written read/write
+C
+duringpolling compromise
+secure 4/8 8
+swapped/written
+D — replaced 8 8
+duringpolling
+swapped/written
+E secure secure 4 8
+afterpolling
+swapped/written readorread/write
+F
+afterpolling compromise
+secure 4/8 8
+swapped/written
+G — replaced 8 8
+afterpolling
+Keytosymbols:
+4
+: Notamperingpossiblewithoutdetection.
+4/8:
+Possibletoinsertballotsundetected,butballotsalreadypresentatpointofcompro-
+misemaynotberemovedwithoutdetection.
+8
+: Arbitrary,undetectedtamperingwithballotspresentatpointofcompromisepossible.
+Table1.ResultsofvariousthreatscenariosonelectionintegrityusingthecryptographicandPROM
+votestoragemodules.
+movablememoryafterfinalization. However,theresulting guarantees. The data structures in both the internal mem-
+setmustincludethefirstkballotscastifitistoverify. ory of the CVSM and its removable storage are history-
+Ifthepublickeyfingerprintdoesnotcorrectlyreachthe independent. Ineithersystem,anillicitreadoftheremov-
+canvassingfacility,thenthenewsystemoffersnoimprove- ablestorageduringthepollingprocesswillreducevoterpri-
+ments over the PROM-based system. It should be easier, vacy by partitioning the ballots into those cast before the
+however, to ensure the safe arrival of a public key finger- compromiseandthosecastafter(butnofurtherprivacywill
+printthanaPROM. belost).InthecaseoftheCVSM,anillicitreadofthevalue
+Anadditionalissueaffectingelectionintegrityisthatof S 1 stored internally will reduce voter privacy in the same
+“vote disqualification” attacks, in which the attacker does way, assuming the final contents of the removable storage
+not insert or delete votes, but instead attempts to prevent areeventuallymadepublic.
+votesfrombeingcounted(presumablyinaregionsupport- However,inthecaseofamaliciousrandomnumbergen-
+ingtheiropponent). Anattackerwhoisabletoreplacethe erator or a malicious implementation of the CVSM algo-
+public key fingerprint or write the internal memory would rithms,thenewapproachsuffersfromsubliminalchannels
+be able cause the final signature check to fail, even if they that may reveal a great deal of information about the or-
+do not have write access to the removable memory. This deringofballots. ThePROMVSMsuffersthesameprob-
+suggeststhefollowingpolicy. Ifthesignaturecheckfails,a lemwhentherandomplacementtabletechniqueforinsert-
+recountshouldbeperformedbasedonasetofpaperreceipts ingballotsintothePROMisusedwithamaliciousrandom
+orsomeotherredundantsourceofinformation(ifpossible), number generator. This threat is mitigated when using the
+butinnocaseshouldthevotesbeoutrightdiscounted. CVSMbyemployingtheRerandomizeoperationdescribed
+in Section 4.5. If the contents of the removable memory
+are rerandomized once at the polling place after finaliza-
+Privacy. Having considered the improvements to elec- tionandonceatthecanvassingfacilitybeforethecontents
+tion integrity offered by the use of the HHAOS scheme in are publicly posted, then the subliminal channels will be
+the CVSM, we now compare the privacy properties of the publiclyvisibleonlyifboththemachinesperformingreran-
+CVSMandPROMVSM.Assumingasecurerandomnum- domizationaremalicious. Onepointtobemaderegarding
+ber generator and a non-malicious implementation of the the process of rerandomization when using the CVSM is
+CVSMalgorithms, thetwosystemsofferthesameprivacy thatthererandomizationoperationmaybeperformedbyanuntrustedentity. Intheworstcase,thesubliminalchannels 7 Conclusions
+will remain, but the machine performing rerandomization
+maynotchangetheballotswithoutinvalidatingtheirsigna- We presented a new cryptographic tool for storing cast
+ture. This is not the case if one were to rerandomize the ballotsonavotingterminal. Thetool,calledhistory-hiding
+output of the PROM VSM when using random placement append-onlysignatures(HHAOS),preservesallthebenefits
+tables.TheballotswouldneedtobecopiedtoanewPROM ofahardware-basedsolution,whilepreventinghardwarere-
+(oremptyspaceontheoriginal),andthemachineperform- placementattacks. Wepresentedanefficientrealizationof
+ing rerandomization would need to be trusted to protect HHAOS using groups with a bilinear map. We also dis-
+election integrity. When using the PROM VSM, however, cussedalessefficientsystemthatusesanystandardsigna-
+subliminalchannelsmaybeavoidedentirelybyusingadif- turescheme.
+ferent(andlessefficient)storagemethod,suchascopyover
+listsorlexicographicchaintables[15].
+6.3 RobustnessandEfficiency
+ThecryptographicvotestoragemoduledescribedinSec-
+tion 5 shares fault tolerance properties similar to those of
+thePROM-basedvotestoragemodule. Alltheinformation
+necessaryfortheCVSMtocontinueoperationafterapower
+failure or system crash is stored on non-volatile memory.
+When overwriting values on either the internal memory or
+theremovablememory,simpletwo-phasecommitsmaybe
+usedtoallowrecoveryinthecaseofacrashinthemidstof
+writing. Inthiscase, acrashinthemiddleofanoperation
+mayrevealthelastballotstored,buttherewillbenofurther
+compromiseofvoterprivacy. Theunavailabilityofthepub-
+lickeyfingerprintatverificationtimewillpreventverifying
+the integrity of the electronic ballots, but will not prevent
+themfrombeingcounted.
+The computational requirements placed on the voting
+machine by the CVSM algorithms are very modest. The
+voting machines need only compute modular exponentia-
+tions twice at initialization (the pairing may be precom-
+puted) and twice for each ballot recorded (also evaluating
+ahashfunctionforeachballot). Thisiswellwithintheca-
+pabilities of low end commodity PC’s or even much more
+limitedembeddedsystems. IfacommodityPChasalready
+beenchosenasthebasicarchitectureforaDREvotingma-
+chine, the computational requirements of CVSM will not
+affect hardware selection. The necessary storage is also
+minimal. Ifweassumeatmost9,000votesacrossallraces
+asinSection3,50-byteidentifiersforeachvote,and160-bit
+groupelementsinG(typicalofanellipticcurve),thenless
+than 650KB are necessary on the removable storage (and
+only a single group element on the internal storage). The
+PROM-based VSM requires the purchase of new PROM’s
+foreachuseofthemachines. Incontrast,aUSBflashdrive
+may be purchased (at consumer rates) for less than $9.00,
+aonetimecost. Ifnointernalnon-volatilestorageisother-
+wiseavailableonthemachines,1Mbitflashmemorychips
+maybepurchasedforlessthan$1.00each.References
+[1] M.BellareandS.Miner. Aforward-securedigitalsignature
+scheme. InProceedingsofCrypto,1999.
+[2] D.Boneh,C.Gentry,B.Lynn,andH.Shacham. Aggregate
+andverifiablyencryptedsignaturesfrombilinearmaps. In
+ProceedingsofEurocrypt,2003.
+[3] D.Boneh,C.Gentry,B.Lynn,andH.Shacham. Asurvey
+oftwosignatureaggregationtechniques. CryptoBytes,6(2),
+2003.
+[4] N.BuchbinderandE.Petrank. Lowerandupperboundson
+obtaininghistoryindependence. InProceedingsofCrypto,
+2003.
+[5] J. Chow, B. Pfaff, T. Garfinkel, K. Christopher, and
+M.Rosenblum. Understandingdatalifetimeviawholesys-
+tem simulation. In Proceedings of the USENIX Security
+Symposium,2004.
+[6] J.-S.CoronandD.Naccache. Bonehetal.’sk-elementag-
+gregate extraction assumption is equivalent to the Diffie-
+Hellmanassumption. InProceedingsofAsiacrypt,2003.
+[7] P. Gutmann. Secure deletion of data from magnetic and
+solid-state memory. In Proceedings of the USENIX Secu-
+ritySymposium,1996.
+[8] J.D.Hartline,E.S.Hong,A.E.Mohr,W.R.Pentney,and
+E. Rocke. Characterizing history independent data struc-
+tures. Algorithmica,42(1):57–74,2005.
+[9] G.ItkisandL.Reyzin.Forward-securesignatureswithopti-
+malsigningandverifying. InProceedingsofCrypto,2001.
+[10] A. M. Keller, D. Mertz, J. L. Hall, and A. Urken. Pri-
+vacyissuesinanelectronicvotingmachine. InProceedings
+oftheACMWorkshoponPrivacyintheElectronicSociety
+(WPES),2004.
+[11] E. Kiltz, A. Mityagin, S. Panjwani, and B. Raghavan.
+Append-onlysignatures. InProceedingsofICALP,2005.
+[12] T.Kohno,A.Stubblefield,A.Rubin,andD.Wallach. Anal-
+ysisofanelectronicvotingsystem. InProceedingsofIEEE
+SymposiumonSecurityandPrivacy,pages27–40,2004.
+[13] B. Lynn. The pairing-based cryptography (PBC) library.
+http://crypto.stanford.edu/pbc.
+[14] D. Micciancio. Oblivious data structures: Applications to
+cryptography. In Proceedings of the ACM Symposium on
+TheoryofComputing(STOC),1997.
+[15] D. Molnar, T. Kohno, N. Sastry, and D. Wagner. Tamper-
+evident,history-independent,subliminal-freedatastructures
+onPROMstorage-or-howtostoreballotsonavotingma-
+chine. InProceedingsoftheIEEESymposiumonSecurity
+andPrivacy,2006.
+[16] M.NaorandV.Teague. Anti-presistence: historyindepen-
+dentdatastructures.InProceedingsoftheACMSymposium
+onTheoryofComputing(STOC),2001.
+[17] N.Sastry,T.Kohno,andD.Wagner. Designingvotingma-
+chinesforverification.InProceedingsoftheUSENIXSecu-
+ritySymposium,2006.
+[18] K.-P.Yee,D.Wagner,M.Hearst,andS.M.Bellovin. Pre-
+rendereduserinterfacesforhigher-assuranceelectronicvot-
+ing. InProceedingsoftheUSENIX/ACCURATEElectronic
+VotingTechnologyWorkshop(EVT),2006.A SecurityandCorrectnessProofs Definition of B. We receive a CDH instance g,A = ga,
+B = gb and use it in Game 1 with A. In order to answer
+randomoraclequeries,wemaintainsetsSandΓandamap
+Hereweprovidesecurityandcorrectnessproofsforthe
+f :{0,1}∗ →Z ,allinitiallyempty.ThesetSwillcontain
+HHAOSschemepresentedinSection4.2. p
+all messages for which the random oracle has been called,
+and we will assign some of these to the set Γ. For conve-
+A.1 Correctness nience,wealsodefinethefunctionH :{0,1}∗ →Gas
+Withalittlealgebraitiseasytoverifythatthisscheme gf(s) ifs∈Γ
+H(s)=
+iscorrectaccordingtoDefinition1. (B·gf(s) ifs∈/ Γ
+Theorem2. HHAOS iscorrect.
+E WecarryoutGame1withAasfollows.
+Proof. LetX ={x 1,...x n}⊆{0,1}∗ andassumePK= Setup Define α = ab and give PK = (g,e(A,B)) =
+(g,e(g,g)α)andΦ n =(S 1,S 2)aregeneratedasinDefini- (g,e(g,g)α)toA.
+tion1. Letr ,r ,...r ∈Z betherandomvalueschosen
+1 2 n p
+Whenever A makes a random oracle query for s ∈
+inthesuccessiveinvocationsofAppend. Lets denotethe
+i {0,1}∗ (inthis phase or later), we answer as follows.
+discretelog(baseg)ofH(x )foreachi∈{1,...n}. Then
+i
+First,checkiff(s)isdefined(thatisifs ∈ S). Ifso,
+withinVerifywecompute
+return H(s). If f(s) is not defined, save a uniformly
+−1 randomvaluefromZ pasf(s).ThenweaddstoSand
+v =e(g,S 1)· e(H(x),y) addittoΓwithprobability q . ThenreturnH(s).
+q+1
+(cid:16)(x, Yy)∈S2 (cid:17)
+n n Corrupt We receive X = {x ,...x } from A. Without
+−1 1 n
+=e g,gα H(x i)ri · e(H(x i),gri) loss of generality we can assume that X ⊆ S, since
+(cid:16) i Y=1 (cid:17) (cid:16)i Y=1 (cid:17) ifthatisnotthecasewecanjustcalltheoracleforall
+=e g,gα n grisi · n e(gsi,gri) −1 x i ∈/ S.IfX ⊆Γ,weabortthesimulation.Otherwise,
+wemaysuccessfullyproduceasignatureΦ forX.
+n
+=e(cid:16) (g,g)α+i Y= r1 1s1+r2(cid:17) s2+(cid:16) ··i Y ·r= n1 sn ·e(g,g)−(cid:17) r1s1−r2s2−···rnsn Letx k be anelement ofX thatisnotinΓ. Wecom-
+pute a signature Φ to return to A as follows. Select
+=e(g,g)α . n
+r ,...r ,r ,...r ←R − Z . Define r = −a.
+1 k−1 k+1 n p k
+Compute
+SincewealsohavethatX ={x|∃y (x,y)∈S },Verify
+2
+willreturnTrueandtheschemeiscorrect.
+Φ =({(x ,gr1),...(x ,A−1),...(x ,grn)},
+n 1 k n
+H(x )r1···A−f(xk) ···H(x )rn)
+A.2 AppendOnlyUnforgeability 1 n
+=({(x ,gr1),...(x ,grk),...(x ,grn)},
+1 k n
+WenowproveHHAOS
+E
+appendonlyunforgeableinthe
+gαH(x 1)r1···H(x k)rk···H(x n)rn)
+random oracle model based on the computational Diffie-
+andreturnΦ toA.Bythedefinitionofr andH(x ),
+Hellmanassumption. n k k
+thisisawellformedresponse.
+Theorem 3. If the computational Diffie-Hellman assump- Note that all our responses to A are properly dis-
+tionholdsinG,thenHHAOS E isappendonlyunforgeable tributed.Theonlyvalueswhichhavenotbeenselected
+intherandomoraclemodel. as in the regular scheme are α = ab and r = −a,
+k
+which are independent and distributed identically to
+Proof. Suppose the (t′,ǫ′)-CDH assumption holds in G;
+values selected as in the regular scheme. Also, the
+thatis, anyprobabilisticalgorithmrunningintimeatmost
+valuesgiveninresponsetorandomoraclequeriesare
+t′ solves CDH with probability at most ǫ′. Then we will
+independentanddistributeduniformlyatrandomover
+showthatHHAOS E is(t,ǫ)-appendonlyunforgeablewith G.
+t′ =O(t·poly(κ))andǫ′ ≥ǫ/(e(q+1)),whereq ≤t.
+Assume a t time algorithm A wins Game 1 with prob- Forge We receive a set Y = {y ,...y } and a signa-
+1 m
+ability at least ǫ while making at most q random oracle tureΦ = (S ,S )fromA. IfVerify(PK,Y,Φ ) =
+Y 1 2 Y
+queries. We construct an algorithm B which solves CDH FalseorX ⊆Y,AhasfailedatGame1andweabort.
+intimeO(t·poly(κ))withprobabilityatleastǫ/(e(q+1)). Also,ifY 6⊆Γ,weabort.Otherwise, we may use the forgery produced by A Thus, Pr[E |E ] ≥ 1/(e(q +1)), Pr[E ] ≥ ǫ, and
+2 1 1
+to solve our CDH instance. Denote the contents of Pr[E ∧E ]≥ǫ/(e(q+1)). SoBdoesnotabortandsuc-
+1 2
+S in Φ as S = {(y ,z ),(y ,z ),...(y ,z )}. cessfullysolvestheCDHinstancewithprobabilityatleast
+2 Y 2 1 1 2 2 m m
+Note that {y |∃z (y,z)∈S }=Y because ǫ/(e(q+1)). Furthermore,BtakestimeO(t·poly(κ)).
+2
+Verify(PK,Y,Φ )=True. Compute So if the (t′,ǫ′)-CDH assumption holds in G, then
+Y
+HHAOS is (t,ǫ)-append only unforgeable, where t′ =
+E
+C =S 1·z 1−f(y1)·z 2−f(y2)···z m−f(ym) O(t·poly(κ)),ǫ′ ≥ǫ/(e(q+1)),andq ≤t.Inparticular,if
+everyPPTalgorithmsolvesCDHinGwithprobabilityneg-
+andreturnC astheanswertotheCDHinstance.
+ligibleinκ,thenHHAOS isappendonlyunforgeable.
+E
+We now demonstrate that C = gab. Since
+Verify(PK,Y,Φ Y) = True, A must have queried for A.3 History-Hiding
+all y ∈ Y at some point,5 so f(y) is defined for all
+y ∈Y. Additionally,wehavethat
+ItisstraightforwardtoestablishthattheHHAOSscheme
+e(g,g)α =e(g,S )·(e(H(y ),z )···e(H(y ),z ))−1 isalsohistory-hiding.
+1 1 1 m m
+Theorem4. HHAOS ishistory-hiding.
+so E
+e(g,g)ab =e(g,S )·e(gf(y1),z )−1···e(gf(ym),z )−1 Proof. Specifically,weshowthatanyadversaryhasadvan-
+1 1 m
+tageexactlyzeroinGame2. RunKeyGen(1κ)tocompute
+and PKandΦ =(gα,{}). ReturnPKtoanadversaryA. Af-
+0
+terreceivingasetX = {x ,...x }andtwopermutations
+e(g,gab)=e(g,S ·z−f(y1)···z−f(ym)) 1 n
+1 1 m λ ,λ fromA,select
+0 1
+⇒gab =S ·z−f(y1)···z−f(ym) .
+1 1 m R
+r ,r ,...r ←−Z
+1 2 n p
+ThusC =gab.
+r′,r′,...r′ ←R −Z
+1 2 n p
+Analysis of B. We now analyze the probability that B
+andcompute
+abortsbeforeitcansuccessfullysolveitsCDHinstance.Let
+E 1 betheeventofAsucceedingatGame1,andletE 2 be Φ n = gαH(λ 0(x 1))r1···H(λ 0(x n))rn,
+theeventofX 6⊆ΓandY ⊆Γ.TheprobabilitythatBdoes
+notabortisthenPr[E ∧E ].
+(cid:0){(λ 0(x 1), gr1),...(λ 0(x n), grn)}
+1 2
+Since B produces well formed responses distributed Φ′ n = gαH(λ 1(x 1))r1′ ···H(λ 1(x n))rn′ , (cid:1)
+wid een ht aic va ell ty hato tPth ro [s Eeo ]f ≥HH ǫA .O NS oE wi wn eit cs oi mnt per ua tc eti Po rn [s Ewi |t EhA ]., (cid:0){(λ 1(x 1), gr1′ ),...(λ 1(x n), grn′ )}
+1 2 1
+AssumeE 1. Letθ = q+q 1. Then AccordingtoGame2,ifourcoinbis0wemustre(cid:1)turnΦ n,
+otherwise we return Φ′ . However, since r ,r′,r ,r′,...
+Pr[E 2]=Pr[(X 6⊆Γ)∧(Y ⊆Γ)] areselectedindependenn tlyandmultiplicatio1 nin1 G2 is2
+com-
+=Pr[(X \Y 6⊆Γ)∧(Y ⊆Γ)] mutative, Φ and Φ′ are identically distributed random
+n n
+=Pr[X \Y 6⊆Γ]Pr[Y ⊆Γ] variables. So A’s guess b′ is independent of which of the
+twowereturnand thusindependent of ourcoin flipb. We
+=(1−θ|X\Y|)θ|Y|.
+then have that |Pr[b′ =b]− 1| = 0 and have shown that
+2
+SinceAsucceeds,X 6⊆Y andtherefore|X\Y|≥1.Also, theschemeishistory-hiding.
+|Y|≤q. So
+Additionally,itisevidentfromtheproofthatHHAOS
+E
+Pr[E ]≥(1−θ)θ|Y| (like HHAOS S) is not only history-hiding, but history-
+2
+independentintheinformationtheoreticsense.
+≥(1−θ)θq
+q
+1 q
+= ·
+q+1 q+1
+(cid:18) (cid:19)
+1 1
+≥ · .
+q+1 e
+5We neglect the possibility of A guessing the output of the random
+oracle,whichmaybemadearbitrarilyunlikelybyincreasingtheoutput
+lengthoftherandomoracle.B ImplementationDetails
+struct {
+P; // public key: element ofG T
+Here we provide concrete details on efficiently and se-
+curelyimplementingthecryptographicvotestoragemodule M; // number of ballots stored:
+(CVSM)describedinSection5.2. Wefirstdetailthevalues // element of {0,...n−1}
+storedbytheCVSM,thentheproceduresforupdatingthem.
+V ; // final value ofS : element ofG
+The CVSM achieves multiset semantics by appending 1 1
+to a string the number of copies already present before V ; // finalization value: element ofG
+2
+inserting it into the set of stored strings, as described in
+Section 2.1. Specifically, the CVSM uses a hash table S 2[n]; // ballots: array ofnblocks,
+C :{0,1}∗ →Nwhichkeepstrackofthenumberofcopies // each of which stores a pair(x,y)
+ofeachstringwehaveencountered. Thismaybestoredin // where x∈{0,1}ℓ+⌈log2n⌉andy∈G
+the main (volatile) memory of the CVSM process; its us- }
+age is further explained below. Referring to the HHAOS
+scheme described in Section 4, the history-hiding append
+Figure 2. Values stored on the removable
+only signature Φ = (S ,S ) is stored in two parts. Dur-
+1 2
+ing the polling process, we store the value S ∈ G on the flashmemorywithinthevotingmachine.
+1
+internalflashmemorywithinthemachine. Thecontentsof
+S are stored on the removable flash memory along with
+2
+several other values. To refer to these locations on the re- firstM entriesinthearrayS andcomputethefollowing.
+2
+movable memory, we denote the content of the removable
+memory with the structure given in C-like pseudocode in z ← e(H(x),y)
+1
+Figure2. Herenisanupper bound onthenumber ofbal-
+(x, Yy)∈S2
+lotswewillneedtostoreandℓisthelengthofeachballot.
+z ←e(H(“ finalize ”||M),V )
+Thesevaluesontheremovablestoragealongwiththevalue 2 2
+S 1ontheinternalstoragearemanipulatedbythefollowing If P = e(g,V )·z−1 ·z−1, report that the history-hiding
+procedures. 1 1 2
+append only signature on the recorded ballots has verified
+andproceedtototaltheballots;otherwise,reportanerror.
+Open Selectα ←R − Z andcomputePK = e(g,g)α. Print
+p
+a fingerprint of the public key PK. Save S ← gα,
+1
+M ←0,andP ←PK.
+InsertBallot Upon receiving a ballot string b ∈ {0,1}ℓ,
+lookup b in the hash table C, incrementing the value
+C(b)ifitisfound. Ifbisnotfound,insert1atC(b). If
+bcollideswithanotherstringb′ 6=binC,usechaining
+andsortthestringsatthatlocation. Sortingcollisions
+is necessary to maintain history independence. Next,
+randomly select r ←R − Z , i ←R − {0,...M}, and save
+p
+S ← S ·H(b||C(b))r. ThencopyS [M] ← S [i],
+1 1 2 2
+store S [i] ← (b||C(b), gr), and save M ← M +
+2
+1. Note that this method of selecting a location for
+the new pair in S ensures that every ordering of the
+2
+currentvaluesinS isequallylikely.
+2
+Close Randomly select r ←R − Z and write V ← S ·
+p 1 1
+H(“ finalize ”||M)r and V ← gr on the removable
+2
+storage. SaveS ←0ontheinternalstorage.
+1
+Toverifytheballotsstoredonaremovablememoryus-
+ingapublickeyfingerprint, carryoutthefollowingopera-
+tions. Firstcheckthatthefingerprintprovidedmatchesthe
+publickeyP storedonthememory. Next,scanthroughthe

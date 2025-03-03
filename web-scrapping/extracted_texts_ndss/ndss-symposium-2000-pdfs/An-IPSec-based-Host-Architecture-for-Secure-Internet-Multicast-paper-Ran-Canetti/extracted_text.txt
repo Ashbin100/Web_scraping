@@ -1,0 +1,1437 @@
+An IPSec–based Host Architecturefor Secure Internet Multicast
+RanCanetti,Pau–ChenCheng,FrederiqueGiraud, DimitriosPendarakis
+JosyulaR.RaoandPankaj Rohatgi
+IBM ThomasJ.WatsonResearchCenter
+P.O.Box 704
+YorktownHeights,NY10598
+email: (cid:0) canetti,pau,dimitris
+(cid:1)
+@watson.ibm.com, (cid:0) giraud,jrrao,rohatgi
+(cid:1)
+@us.ibm.com
+DebanjanSaha
+BellLabs,LucentTechnologies
+101CrawfordCornerRoad
+Holmdel,NJ07733
+email: (cid:0) debanjan@dnrc.bell-labs.com
+(cid:1)
+Abstract and data authentication is essential for many multicast
+applications. Maintaining confidentiality of the trans-
+mitted data is also required by some applications. Ex-
+We propose a host architecture for secure IP multi- amplesrangefromone-to-manyscenariossuchasnews
+cast. We identify the basic components of the archi- and data feeds (say, quotes of stock prices), audio and
+tecture, describe their functionalitiesand how they in- videobroadcasts, or file andsoftware updates,to more
+teractwithoneanother. Thefundamentaldesigntenets interactive scenarios such as electronic lectures, town-
+of the proposedarchitecture are simplicity,modularity, hall meetings and conferences. (See [Q98, CP99] for
+and compatibility with existing protocols and systems. surveysofmulticastapplicationsandtheirsecuritycon-
+Morespecifically,wetrytore-useexistingIPSecmech- cerns.)
+anismsasfaraspossible,andextendthemwhenneces- Alotofworkhasbeendoneindesigningsecuremul-
+sary. Wealso discuss ourexperiences with implement- ticast protocols (see the survey in [CP99]). Recently,
+ingtheproposedarchitectureonLinux. the Internet Architecture Board (IAB) has chartered a
+workinggroupwithintheInternetResearchTaskForce
+(IRTF)tostudyanddevelopstandardizableprotocolsfor
+1 Introduction securemulticast[SMuG].
+Existing work on securing group communication
+The Internet today supports a basic form of multi-
+concentrates on the task of group management and
+cast service where a multicast group is identified by a
+access control (see, for instance, [HM97a, HM97b,
+ClassDIPaddress[H95]. Areceivercanjoinandleave
+M97, STW98, WHA97, WGL98, HCD98, HCM98,
+the group by sending IGMP (Internet Group Manage-
+BMS99]). Morespecifically,thefocusisondistributing
+ment Protocol) [RFC1112, D91] messages to their lo-
+and maintainingagroupkeythatisknowntoalllegiti-
+cal routers. To send datagrams to a multicast group, a
+matemembers, but remainsunknownto non-members.
+senderneednotbeamemberofthegroup.Itcansimply
+Thisgroupkeyisdistributedbyoneormoregroupcon-
+addressthedatagramstothegroupaddress. Itisthere-
+trollers, according to some pre-specified policy, and is
+sponsibilityofthemulticastcapablerouterstocommu-
+thenusedtoencryptthegroupcommunication.Lessat-
+nicatewitheachotherusingmulticastroutingprotocols
+tentionisgiventotheinternaldesignofagroupmember.
+anddeliverthedatagramstoallreceiverswhoaremem-
+Thefocus ofthis paperis onthe host architectureof
+bersofthegroup.Themulticastgroupisanopengroup
+amemberofasecuremulticastgroup.Themembercan
+andsendersdonotnecessarilyknowtheidentitiesofthe
+beeitherasender,orareceiver,orboth.Intherestofthe
+receivers inthe group. Likewise,receivers donot have
+paper,weidentifybasiccomponentsofthearchitecture,
+anymechanismsavailabletoauthenticatetheidentityof
+outlinetheirfunctionalities,anddescribetheinteraction
+thesendersortoverifytheintegrityofthereceiveddata.
+amongthem.ThearchitectureisbasedontheIPSecpro-
+Supportforgroupmembershipcontrolandforsender
+1of17tocolsuite[KA98]andre-usesIPSeccomponents(such
+as (cid:2) IKEandESP).WehaveextendedtheIPSecarchitec-
+ture in several ways to accommodate the requirements
+ofsecuregroupcommunication.
+Some of the main features of the proposed architec-
+ture are: simplicity, modularity and compatibility with
+existing systems and protocols. We identify the key
+componentsofthearchitectureanddefinetheinterfaces
+betweenthem.Thismodularapproachallowsthedevel-
+opmentofalternativeimplementationsofvariouscom-
+ponents. In addition, our architecture can accommo-
+date known proposals for group and key management.
+It is compatible with the secure IP multicast frame-
+work that is being developed by the Secure Multicast
+working group (SMuG) of the Internet Research Task
+Force[SMuG]. ItissimpletoincorporatewithinIPSec-
+compliant systems, with either small or no changes to
+theoperatingsystemkernels.
+Weareimplementingtheproposedarchitecturewithin
+the Linux kernel using the FreeSwan IPSec distribu-
+tion[FSWAN] asthebase. Wedescribethis effort and
+ourexperience.
+Apreliminaryversionofthisarchitectureappearedas
+an InternetDraft, draft-irtf-smug-sec-mcast-arch-00.txt
+at the Secure Multicast Users Group IRTF. This paper
+describesfurtherinternaldetailsofthearchitectureand
+experienceswithimplementingitscomponents.
+Organization Therestofthepaperisorganizedasfol-
+lows. Section 2 reviews some salient security require-
+mentsofmulticastapplications,and describeshowour
+work fits within the larger context of a comprehensive
+secure multicast solution. Section 3 presents our main
+designtenets. Sections4,5and6describethearchitec-
+ture. Section 7 discusses compatibility issues between
+securemulticastandIPSec andSection8describesex-
+periments to validate the basic design decision to use
+IPSecandresultsofpreliminaryperformancetestsdone
+aspartofanongoingimplementationofthearchitecture.
+WeconcludewithsomeremarksinSection9.
+2 Background
+2.1 Security requirements of multicast com-
+munication
+We outline the salient security requirements of mul-
+ticast communication. A more detailed discussion ap-
+pearsin[CP99,CG
+(cid:3)
+99].
+(cid:4)
+members. All group communication is encrypted
+via symmetric encryption using this key. The ar-
+chitectureproposedherefollowsthisapproach.
+Formanyapplications,groupmembershipislikely
+tovaryovertime.Itisoftenrequiredthatmembers
+leavingagrouploseaccesstofuturegroupcommu-
+nication,andthatmembersjoiningagroupdonot
+gainaccessto groupcommunicationthatoccurred
+beforetheyjoined.
+Note that in order to implement access control it
+mustbepossibletoauthenticatetheidentityofpo-
+tential group members. This can be done using
+public-keycertificatesofpotentialmembers.Ade-
+cisiononwhethertoacceptrequeststojoinagroup
+isusuallymadeaccordingtosomepredefinedpol-
+icy.
+Group membership control and confidentiality:
+The goal is to ensure that the group communica-
+tion is accessible only to legitimate group mem-
+bers. Groupmembershipcontrolisusuallyimple-
+mentedbyhavingagroupkeysharedbyallgroup
+(cid:4) Group authentication: This refersto theabilityof
+a group member to verify that the received group
+communicationoriginatedfromasourcewithinthe
+group. Note that any group member can imper-
+sonate thesenderormaliciouslymodifythetrans-
+mitted data. To achieve this, we followthe usual
+approach of implementing group data authentica-
+tionusingadedicatedkeysharedamongallgroup
+members. All the communicated data is authenti-
+cated via Message Authentication Codes (MACs)
+usingthesharedkey.
+(cid:4) Individual source and data authentication: This
+refers to the ability of group members to verify
+the authenticity of the data, and identity of the
+sender of data, even if the other group members
+are not trusted. This problem is inherently differ-
+ent from group authentication and from authenti-
+cation of point-to-point connections, since single
+MACbasedsolutions(suchasthoseusedinIPSec
+[KBC97])arenotapplicablehere.
+Other security concerns, like non-repudiability and
+anonymity,mayalsoberelevanttosomeapplications.
+2.2 On the structure of secure multicast solu-
+tions
+Inorderto placeourworkin context, weoutlinethe
+generalstructureofsecuremulticastsolutions.
+Veryroughly,asecuremulticastsolutioninvolvesthe
+following entities. In addition to the group members
+(and would-be members) there are one or more group
+controlentities. Theseconsistofthegroupinitiatorand
+owner,andoneormorepolicyandkeyservers. Asolu-
+tioncanbeviewedasconsistingoftwomainparts:
+2of17(cid:4) Group control: This part deals with the task of
+group management and access control, in partic-
+ular, with distributingand updating the group key
+and other data that is relevant to securing group
+communication. Typically this part includes only
+communicationbetweenthecontrolentitiesofthe
+group and potentialgroup members (and possibly
+somecommunicationamongthecontrolentities).
+(cid:4) Datahandling:Thispartdealswiththecommuni-
+cated data itself. This includes the processing of
+dataattheendhosts,datapacketrouting,andpos-
+siblyen-routetransformations.Typicallythegroup
+controlentitiesdonotparticipateinthispartatall.
+Thisworkhandlesbothparts, fromthepointofview
+of a group member. It does not address the design of
+thegroupcontrolentities;itiscompliantwithanysuch
+design.
+3 DesignTenets
+We describe the main design principles set forth in
+thiswork.
+(cid:4) Independence from multicast routing: The archi-
+tecture does not interfere with the routing mecha-
+nismofdata packets. Datapacketsmayberouted
+via any multicast or unicast routing. For sake of
+simplicity and modularity of design, we recom-
+mendthatthekeymanagementmechanismassume
+reliable communication. Yet, no specific mecha-
+nismforobtainingreliabilityisspecified. Anyre-
+liable multicast or unicast mechanism (e.g., TCP)
+canbeused.
+(cid:4) MimicIPSecarchitecture:AsinIPSec,weseparate
+the modules thathandle data fromthose that han-
+dlekeymanagement.Functionssuchasthegenera-
+tion,distributionandupdateofcryptographickeys
+areencapsulatedinakeymanagementmodule,that
+isplacedin the“applicationlayer”ofthecommu-
+nication,andoutsidetheOSkernel.Thisfacilitates
+application specificoperations, such asmultiplex-
+ingofdatafordifferentusersandcertificateverifi-
+cation. ThedatahandlingpartliesmostlyintheIP
+layer, using IPSec modules. Yet, we introduce an
+additionallevel ofdatahandling, intheinterestof
+sourceauthentication.
+(cid:4)
+ESP protocol [KA98] is used for exchanging en-
+cryptedand authenticatedmulticastdata. Ifconfi-
+dentialityisnotanissueorifadditionalauthentica-
+tionbeyondwhatisprovidedbytheESPauthenti-
+cation mechanismis required(such asauthentica-
+tionoftheIPheader)thentheAHprotocolcanalso
+beused.
+SinceIPSecwasmostlydesignedforunicast,there
+areafewissuesthatarisewhentheESP/AHproto-
+cols areused formulticastdata. Wediscusssome
+of these issues in Section 7. Multicast-specific
+packettransformationsmaybeintroducedinthefu-
+ture.
+Wealso recommendusingInternetKey Exchange
+protocol (IKE) as a component within the multi-
+cast key managementmodule, forsecuring point–
+to–point communication between group members
+andthecontrolentities.
+Use existing components: We use existing com-
+ponents wherever possible. Specifically, we use
+IPSec’sEncapsulatingSecurityPayload(ESP)pro-
+tocol for encrypting and authenticating data. The
+(cid:4) Minimize modifications of the OS kernel: The ar-
+chitectureisstructuredsothatthenewmulticastse-
+curityspecificcomponentsarekeptintheapplica-
+tionspaceandthe IPSeccomponentsthatarecur-
+rently in the OS kernel can be used for multicast
+security without modification. It is expected that
+with time, some of the multicast specific compo-
+nentsmaybemovedtothekernelandIPSeccom-
+ponentsalreadyinthekernelwouldbemodifiedto
+bettersupportmulticast.
+(cid:4) Flexibility in the choice of cryptographic algo-
+rithms: By re–using the IPSec design for data
+transport,weretaintheflexibilityofusinganydata
+encryptionandauthenticationalgorithmwhichcan
+besupportedbyIPSec.
+Thenewcomponentsintroducedinthisdocument,
+namelytheMulticastInternetKeyExchangeMod-
+ule (MIKE) and the Source Authentication Mod-
+ule (SAM)provideframeworkswhich areflexible
+enoughtosupportmostgroupkeymanagementand
+sourceauthenticationschemes.
+4 SystemArchitecture
+4.1 Motivation
+We present a bird’s eye view of the architecture, its
+components,andthedataflow. Webeginbymotivating
+thedecisiontobasethearchitectureontheIPSecdesign.
+TheIPSecarchitecture. Inanutshell,theIPSecpro-
+tocol suite consists of the following components: The
+InternetKeyExchange (IKE)protocolisanapplication
+layer protocol for agreeing on a security association
+3of17(SA) between the communicating peers. Among other
+data, (cid:5) theSAincludessharedsessionkeysforauthentica-
+tionandencryptionofdata. TheAuthenticationHeader
+(AH)andEncapsulatingSecurityPayload(ESP)aretwo
+protocolsforauthenticatingandencryptingdatapackets,
+usingtheinformationintheSAfortherelevantsession.
+BothAHandESPareIP–layerprotocolsandoperateon
+apacketbypacketbasis. Thecommunicationbetween
+theapplication–layerIKEandtheIP–layerAHandESP
+isdoneviaasecurityassociationdatabase.
+Why IPSec–based design? In contrast to previous
+designs of secure multicast host architectures (e.g.,
+[CE
+(cid:3)
+In contrast with IPSec, where the data transforma-
+tions are done exclusively in the IP layer, we partition
+the data–handling mechanism into two separate com-
+ponents. The first component, called Source Authenti-
+cation Module (SAM), sits in the application layer and
+dealswithtransformationsforauthenticatingthesource
+and contents of the data. (Recall that the AH or ESP
+transformsdo notguaranteeindividualsourceand data
+authentication for group communication.) One benefit
+ofplacingSAMintheapplicationlayerisavoidingthe
+need to modify the operating–system kernel. In addi-
+tion, transforms for source authentication may benefit
+formtheabilitytoprocessthedatainlargerframes,be-
+99]), that remained exclusively in the application fore it is partitionedinto IP packetsby the sender, and
+layer of the communication,we have based ourdesign aftertheframeshavebeenre–assembledbythereceiver.
+ontheIPSecprotocolsuite. (This additional option may be most viable when reli-
+One mainreasonforusingIPSecisthatitprovidesa abletransmissionisguaranteed.)
+set ofprotocolsthatwillshortlybe availableonpracti- The second stage for data processing is the ESP
+callyeverysecurity–conscioushostontheInternet. We transform at the IP layer. Here data may be en-
+see great benefit in using existing protocols for secure crypted/decryptedusingthegroupkey. Possiblythedata
+multicast,bothfromthepointofviewofthesystemde- isalsoauthenticatedusingthegroupkey;thisguarantees
+signer(whodoesnotneedtodesignsuchprotocolsfrom groupauthentication.
+scratch) and from the point of view of the user (who Both SAM and ESP take the informationneededfor
+doesnotneedtohaveduplicatecodeandcanhaveauni- handlingthedatafromtheMSAdatabase. (Weremark
+fiedstandardsecuritymechanismforunicastandmulti- thatasimilarnotionofsecurityassociationformulticast
+cast). Another reason for using IPSec is its enhanced isproposedin[HM99]. Thetwonotionsmayindeedbe
+efficiency in processing data, being an IP–layer proto- unified.)
+col.
+4.2.2 Architectural Details We now describe the
+On the downside, using IPSec ties thedesign to ex-
+architecture of a member of a secure multicast group.
+istingprotocolsandforcesustodealwithcompatibility
+The member could either be a data recipient or a data
+problems with existing implementations. Weelaborate
+sender orboth. From the application’sperspective, the
+onsuch problems in Section7. However, even in light
+secure multicast framework provides a simple API for
+oftheseproblems,weregardtheIPSec–baseddesignas
+usingsecuremulticast.ThisAPIislogicallypartitioned
+aviableandpreferableoption.
+intotheDataAPIwhichdealswithsendingandreceiv-
+4.2 Architecture ing multicast data securely and the Control API which
+deals with the process of joining and leaving a secure
+4.2.1 Overview Wepresentahighleveloverviewof multicast group and the associated access control and
+the architecture. As in IPSec, we partition the “con- key update functions. The block diagram of a secure
+trol plane” functions (i.e., key management and policy multicastframeworkonahostisshowninFigure1.
+mechanisms) from the “data–plane” transformations.
+The“controlplane”functionsareplacedintheapplica-
+tionlayer. ThemaincomponenthereiscalledMulticast
+InternetKeyExchange (MIKE).Thisisagenericname
+forthecomponentthatisresponsibleforcommunicating
+withthegroupcontroller(s),bothonjoiningandleaving
+the group, and for periodic updates of the group secu-
+rity data (suchas keyupdates). TheMIKE component
+generates and updates a multicast security association
+(MSA) database. This database contains the necessary
+data for members in the relevant group. In particular,
+formulti–userhoststhe GSAspecifieswhichusersare
+membersofthegroup.
+(cid:4) MIKE – Multicast Internet Key Exchange: This
+moduleisresponsibleforkeymanagementandim-
+plements the Control API which permits applica-
+tions to join and leave secure multicast groups.
+This module resides in the application layer, out-
+side the OS kernel. It interacts with the MIKE
+modules of the group controller(s), and generates
+and maintains a Multicast Security Association
+(MSA)thatcontains:
+– Groupkeysforencryption/decryptionandau-
+thentication of data (via the AH/ESP mod-
+ules).
+4of17CLIENT APPLICATION
+SENDER AUTHEN.
+MULTICAST SECURITY MODULE
+ASSOCIATION (SAM)
+(MSA)
+IPSec
+(AH + ESP)
+(cid:6)(cid:8) (cid:7)(cid:10) (cid:9)(cid:12)(cid:11)(cid:13) (cid:7)(cid:10) (cid:14)
+Control Plane Data Plane
+Control join/leave Data
+send/receive
+API API
+MULTICAST INTERNET
+KEY EXCHANGE MODULE
+(MIKE)
+Secure Multicast
+Key Management Flows
+Secure Multicast
+Data Flow
+(cid:15)(cid:8) (cid:16)(cid:10) (cid:7)(cid:17) (cid:9)(cid:19) (cid:18)(cid:10) (cid:20)(cid:13) (cid:21)(cid:19) (cid:22)(cid:17) (cid:7)
+Figure1.Blockdiagramofsecuremulticasthostarchitecture.
+– Signing/Verificationkeysforsourceauthenti-
+cationofdatabytheSAMmodule,described
+below.
+– Other information regarding the connection,
+asinanIPSecSA.
+– Alistofapplicationsthataremembersofthe
+group(relevantformulti–userhostsonly).
+In order to make a MIKE specification complete,
+the MIKE modules within the group controller(s)
+need to be specified. See more discussion on the
+designofMIKEinsection5.
+An additional functionality of MIKE is periodic
+updatesoftheMSA,whenevergroupkeysorkeys
+usedbySAMarechanged.
+(cid:4)
+is encrypted with the group key by the sender(s)
+anddecryptedusingthesamekeybyreceivers.The
+ESPheaderremainsasdefinedintheunicastcase;
+theprotocolheaderprecedingtheESPheaderwill
+containthevalue50in itsProtocol(IPv4)orNext
+Header (IPv6, Extension) field and its destination
+IPaddresswillbetheIPmulticastgroupaddress,a
+classDaddress.Thus,thepacketwillbeforwarded
+to allmembersofthe groupbyrouterssupporting
+multicastdelivery. ESPcanbeusedinconjunction
+with the ESP authentication option. In principle,
+ESPformulticasttrafficcanbeusedeitherintrans-
+port or tunnel mode, although transport mode is
+clearly moreappropriatein an environmentwhere
+mostparticipatingmembersareendhosts.
+For multicast data authentication different tech-
+IPSecmodules:AH/ESP: niques can be used depending on whether group
+or individualsenderauthenticationis desired. For
+ThesearetheIPSecmodulesthatresidein theOS
+group authentication, the protocol designed for
+kernelanddealwithencryption/decryptionandau-
+unicast IP security, namely the IP Authentication
+thentication of data packets. These modules pro-
+Header(AH)[KA98]and/ortheauthenticationop-
+vide encryption/decryption and group authentica-
+tionwithinESParesufficient. All membersshare
+tionofincoming oroutgoingmulticastdata. Data
+5of17acommon,symmetricauthenticationkeywhichis
+administeredby thegroup controllerand whichis
+used to generate the message authentication code
+(MAC). The AH header remains as definedin the
+unicastcase;theprotocolheaderprecedingtheESP
+header will contain the value 51 in its Protocol
+(IPv4)orNext Header(IPv6,Extension)field and
+its destination IP address will be the IP multicast
+groupaddress,aclassDaddress. TheSPIvalueis
+selected,asforESP, bythegroupcontroller. (See
+more discussion on the assignment of the SPI in
+Section7.)
+(cid:4)
+keys. (See the survey of [CP99].) In particular
+the source authentication mechanism proposed in
+[M99],basedonaschemeof[WL98]orascheme
+describedin[R99]areoptionsforrealizingSAM.
+AnadditionalpotentialfunctionalityofSAMisto
+providereplayprotectionfordata, incasethatthe
+IPSEC replay protection mechanism is turned off
+becauseofmultiplesenderproblems.
+WeshalldiscusstheSAMmoduleingreaterdetail
+inSection6.
+4.3 DataandControlFlows
+SAM – Source Authentication Module: This mod- Typical operation of the system is as follows.1 The
+ule is responsible for the transformations that en-
+member initiates a secure multicast session by invok-
+ableauthenticatingthesourceofreceiveddataand
+ing the join operation in the Control API which is im-
+possiblyforreplayprotection. Scalablesourceau-
+plemented by MIKE. This enables the member to reg-
+thenticationmayinvolveoperationsthatspanmore
+ister in the group as a sender or a receiver or both.
+thanasinglepacket,bothforoutgoingandincom-
+Subsequently, the member is able to send and re-
+ing data. Since UDP frames are good candidates
+ceive datagrams securely to the multicast group us-
+forabasicunitforauthentication,itseemsreason-
+ing the send/receive functions of the Data API. All
+able to place this component in a higher layer in
+groupkeymanagement,dataencryption/decryptionand
+theprotocolstack,i.e., aboveUDP. It couldeither
+group/source authentication functions are managed by
+be part of the kernel or kept in application space.
+the secure multicast framework and are transparent to
+Ifthekernelweretobemodified,thenthismodule
+the member. If at some later point in time the mem-
+should be partof a“SecureMulticast UDP” layer
+berdecidestoleavethesecuremulticastgroupthenthis
+which couldreplace UDP. This “Secure Multicast
+is done by invoking the leave operation in the Control
+UDP” layer could also implement the mult–user
+API.Thisactioneventuallyresultsintheterminationof
+accesscontrolfunctionalitywhichwewilldiscuss
+themember’s abilityto securelysend/receivemessages
+laterinSection7.1.Apartfromthedisadvantageof
+tothegroup.
+requiringkernelmodifications,placingSAMinthe
+We now outline the data and control flows in more
+kernel will make it inflexible in the choice of au-
+detail.
+thenticationschemesandwillalsoresultintheker-
+nel beingentrustedwith the user’ssignaturekeys.
+Ontheotherhand,iftheSAMmoduleiskeptinthe
+application space then source authentication will
+notbetransparenttoapplicationsandexistingmul-
+ticastapplicationswillneedtobere–writtentoin-
+voke the relevant functions of the SAM module.
+But if a SAM module is well designed, then this
+burdenshouldbecomparabletomovingfromreg-
+ularsocketstoSSLinthecaseofunicast,andsuch
+achangeshouldbeequallyacceptabletotheappli-
+cationdevelopercommunity. Thereforeitisadvan-
+tageoustokeeptheSAMmoduleintheuserspace
+fornow.
+The internal structure of the SAM depends to a
+large extent on the source authentication mecha-
+nism used. Several source authentication mecha-
+nisms exist, some are based on public key signa-
+tures which may be applied on a group of pack-
+ets via a variety of mechanisms, and others are
+based on symmetric authentication with multiple
+(cid:4) ControlFlows:
+– Client Join: The application invokes MIKE
+to join a multicast group. At a minimum,
+the application must identify the group that
+it wishes to join and provide information as
+to the authentication required (e.g., whether
+ornotsourceauthenticationisrequiredandif
+so,thesourcesitwilltrust).
+MIKE then performs the process of regis-
+tering with the group controller(s), sets up
+a Multicast Security Association (MSA), in-
+vokes a standard registration mechanism for
+theunderlyingIPmulticastgroupandenables
+the ESP/AH and SAM modules to start pro-
+cessing data. (In multi–user hosts it may be
+that an MSA for this group already exists,
+1Hereweassumethatthedataissent/receivedviaeitherreliableor
+unreliableIPmulticast. Itisnoted,however,thatthesecuritymech-
+anismdescribedherecanbeusedevenwhenthedataisbeingrouted
+viapoint–to–pointconnections,suchasTCP.
+6of17withanotherapplicationlisteningtoit.Inthis
+casetheMSAisupdatedto includethejoin-
+ingapplication.)
+The registration process will inevitably in-
+clude communication with the group con-
+troller(s)andthiscommunicationwillrequire
+mechanisms for authentication of the parties
+as well as confidentiality of the information
+exchanged. Thiscommunication,its authen-
+tication and encryption mechanisms should
+bedealtwithwithintheMIKEmodule.
+At the end of the join process, the Multicast
+Security Association (MSA) database needs
+tobeupdated. Therelevantinformationfrom
+the MSA is then pulled by the ESP/AH and
+SAMmodules.
+– Key update: Key updates messages are in-
+ternal MIKE messages and are not part of
+the high–level architecture. These messages
+areauthenticatedandencryptedseparately,as
+specified in MIKE. A special class of key
+update messages consist of member expul-
+sion messagesin whichthecontrollerexpels
+the member from the group. The expulsion
+process is dependent on the specifics of the
+Key ManagementProtocol,butshouldresult
+in thememberbeing cryptographicallyinca-
+pableofsending/receivingmessagesfromthe
+secure multicast group. In this case MIKE
+module should treat an expulsion message
+likeamemberleaverequestwithouttheneed
+tocontactthecontroller(s).
+– Client Leave: First MIKE is invoked to de–
+register with the group controller(s). Next
+the Multicast Security Association database
+is modified to reflect the fact that the client
+leaves. (Iftherearenomoreapplicationsthat
+are listeningon the same group then the en-
+try maybe deletedormarkedstale). Finally,
+the host executes the standard procedure for
+leavingtheunderlyingIPmulticastgroup.
+(cid:4)
+keys forperforming theseoperationsare ob-
+tained from the MSA.) Next, the data is di-
+rected to the AH/ESPtransformationsin the
+kernel. These transformations are executed
+withthegroupkeys thatappearinthe MSA.
+Finallythedatapacketsaresentonthechan-
+nelinthestandardway.
+– Receipt of data: Incoming data packets are
+first processed by IPSec’s AH/ESP transfor-
+mations in the kernel. There the data is de-
+crypted and group authentication is verified.
+Next, the data stream is processed by the
+SAM and source identity is authenticated, if
+needed. Finally, the data is handed to the
+calling application. (In a multi–user host it
+shouldalsobedecided,basedoninformation
+intheMSA,whethertheapplicationiseligi-
+bletoreceivethecomunicationoftherelevant
+group.)
+5 MIKE:Design Guidelines
+Although the design of MIKE deserves a separate
+document,wesuggestsomerequirementsforMIKE,de-
+scribe architectural principles that will allow MIKE to
+meet these requirements and yet be flexible enough to
+accommodateavarietyofgroupkeymanagementtech-
+niques. This provides an interfacefor plugging in dif-
+ferentgroupkeymanagementmodulesintoMIKE.
+It is stressed that the discussion below does not at-
+tempttoaddresstheinternaldesignofthegroupcontrol
+entities. Instead,itisfocusedontherequirementsfrom
+thepointofviewofagroupmember.
+5.1 FunctionalityofMIKE
+WelistsalientrequirementsfortheMIKEmodule.
+1. MIKE should support the simple scenario where
+there is only a single group controller that com-
+municateswithallgroupmembers. Morecomplex
+environmentswhereintermediateserversfacilitate
+thecommunicationmayalsobesupported.
+DataFlows: 2. MIKEshouldsupportmaintainingasetofkeys(for
+symmetric encryption and authentication) shared
+– Sending of data: If source authentication is
+amongallgroupmembers. Inaddition,MIKEwill
+not needed, then data is transmitted directly
+help in forwarding the public verification keys of
+viaUDP(orareliablemulticastlayer)andthe
+thegroupcontrollerandofsendersinthegroup,to
+IPSecmoduleintheIPlayer,withtheIPmul-
+support source authentication by group members.
+ticastgroupinthedestinationaddress.
+(Notethattheseverificationkeysmaybedifferent
+If source authentication is needed then the from the long–term certificates of these parties.)
+dataisfirsttransferredtotheSAM.Therethe MIKE could obtain these keys directly from the
+dataisprocessedforsourceverification.(The group controller(s) or from some other repository
+usingaprotocolsuchasLDAP[LDAP].
+7of17Control API Join/leave
+MULTICAST INTERNET KEY EXCHANGE MODULE
+KEY MANAGEMENT TECHNIQUE
+SELECTOR
+GROUP KEY AND MSA
+MANAGEMENT FRAMEWORK
+Group Key Mgmt Module
+initiated MSA Control Flows
+GROUP GROUP GROUP
+KEY MGMT KEY MGMT KEY MGMT
+MODULE #1 MODULE #2 MODULE #N MSA
+Secure Multicast
+Key Management Flows
+Figure2.BlockdiagramofMIKE.
+3. MIKEwillbeplacedintheapplicationlayerofthe solutionsthatprovidesecurechannels(e.g.,SSLorpro-
+communication,andoutsidetheOSkernel. prietarycommunicationprotocols)canbeusedinstead.
+4. MIKE should be flexible enough to accommodate 1. Point–to–point communication between a group
+any reasonable multicast group key management memberandthecontroller(say,forgroupregistra-
+solution. tionandde–registration)willbesecuredviaastan-
+dard IPSec connection established by IKE. This
+5. MIKEshouldbeabletodealwithmulti–userhosts.
+connection will provide confidentiality as well as
+Inparticular,theMSAwillcontaininformationon
+authentication of the information exchanged. In
+whichusersaremembersofeachsecuremulticast
+particular, the group keys and additional informa-
+group.
+tion will be transmittedasdata in the secure con-
+nection. The IPSec SA between a group member
+AnarchitecturalblockdiagramofMIKEisshownin
+andacontrollerwillbeshort–lived,andwillgener-
+Figure2.
+allynotlastthroughoutthelifetimeofthemulticast
+5.2 SomedesignguidelinesforMIKE group.
+This section suggests some design guidelines for a 2. Key updatemessageswillbe transmittedfromthe
+group key management module to be plugged into group controller to the membersusing an abstract
+MIKE.Westresssimplicityandre–useofexistingpro- transportation mechanism,called”Reliable Multi-
+tocolsandstandardssuchasIPSecandIKEwherepos- cast Shim” (RMS). This abstract mechanism pro-
+sible. In particular, we propose using IPSec to set–up videsreliablemulticast,inthesensethatanymes-
+secure channels for all point–to–point communication sage transmitted via the RMS is guaranteed to
+betweenthehostandthecontroller(s). Ofcourse,other reachallgroupmembers.
+8of17MULTICAST INTERNET KEY EXCHANGE MODULE
+GROUP KEY AND MSA
+Group Key Mgmt Module
+MANAGEMENT FRAMEWORK
+initiated MSA Control Flows
+GROUP MSA
+Key Management Module
+Reliable Multicast Shim
+Reliable Multicast
+Emulation Using
+RMT or PGM or
+Home-Grown Rel. MCast or
+Point-to-Point TCP
+User Space
+Kernel
+Multicast Key Management IPSec
+Flows AH + ESP
+Point-to-Point Flows Required
+for Secure Multicast Key Management
+(e.g., between a member and the controller)
+Figure3.SuggesteddesignofMIKE.
+TheRMSabstractioncanthenbeimplementedvia modulewhichconformstotheMIKErequirements.
+any available reliable multicast mechanism (such The example module is based on a few modifica-
+as those developed in [RM]), or alternatively via tionstothemulticastkeymanagementmoduleinIBM’s
+point–to–pointreliablecommunication(TCP). Toolkit for Secure Internet Multicast [CE
+3. Key update messages sent by the controller will
+have a special format. In particular, they will be
+authenticated using public–keysignatures that are
+verifiable using a public key that is handed to the
+members at registration time. MIKE will imple-
+mentitsownsignatureverificationmechanism.
+The suggested design guidelines for MIKE are
+sketchedinFigure3.
+5.3 Anexample
+Inthepreceedingsectionsweoutlinedsomerequire-
+mentsandguidelinesfortheMIKEmodule,withoutex-
+plicitlydescribinghowexistinggroupkeymanagement
+techniquesandimplementationscouldbemodifiedtofit
+withintheMIKEframeworkinconformancewiththese
+requirements and guidelines. In this section we give
+an example of one possible multicastkey management
+(cid:3)
+99]. The
+original toolkit employed a scheme by Wallner et al,
+[WHA97]forgroupkeymanagementandSSLforuni-
+cast connections between the client’s key management
+module and the groupcontroller. Inthe example mod-
+ule, theSSLinteractionsbetweentheclient’skeyman-
+agementmodule(MIKE)andthegroupcontrollerwould
+be replaced by IPSec connections. In the original
+toolkit, signed key update messages were multicast by
+the group controller over a reliable multicast channel.
+In theexample, thesesignedmessages wouldbe trans-
+ported over the “Reliable Multicast Shim”. These to-
+gether withother minorchangeswouldbe sufficient to
+makethetoolkitcomplywiththeMIKEguidelines.
+6 InterfacesofSAM
+In this section, we briefly describe the interfaces of
+SAM,totheapplicationandtothecommunicationlayer.
+WedonotdescribeanimplementationofSAM;imple-
+9of17mentations may vary widely and are to a large extent
+independent (cid:23)
+6.1.3 Frame Sequence Number The frame se-
+oftheoverallarchitecture. Webelievethat quence number field is a numeric field containing the
+theseinterfacesaregeneralenoughtoaccomodateava- sequencenumberoftheSAMframewithrespecttothe
+riety of mulitcast authentication schemes and applica- flowofSAMframessentoutbythesender(asidentified
+tions, and thus could serve as a basis for the standard- bythesourceidentifier)forthecurrentsession(asiden-
+ization. From Figure 1, it is clear that the interface to tified by the session identifier). Each sendermaintains
+SAM consists of a SAM Data API thatis presentedto thesequencenumberforitsownownflowbypickinga
+secure multicast applications and a specificationof the startingsequencenumber forits frameand thensubse-
+formatofdatablockswhicharesentorreceivedbythe quentlyincrementingthesequencenumberoneachsuc-
+SAMlayertothecommunicationlayersbelow. cessive outgoing frame. The SAM module on the re-
+ceiver side can optionally use these sequence numbers
+6.1 SAMDataFormat
+to implement replay protection and re–ordering of re-
+DataflowingbetweentheSAMmoduleandtheunder- ceivedSAMframes(ifrequiredbythesourceauthenti-
+lyingcommunication modules is organizedinto blocks cation scheme) by employingwell known sliding win-
+orframes.Thebasicideaisthatonthesendingend,out- dowbasedtechniques.
+going data supplied by the application is packaged to-
+6.1.4 DataPayload Thisfieldholdstheactualdata
+getherwithauthenticationdataintooneorseveralSAM
+payloadthatthesenderneedstosendinanauthenticated
+frames which are passed to the communication layers
+manner.
+below. Onthereceivingend,SAMframesaredelivered
+bythecommunicationlayerstotheSAMmodulewhich 6.1.5 AuthenticationInformation Thisfieldholds
+verifiestheauthenticationinformationcontainedwithin theauthenticationinformationwhichisrequiredbythe
+theSAMframesandprovidestherawauthenticateddata receiver to authenticate the source and contents of the
+backtothereceivingapplication,togetherwiththeiden- Data Payload, Session Identifier, Source Authentifier
+tityofthesource. and Frame Sequence Number fields in SAM frames
+Each SAM frame consistsof several fields as shown within the flow from the sender. To allow maximum
+in Figure 4. These include the Session Identifier, the flexibilityinthechoiceofauthenticationschemes,there
+SourceIdentifier, theSequenceNumber, the DataPay- is no requirement that the authentication information
+loadandtheAuthenticatorfields. Wenowdescribethe carried within a SAM frame be either sufficient to or
+functionalityofeachofthesefieldsinmoredetail. restricted to authenticate the contents of that frame, it
+could even carry authentication information related to
+6.1.1 Session Identifier Field The Session Identi-
+other frames. All that is required is that SAM layer
+fieris a numericfieldwhich uniquelyidentifiesthe se-
+should have authenticatated each of the required fields
+cure multicast session. The purpose of this field is to
+withinaSAMframebeforepassingtheDataPayloadto
+bind the Data Payload with a particular secure multi-
+theapplicationlayer. Therefore,incaseswhereauthen-
+cast session. It is expected that for some applications,
+tication information carried within a SAM frame and
+senders may use the same long term signature key for
+all previous frames is not sufficient to authenticate the
+signing packets for several different multicast sessions
+frame,thendependingontheauthenticationscheme,the
+andthisbindingisnecessaryto preventout–of–context
+SAM modulemayneedto bufferthisframetill theau-
+substitutionattacks.Ourprotoypecurrentlyimplements
+thenticationinformationarrivesordroptheframeasthe
+this as 32–bit numeric field chosen by the group con-
+frameisnolongerwithinthesequencenumberwindow.
+troller, but a more robust structure (possibly includ-
+ing a combination of group controller id and a group– 6.2 SAMDataAPI
+controller assigned session id) would be required for
+The SAM Data API draws heavily from Netscape’s
+largerscaledeploymentandforstandardization.
+SSL API [SSLRef]. This is because in the network-
+6.1.2 Source Identifier In scenarios with multiple ing stack,theplacementofSAMisquitesimilartothe
+senders, the source identifier field provides a succinct placementofSSL.TheNetscape’s APIwasselectedas
+way to identify the purported sender of the packet, so a model for the SAM Data API because of its clean
+thattheauthenticationmechanismcorrespondingtothe modulardesignthatabstractsawaymostnetworkingand
+purported sender is used to verify the source of the memorymanagementdetails.Usingasimilardesignfor
+packet. In our prototype this is currently implemented SAMpermitsustocreateaSAMmodulethatfocusses
+as a source IP–address/port–number tuple. Again, for only on its designated task, i.e., source authentication,
+standardizationpurposes,thisneedstobegeneralizedto withouthavingtohandleextraneousissuessuchasnet-
+handleothertypesofSourceIdentifiers. working,heapmanagementetc. Anotherbenefitofthis
+10of17S E S IS DION S O U IR DCE F SR EA QME D PA AT YA
+LOAD
+A IU NT FH
+O
+NUMBER
+Figure4.SAMDataFormat
+appraochisthatthesameSAMmodulecanworkwitha
+varietyofdifferentunderlyingtransportmechanisms.
+At the core of the SAM Data API is the concept of
+a SAM context, a data structure which holds all infor-
+mationrevelanttosourceauthentication(includingcur-
+rentstate)foraparticularsecuremulticastsession. The
+SAMDataAPIprovidesAPIsforintializingandmain-
+taining components of the SAM context as well as an
+API for sending and receiving authenticated data from
+thesecuremulticastsessionidentifiedbytheSAMcon-
+text. WenowdescribethesetwotypesofAPIsinmore
+detail.
+6.2.1 SAM context component management For
+modularity, the SAM context consists of an I/O con-
+text,amemorycontext,ausercontextandagroupcon-
+text. TheI/Ocontextdealswiththemulticastdatainput
+andoutputfunctions,thememorycontextdealswiththe
+platform and/or application specific memory manage-
+mentfunctions,theusercontextdealswithinformation
+specific to the application as a sender and/or receiver
+withinthe multicast group and the group context deals
+with information related to the entire group. We now
+describeeachofthesecontextsandtheirmanagementin
+greaterdetail.
+(cid:4)
+the communicationmechanismbeing used forthe
+groupcommunication.Accordingly,theSAMcon-
+text management API provides a set of functions
+to registerthe applicationsuppliedread, readfrom
+andwritefunctionswithaSAMcontext.
+SAMI/Ocontext:TheSAMlibraryprovidespro-
+totypesforfunctionstoreadandwritedatablocks
+to the underlying communication layer. These
+functions are read, readfrom and write. The read
+functionreadsdata fromthe communicationlayer
+into a supplied buffer. The readfrom function is
+similar but in addition to receiving data into a
+buffer, the readfrom callalso providesahintasto
+the identity of the sender (e.g., IP–address/port–
+number of sender). The write function sends a
+buffer of data down to the communication layer.
+SAM assumes that pointers to the read and write
+functions are blocking and internally SAM uses
+onlythesefunctionsforcommunciations. Theac-
+tual read, readfrom and write functions are pro-
+videdbytheapplicationandregistered totheSAM
+context. This modular approach allows the SAM
+layertobeoblivioustothespecificsandinternalsof
+(cid:4) SAM memory context As with the I/O context,
+the SAM library provides prototypes for standard
+memory mangement functions such as alloc, free
+and realloc and provides an API to register these
+applicationsuppliedfunctionswithaSAMcontext.
+(cid:4) SAM user context The SAM user context data
+structurecontainsuserspecificinformationrelative
+to the secure multicast group. This includes the
+useridentifier,thecurrentoutgoingsequencenum-
+berandtheuser’sauthenticationinformationwhich
+includesahandletothesourceauthenticationalgo-
+rithm and key to be used for computing authenti-
+cationinformationforoutboundSAMframes.The
+usercontext APIalsoprovidesforfunctionstoin-
+tializeandmaintainthisinformation.Itisexpected
+that the MIKE module would invoke these func-
+tionstomanagethisinformation.
+(cid:4) SAM group context This data structure holds
+groupspecificinformationsuchasasessionidenti-
+fierandalist(orahashtable)ofregisteredsenders
+and their algorithms, replay windows and keys to
+be used to authenticateSAM framesfrom eachof
+theregisteredsenders.Again,theSAMgroupcon-
+text API provides for functions to initialize and
+maintain this information. It is expected that the
+SAMgroupcontextwillbemanagedbyMIKEei-
+therviadirectcommunicationwiththeGroupcon-
+trollers or via some sort of LDAP [LDAP] access
+toarepositoryofauthenticationkeys.
+6.2.2 SAM contextdata flow API Oncethe SAM
+context componentsareinitialized, aSAM context can
+be usedbyan applicationto sendand receiveauthenti-
+cateddata onthecorrespondingmulticastsession. The
+maindatacommunicationfunctionsavailabletotheap-
+plicationare
+11of17(cid:4) sam readfrom: Thisfunctionistobeusedbyap-
+plicationstoreceivesourceauthenticateddatafrom
+the secure multicast group. When provided with
+a valid SAM context, a data buffer and a source
+identifierplaceholder,thisfunctionreadsincoming
+data fromthe secure multicastgroupidentified by
+the SAM context, authenticates it and places raw
+authenticateddataintothesupplieddatabufferand
+theidentityofthesourceintothesourceidentifier
+placeholder.Thisfunctionblockstillauthenticdata
+isreceived.
+(cid:4) sam write: Thisfunctionistobeusedbyapplica-
+tionstopostauthenticateddatatothesecuremulti-
+castgroup.WhenprovidedbyavalidSAMcontext
+andadatabuffer, thisfunctionpoststhedata con-
+tainedinthedatabuffertogetherwithuserauthen-
+ticationinformationtothesecuremulticastgroup.
+7 Compatibilitywith IPSec&IKE
+This section discusses some compatibility issues of
+secure multicast with the design of the IPSec protocol
+suite.
+7.1 Granularity of Access Control: Host vs.
+Application
+By design, IPSec is ideally suited for securing traf-
+fic between two hosts. Securing traffic between appli-
+cations requires hosts to implement additional control
+mechanisms to create and maintain SA’s at the granu-
+larityofapplications,i.e.,tocreateandmaintainproper
+associationsbetweenSA’sandapplications’
+(cid:24)
+protocol,
+port
+(cid:25)
+2. Only applications which are current members
+of the multicast group can send/receive packets
+throughthegroup’sUDPport.
+ThisimpliesanewcontrolmechanismintheUDPlayer
+whichcontrolsaccess tothe portonthebasisofmulti-
+castmembershipinformationreceivedfromMIKE.
+Alessintrusive,butinferior solutionwhichdoes not
+requirekernelmodificationswouldbeputthesamecon-
+trolmechanisminasystemdaemonprocess. Thispro-
+cess joins a secure multicast group once on behalf of
+user applications and perform multiplexing and access
+control on outgoing and inbound data. By binding to
+the group’s UDP port exclusively the daemon can en-
+surethatnootherapplicationcansubvertthedaemon’s
+controlonthedataflow.
+7.2 IdentificationofMulticastSecurityAssoci-
+ationsandSPIassignment
+Inthe InternetProtocol,aSecurityAssociation(SA)
+is uniquely identified by the combination of the desti-
+nation address, SecurityParameterIndex (SPI)and the
+protocol used (e.g., AH, ESP). As stated in the IPSec
+architecture document [KA98], the destination address
+can be either unicast or multicast; the definition of an
+SAremainsthesame.
+InunicastSAs,inordertoavoidpotentialconflictsof
+SPI values, receivers are responsible forassignmentof
+the SPI. Since in the multicast case there are multiple
+destinations, all within the same multicast destination
+address, suchan approachisimpracticalsinceit would
+require coordination by all receivers. Selection by the
+senderwouldalsobeproblematic,especiallyinthecase
+tuples [KA98, CGHK98]. Similarly, multicast
+ofmultiplegroupsenders.
+over IPSec works best when the granularity of access Within our framework, a reasonable solution to the
+control or group membership is at the level of hosts. problemistoutilizethebenefitsofthecentralizedcon-
+However, if the granularity of access control is at the troller by requiring that the group controller selects
+level of user applications, then IPSec by itself is not
+the SPI for each multicast group and communicates it
+sufficient. This is not a problem for most hosts on the
+to members, sendersand receivers, during registration.
+Internet which are single–user systems. However in
+Selection by the controller guarantees that the SA is
+multi–user systems where multiple users could belong uniquelyidentifiedbythecombinationoftheSPIvalue,
+to the same secure multicast group, additional mech- themulticastgroupaddressandtheprotocol. (Asimilar
+anisms need to be implemented by the host to ensure solutionissuggestedin[HM99].)
+thatIPSecprotectedmulticasttrafficflowsareinitiated
+As stated in [KA98], multiple senders to a multi-
+and delivered to only those applications which belong
+castgroupMAYuseasingleSecurityAssociation(and
+to themulticastgroup. Thisrequires closecooperation hence Security Parameter Index) for all traffic to that
+betweenMIKEandthesystem. group. In that case, the receiver only knows that the
+Anidealsolutioninvolvesmakingchangestothehost message came from a system knowing the security as-
+kernelsothat:
+sociation data for that multicast group. Multicast traf-
+fic MAY also usea separate Security Association(and
+1. ThemulticastSA’sforthemulticastgroupareonly
+hence SPI)foreach sender. TheassignmentofSA’s to
+associated withthe specific UDP portused by the
+senderscanbedonebythegroupcontroller.
+group.
+12of177.3 Sequence Number Handling and Replay– 8.1 FeasibilityTests
+Prevention
+Our test bed consists of IBM PCs running Red Hat
+Both ESP and AH headers contain a mandatory, Linux5.1withkernelversion2.0.35andwithFreeswan
+monotonically increasing, sequence number field in- version 0.91 implementation of IPSec. Freeswan con-
+tendedtoprovideanti–replayprotection. Processingof sistsoftwodaemons,klipsandpluto,whicharestarted
+thesequencenumberisatthediscretionofthereceiver, atboottime.
+but the senderMUST alwaystransmitit. The sender’s Klips, in the kernel, encrypts/encapsulates outgoing
+andreceiver’s countershavetobeinitializedto 0when packetsanddecrypts/decapsulatesincomingpackets. It
+theSAisestablishedandthefirstpacketofthatSAwill isimplementedasavirtualnetworkinterfaceandiscon-
+haveasequencenumberof1. figuredasanyothernetworkinterface.Thisvirtualinter-
+Inthecaseofmultiplesendersusingthesamesecurity faceisattachedtoaphysicalinterfacewhichhandlesthe
+association(andhencethesameSPIvalue)consistency traffic flow to/from the network. In the networkstack,
+and monotonicity of the sequence number cannot be the IPSec packet handler is piggy–backed onto the as-
+guaranteed. Hence,anti–replayserviceSHOULDNOT sociated physical interface packet handler. Klips also
+be used in a multi–sender environment that employs a providesan APIto set upthesecurityassociations that
+single SA. Multicast security implementations should map destination addresseswith the proper IPSec secu-
+thusensurethatreceiversdonotperformsequencenum- rityassociation.
+berprocessingandverification. Theotherdaemon,pluto,runsinuserspaceandman-
+Wesee twopossiblesolutionsto provideanti–replay ages thekeys andtheir updates. Referto theFreeswan
+protection: documentation [FSWAN] for additional details. Pluto
+(1) Using multiple SAs, one for each sender. (All wasnot used in ourtestsince weconfiguredthe IPSec
+these SAs may be part of a single MSA.) This can SAsmanually.
+provide a weak form of replay protection (against out-
+siders). 8.1.1 System set up and configuration Figure 5
+(2) Putting anti–replay protection in some higher showsthesystemsetupfortestingtheLinuxFreeSwan
+level module such as SAM. This solution requires IPSecpackage.
+application–layerframingofmulticastmessages. We first tested the proper configuration of IPSec, by
+These alternative solutions may better suit different testing the 2 modes of IPSec encapsulation, transport
+applications. andtunnel,asdescribedintheklipsinstallationfiles.
+We connected two security gateways A and B, run-
+7.4 Allowing IPSec processing of multicast ningLinuxwithFreeswan,viaanEthernetlink,config-
+packets ured as network interface eth0 on both machines, and
+representingthepublicInternet. Eachgatewaywasalso
+Some current implementations of the IP protocol
+connectedviaatokenringnetworktoaLANrepresent-
+stack will discard any IP packet with a class D desti-
+ing a private Intranet, designated as C and D, respec-
+nation address and a “protocol” field that is not UDP.
+tively. A snoopingboxE runningSolaris5.1 observed
+SuchimplementationsneedtobechangedtosupportIP–
+allEthernettraffic.
+multicastpacketsprotectedbyIPSec.
+The IPSec virtual interface ipsec0 was attached to
+eth0andconfiguredSothatallnetworktrafficbetween
+8 ValidationofArchitecture
+CtoDwouldbesecuredacrossthepublicEthernet.We
+ran the test scenariosof the Freeswansample files and
+AprototypeoftheproposedsecureIPmulticastarchi-
+verified thatpacketsbetweenCtoD wereproperlyen-
+tectureiscurrentlyunderdevelopment. Componentson
+cryptedbyAandB.
+the data path such as SAM and UDP over IPSec have
+been implemented and tested. Components along the
+8.1.2 TestSetup Wethenproceededtotestthemul-
+controlpathsuchasMIKEarestillbeingdeveloped.
+ticast support of Freeswan. For this set of tests we
+Evenatthisearlystageofdevelopmentwewereable
+did not change our previous configuration and ipsec0
+totestthefeasibilityofusingIPSectosecuremulticast
+wasstillbound to eth0andtrafficthroughtheEthernet
+traffic. We also were able to evaluatethe performance
+wasstillencrypted. Butwedisconnectedthe2subnets,
+impactofaddingsourceauthentication,groupauthenti-
+which were not needed. We installed, on gateways A
+cationandconfidentialitytoourarchitecture.
+and B, a simple multicast client/server application that
+In this section, wedescribethesefeasibilityand per-
+openedaUDPsocket,joinedagivenmulticastgroupon
+formancetestsandpresentpreliminaryresults.
+theeth0interfaceandthenloopedonsendingmulticast
+13of17Linux/FreeSwan
+Linux/FreeSwan
+Gateway B
+Gateway A
+ipsec0 ipsec0
+net interface net interface
+tr0 eth0 tr1
+C snoop E D
+Figure5.SystemSetupfortestingFreeSwan/IPSeconLinux.
+messagesandlisteningformessages.Again,asnooping
+box on the Ethernet eavesdropped on the traffic across
+thewire.
+8.1.3 FeasibilityTestResults Wemadethefollow-
+ingobservations:
+(cid:4) Handling of multicast addresses by Linux Multi-
+cast addressesare Class D addressesidentified by
+first 4 bits equal to 1110 with the remaining 28
+bits specifying a multicast group id. This trans-
+lates to addresses in the range from 224.0.0.0 to
+239.255.255.255.
+In the process of configuring the Linux routes to
+run our tests, we noticed that Linux treats mul-
+ticast addresses in the 224.0.0.0 range differently
+fromothers. Intheory,allmulticastaddressroutes
+should use the same network mask of 240.0.0.0,
+since they are not real network addresses. But in
+practice, this is only true of the 224.0.0.0 range.
+Other multicast ranges, such as 235.0.0.0, cannot
+usethenetmask240.0.0.0whentheroutesareset,
+orelsethe“routeadd”commandfails;weusedthe
+netmask255.0.0.0.
+(cid:4) Handling of received multicast IPSec packets by
+Linux Linux successfully processed and delivered
+received multicast IPSec packets intended for the
+all–hostmulticastgroupat address224.0.0.1. But
+it dropped packets intended for other multicast
+groups.
+Theflow–of–controlin Linuxand FreeSwancode
+isasfollows:
+1.
+(cid:26)(cid:28)(cid:27) (cid:29)(cid:31) (cid:30)! # "(cid:10) $
+in
+(cid:26)(cid:28)(cid:27) (cid:26)& %# (cid:27)# ’) (+ *(cid:30)
+was received; in our test the id is eth0. The
+function massages the skb and passes it to
+thenextprotocollayerforfurtherprocessing.
+If the packet is an IPSec packet, it is passed
+to the
+: This function re-
+trieves an IP packet from the system input
+queue;theIPpacketisinakernelbuffer(skb)
+containingadevice idrepresentingthephys-
+ical network interface on which the packet
+(cid:26)(cid:28)(cid:27)- ,+ ./ (cid:30) (cid:29)(cid:31) (cid:30)0 # "1 $
+function, which will call
+./ ,2 (cid:27) (cid:29)(cid:31) (cid:30)! # "(cid:10) $
+in
+(cid:26)3(cid:27)4 ,/ .+ (cid:30) ./ ,2 (cid:27)5 *(cid:30)
+(or
+68 7 (cid:29)(cid:31) (cid:30)! ) "1 $
+in
+(cid:26)3(cid:27)4 ,/ .+ (cid:30) 68 79 *:(cid:30) .).
+2.
+./ ,2 (cid:27) (cid:29)(cid:31) (cid:30)! # "(cid:10) $
+in
+(cid:26)(cid:28)(cid:27)- ,+ ./ (cid:30) .+ ,; (cid:27)9 *:(cid:30)
+: Thisfunctionpro-
+cessestheskbfurther,andreplacesthedevice
+id(eth0)intheskbbufferwiththevirtualin-
+terfaceidentifier (ipsec0). The skb packetis
+then decapsulated and decrypted as needed.
+Finally,theresultingskbisplacedbackonthe
+systeminputqueueandcontrolisreturnedto
+(cid:26)3(cid:27) (cid:29)(cid:31) (cid:30)! ) "1 $
+in
+(cid:26)3(cid:27) (cid:26)& %# (cid:27)# ’) (+ *(cid:30)
+3.
+(cid:26)3(cid:27) (cid:29)(cid:31) (cid:30)! ) "1 $
+in
+(cid:26)3(cid:27) (cid:26)& %# (cid:27)# ’) (+ *(cid:30)
+: This function re-
+trieves the skb from the system input queue
+again;notethatthedeviceidintheskbnowis
+ipsec0.Thefunctionexaminesthedestination
+addressofthepacket. Iftheaddressbelongs
+toamulticastgroup,thefunctionchecksifthe
+networkinterface identified by the device id
+intheskbhasregisteredinterestinthatgroup
+(viaamulticastjoinonthatinterface). Ifnot,
+thepacketisdropped. Otherwise,processing
+continuesand the the resulting skb packetis
+passedtothenext protocollayer, inthiscase
+UDP, for further processing and delivery to
+theapplication.
+One problem that we encountered here is
+that in the Linux socket API for IPv4, mul-
+ticast join requests can only be associated
+with physical interfaces, such as eth0, but
+not with virtual interfaces, such as ipsec0.
+Thiscauses
+(cid:26)3(cid:27) (cid:29)(cid:31) (cid:30)! ) "1 $
+todropthedecapsulated
+ipsec packet since the packet is associated
+with an interface (ipsec0) which is not reg-
+14of17isteredwiththemulticastgroup.
+We developed a temporary work–around for
+thisproblem:
+– inthe
+./ ,2 (cid:27) (cid:29)(cid:31) (cid:30)! # "(cid:10) $
+functionof
+(cid:26)(cid:28)(cid:27)- ,+ ./ (cid:30) ./ ,; (cid:27)9 *:(cid:30)
+:
+Wepatchedthe klipscodeto simplyre-
+storetheskbdevicefieldidintheskbto
+thephysicaldeviceidbeforeplacingthe
+skbbackonthesysteminputqueue.
+– in
+68 7 (cid:29)(cid:31) (cid:30)0 # "1 $
+functionof
+(cid:26)(cid:28)(cid:27)- ,+ ./ (cid:30) 68 75 *:(cid:30)
+: The
+samepatch(asabove)canbeused,since
+the
+68 7 (cid:29)(cid:31) (cid:30)! # "(cid:10) $
+processingisnearlyidenti-
+caltothatof
+./ ,; (cid:27) (cid:29)(cid:31) (cid:30)0 # "1 $
+.
+(cid:4) Sharing of UDP ports UDP delivers decrypted
+multicast packets to any process listening on the
+sameinterfaceandportastheregisteredmulticast
+application, even if the process has not joined the
+multicastgroup. Thishappenswhenthemulticast
+applicationsetsthesocketSO REUSEADDRop-
+tion before binding to the port. This is routinely
+done in application code. Since multicast only
+works with UDP sockets, care must be taken to
+control access to the port. This is an instance of
+theaccesscontrolgranularityproblemdiscussedin
+section7.1.
+A temporary work–around is to have the se-
+cure multicast group
+<> =/ (cid:26)& %
+operation not set the
+SO REUSEADDR socket option. This way after
+thefirstgroupmemberjoins,nootherapplications
+will be able to bind to the multicastgroup’s UDP
+port. Thislimitsthegranularityofmulticastgroup
+membershiptooneapplicationperhost. Betterso-
+lutions which do not have this restriction are de-
+scribedinsection7.1buthavenotyetbeenimple-
+mented.
+(cid:4) PacketsintheclearIfaplainUDPpacketissent
+tothemulticastaddress,itshouldbedroppedbythe
+receiver. The FreeSwan–0.91 code does not drop
+the packet. This is a knownbug to the FreeSwan
+developersanditismentionedintheFreeSwandis-
+tribution.
+Ingeneral,animplementationofIPSecmustcheck
+and drop any received packet that is not properly
+protected[CGHK98].
+(cid:4)
+8.2 PerformanceTests
+Weperformedaseriesofteststoevaluatetheperfor-
+mancecostofaddingsecuritytogroupmulticastinour
+architecture. Sinceonlythedataflowsideofourdesign
+isimplemented,wefocussedonthecostofaddinggroup
+authentication, source authenticationand encryption to
+themulticastdataflowswithinourarchitecture. Wedid
+notaddressperformanceissuesrelatingtokeymanage-
+ment. We performed our tests on a 400 Mhz Pentium
+IImachinerunningRedHatLinux5.1withkernelver-
+sion 2.0.35 compiled with the Freeswan–0.91 package
+[FSWAN] IPSec. Our SAM user library was imple-
+mentedasdescribedinSection6usingtheHybridSig-
+natureschemeforsourceauthenticationasdescribedin
+[R99]. Thetestmachineswereconnectedviaa10Mbps
+ethernet LAN. In the absence of a MIKE module, all
+keysusedforthesetestswereenteredmanually.
+8.3 DescriptionofTests
+Conclusion from Feasibility Test Results
+Freeswan 0.91 was cumbersome to install, con-
+figure and test. Documentation was basic but
+adequate. So far, tests ofsecure IP multicastwith
+our patched Freeswan–0.91 seem to work within
+thelimitsofthepreviousremarks.
+(cid:4) BaselineTest: MulticastoverUDP:Inordertoes-
+tablish a performance baseline, we first tested the
+speedofplainmulticastoverUDP, i.e., thepacket
+processing time required to send a UDP packet
+down to the communication hardware. This was
+donefortwodifferentpacketlengthsbothofwhich
+arelessthantheMTUsize.
+(cid:4) UDP–MulticastoverIPSEC:Inthis test, wemea-
+sured packet processing time for UDP–Multicast
+packetsoverIPSECfortwopacketsizes,usingthe
+ESP protocol with the Triple DES and HMAC–
+MD5–96transforms.
+(cid:4) SAMoverUDP–MulticastoverIPSEC:Inthistest
+wemeasuredthepacketprocessingtimeforpack-
+ets sent through our SAM interface to the UDP–
+Multicast/IPSEClayer. TheIPSEC layerused the
+ESP protocol with the Triple DES and HMAC–
+MD5–96 transforms and the SAM layer used the
+Hybrid Signature scheme as described in [R99].
+Thiswasagaindonefortwodifferentpacketsizes.
+8.4 PerformanceResults
+We first tried to measure the time to send a packet
+by measuringthe time taken by an application to send
+several packetsanddividingbythe numberofpackets.
+This approach produced some strange results: we ob-
+servedthatanapplicationexecutingalooptorepeatedly
+sendamulticastpacketoverUDPcouldtakelongerthan
+a applicationtryingto send the samenumber ofmulti-
+cast UDP packets over IPSEC! We were able to trace
+this anomaly to the networking device’s buffer getting
+filledupbythehighdatainputratewhenplainmulticast
+15of17UDPPayloadSize EthernetFrameSize Time(
+?9 ,
+)
+464 506 15.5
+1262 1304 19.4
+Table1.BaselineTestResults
+UDPPayloadSize EthernetFrameSize Time(
+?9 ,
+)
+464 542 349
+1262 1334 823
+Table2.MulticastoverUDP/IPSEC
+packets were sent. This would cause a large OS over-
+head since the process would have to be swapped out
+and placed in the wait queue and restarted only when
+networkingdevice buffer was less than half–full. This
+overheadcouldsignificantlyskewtheaveragetimecal-
+culation. For example, when a loop to send out 1262
+bytemessagesoverUDPwasexecuted,thefirst41iter-
+ationsof theloop took 796
+?9 ,
+, orroughly19.4
+?9 ,
+per
+packet but the first 42 iterations took 26468
+?9 ,
+or an
+average of 630
+?9 ,
+per packet! So we decided to mea-
+sureonlythebesttimingweobtainedwhensendingfew
+packets,whichinthiscasewouldbe19.4
+?9 ,
+perpacket.
+(cid:4) BaselineTest: MulticastoverUDP
+Table1summarizestheresults.
+(cid:4) MulticastoverUDP/IPSEC
+Table2summarizestheresults.
+(cid:4) SAM/UDP/IPSEC
+Whenmeasuringthetimetosendonlyafewpack-
+ets (100 in this case), with the SAM module us-
+ingthehybridsignatureschemeof[R99]i, weob-
+servedthatthepacketprocessingoverheadwasnot
+substantiallyworsethaninthecasewithoutsource
+authentication. Thisisbecauseoftheoff–line/on–
+inlinenatureofthehybridsignaturescheme.When
+sendingonlya smallnumber ofpackets, the aver-
+agetimecalculationincludesonlytheon–linecosts
+ofthehybridscheme. Theresultsaresummarized
+inTable3below.
+However, when averages werecomputed bysend-
+ing much larger number of packets (1000 in this
+case), the average calculations included a portion
+oftheoff–linecostasshowninTable4
+Eventually, weexpect thatthefulloff–linecostof
+around 1500
+?9 ,
+UDPPayloadSize EthernetFrameSize Time(
+per packet would show up when
+calculating the averages based on sending a very
+largenumberofpackets.
+?9 ,
+)
+464 542 392
+1262 1334 933
+Table3.Avgper–packet time(100pkts)
+UDPPayloadSize EthernetFrameSize Time(
+?9 ,
+)
+464 542 576
+1262 1334 1522
+Table4.Avgper–packet time(1000pkts)
+9 Conclusion
+We have presented a host architecture for a mem-
+ber in a secure multicast group. The architecture is
+based on the IPSec host architecture for secure point-
+to-pointcommunication,andre-usestheIPSeccompo-
+nents(ESP,AH,IKE).Inaddition,thearchitectureiden-
+tifies new modules: MIKE forkey exchange, SAMfor
+sourceanddataauthentication,andtheMSAforbridg-
+ingthecontrolpath(MIKE)andthedatapath(ESP/AH
+andSAM).Wehavediscussedcompatibilityissueswith
+IPSec, and describedan on-going effort to validatethe
+architectureviaimplementation.
+Theproposedarchitecturecomplementsexistingpro-
+posalsforsecuremulticastkeyandpolicymanagement,
+thatconcentrateonthedesignofthegroupcontrolenti-
+ties. We hopeit willbecomean integralpartofacom-
+prehensivesecuremulticastsolution.
+References
+[BMS99] D. Balenson, D. McGrew, A. Sherman,
+“Key Managementfor Large DynamicGroups:
+One-Way Function Trees and Amortized
+Initialization”, Internet Draft draft-balenson-
+groupkeymgmt-oft-00.txt,February1999.
+[CG
+(cid:3)
+99] R. Canetti, J. Garay, G. Itkis, D. Miccian-
+cio,M.Naor,B.Pinkas,“MulticastSecurity: A
+TaxonomyandEfficientAuthentication”,INFO-
+COM’99.
+[CP99] R.Canetti,B.Pinkas,“Ataxonomyofmulticast
+security issues”, Internet Draft draft-irtf-smug-
+taxonomy-01.txt,April1999.
+[CE
+(cid:3)
+99] I. Chang, R. Engel, D. Kandlur, D. Pen-
+darakis,D.Saha,“AToolkitforSecureInternet
+Multicast”,INFOCOM99.
+[CGHK98] P. C. Cheng, J. A. Garay, A. Herzberg, H.
+Krawczyk, “A Security Architecture forthe In-
+ternet Protocol”, IBM System Journal, Vol. 37,
+No.1,Feb.1998.
+16of17[D91] Steve E. Deering, “Multicast Routing in Data- [Q98] Bob Quinn, ”IP Multicast Applications: Chal-
+gram Internetworks”, Ph.D. Thesis, Stanford lenges and Solutions”, draft-quinn-multicast-
+University,December1991. apps-00.txt,Nov1998.
+[RFC1112] S.Deering,“HostExtensionsforIPMulti- [RM] The Reliable Multicast working group
+casting”,IETFRequestforCommentsNo.1112, at the Internet Research Task Force,
+August1989. http://www.irtf.org/charters/reliable-
+multicast.htm.
+[FSWAN] Code available at
+http://www.xs4all.nl/freeswan/download.html. [R99] Pankaj Rohatgi, ”A Compact and Fast Hybrid
+SignatureSchemeforMulticastPacketAuthen-
+[HCD98] T. Hardjono, B. Cain, N. Doraswamy, “A
+tication”, To appear in the Proceedings of 6th
+Framework for Group Key Management for
+ACM Computer and Communications Security
+Multicast Security”, Internet Draft draft-ietf-
+Conference,1999.
+ipsec-gkmframework-00.txt,July1998.
+[SMuG] The Secure Multicast working group
+[HCM98] T. Hardjono, B. Cain, N. Monga, “Intra-
+at the Internet Research Task Force,
+Domain Group Key Management Protocol”,
+http://www.irtf.org/charters/secure-
+Internet Draft, draft-ietf-ipsec-intragkm-00.txt,
+multicast.htm and
+November1998.
+http://www.ipmulticast.com/community/smug.
+[HM99] T. Hardjono, N. Monga, “Group Security
+[SSLRef] SSLRef 3.0: Available from
+Association (GSA) Definition for IP Mul-
+http://www.netscape.com.
+ticast”, Internet Draft draft-irtf-smug-gsadef-
+00.txt,February1999. [STW98] M. Steiner, G. Tsudik, M. Waidner,
+“CLIQUES: A new approach to group key
+[HM97a] H.Harney,C.Muckenhirn,“GroupKeyMan-
+agreement”,IEEEICDCS’98,May1998.
+agementProtocol(GKMP)Specification”.IETF
+RequestforComments2093,July1997. [WHA97] D.M. Wallner, E. J. Harder, R. C. Agee,
+“Key Management for Multicast: Issues and
+[HM97b] H. Harney, C. Muckenhirn, “Group Key
+Architectures”,InternetDraftdraft-wallner-key-
+Management Protocol (GKMP) Architecture”,
+arch-01.txt, September 1998. (Preliminary ver-
+IETFRequestforComments2094,July1997.
+sioninJuly97.)
+[H95] C. Huitema, “Routingin the Internet”, Prentice
+[WGL98] C.K.Wong, M. Gouda,S.S.Lam,“Secure
+Hall,1995.
+Group Communication Using Key Graphs”,
+SIGCOMM ’98. Also, University of Texas at
+[KA98] StephenKent,RandallAtkinson,“SecurityAr-
+Austin, Computer Science Technical report TR
+chitecture for the Internet Protocol”, IETF Re-
+97-23.
+questforComments2401,1998.
+[WL98] C.K.Wong, S.S.Lam,“DigitalSignaturesfor
+[KBC97] H. Krawczyk, M. Bellare, R. Canetti,
+FlowsandMulticasts”,IEEEICNP’98.Seealso
+“HMAC: Keyed-Hashing for Message Authen-
+UniversityofTexasatAustin,ComputerScience
+tication”, IETF Request for Comments 2104,
+TechnicalreportTR98-15.
+February1997.
+[LDAP] ”LightweightDirectoryAccessProtocol(v3)”,
+IETFRequestforComments2251,1997.
+[M99] L. Mccarthy, “RTP Profile for Source Authen-
+tication and Non-Repudiation”, Internet Draft
+raft-mccarthy-smug-rtp-profile-src-auth-00.txt,
+May1999.
+[M97] S.Mittra,“Iolus: AFrameworkforScalableSe-
+cure Multicast”. In Proceedings of ACM SIG-
+COMM’97,Cannes,France,September1997.
+17of17

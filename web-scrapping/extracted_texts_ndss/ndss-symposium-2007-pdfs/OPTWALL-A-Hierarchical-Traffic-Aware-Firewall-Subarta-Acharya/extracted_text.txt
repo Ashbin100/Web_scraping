@@ -1,0 +1,1361 @@
+OPTWALL: A Hierarchical Traffic-Aware Firewall
+Subrata Acharya
+y
+, Mehmud Abliz
+y
+, Bryan Mills
+y
+, Taieb F. Znati
+y
+y ;k
+Department of Computer Science,
+k
+Telecommunications Program
+University of Pittsburgh,
+Pittsburgh, PA 15260
+(sacharya, mehmud, bmills, znati)@cs.pitt.edu
+Jia Wang
+x
+, Zihui Ge
+x
+, Albert Greenberg
+x
+x
+AT&T Labs Research,
+Florham Park, NJ 07932
+(jiawang, gezihui, albert)@research.att.com
+Abstract—The overall efficiency, reliability, and availability of a tion of this multi-dimensionalstructure hasbeen provento be
+firewalliscrucialinenforcingandadministratingsecurity,especially a NP hard [1], [2] problem. This has motivated the research
+when the network is under attack. The continuous growth of the
+communityto focuson variousapproachesto providereliable
+Internet, coupled withtheincreasing sophistication oftheattacks,is
+and dependable firewall optimization methods. In-spite of a
+placingstringentdemandsonfirewallperformance.Thesechallenges
+requirenewdesigns,architectureandalgorithmstooptimizefirewalls. strong focus towards an efficient design, the techniques used
+In this paper, we propose OPTWALL, an adaptive hierarchical thus far are static, and fail to adapt to the dynamic traffic
+firewall optimization framework aimed at reducing operational cost changesof the network.In particular, currenttechniqueshave
+of firewalls. The main features of the proposed approach are the
+failedtoincludethetrafficcharacteristicsinthedesignandop-
+hierarchical design, splittingtechniques, anonlinetrafficadaptation
+timizationoffirewalls.Currentfirewalldesignsdonotsupport
+mechanism,andastrongreactiveschemetocountermaliciousattacks
+(e.g.Denial-of-Service(DoS)attacks).Tothebest ofourknowledge, adaptivemechanismtodetectandcounterattacksinanetwork
+this work is the first of its kind to use traffic characteristics in the environmentcharacterizedbyheavytrafficfluctuations.Hence,
+design of an adaptive hierarchical firewall optimization framework. they fail to operate efficiently under adverse conditions.
+To study the performance of OPTWALL, a set of experiments are The main objective of this paper is to address the short-
+conductedonLinuxipchains.Theperformanceevaluationstudyuses
+comings of the current firewalls and increase their ability to
+a large set of firewall policies and traffic traces managed by a Tier-
+deal with dynamic changes in network load and topology,
+1 ISP and provides security access for the ISP network from/to its
+business partners. Results show the high potential of OPTWALL to particularlywhen the network is under attack. To achieve this
+reducetheoperationalcostoffirewalls.Inparticular,theresultsshow goal, the paper proposes a hierarchical framework for traffic-
+that a performance improvement of nearly 35% can been achieved awarefirewalloptimization.Thebasictenetofthisframework
+in a heavily loaded network environment.
+is that the design of next generation firewalls must leverage
+their packet inspection capabilities with traffic awareness in
+I. Introduction
+order to optimize the operationalcost they incur in defending
+Theconstantlychangingnature,scaleandscopeofinformation against intrusions and denial of service attacks.
+technologyenvironments,coupledwiththeincreasingnumber Traffic-aware firewall optimization is challenging as the
+and complexity of security threats, is forcing Tier-1 ISPs to number of security policies a firewall has to enforce for
+resort to increasingly complex security policies and mecha- enterprisenetworksislarge.Thisisfurthercompoundedbythe
+nisms. Firewalls constitute the cornerstone of most network limited resources of firewalls relative to the increased ability
+defense systems and have proven to be an effective solution ofthenetworktoprocessandforwardtrafficatextremelyhigh
+to monitor and regulate traffic. The efficiency of firewalls in speed.Inthispaper,thefocusisonoptimizingthemostwidely
+protecting the infrastructure, however, depends not only on used ‘list based’ firewalls. To achieve this goal we propose a
+the integrity and coherence of the security policies they are hierarchical firewall optimization approach, to create a load-
+configuredtoimplement,butequallyimportantlyonthespeed balancedpolicysubset.Themainchallengeintheconstruction
+at which these policies are enforced. of these subsets stems from the need to maintain semantic
+With the dynamic change in the network load, topology, integrity of the policy set at each level of the hierarchy.
+and bandwidth demand, firewalls are becoming a bottleneck. The major contributions of the paper are:
+All these factors create a demand for more efficient, highly
+available,andreliablefirewalls.Optimizingfirewalls,however,
+remainsa challengefornetworkdesignersandadministrators.
+A typical present day firewall enforces its security policies
+via a set of multi-dimensionalpacketfilters(rules). Optimiza-
+(cid:15)
+The design of OPTWALL, an adaptive hierarchical fire-
+wall optimization framework. In this framework we pro-
+poseanoptimalsolutionto constructthe hierarchybased
+on rule-splitting, while maintaining the integrity of the
+original firewall rule set.(cid:15)
+Asetofheuristics,basedonatrade-offbetweenoptimal-
+ity,timecomplexity,andresourcerequirementstoconvert
+the list based firewall rule sets into integrity preserving
+hierarchical rule subsets.
+(cid:15)
+An adaptive, traffic-aware protocol to detect and defend
+against traffic anomalies.
+(cid:15)
+An experimental study to assess the performance of the
+proposed solutions and measure the impact of dynami-
+cally exploiting the traffic characteristics on the perfor-
+mance of firewalls.
+The rest of the paper is organized as follows: Section II
+describes the background on list based firewalls. The rule
+cost metric is described in Section III and we introduce
+the OPTWALL framework in Section IV. Section V depicts
+the OPTWALL splitting design approaches. We present the
+evaluation and results in Section VI. Section VII presents the
+related work. Finally, we concludethe paper in Section VIII.
+II. List Based Firewalls
+A security rule is a multi-dimensional structure, where each
+dimension is either a set of network fields or an action field.
+The rule set defines the security policies which must be
+enforced by the firewall.
+In an Internet environment, a rule is defined by a set
+of source ip addresses, a set of destination ip addresses, a
+set of service types and an action field. The service type
+typically includes both the underlying protocol type and a
+port number. An action field can be either accept, deny, or
+forward. An accept action allows the packet access into the
+protected domain.A deny action causes a packet, in violation
+of the security policy,to be rejected.Finally, a forwardaction
+leads to further inspection of the packet. Formally, a rule R
+can be represented as:
+R = [(cid:8) 1 ; (cid:8) 2 ; (cid:1) (cid:1) (cid:1) ; (cid:8) k ; (cid:6) ℄
+, where
+(cid:8) j
+representsnetworkfieldsand
+(cid:6)
+isanactionfield.Aninstance
+of a typical rule in an Internet environment can be of the
+following structure:
+<
+s
+a
+s r
+r v
+t i
+=
+o
+=
+n
+f
+f (cid:27)
+=
+s ; s ;1 2
+; (cid:27) ; (cid:1)1 2
+f d r o p
+(cid:1) (cid:1) (cid:1) ; s n
+g(cid:1) (cid:1) ; (cid:27) l
+ja e p
+g ;
+;
+t jf
+d
+o r
+s
+w
+t =
+a r
+f d
+d g
+1
+>
+; d 2 ; (cid:1) (cid:1) (cid:1) ; d m g ;
+where
+s i
+represents a source IP address,
+d i
+a destination IP
+address, and
+(cid:27) i
+a service type.
+Inlist-basedfirewalls, rulesdescribingthenetworksecurity
+policies form a “priority” list. The priority of a rule, also
+referred to as the rule rank, is based upon its position within
+the list. Earlier occurring rules have higher rank than later
+ones. A rule-set can be converted to a tuple-set by creating
+all possible permutations of the fields in a rule. A formal
+representation of a tuple is:
+<
+a
+s r
+t i o
+=
+n =
+s ;i
+f d
+d
+r
+s
+o
+t
+p
+=
+ja
+d i
+e
+;
+p
+s r
+t jf
+v
+o
+=
+r w
+(cid:27)
+a
+i
+r
+;
+d g
+where
+s i
+represents a source IP address,
+d i
+a destination IP
+address, and
+(cid:27) i
+a service type.
+List-based firewalls work by examining the tuples in
+sequential order. For each packet, the first matching tuple
+determines the action taken by the firewall. List based
+firewalls preform well if the list size is small. As the list size
+scales up to millions of tuples, managing and optimizing the
+firewall policies is a challenge. Moreover highly dynamic
+traffic changes introduces the challenge of dynamic rule
+optimization.
+III. Rule Cost Metric
+The main factor that affects the performance of a firewall is
+the processing overhead due to packet inspection. The metric
+calculation is done for a rule and can easily be applied to
+tuples within a rule.
+To capture the overhead cost incurred by a firewall to
+process a rule and enforce the security policy, two metrics
+are defined. The first metric, denoted as rule size(), measures
+the size of a given rule in terms of the number of bits
+necessary to determine unambiguously a match between
+the rule definition and the corresponding fields of a packet
+under inspection. The assumption underlying the rule size()
+metric stems from the fact that the complexity of a matching
+operation is proportional to the size of the rule. Formally,
+given a rule
+r
+, rule size(
+r
+) can be defined as:
+r u l e s i z e ( r ) =
+8
+><
+>:
+P
++
+S
+(cid:12)
+p
+(cid:2)
+;D p
+N
+f
+s
+(cid:11)
+(cid:2)
+1 (cid:2)
+( k
+k
+P
+s
+r
+p
+r
+k
+k
++
++
+(cid:11)
+k
+2
+P
+(cid:2)
+o r
+k
+k
+d
+)
+p
+;
+k g
+where,
+(cid:11) 1 ; (cid:11) 2
+, and
+(cid:12)
+are weight parameters,
+S p
+and
+D p are respectively the set of source and destination prefixes
+which occur within the definition of the rule,
+s p
+and
+d p
+are
+the bit representation of the source and destination prefixes,
+respectively,
+N s
+is the number of services defined within the
+rule,and
+P r r
+and
+P o r
+arethebitrepresentationoftheprotocol
+and port identifiers, respectively.
+The second metric used in our experimentation is the cost
+of operating on a given rule set. This cost depends on the
+rule’s rank and size, and on how often the rule is invoked by
+the firewall. Formally, given a set of rules
+r 1 ; r 2 ; : : : ; r k
+, the
+cost of a given rule,
+r i
+,
+o s t ( r i )
+, is defined as follows:
+o s t ( r i ) = h i t o u n t ( r i ) (cid:2)
+P
+8 r k 2 P r i k r k k
+where,
+P r i
+is the set of
+r i
+’s predecessors in the list-based set
+of rules.
+Usingtheabovemetrics,theaimofoptimizationistoreduce
+the rule set size and consequently the processing time of the
+rule set. This in turn reduces the overall firewall operationalcost. The resourcesthat affectare the CPU utilization and the Rule 1
+Filter 1 Rule Subset1
+memory usage of the firewall machine.1 Rule 2
+IV. OPTWALL
+Rule 3
+Filter 2 Rule Subset2
+.
+Contrary to a list-based structure, a hierarchical design leads . . .
+to efficient organization of rule sets, thereby increasing sig- . .
+. . .
+nificantly the performance of the firewall. OPTWALL uses . .
+.
+a hierarchical approach to partition the original ruleset into . .
+.
+mutually exclusive subsets of rules to reduce the overhead of Filter K Rule SubsetK
+packet filtering. .
+InOPTWALL,theprocessingofapacketatafirewallstarts Rule N
+Filter i ∩ Filter j = φ, N >>> K
+at the root of the hierarchical structure. The packet is subse-
+quentlyforwardedto the remaininglevelsof the hierarchyfor
+List Based Firewall Rule Set K-Partition Rule Subsets
+further processing. Packet processing completes if a match
+(N Rules)
+betweentheattributesofthepacket,asdefinedbythefirewall
+security policy, occurs. In this case, the action, defined by
+the corresponding firewall rule, is enforced. Alternatively, on
+Fig. 1: N rules into K partition problem
+a non-match, a default action is invoked. The default action
+can either be accept, in which case the packet is forwarded Rule 1
+to destination, or reject, in which case the packet is dropped. F 1 1 F 2 1 . . . . . . . . . FL1 Rule
+Rule 2 SubsetL1
+In the following, a formal specification of the objective and
+basic operation of OPTWALL are discussed. Rule 3
+A. OPTWALLDesignGoals . F 2 2 . . . . . . . . . . FL2 Rule
+.
+SubsetL2
+Given a large rule set, the objective of OPTWALL is to . .
+. .
+partition this set into ‘K’ mutually exclusive subsets. Each
+subset is associated with a unique filter which represents a . F 2 3 . . . . . . . . . . . . .
+superset of the associated policy subset. . . .
+.
+The hierarchicalapproachof the OPTWALL architectureis .
+driven by three main design goals: F 1 2 F 2 4 . . . . . . . . . FLK Rule
+Rule N SubsetLK
+1) Reduce the cost of processing the firewall rule set,
+defined at the average processing time a packet incurs F i ∩ F j = φ, N >>> K (F = Filter)
+before an action is enforced by the firewall,
+List Based Firewall Rule Set OPTWALL
+2) Preserve the semantics of the original rule set, and (N Rules) Hierarchical K-Partition Rule Subsets
+3) Maintainthe optimalityof the rulesetas trafficpatterns
+and rule sets change.
+It is to be noted that in its general form the ‘K-partition’
+problemisNPhard,asitcanbereducedtothe‘Clustering’[4]
+or the ‘K-median’ problem [5]. Figure 1 depicts the process Fig. 2: Basic operation of OPTWALL
+of partitioning N rules into K subsets.
+To address the complexity of the partitioning problem, the multi-level data structure composed of rule subsets and
+OPTWALL uses an iterativeapproachto partitionthe original theircorrespondingfilters.Wethendiscusstheprocedureused
+set of rules and produce a multi-level hierarchy of mutually to build the OPTWALL hierarchical structure and the actions
+exclusive, cost-balanced rule subsets. Initially, the rule set is required to maintain this structure.
+divided into two subsets and filters, which covers the rules B. DataStructure
+containedineachsubset,aredeveloped.Theresultingsubsets,
+In order to process the rules, OPTWALL uses a hierarchical
+alongwiththeircorrespondingfilters,formthefirstlevelofthe
+data structure in which the deepest level of the hierarchy
+hierarchy.Thisiterativeprocesscontinuesuntilfurtherdivision
+contains the rule subsets and the intermediate levels contain
+ofthesubsetsatthecurrentlevelofthehierarchyisnolonger
+filters which cover the rules included in those subsets.
+cost effective. Note that this cost also includes the cost of
+The design of the data structure must ensure that the
+determiningthefilters.TheOPTWALLpartitioningprocessis
+operational cost is reduced. The design must also ensure that
+described in Figure 2.
+the semantic integrity of the original rule set is preserved.
+Inthefollowingsectionswewillpresenttheprocessesused
+It is to be noted that the operational cost is determined by
+to achieve each of OPTWALL design goals. We first describe
+the deepest rule subset. Balancing the hierarchical structure
+1Themetricusedinthispaperfollow thesameguideline asin[3]. in order to reduce the length of the deepest rule subsetis, therefore, vital if the desire is to achieve the maximum series of IP-table rule subsets. It is to be noted that most list
+reduction in processing cost. Furthermore, the data structure based firewalls, such as Linux ipchains, support the ability to
+mustbe designedin sucha way thatthe re-balancingprocess, forwardpacketsfromonelisttoanotherforfurtherprocessing.
+in response to traffic changes, can be achieved with minimal Consequently, the OPTWALL hierarchical structure can be
+overhead. usedtoaugmentthefilteringcapabilitiesoflistbasedfirewalls.
+Semantic integrity of the original rule set can be achieved,
+D. HierarchicalStructureMaintenance
+during the rule set partitioning process, by computing filters
+thatrepresentaccuratelyandcompletelythe rulesubsets. Fur- The hierarchical structure is built to reflect the current traffic
+thermore, packet processing must follow the same semantics patternandrulesets.Asthetrafficpatternandrulesetschange,
+specified by the filters resulting from the partitioningprocess. the hierarchical structure must be updated to maintain its
+If the rules are split and re-ordered, in order to optimize balance. To detect changes, OPTWALL monitors the traffic
+operational cost, the process of re-enforcing the original rule logsinreal-timeandadjuststhehitcounts.OPTWALLasserts
+semantics must be achieved with reduced overheard. that changes have occurred if the difference between the old
+and updated hit counts of any rule exceeds a predetermined
+C. HierarchicalStructureBuilding
+threshold. This threshold, a tunable parameter, is determined
+The process of building the hierarchical structure described based on the traffic characteristics and the policy set under
+previously is accomplished using three basic stages: pre- consideration.
+processing, ordering, and splitting. In the following, we dis- If the need to balance the hierarchical structure rises,
+cuss the basic operations carried out at each of these design OPTWALL uses the existing traffic logs to update the cost
+stages. of rules in the rule subsets, including rules which have been
+The pre-processing stage takes as its input the original added to reflect a new security policy. OPTWALL then uses
+list based rule set and produces an optimized rule set. This re-ordering, re-splitting, and promoting to re-establish the
+optimized rule set consists of fully disjoint and concise rules, balance of a hierarchical structure.
+where all rule redundancies and dependencies are removed Re-ordering consists of re-prioritizing the rule subsets at
+[3]. The fact that the rules in the rule set are mutually the deepest level of the hierarchical structure. This process
+disjoint provides OPTWALL with full flexibility to re-order is necessary to take into consideration the impact of traffic
+the rules and divide them into rule subsets, without violating variations on the hit count of rules in a given rule set. Re-
+the semantics of the original rule set. orderingis triggeredwhen a the differentbetween the current
+In the pre-orderingstage, rules are re-orderedsuch that the and previous hit counts of a given rule exceeds the threshold.
+highest cost rules are moved to the top of the rule set. As Re-splitting is invoked when a sub-hierarchical structure
+stated previously, the cost of a rule is based upon the size of becomes out of balance, due to traffic variations. A sub-
+the rule and the amount of traffic processed by that rule, as hierarchicalstructure is considered to be out-of-balanceif the
+indicatedbyitshitcount.Byre-orderingrulestheoverallcost averagepacketprocessingcostexceedsapredefinedthreshold.
+of processing traffic is reduced. This process can occur at any level, including the root of the
+Thegoalofthesplittingstageistoproduceapartitionofthe hierarchical structure. When sub-hierarchical structure is out
+original rule set into a set of mutually disjoint rule subsets. of balance, splitting is applied to the original rule subset that
+This process involves taking the pre-processed rule set and generated this sub-hierarchical structure. In some cases, it is
+dividing it into rule subsets, each of which is defined by a notpossibletoproduceamorebalancedhierarchicalstructure,
+filter. Each filter is a series of disjoint tuples that fully cover inwhichcase the levelismarkedascurrentlyoptimalandthe
+its corresponding rule subset. threshold for the intermediate levels are increased.
+To partition the original rule set, OPTWALL uses a multi- Promoting aims at reducing the overhead of packet pro-
+step process, whereby it initially splits the original rule set cessing at different levels of the hierarchy. The need for rule
+into two subsets. It then recursivelyrunsthis splitting process promotion occurs when a single rule hit count increases dra-
+on the subsets producedby the previousstage to generate the matically and exceeds its predefined threshold. This scenario
+next level of the hierarchical structure. This splitting process is likely to occur during anomalous traffic behavior, typically
+continues until the overall processing cost overshadows the observed during Denial-of-Service (DoS) attacks. To mitigate
+benefit gained by further splitting the current subsets. When the impact of DoS attacks and drastically reduce the cost
+this occurs, the splitting process terminates and the previous of processing traffic generated by these attacks, the rule is
+levelis selectedasthe feasibleoptimaldepthofthehierarchi- promotedto a level above the filters. Depending on the rule’s
+cal structure. priority, promotion may continue recursively until it reaches
+The efficiency of the partitioning process strongly depends its appropriate priority level. In the extreme case, the rule
+on the way the rule subsets are produced at different levels may be moved all the way up to the root of the hierarchical
+of the hierarchy. Several strategies to produce feasible rule structure. This promotion is temporary and the rule, as it
+set splitting can be used. These strategies are discussed in never removed from the rule subsets. The reason behind the
+SectionV. temporarypromotionstems from the transitorynature of DoS
+The produced hierarchical structure is then converted to a attacks. Once the traffic has returned to its normal levels, theOriginal Ruleset
+Remove Duplicate Create Disjoint Re−order Rules
+Rules and Rule Set Based Upon Cost
+Compress Function
+Central Authority Split Capital Rules
+Trigger Into Two Sets And
+Re−Split Produce Two Filters
+That Describe Each
+Subset
+Install Rule Set On
+Trigger
+Monitor Cost Two Children And
+Rule Promotion
+At Children Install Filters On
+(DoS)
+Parent
+Child Process
+Feed Cost Monitor Cost
+Data Back
+Re−order Rule
+Locally
+golsyS
+gnirotinoM
+metsyS
+HSS
+llaC
+DISTANCE(), and WIDEN(). All three function are available
+onthefilterobjectandallacceptasingleargumentofatuple.
+The MATCH() function checks to see if a tuple is covered
+by the filter. The source and destination IP addresses are
+compared to the range specified in the filter. Similarly the
+port number is compared to the port range specified in the
+filter. The protocol type is matched to a list of protocol types
+thefilterevaluatesupon.Thisfunctionreturnstrueifthetuple
+matches the tuple and false otherwise.
+The DISTANCE() function calculates the distance between
+a given tuple and the filter. If the filter matches the tuple
+then the value returned by this function is 0. Otherwise, this
+function returns a positive number between 0 and 1, not
+inclusive. The distance is based on the entire tuple.
+TocalculatethedistancebetweentwoIPaddresseswelook
+at the numerical distance between them is considered. If the
+IP addresses represent ranges, the distance function based on
+the distancebetween the two furthestpointswithinthe ranges
+is calculated. A similar procedure is used to calculate the
+distancebetweenportsorportranges.Theprotocoldistanceis
+setto0iftheprotocolalreadyexistsintheprotocollistforthe
+filter. Otherwise the distance is set to 1. All the distances are
+Install Rule Set
+then normalized to the maximum values of their respective
+fields. The summation of this normalized values are then
+weighted and re-normalized to produce a value between 0 or
+1.
+The WIDEN() function is used to expand a filter such that
+it matches the given tuple. This is achieved by expandingthe
+IP range, port range, and protocols. A function calculates the
+costofthetuplebasedontrafficcharacteristicsandothertuple
+properties.
+The driver of the splitting process is the search for a set
+of filters, which covers the the hierarchical structure without
+violatingthesemanticintegrityoftheoriginalruleset,inorder
+toimprovetheoperationalcostofthefirewall.Ideally,optimal
+Fig. 3: OPTWALL:Architecture splittingensuresthat,attheendofthepartitioningprocess,all
+subsetshasequalcost. Consequently,whenan optimalsplitis
+promoted rule can be removed from the higher levels.
+achieved,theaverageprocessingcostofeachpacketisreduced
+Theautomatizedinteractionbetweenthelevels(parent-child
+byhalfofitsoriginalcost.Anoptimalstrategyforperforming
+modules) of OPTWALL is illustrated in Figure 3. Each level,
+a cost-balanced split of the original set of rules is to use two
+starting from the root, acts as a central authority to a lower
+sub-lists and alternatively place the rules in each list, starting
+level in the hierarchy.
+with the highest cost rule, until the set of rules is exhausted.
+While this strategy is optimal, it is not always feasible. This
+V. OPTWALL Splitting Design Approaches duetothefactfactthateachrulesubsetproducedateachstage
+of the splitting process must have a mutually disjoint set of
+The efficiency of the splitting process, in terms of packet filters. Computing such filters may not be always achievable.
+processing overhead,strongly impacts the performanceof the The next subsection focuses on the issues related to the
+firewall. In this section, we first describe the splitting process designofsplittingthe tupleset intohierarchicaltuplesubsets.
+and discuss various solutions proposed for splitting the rule First,anoptimalsolutionispresentedanditsapplicabilityina
+set.Inthispaperwedescribearulewithsingleattributevalue realfirewallsettingisdiscussed.Avarietyofheuristics,which
+asatuple.Wewillusethetuplesetastheinputtooursplitting achievenearoptimalsolutionswithreducedoverhead,arethen
+process. presented.
+Theoutputofthesplittingoperationaretwofiltersandtheir
+A. OptimalApproach
+corresponding tuple subsets. The filters and tuple subsets are
+semanticallysimilartothatofasinglelistbasedtupleset.The The optimal splitting approach is based on an A* search
+processofsplittingreliesuponthreebasicfunctionsMATCH(), strategy. Achieving an optimal partition is possible since thecost can be calculated cumulatively for any partition as it is
+fixedanddoesnotvarywiththetuplepriority.Thebasicsteps
+of the Optimal Solution are depicted in Algorithm 1.
+The function
+g ( n )
+determines the cost of the configuration
+in the current state. The function
+h ( n )
+, on the other hand,
+computesthe optimalcost of the remainingunassignedtuples
+if placed in either of the subsets. The function
+h m a x ( n ) calculates the maximum cost of the remaining tuples. This
+canbeusedasaguidelinetoterminatethecomputationofthe
+filters if the cost benefit resulting from this new filters does
+not improve on the gains of the previous configuration.
+Another mechanism, which is used to reduce the overhead
+incurred by the search of the feasible optimal solution, is to
+prune the search space. This is triggered when the difference
+between
+h m a x ( n )
+and
+h m in ( n )
+islower thana specified error
+percentage. This enables the search to convergeto filters of a
+nearly optimal solution at a much faster rate.
+Eventhoughafeasibleoptimalsolutioncanbeobtained,the
+worst case time complexity is of the order of
+2
+N
+Algorithm 1 Optimal Solution
+, where N is
+the number of tuples. As the number of tuples becomes large
+searching for such a solution leads to a firewall bottleneck.
+Another shortcomingof the optimalsolution is that the mem-
+ory requirement can also become prohibitive as the number
+of tuples becomes very large. To address these drawbacks a
+set of heuristics are proposed. These heuristics converge to a
+nearly optimal solution, while maintaining a time complexity
+linear in the number of tuples.
+B. HeuristicSolution
+The heuristic solutions proposed are local greedy search
+solutions aimed at determining a set of filters and splitting
+the list based tuple set into two tuple subsets. Each tuple
+of the list based set is disjoint from the other. This aids
+the performance and effectiveness of the approach to split
+the tuples into smaller tuple subsets. As mentioned in [6]
+application of greedy scheme works best when the tuples
+are all disjoint from one another. In other words, making
+tuplesdisjointfromeachotherenablesfullflexibilityfortuple
+splitting and re-ordering based on traffic characteristics.
+Depending on the choice of the initial filters, five different
+variations of the Greedy Heuristic are proposed. The first
+variation of the Greed Heuristic is to deterministically assign
+thehighestprioritytuplesastheinitialfilters.Thisheuristicis
+referredtoasHitcount-HitcountHeuristic.Theideabehind
+choosing the highest ranked tuples as the initial filters is to
+assignthehighestcostingtuplesintodifferenttuplesubsetsin
+order to arrive at a cost balanced solution. The main steps of
+the algorithm is described in Algorithm 2.
+The next variation of the Greedy Heuristic is to assign one
+initial filter as the highest costing tuple and the next initial
+filter as one amongst the rest of the tuples which is at a
+maximumdistancefromthehighestcosttuple.Thedistanceis
+calculated using the DISTANCE functionas stated previously.
+ThisvariationoftheGreedyHeuristicisreferredtoastheHit
+count-Max distance Heuristic.
+The third variant of the Greedy Heuristic uses a randomly
+g ( i ; n )
+= cost of
+l i s t a
+and
+l i s t b
+after adding tuple n to
+list i
+h ( n )
+= current cost of optimally placing the remaining
+tuples
+o s t ( i ; n )
+=
+g ( i ; n )
++
+f i l t e r a
+h ( n )
+,
+l i s t a
+= filter and tuples for list A
+f i l t e r b
+,
+l i s t b
+= filter and tuples for list B
+s t a k
+= stack ordered with least cost on top
+INPUT:
+t u p l e s [℄
+- List of tuples sorted by cost
+ALGORITHM
+o u n t e r
+=
+0
+,
+l i s t a
+=
+;
+,
+l i s t b
+=
+u r r e n t T u p l e
+; =
+t u p l e s [ o u n t e r ℄
+while
+o u n t e r < t u p l e s :s i z e ( )
+do
+if
+o s t ( A ; u r r e n t T u p l e ) < o s t ( B ; u r r e n t T u p l e )
+then
+if
+f i l t e r a \ f i l t e r b
+.widen(
+u r r e n t T u p l e
+)
+< a n y ; a n y ; a n y ; a n y >
+6= then
+s t a k :a d d ( < l i s t a
+,
+l i s t b [ u r r e n t T u p l e
+,
+f i l t e r a
+,
+f i l t e r b :w i d e n ( u r r e n t T u p l e )
+,
+o u n t e r > )
+end if
+f i l t e r a
+.widen(currentTuple),
+l i s t a
+.add(currentTuple)
+if
+f i l t e r a \ f i l t e r b = < a n y ; a n y ; a n y ; a n y > then
+< l i s t a ; l i s t b ; f i l t e r a ; f i l t e r b ; o u n t e r >
+=
+stack.pop()
+end if
+else
+if
+f i l t e r a
+.widen(
+u r r e n t T u p l e
+)
+< a n y ; a n y ; a n y ; a n y >
+\ f i l t e r b 6= then
+s t a k :a d d ( < l i s t a [ u r r e n t T u p l e
+,
+l i s t b
+,
+f i l t e r a :w i d e n ( u r r e n t T u p l e )
+,
+f i l t e r b
+,
+o u n t e r > )
+end if
+f i l t e r b
+.widen(currentTuple),
+l i s t b
+.add(currentTuple)
+if
+f i l t e r a \ f i l t e r b = < a n y ; a n y ; a n y ; a n y > then
+< l i s t a ; l i s t b ; f i l t e r a ; f i l t e r b ; o u n t e r >
+=
+stack.pop()
+end if
+end if
+o
+u
+u
+r
+n
+r
+t
+e
+e
+n
+r
+t
++
+T u
++
+p l e
+=
+t u p l e s [ o u n t e r ℄
+end while
+OUTPUT:
+< f i l t e r a ; l i s t a ; f i l t e r b ; l i s t b >Algorithm 2 Hit count-Hit count Heuristic
+INPUT:
+tuples[] - List of tuples sorted by cost
+f i l t e r a
+=
+f i l t e r b
+t u p l e s [0 ℄ =
+t u p l e s [1 ℄ for
+i = 2
+to tuples.length() do
+if
+f i l t e r a :m a t h e s ( t u p l e s [i ℄)
+then
+add
+t u p l e [i ℄
+to
+l i s t a else if
+f i l t e r b :m a t h e s ( t u p l e s [i ℄)
+then
+add
+t u p l e [i ℄
+to
+l i s t b else
+d i s t a n e a
+=
+d i s t a n e b
+f i l t e r a :d i s t a n e ( t u p l e s [i ℄) =
+f i l t e r b :d i s t a n e ( t u p l e s [i ℄) if
+d i s t a n e a < d i s t a n e b
+then
+f i l t e r a :w i d e n ( t u p l e s [i ℄) add
+t u p l e [i ℄
+to
+l i s t a else
+f i l t e r b :w i d e n ( t u p l e s [i ℄) add
+t u p l e [i ℄
+to
+l i s t b end if
+end if
+end for
+OUTPUT:
+f i l t e r a
+- filter tuple for list A
+f i l t e r b
+- filter tuple for list B
+l i s t a
+- list of tuples for child A
+l i s t b
+- list of tuples for child B
+selected initial filter assignment. This heuristic is referred to
+as Random-Random Heuristic. A randomized algorithm is
+used to determine initial filters from a set of possible filters.
+Theselectedsetisthenusedtobuildthehierarchicalstructure.
+ThefourthvariantoftheGreedyHeuristicistoconsiderthe
+distance between all possible pairs of filters. The pair which
+containsthe filters with maximumdistancefromeach otheris
+selected.Thisstrategyhaspotentialtosplitthetuplesintowell
+balanced sets. This heuristic is referred to the Max distance-
+Max distance Heuristic. The complexity for all the above
+approachesisproportionaltothenumberoftuplesintheinitial
+tuple set.
+The fifth variant of the Greedy Heuristic is the All Pair
+Heuristic. This variant considers all possible pairs of tuples
+asinitialfilters.UsingthemethoddepictedinAlgorithm2we
+determinea splitforeach possible pairandthen pickthe split
+with the least cost.
+The results for All Pair Heuristic are not included as the
+heuristic never converged to a solution due to the excessive
+overhead required to obtain the most cost efficient configura-
+tion among all possible pairs of tuples. The time complexity
+ofthisheuristicisofthe orderof
+N
+3
+,where
+N
+isthe number
+oftuples.Forlargevaluesof
+N
+: rule (
+: src( : srv(
+: 10.10.10.2 : ospf
+: 10.10.10.3 : traceroute
+: 10.10.10.4 : echo-requests
+: 10.10.10.5 : ping-replies
+) )
+: dst( : action(
+: 10.20.10.1 : accept
+: 10.20.10.4 )
+: 10.20.10.5 )
+)
+Fig. 4: Rule Structure
+num;date;time;orig;type;action;alert;i/f_name;i/f_dir;
+product;src;dst;s_port;service;proto;………………..
+1;27Jul2005;23:59:04;10.10.10.1;log;accept;;qfe1;
+inbound;X;10.30.10.1;10.20.10.1;53480;161;udp;;;
+Fig. 5: Traffic Log Instance
+VI. Performance Evaluation
+Inthis section we describethe experimentsand evaluationsto
+validate the proposed OPTWALL scheme. First, we briefly
+described the synthetic data used in this evaluation study.
+The experimentalset up, traffic generation and the evaluation
+results are discussed.
+A. ExperimentalData
+Thedatasetusedintheexperimentalstudyemulates,interms
+of size and number of rules, the data of of a typical list
+based firewall managed by large ISPs supporting a variety of
+customers.In thisperformanceevaluationstudy,itis assumed
+that the ISP provides secure access to and from a group
+of customers and business partners. The data set consists of
+firewall rule sets and traffic logs.
+Each rule set consists of several thousand rules. Each rule
+is a multi-dimensionalstructure of tuples. A rule set contains
+on average one million tuples. Figure 4 shows an instance of
+arulestructure.Thedimensionsoftheruleincludethesource
+address,
+,thecomputationalcostofthe
+heuristic becomes prohibitive.
+s r
+, the destination address,
+d s t
+, the service types,
+s r v
+, and the action. Each dimensioncontainsmultiple values.
+Aninstanceofa tupleofthisruleis
+1 0 :2 0 :1 0 :1 ; s r v : o s p f ; a t i o n : a
+<
+e p
+s
+t
+r
+>
+: 1 0 :1 0 :1 0 :2 ; d s t :
+. Figure 5 depicts
+an entry of the firewall traffic log. The firewall logs one entry
+per session.
+B. ExperimentalSetup
+The experimental set up for the evaluation of the proposed
+OPTWALL approach consists of a machine acting as a fire-
+wall and another generating traffic and collecting logs. The
+machines used for our evaluation are
+A M D A t h l o n
+tm
+64 bit
+Processors 3000+ running
+U b u n t u L i n u x
+operating system.
+The machines are isolated for testing to ensure that there areFirewall Hierarchical vs. List-Based
+1440 packets/sec, Max-Distance-Max-Distance Heuristic
+Packet Original rule
+Generator set 80
+70
+60
+Splitter
+50
+40
+30
+Rule Rule
+Log Processor subset subset 20
+A B
+10
+0
+List Based Hierarchical -Hierarchical -Hierarchical -Hierarchical -
+Level 1 Level 2 Level 3 Level 4
+Fig. 6: Experimental Setup Levels of hierarchy
+no other variants. Figure 6 shows the block diagram of the
+experimental setup.
+C. TrafficGeneration
+Therewere two typesof traffic characterizationsused to eval-
+uate OPTWALL, the worst case and emulated case behavior.
+In worst case scenario, traffic is composed of a single packet
+type that does not match any of the tuples. This assures that
+the packet will be caught only by the default action tuple.
+The emulated traffic is generated by creating packets that
+match each tuple and proportionallysending them to a traffic
+trace similar to a large ISP’s firewall operation. The worst
+case traces were used to study the worst case performance
+of OPTWALL in comparison to the baseline case, a list
+based firewall. Performance at worst case was determined
+by using constant traffic rates and measuring the overall
+CPU utilization. Traffic rates were determined by loading the
+firewall from 25% to 100% utilization with the installed list
+based rule set. A similar approach was used to determine the
+load for the emulated traffic evaluations.
+D. Evaluationresults
+The following subsection discusses the various results high-
+lighting the potential of the proposed OPTWALL approach.
+1) Hierarchical modelevaluation: This study was per-
+formedtoevaluatethepotentialofthe hierarchicaldesignand
+its effect on efficient firewall optimization w.r.t. a list based
+design. The extent of the hierarchy depends on the tuple set
+size, the traffic characteristics and the variability in traffic.
+For our evaluation we fixed the tuple size, load applied and
+the splitting approach used to determine the benefit from the
+proposedhierarchicaldesign.Theexperimentswereconducted
+on a heavily loaded system and using the best performing
+heuristic amongst all the solutions proposed earlier in the
+paper.We use atuplesetofnearly5,000tuples,loadof1,440
+packets/sec andthe Max Distance-MaxDistance Heuristic for
+our evaluations. Results as in Figure 7 shows the potential
+of the proposed OPTWALL framework. It is to be noted that
+after a pointre-splits cause more harm than good.The results
+noitazilitU
+UPC
+llarevO
+Fig. 7: Hierarchical vs. List-Based
+Performance Evaluation - Worst Case
+120
+100
+80
+60
+40
+20
+0
+2028 1907 1605 1443 1052 961 833
+Load in Packets/second
+noitazilitU
+UPC
+Hit count-Hit count
+Hit count-Max distance
+Random-Random
+Max distance- Max distance
+Optimal
+List Based
+Fig. 8: Performance Evaluation (Worst-Case - 60,000 tuples)
+depict a way to arrive at a sweet spot between the number of
+re-splits and the gain to due the hierarchical design.
+2) Worst case performance evaluation: The next
+studyperformedistodeterminetheworstcasepacketprocess-
+ingcostofthefirewall.Aworstcasepacketprocessingoccurs
+when very packet entering the system requires processing of
+the entire tuple subset. This helps to determine the maximum
+packet rate for worst case traffic processed by the firewall.
+Various tuple sizes are used for the evaluations. The results
+are for a typical large tuple set, consisting of 60,000 tuples.
+FromFigure8itcanbeconcludedthatthe OptimalApproach
+and Max distance-Max distance Heuristic perform the best in
+comparison to the baseline list based approach. It is to be
+noted that filters determined by the Optimal Approach shows
+better traffic filtering than the heuristics approaches.
+3) Emulatedtrafficperformanceevaluation: Thenext
+study is to determine the CPU consumption of the firewall
+when the traffic applied follows the normal traffic trace.
+ResultsasinFigure9showthebenefitoftheproposedscheme.100
+80
+60
+40
+20
+0
+0 1000 2000 3000 4000 5000 6000 7000 8000
+noitazilitU
+UPC
+llarevO
+Worst case - List based
+Worst Case - Max distance - Max distance
+Emulated - List based
+Emulated - Max distance - Max distance
+Load in Packets/sec
+Fig. 9: Emulated Traffic Performance Evaluation
+The CPU improvementin the worst case is about35% and in
+the emulated case is about14%. Since, the CPU consumption
+isadditive,anygainontheemulatedcase canbetranslatedas
+acapacityfordealingwithmoreanomaloustrafficthatcanbe
+handled by the firewall. In other words, OPTWALL can deal
+with a larger predicted traffic volume and also a much larger
+anomalous traffic.
+4) Handling attacks evaluation: The aim of this study
+is to test the strength of OPTWALL in handling attacks
+and traffic fluctuations. Since the hit counts for default
+action tuples are large and unpredictable, it can cause a
+huge bottleneck to the entire firewall operation. Figure 10
+illustrates an instance of a large hit count for a default action
+tuple.TotesttheperformanceofOPTWALLinhandlingsuch
+attacks we emulated the attack and increasing the hit count
+of a certain default action tuple from
+0 (cid:24) 1 0 0 ; 0 0 0
+.Figure 11
+shows the competence of OPTWALL in countering dynamic
+traffic changes and hence aiding the steady maintenance of
+firewall operation.
+5) Sensitivity analysis evaluation: The final study is
+aimed at sensitivity analysis of the proposed OPTWALL ap-
+proaches. The analysis was performed for tuple sizes varying
+from
+0 (cid:0) 1 0 0 0
+3 37 40 41 61 64 93 109 115 407 1000 1013 1097 1868
+Rule rank
+tuples. Figure 12 details a comparative study
+between the baseline list based, the best heuristic and the
+optimal solution. Results depicted are for a heavily loaded
+firewall operation. From the results it can be inferred that the
+heuristic solutions are best suited for a hierarchical firewall
+optimization framework.
+VII. Related Work
+Due to the enormousimpact of firewalls on network security,
+there has been a significant amount of research work on how
+to optimize firewalls. Much of this work, however, has been
+in the area of firewall policy modeling and optimization [7],
+[8], [9], [10], [11], [12], [13], [14], [15], [16].
+ni
+ruoh
+nevig
+a ni
+tnuoc
+tiH
+0th
+1st
+High default deny rule hit 2nd
+3rd
+4th
+5th
+6th
+7th
+8th
+9th
+10th
+11th 12th
+13th 14th
+15th
+16th
+17th
+18th
+19th
+20th
+21th
+22th
+23th
+3 37 40 41 61 64 93 109 115 407 1000 1013 1097 1868
+Rule rank
+ni
+ruoh
+nevig
+a ni
+tnuoc
+tiH
+0th
+1st
+High default deny rule hit 2nd
+3rd
+4th
+5th
+6th
+7th
+8th
+9th
+10th
+11th 12th
+13th 14th
+15th
+16th
+17th
+18th
+19th
+20th
+21th
+22th
+23th
+Fig. 10: Default Deny Hit Count for a typical day
+Handling Denial of Service Attack
+30
+25
+20
+15
+10
+5
+0
+0 500 1000 10000 100000 1000000
+Hit count for a default deny rule
+eluR/tsoC
+without OPTWALL
+with OPTWALL
+Fig. 11: Countering DoS Attacks
+Sensitivity Analysis
+35
+30
+25
+20
+15
+10
+5
+0
+200 400 600 800 1000
+Number of Tuples
+noitazilitU
+UPC
+llarevO
+Optimal
+Max distance-Max distance
+List based
+Fig. 12: Sensitivity AnalysisVery few attempts have been made to achieve multi-
+dimensional firewall optimization. In [17], a tool to model
+firewall policies and detect conflicts is described. In this
+work, the authors focus mainly on single attribute rules.
+Similarly, in [13] a constraint logic programming (CLP)
+framework to analyze rule sets is discussed. These research
+work offer a good insight in how to model and analyze rule
+sets. Neither of these works, however, consider optimizing
+a multi-dimensional rule set. The approach proposed in [7]
+optimizes the firewall rule set using Directed Acyclic Graphs
+(DAGs) to describe rule dependencies. However, it does
+not provide a methodology to build the DAG. Furthermore,
+for complex graphs this scheme is ineffective. In [18], a
+framework to analyze and optimize rule sets is described.
+However, the authors do not provide specific details on
+how optimization can be achieved within the proposed
+framework. Furthermore, this work does not consider the
+traffic characteristics in its optimization approach.
+Recently there has been great attention to address traffic-
+aware firewall optimization. Some efforts in rule reordering
+using traffic specifications as in [6] have been proposed. But
+theyconsideraverysmallfirewallpolicyset(
+(cid:24) 2 0 0
+incur in defending against intrusions and denial of service
+attacks. To the best of our knowledge this is the first effort
+towards using firewall traffic log information and hierarchy
+to design and optimize firewalls. The performance of the
+OPTWALLapproachbothforworstcaseandnormaloperation
+of the firewall is studied. The results show that OPTWALL
+leads to reduced operational cost of firewalls.
+OPTWALL presents a novel method to use hierarchy in
+optimizing list based firewalls. It helps to achieve the maxi-
+mumbenefitviavarioussplittingprocessestoarriveatfeasible
+optimaland near optimal solutions. We are presently working
+on extending the hierarchical design concept onto physically
+distributed firewalls. This would imply that the rule subsets
+could be run on differentmachines or in parallel on the same
+machine.
+IX. Acknowledgments
+We would like to thank AlexandreP. Ferreira for his valuable
+insights and feedback.
+APPENDIX
+The following segment describes the intuition behind the
+)andthere proposed research. First the optimal solution for a list based
+is absence of complete rule reordering due to dependencies firewall policy set is presented and then the solution for K-
+in the policy set. Furthermore, all traffic characterizations are partitions is discussed.
+not considered for firewall optimization. [3] presents a tool
+A. Optimalsolution-Listbased
+geared towards adaptive optimization of list based firewalls.
+However, the work falls short of addressing non-linear policy Alistbasedfirewallisasequenceoftuplesthatarecomposed
+optimization. In other words, it does not consider any traffic- of filter fields and an action to be executed for packets that
+aware design improvements in the firewall structure. The match the filter profile. Each tuple has a counter that counts
+work presented in this paper builds on [3] and achieves every time the tuple has been fired and has a rank that
+complete non-linear policy reordering by removal of all rule determines its position in the list based sequence.
+dependencies. The proposed firewall optimization approach, Each test of a filter for a tuple consumes certain CPU
+’OPTWALL’ is a novel adaptive hierarchical design geared processingtime. Assuming that the cost of testing is the most
+towards very large policy optimization. expensiveoperation,thetotalCPUcostofasequenceoftuples
+is the sum of the costs of the number of times the tuple is
+VIII. Conclusions and Future Work tested. For a tuple
+A firewall is a combination of hardware and software used
+to implementa security policy governingthe flow of network
+traffic between two or more networks. In its simplest form, a
+firewallactsasa securitybarriertocontroltrafficandmanage
+connections between internal and external network hosts.
+Firewalls have proven to be useful in dealing with a large
+numberof threatsthatoriginatefromoutsidea network.They
+arebecomingubiquitousandindispensabletotheoperationof
+the network. The continuous growth of the Internet, coupled
+with the increasing sophistication of attacks, however, is
+placing further demands and complexity on firewalls design
+and management.
+Thispaper focuseson the problemof firewall optimization.
+To this end, the paper proposes a hierarchical framework,
+OPTWALL, for traffic-aware firewall optimization. The basic
+tenet of this framework is that the design of next generation
+firewallsmustleveragetheirpacketinspectioncapabilitieswith
+trafficawarenessinordertooptimizetheoperationalcostthey
+i
+the number of times it is tested is a
+summation of the tuple’s hit count plus the hit count of all
+tuples that succeeds it.
+C =
+NX
+i= 1
+NX
+j = i
+H j ) C =
+NX
+i= 1
+i (cid:3) H i
+(1)
+where,
+C
+represents the total cost of the list based tuple
+processing, and
+H i
+represents the hit count of tuple
+i
+.
+Withthisresultwecandefinetheweightedcostofthetuple
+i (cid:3) H i
+.
+The lowest cost of the sequenceis achievedby keepingthe
+list in an inverse sorted order by hit count. The proof is by
+switching tuple
+k
+with tuple
+l
+in the formula above and since
+the only terms that change are
+k
+*
+H k
+is changed to
+l
+*
+H k and
+l
+*
+H l
+is changed to
+k
+*
+H l
+Hence,
+(cid:1) C = k (cid:3) ( H k (cid:0) H )l (cid:0) l (cid:3) ( H k (cid:0) H )l = ( k (cid:0) l ) (cid:3) ( H k (cid:0) H )l
+(2)If
+k < l
+, this implies that the cost will decrease,
+stateddifferently,(
+(cid:1) C > 0
+)onlyif
+H k (cid:0) H l < 0 ) H k < H :l Hence,thelowestcostisachievedwhenthetuplesareordered
+using their hit counts with the highest countas the first tuple.
+B. Optimalsolution-Kpartitions
+Assuming a distribution of the tuples such that all tuples can
+appear only in one list and there is a function f(i) and g(i)
+that maps a tuple with rank
+i
+in list A or list B to the rank it
+occupiedin the single list. In this case the followingequation
+holds:
+8 i ; j ; f ( i ) 6= g ( i )
+(3)
+8 i 9 j ; i = f ( j ) _ i = g ( j )
+(4)
+Implies that, no tuples are duplicated and all tuples appear
+in the new configuration.
+C =
+NX
+i= 1
+H i +
+N =
+X
+i=
+K
+l
+i (cid:3) H f ( i) +
+N =
+X
+i=
+M
+l
+i (cid:3) H g ( i) ; N = K + M
+(5)
+Cost of the new tuple plus the cost of each partition.
+Each partition has to be sorted similar to the reorder
+discussion above. The tuples in the original sequence are to
+be as low as possible in the new partitions to reduce the cost.
+Exchangingtuplesinthesamerowbetweenlistsdoesnotalter
+the final cost of the firewall. Hence, the optimal solutions are
+as follows:
+f ( i )
+= 2
+i
+or 2
+i
++ 1 and
+g ( i )
+= 2
+i
+or 2
+i
+[13] P. Eronen and J. Zitting, “An expert system for analyzing firewall
+rules,”inProceedingsofthe6thNordicWorkshoponSecureITSystems
+(NordSec2001),Copenhagen, Denmark,Nov.2001,pp.100–107.
+[14] S. Hinrichs, “Integrating changes to a hierarchical policy model,” in
+Proceedings of 9th IFIP/IEEE International Symposium on Integrated
+NetworkManagement. Nice,France:IEEE,2005.
+[15] E. Al-Shaer and H. Hamed, “Modeling and management of firewall
+policies,”IEEETrans.NetworkandServiceManagement,vol.1,no.1,
+Apr2004.
+[16] S. J. Tarsa and E. W. Fulp, “Trie-based policy representations for
+networkfirewalls,”inProceedingsoftheIEEEInternationalSymposium
+onComputer Communications, 2006.
+[17] E. Al-Shaer and H. Hamed, “Modeling and management of firewall
+policies,”IEEETrans.NetworkandServiceManagement,vol.1,no.1,
+Apr2004.
+[18] J.Qian,S.Hinrichs,andK.Nahrstedt,“ACLA:Aframeworkforaccess
+control list (acl) analysis and optimization,” in Communications and
+Multimedia Security, 2001.
++ 1.
+REFERENCES
+[1] T. V. Lakshman and D. Stidialis, “High speed policy-based packet
+forwarding using efficient multi-dimensional range matching,” in In
+Proceedings ofSIGCOMM. ACMPress,1998.
+[2] V.Srinivasan,S.Suri,andG.Varghese,“Packetclassificationusingtuple
+spacesearch,”inInProceedings ofSIGCOMM. ACMPress,1999.
+[3] S.Acharya,J.Wang,Z.Ge,T.Znati,andA.Greenberg,“Traffic-aware
+firewall optimization strategies,” in IEEE International Conference on
+Communications, Istanbul, Turkey,June2006.
+[4] P.Brucker,“Onthecomplexityofclusteringproblems,”ininOptimiza-
+tionandOperationsResearch. Springer-Verlag,pp.45-54,1977,1997.
+[5] S.Singh, F.Baboesu, G.Varghese, andJ.Wang,“Packet classification
+usingmultidimensional cutting,” inSIGCOMM,2003.
+[6] H. Hamed and E. Al-Shaer, “Dynamic rule-ordering optimization for
+high-speed firewall filtering,” inASIACCS,2006.
+[7] E. W.Fulp, “Optimization of network firewalls policies using directed
+acyclic graphs,” in Proceedings of the IEEE Internet Management
+Conference, 2005.
+[8] ——,“Parallelfirewalldesignsforhigh-speednetworks,”inINFOCOM,
+2006.
+[9] L. Qiu, G. Varghese, and S. Suri, “Fast firewall implementations for
+software-basedandhardware-basedrouters,”inSIGMETRICS’01:Pro-
+ceedings of the 2001 ACM SIGMETRICS international conference on
+Measurementandmodelingofcomputersystems. NewYork,NY,USA:
+ACMPress,2001,pp.344–345.
+[10] P. Gupta and N. McKeown, “Packet classification using hierarchical
+intelligent cuttings,” ininProceedings ofHotInterconnects, 1999.
+[11] S.Singh, F.Baboesu, G.Varghese, andJ.Wang,“Packet classification
+onmultiple fields,”inSIGCOMM,1999.
+[12] ——, “Packet classification using multidimensional cutting,” in SIG-
+COMM,2003.

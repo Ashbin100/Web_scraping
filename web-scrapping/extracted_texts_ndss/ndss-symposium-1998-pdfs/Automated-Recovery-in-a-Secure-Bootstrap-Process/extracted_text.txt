@@ -1,0 +1,1132 @@
+Automated Recovery in a Secure Bootstrap Process
+WilliamA.Arbaugh
+AngelosD.Keromytis
+DavidJ.Farber
+(cid:3)
+JonathanM.Smith
+UniversityofPennsylvania
+DistributedSystemsLaboratory
+Philadelphia,PA.19104-6389
+f
+waa,angelos,farber, jms
+g
+@dsl.cis.upenn.edu
+Abstract
+Integrity is rarely a valid presupposition in many sys-
+temsarchitectures,yetitisnecessarytomakeanysecurity
+guarantees. To address this problem, we have designed a
+secure bootstrap process, AEGIS, which presumes a mini-
+malamountofintegrity, andwhichwehaveprototypedon
+theIntel x86 architecture. The basic principle is sequenc-
+ingthebootstrapprocessasachainofprogressivelyhigher
+levels of abstraction, and requiring each layer to check a
+digitalsignature of the next layer before control is passed
+toit. Amajordesigndecisionistheconsequenceofafailed
+integrity check. A simplistic strategy is to simply halt the
+bootstrapprocess. However, aswe showin thispaper, the
+AEGISbootstrapprocesscanbeaugmentedwithautomated
+recoveryprocedureswhichpreservethesecurityproperties
+ofAEGISundertheadditionalassumptionoftheavailabil-
+ityofatrustedrepository. Wedescribetwomeansbywhich
+sucharepositorycanbeimplemented,andfocusouratten-
+tiononanetwork-accessiblerepository.
+1 Introduction
+Systems are organized as layered levels of abstraction,
+ineffectdefiningaseriesofvirtualmachines. Eachvirtual
+machine presumes the correctness (integrity) of whatever
+virtualor real machinesunderlieits own operation. With-
+outintegrity,nosystemcanbemadesecure,andconversely,
+anysystemisonlyassecureasthefoundationuponwhich
+(cid:3)
+itis built. Thus, withoutsuch a secure bootstraptheoper-
+atingsystemkernelcannotbetrustedsinceitisinvokedby
+anuntrustedprocess.Webelievethatdesigningtrustedsys-
+temsbyexplicitlytrustingthebootcomponentsprovidesa
+falsesenseofsecuritytotheusersoftheoperatingsystem,
+andmoreimportant,isunnecessary.
+We havepreviouslyreported[4] the design andprelimi-
+naryimplementationresultsforAEGIS,asecurebootstrap
+process. AEGIS increases the security of the boot pro-
+cess by ensuring the integrity of bootstrap code. It does
+this by constructinga chain of integritychecks, beginning
+at power-on and continuinguntil the final transfer of con-
+trolfromthebootstrapcomponentstotheoperatingsystem
+itself. The integrity checks compare a computed crypto-
+graphichashvaluewithastoreddigitalsignatureassociated
+witheachcomponent.
+The importance of the integrity of the bootstrap pro-
+cess is highlighted by the recent disclosure by Intel that
+the Pentium Pro and Pentium II processors can have their
+microcode dynamically updated through a process during
+bootstrap by using capabilities of the Basic Input Output
+System (BIOS) and the Power on Self Test (POST)[19].
+While this is a useful upgrade capability, it is also a dan-
+gerousone. AEGISprovidesintegrityguaranteesnotonly
+for the BIOS code that updates the processor microcode,
+but also the microcode itself. Beyond the integrity guar-
+antees, AEGIS can also provide secure automatic updates
+to all of the bootstrapcomponentsincludingthe processor
+microcode.
+In order to provide integrity guarantees the AEGIS
+modelreliesexplicitlyonthreeassumptions:
+Smith and Farber’s work is supported by DARPA under Con- 1. Themotherboard,processor,andaportionofthesys-
+tracts #DABT63-95-C-0073, #N66001-96-C-852, and #MDA972-95-1-
+temROM(BIOS)arenotcompromised,i.e.,theadver-
+0013withadditionalsupportfromtheHewlett-PackardandIntelCorpora-
+tions. saryisunableorunwillingtoreplacethemotherboard
+1of13orBIOS. 1.2 Goals
+2. Existence of a cryptographic certificate authority in- Therearesix main goalsof theAEGISrecoveryproto-
+frastructure to bind an identity with a public key, al- col.
+thoughno limits are placed on the type of infrastruc-
+1. Allow the AEGIS client and the trusted repository to
+ture.
+mutually authenticate their identities with limited or
+nopriorcontact(mobilitybetweendomains).
+3. Atrustedrepositoryexistsforrecoverypurposes.This
+repositorymaybeahostonanetworkthatisreachable 2. Preventmaninthemiddleattacks.
+througha secure communicationsprotocol, or it may
+beatrustedROMcardlocatedontheprotectedhost. 3. Preventreplayattacks.
+4. Mitigatecertainclassesofdenialofserviceattacks.
+TheAEGISarchitecture,whichweoutlinebelowinSec-
+tion 2, includes a recovery mechanism for repairing in- 5. Allowtheparticipatingpartiestoagreeuponashared
+tegrity failures and protection against some classes of de- secret in a secure manner in order to optimize future
+nial of service attacks. An added benefit of the recovery messageauthentication.
+mechanism is the potential for reducing the Total Cost of
+Operation(TCO)ofacomputersystembyreducingtrouble 6. KISS(KeepItSimpleandSecure):Complexitybreeds
+calls and down time associated with failuresand upgrades designandimplementationvulnerabilities.
+ofthebootprocess.
+1.3 OutlineofthePaper
+From the start, AEGIS has been targeted for commer-
+cialoperatingsystemsoncommodityhardware,makingita
+practical“real-world”system. InAEGIS,thebootprocess In Section 2, we make the goals of the AEGIS design
+isguaranteedtoendupina securestate, evenin theevent explicit. Sections 3, 4, and 5 form the core of the pa-
+ofintegrityfailuresoutsideofaminimalsectionoftrusted per, giving an overview of AEGIS, and the IBM PC boot
+code. process. Section 4 providesan introductionto the crypto-
+Wedefineaguaranteedsecurebootprocessintwoparts. graphic and system tools needed to build a secure recov-
+Thefirstisthatnocodeisexecutedunlessitiseitherexplic- ery protocol, and describessuch a protocol. Section 5 de-
+itly trusted or its integrity is verified prior to its use. The scribes the details of adding the recovery protocol to ex-
+secondisthatwhenanintegrityfailureisdetectedaprocess isting DynamicHost Configuration Protocol(DHCP), and
+can recover a suitable verified replacement module. This TrivialFileTransferProtocol(TFTP)implementationsand
+recoveryprocessisthefocusofthecurrentpaper. providesperformanceinformation. We discuss thesystem
+statusandournextstepsinsection6,andconcludethepa-
+perinsection7.
+1.1 Responsestointegrityfailure
+2 AEGISArchitecture
+Whenasystemdetectsanintegrityfailure,oneofthree
+possiblecoursesofactioncanbetaken.
+2.1 Overview
+The first is to continue normally, but issue a warning.
+Unfortunately,thismayresultintheexecutionoruseofei-
+Tohaveapracticalimpact,AEGISmustbeabletowork
+theracorruptormaliciouscomponent.
+with commodity hardware with minimal changes (ideally
+Thesecondistonotuseorexecutethecomponent.This
+none)totheexistingarchitecture.TheIBMPCarchitecture
+approachistypicallycalledfailsecure,andcreatesapoten-
+wasselectedasourprototypeplatformbecauseofitslarge
+tialdenialofserviceattack.
+usercommunityandtheavailabilityofthesourcecodefor
+Thefinalapproachistorecoverandcorrecttheinconsis- severaloperatingsystems. WealsousetheFreeBSDoper-
+tencyfromatrustedrepositorybeforetheuseorexecution ating system, but the AEGIS architectureis not limited to
+ofthecomponent. any specific operatingsystem. Porting to a new operating
+Thefirsttwoapproachesareunacceptablewhenthesys- system onlyrequiresafewminorchangesto thebootsec-
+temsareimportantnetworkelementssuchasswitches, in- tor codeso that the kernel can beverified prior to passing
+trusion detection monitors, or associated with electronic controltoit. Sincetheverificationcodeiscontainedinthe
+commerce,since they either makethe componentunavail- BIOS,thechangeswillnotsubstantiallyincreasethesizeof
+ableforservice,oritsresultsuntrustworthy. thebootloader,northebootsector.
+2of13AEGISmodifiesthestandardPCbootprocessshownin ROM signature is found by the BIOS, control is immedi-
+Figure1sothatallexecutablecode,exceptforaverysmall atelypassedtoit. WhentheROMcompletesitsexecution,
+sectionoftrustedcode,isverifiedpriortoexecutionbyus- controlisreturnedtotheBIOS.
+ingadigitalsignature. Thisisaccomplishedthroughmodi- ThefinalstepofthePOSTprocesscallstheBIOSoperat-
+ficationsandadditionstotheBIOS.TheBIOScontainsthe ingsystembootstrapinterrupt(Int19h).Thebootstrapcode
+verificationcode,andpublickeycertificate(s). Inessence, firstfindsabootablediskbysearchingthedisksearchorder
+thetrusted softwareservesastherootofan authentication definedintheCMOS.Onceitfindsabootabledisk,itloads
+chain that extends to the operating system and potentially theprimarybootsectorintomemoryandpassescontrolto
+beyondtoapplicationsoftware[38][18][34].IntheAEGIS it. The code contained in the boot block proceeds to load
+bootprocess, either the operatingsystem kernelis started, theoperatingsystem,orasecondarybootsectordepending
+orarecoveryprocessisenteredtorepairanyintegrityfail- ontheoperatingsystem[22][14]orbootloader[3].
+ure detected. Once the repair is completed, the system is Ideally, the boot process would proceed in a series of
+“warmbooted”toensurethatthesystemstarts. Thisentire levels with each level passing control to the next until the
+processoccurswithoutuserintervention. operatingsystemkernelisrunning.Unfortunately,theIBM
+Inadditiontoensuringthatthesystemstartsinasecure architectureusesa“starlike”modelwhichisshowninFig-
+manner,AEGIScanalsobeusedtomaintainthehardware ure1.
+and software configuration of a machine. Since AEGIS
+maintainsacopyofthesignatureforeachexpansioncard1,
+Operating System
+any additional expansion cards will fail the integrity test.
+Similarly, a new operating system cannot be started since Level 4
+theOSkernelwouldchange,andthenewkernelwouldfail
+theintegritytest.
+Boot Block
+Level 3
+2.2 AEGISBootProcess Expansion ROMs Expansion ROMs
+Every computer with the IBM PC architecture follows
+approximatelythesamebootprocess.Wehavedividedthis
+processintofourlevelsofabstraction(seeFigure1),which Level 2
+correspondto phases of the bootstrap operation. The first
+phase is the Power on Self Test or POST [30]. POST is
+System BIOS
+invokedinoneoffourways:
+1. Applyingpowertothecomputerautomaticallyinvokes Level 1
+POSTcausingtheprocessortojumptotheentrypoint
+Initiate POST
+indicatedbytheprocessorresetvector.
+Figure1.IBMPCbootprocess
+2. Hardware reset also causes the processor to jump to
+theentrypointindicatedbytheprocessorresetvector.
+3. Warm boot (ctrl-alt-del under DOS) invokes POST 2.2.1 ALayeredBootProcess
+withouttestingorinitializingtheupper64Kofsystem
+We have divided the boot process into several levels to
+memory.
+simplify and organize the AEGIS BIOS modifications, as
+shown in Figure3. Each increasing level addsfunctional-
+4. Softwareprograms,ifpermittedbytheoperatingsys-
+ity to the system, providing correspondinglyhigher levels
+tem,canjumptotheprocessorresetvector.
+of abstraction. The lowest level is Level 0. Level 0 con-
+In each of the cases above, a sequence of tests are con- tains the small section of trusted software, digital signa-
+ducted. All of these tests, except for the initial processor tures, public key certificates, and recovery code. The in-
+selftest,areunderthecontrolofthesystemBIOS. tegrity of this level is assumed to be valid. We do, how-
+ever, perform an initial checksum test to identify PROM
+Oncethe BIOS hasperformedall of its poweron tests,
+failures. Thefirstlevelcontainstheremainderoftheusual
+it begins searching for expansion card ROMs which are
+BIOS code, and the CMOS. The second level contains all
+identifiedin memorybya specificsignature. Onceavalid
+of the expansion cards and their associated ROMs, if any.
+1Ideally,thesignaturewouldbeembeddedinthefirmwareoftheROM. Thethirdlevelcontainstheoperatingsystembootsector(s).
+3of13These are resident on the bootable device and are respon-
+sible for loading the operating system kernel. The fourth
+levelcontainsthe operating system, and the fifth and final
+levelcontainsuserlevelprogramsandanynetworkhosts.
+The transition between levels in a traditional boot pro-
+cessisaccomplishedwithajumporacallinstructionwith-
+outanyattemptat verifyingtheintegrityof thenextlevel.
+AEGIS, on the other hand, uses public key cryptography
+andcryptographichashestoprotectthetransitionfromeach
+lowerleveltothenexthigherone,anditsrecoveryprocess
+ensurestheintegrityofthenextlevelintheeventoffailures.
+Thepseudocodefortheactiontakenateachlevel,
+L
+,before
+transition to level
+L + 1
+because of some malicious act. Finally, the component’s
+certificatetimestampmaynolongerbevalid. Ineachcase,
+the client MUST attempt to recover from a trusted reposi-
+tory.Shouldatrustedrepositorybeunavailableafterseveral
+attempts,thentheclient’sfurtheractiondependsonthein-
+tegritypolicyoftheuser.Forinstance,ausermaychooseto
+continueoperationinalimitedmanner,ortheymaychoose
+tohaltoperationsaltogether.
+2.4 TrustedRepository
+is shown in Figure 2. The func-
+ThetrustedrepositorycaneitherbeanexpansionROM
+boardthatcontainsverifiedcopiesoftherequiredsoftware,
+int IntegrityValid(Level L) {
+or it can be a network host. If the repository is a ROM
+Certificate c = LookupCert(L);
+board, then simple memory copies can repair or shadow
+int result;
+failures. If the repository is a network host, then a proto-
+colwithstrongauthenticationisrequired.
+if (result = VerifyCertChain(c))
+return DSAVerify(SHA1(L), c); Inthecaseofanetworkhost,thedetectionofanintegrity
+else return result; failurecausesthesystemtobootintoarecoverykernelcon-
+} tainedonthenetworkcardROM.Therecoverykernelcon-
+tactsa“trusted”repositorythroughthesecureprotocolde-
+if (IntegrityValid(L+1))) { scribedinthispaperto recovera signedcopyofthefailed
+GOTO(L+1); componentor its certificate. Thefailed componentis then
+} else { shadowed or repaired, and the system is restarted (warm
+Recovery(L+1); boot).
+} TheresultantAEGISbootprocessisshowninFigure3.
+Notethatwhenthebootprocessenterstherecoveryproce-
+dureit becomesisomorphicto a secure networkbootwith
+Figure2.LayerTransitionPseudocode
+thepurposeofretrievingvalidbootstrapcomponentsrather
+thanan operatingsystem. We leveragethisfactby adding
+tion IntegrityValid first finds the componentcertificate for
+authentication to the well known network protocols sup-
+LevelL.Ideallythiswillbestoredinthecomponentitself,
+porting Remote Program Loading (RPL) DHCP[12], and
+but initially it will be stored in a table contained in Level
+TFTP[17] and using them as our recovery protocol. As
+0. Once the certificate, c, is found. VerifyCertChain then
+a result, our approach is similar to that proposed in the
+verifies that the certificate(s) form a “chain” of trust from
+NetPC specification[8]. The biggest difference, however,
+the component certificate to the root Certificate Authority
+betweenourapproachandtheNetPCapproach,inaddition
+PublicKey. If theydo not, then bothVerifyCertChainand
+to that noted above, is the addition of security. Currently,
+IntegrityValidreturnanerrorcodeandarecoveryprocedure
+theNetPCspecificationdoesnotcontainanyformofsecu-
+isentered. If VerifyCertChainreturnsTRUE,thenthesig-
+rity. The authorsof the NetPC specification, however, are
+naturecontainedinthecertificateisverifiedusingthepublic
+developingasecurityarchitecture,anditwilllikelybean-
+keycontainedinthecertificate.
+nouncedbytheconferencedate.
+Anyintegrityorcertificatefailuresidentifiedintheabove
+processarerecoveredthroughthetrustedrepository.
+3 AEGISNetwork RecoveryProtocol
+2.3 IntegrityPolicy
+Formalizing the discussion in Section 1.1, the AEGIS TheAEGISnetworkrecoveryprotocolcombinesproto-
+integritypolicypreventstheexecutionofacomponentifits cols and algorithms from networking and cryptographyto
+integritycannotbevalidated. Therearethreereasonswhy ensure the security of the protocol. This section first pro-
+theintegrityofacomponentcouldbecomeinvalid.Thefirst videsanintroductiontothematerialneededtofullyunder-
+is the integrity of the componentcould change because of standtherecoveryprotocol. Wethendescribetheprotocol
+somehardwareorsoftwaremalfunction,oritcouldchange andprovideexamplesofitsuse.
+4of13User Programs notionofacapability[29]. Inacapabilitybasedmodel,the
+Network Host certificatecarriestheauthorizationsoftheholdereliminat-
+Level 5
+ing the need for an identity infrastructureand access con-
+Operating System
+trollists. InAEGIS,weusetwocapabilities:SERVER,and
+Level 4 CLIENTwiththeobviousmeanings.
+Boot Block
+In AEGIS we only use three types of certificates. The
+Level 3 first is an authorizationcertificate. This certificate, signed
+Expansion ROMs
+byatrustedthirdpartyorcertificateauthority,grantstothe
+keyholder(themachinethatholdstheprivatekey)thecapa-
+Level 2 bilitytogeneratethesecondtypeofcertificate-anauthen-
+tication certificate. The authentication certificate demon-
+BIOS Section 2 stratesthattheclientorserveractuallyholdtheprivatekey
+Level 1 correspondingto the public key identified in the authenti-
+AEGIS ROM cation certificate. A nonce field is used along with a cor-
+BIOS Section 1 respondingnonceintheserverauthenticationcertificateto
+Level 0 ensure that the authentication protocol is “Fail Stop”[20]
+Initiate POST Legend detecting and preventingactive attacks such as a man–in–
+Control Transition
+Recovery Transition the–middle.Themsg-hashfieldensuresthattheentiremes-
+sagecontainingthecertificateshasnotbeenmodified. Us-
+Figure3.AEGISbootcontrolflow ingthemsg-hashintheauthenticationcertificateeliminates
+asignatureandverificationoperationsincetheentiremes-
+sage no longer needs to be signed. The additional server
+3.1 Certificates
+fields are used to pass optional Diffie-Helman parameters
+totheclientsothattheseparametersneednotbeglobalval-
+Theusualpurposeofacertificatewithrespecttopublic
+ues. While clientsarefreeto set thevalidityperiodofthe
+key cryptographyis to bind a public key with an identity.
+authenticationcertificatetowhatevertheydesire,weexpect
+Whilethis bindingis essentialfor strong authentication,it
+thatclientswillkeeptheperiodshort.
+severelylimitsthepotentialofcertificates,e.g. anonymous
+ThecurrentSDSI/SPKI draftRFC proposesseveralen-
+transactions.Themostwidelyusedcertificatestandard,the
+coding schemes. The one shown in Figures 5, 6, and 7
+X.509[7] and its variants, provide only this binding. The
+is the Advanced Transport Format (ATF). Basically, an
+X.509standard, also, suffersfromother serious problems.
+ASCII representation of the certificate with binary infor-
+The most significant is ambiguity in the parsing of com-
+mation, e.g. keys, represented by Base64 encoding. Un-
+pliantcertificatesbecauseof itsuse oftheBasicEncoding
+fortunately, none of the proposed representation schemes
+Rules (BER)[6]. The encoding rules also require a great
+for SDSI/SPKI produce certificates small enough for our
+dealofspacetoimplement,andtheencodedcertificatesare
+purposes. Therefore, we propose a new encoding scheme
+usually large. While the V3 specification eliminates most
+which we call the Binary Transport Format (BTF). BTF
+oftheproblemsabove,theremainingonespreventitsuse.
+uses fixed identifiers for the various certificate types, and
+Because of the limits and problems with the X.509
+a direct mapping of binary data into its network byte or-
+certificate standard, we use a subset of the proposed
+derrepresentation. Theresultingencodingschemereduces
+SDSI/SPKI 2.0 certificate structure[16][15] instead. The
+the size of a certificate from approximately one thousand
+SDSI/SPKIformatdoesnotsufferfromthesameproblems
+bytes when encoded in ATF to slightly less than two hun-
+asX.509,anditoffersadditionalfunctionality.
+dred and fifty six bytes when encoded in BTF. Space is
+also saved by combining several SPKI fields into a single
+3.1.1 SDSI/SPKILite
+type, e.g. (subject (hash-of-key (hash sha1 bytes))) maps
+Since the SDSI/SPKI standard is still under development, tosubject-publickey-dsa-hash-sha1.Whilethisexpandsthe
+wehavechosento supportthe small subsetof SDSI/SPKI namespacesignificantly,italsosavesasignificantamount
+neededforAEGIS.WecallthissubsetSDSI/SPKILite. ofspace.Table1listssampletypeidentifiersforBTF.BTF
+SDSI/SPKI provides for functionality beyond the sim- usestwoformats.Thefirstisathreetupleofidentifier,size,
+plebindingofanidentitywithapublickey. Identitybased data. Theidentifieristwobytes,thesizeistwobytes,and
+certificatesrequirethe existenceofan AccessControlList the data is a variable size. The second is an implied size
+(ACL)whichdescribetheaccessrightsofanentity. Main- formatbasedontheidentifier. Thelatterformatis usedas
+tainingsuchlistsinadistributedenvironmentisacomplex muchaspossibletosavespace.
+anddifficulttask. Incontrast,SDSI/SPKI providesforthe ExamplesofthesecertificatesareshowninFigures4,5,
+5of13Size in bytes
+cert 2
+issuer-publickey-dsa-hash-sha1 22
+((cert (issuer (hash-of-key (hash sha1 cakey))) subject-publickey-dsa-hash-sha1 22
+(subject (hash-of-key (hash sha1 keyholderkey))) tag client 4
+(tag (client))
+not-before 6
+(not-before 03/29/97-0000)
+(not-after 03/29/98-0000) not-after 6
+(signature (hash sha1 hashbytes)
+signature-publickey-1024-dsa 190
+(public-key dsa-sha1 cakey)
+(sigbytes))) Total = 252
+(a)ATF (b)BTF
+Figure4.AEGISAuthorizationCertificate
+SPKIType Identifier ((cert (issuer (hash-of-key (hash sha1
+cert 0xaeba clientkey)))
+(subject (hash-of-key (hash sha1
+issuer 0x0001
+clientkey)))
+issuer-publickey-dsa-hash-sha1 0x1001
+(tag (client (cnonce cbytes)
+subject 0x0002
+(msg-hash
+subject-publickey-dsa-hash-sha1 0x1002
+(hash sha1 hbytes))))
+sha1-hash 0x0004
+(not-before 09/01/97-0000)
+tag 0x0005
+(not-after 09/01/97-0000))
+not-before 0x0006
+(signature (hash sha1 hashbytes)
+not-after 0x0007
+(public-key dsa-sha1 clientkey)
+signature 0x0008
+(sigbytes)))
+signature-publickey-1024-dsa-hash-sha1 0x1008
+signature-publickey-1024-dsa 0x2008
+Figure5.AEGISClientAuthenticationCertifi-
+Table 1. Sample Binary Transport Format cate
+Identifiers
+storagerequirementsfor CRLs which would overburdena
+and6. Thefirstfigureshowsanauthorizationcertificatein client. Second, we can potentially reduce the amount of
+bothATFandBTFforms. TheremainingFiguresuseonly systemmaintenancerequiredoftheclient. Sincetheclient
+ATFforreadabilitypurposes. Thethirdandfinalcertificate mustconnectto theserveronaregularbasisto updatethe
+formatisthecomponentsignaturecertificateshowninFig- componentcertificates,theservercan,atthesametime,up-
+ure 7. This certificate is either embedded in a component datetheactualcomponentaswellifanewversionisavail-
+orstoredinatable. ItisusedwiththeAEGISbootprocess able.
+describedearlierinthispaper.
+3.2 DiffieHellmanKeyAgreement
+3.1.2 CertificateRevocationLists
+The Diffie Hellman Key Agreement (DH) [9] permits
+Requiring each client to maintain a Certificate Revocation twopartiestoestablishasharedsecretbetweenthem. Un-
+List (CRL) places a significant burden on the non-volatile fortunately,thealgorithmasoriginallyproposedissuscep-
+storageoftheclient. RatherthanuseCRLs,wechoosein- tible to a man-in-the-middleattack. Theattack can be de-
+steadtokeepthevalidityperiodofcertificatesshortasinthe feated, however, by combining DH with a public key al-
+SDSI/SPKImodelandrequiretheclientto updatethecer- gorithmsuchasDSAasproposedintheStationtoStation
+tificateswhentheyexpire.Thisservestwopurposesbeyond Protocol (StS)[10]. Our recovery protocolis an extension
+theabilitytohandlekeyrevocation. First,weeliminatethe toStS.
+6of13TheDHalgorithmisbasedonthedifficultyofcalculat-
+ing discrete logarithms in a finite field. Each participant
+agreestotwoprimes,
+((cert (issuer (hash-of-key (hash sha1
+serverkey)))
+(subject (hash-of-key (hash sha1
+serverkey)))
+(tag (server (dh-g gbytes)
+(dh-p pbytes)
+(dh-Y ybytes)
+(msg-hash
+(hash sha1 hbytes))
+(cnonce cbytes)
+(snonce sbytes)))
+(not-before 09/01/97-0900)
+(not-after 09/01/97-0900))
+(signature
+(hash sha1 hashbytes)
+(public-key dsa-sha1 serverkey)
+(sigbytes)))
+Figure6.AEGISServerAuthenticationCertifi-
+cate
+((cert (issuer (hash-of-key (hash sha1
+approverkey)))
+(subject (hash sha1
+hashbytes))
+(not-before 09/01/97-0000)
+(not-after 09/05/97-0000))
+(signature (hash sha1
+hashbytes)
+(public-key dsa-sha1
+approverkey)
+(sigbytes)))
+Figure7.AEGISComponentCertificate
+g
+and
+p
+,suchthat
+g
+isprimitive
+n
+m o d . These values do not need to be protected in order to
+ensurethestrengthofthesystem,andthereforecanbepub-
+lic values. Each participantthengeneratesa largerandom
+integer. Bob generates
+x
+as his large random integer and
+computes
+X = g
+x
+m o d p
+. Hethensends
+X
+toAlice. Al-
+ice generates
+y
+as her large random integer and computes
+Y = g
+y
+m o d p
+. She then sends
+Y
+to Bob. Bob and Al-
+icecannoweachcomputeasharedsecret,
+k
+,bycomputing
+k = Y
+x
+m o d p
+and
+k = X
+y
+m o d p
+,respectively.
+3.3 DigitalSignatureStandard
+TheDigitalSignatureStandard(DSS)includesadigital
+signature algorithm (DSA) [35] and a cryptographic hash
+algorithm(SHA1)[36]. DSAproducesa320bitsignature
+usingthefollowingparameters:
+Aprime,
+p
+,between512and1024bitsinlength.Thesize
+oftheprimemustalsobeamultipleof64.
+A160bitprimefactor,
+q
+,of
+p (cid:0) 1
+.
+g
+, where
+g = h ( p
+(cid:0)
+1 ) = q m o d p
+and
+h
+is less than
+p (cid:0) 1 suchthat
+g
+isgreaterthan1.
+x
+,where
+x
+islessthan
+q
+.
+y
+,where
+y = g
+x
+m o d p
+.
+Theparameters
+p
+,
+q
+,and
+g
+arepublic. Theprivatekeyis
+x
+,
+andthepublickeyis
+y
+.
+Asignatureofamessage,
+M
+,iscomputedinthefollow-
+ingmanner. Thesignergeneratesarandomnumber,
+k
+,that
+islessthan
+q
+,andthencomputes
+r = ( g
+k
+m o d p ) m o d q and
+s = ( k
+(cid:0)
+1
+( S H A 1 ( M ) + x r ) ) m o d q
+. The values
+r and
+s
+,each160bitsinlength,comprisethesignature. The
+receiververifiesthesignaturebycomputing:
+w
+u
+u
+v
+=
+=1
+=2
+=
+(cid:0)
+s
+S(
+r(
+g( (
+1
+H
+(cid:3)
+1u
+m
+A
+w
+(cid:3)
+o
+1
+)
+y
+d
+(
+u
+M
+m
+2
+q
+(cid:3))
+o d
+) m
+w
+q
+o
+)
+d p
+m
+)
+o d
+m
+q
+o d q
+.
+Thesignatureisverifiedbycomparing
+v
+and
+r
+. Iftheyare
+equal,thenthesignatureisvalid.
+3.4 IPSECAuthenticationHeader
+The IPSEC Authentication Header (AH) provides au-
+thenticationandintegrityofanIPdatagram[25]. Thefor-
+matfortheIPSECAuthenticationHeaderisshowninFig-
+ure 8. The next header field describes the type of header
+7of13following AH. The Length field indicates the size of the
+header in 4-byteunits minus 2. For instance, if the entire
+headersizewas192bitsthenthelengthfieldwouldhavea
+valueof4.TheSecurityParametersIndex(SPI)determines
+whichsecurityassociationdefinedbetweenthesourceand
+destination to use. The sequence number is a 32 bit field
+thatisusedtopreventreplayattacks,andtheauthentication
+datafieldisavariablelength,alignedto32bits,fieldcon-
+taining the appropriate authentication information. In the
+caseofAEGIS,thisisa96bitMAC.
+0 8 16 31
+Next Hdr Length Reserved
+Security Parameters Index
+Sequence Number Field
+Authentication Data (variable)
+Figure8.IPSECAHFormat
+3.5 SHA1MessageAuthenticationCode
+Message Authentication Codes (MAC) utilize a secret,
+k
+,sharedbetweenthecommunicatingpartiesandamessage
+digest.WeusetheSecureHashAlgorithm(SHA1),andthe
+HMAC described in RFC 2104[26] and a draft RFC[31].
+TheMACisdefinedas:
+S H A 1 ( k
+XOR
+o p a d ; S H A 1 ( k
+XOR
+i p a d ; M ) )
+,
+where
+M
+is the message or datagram,
+o p a d
+is an array of
+64byteseachwith thevalue0x5c,and
+i p a d
+isanarrayof
+sixtyfourbyteseachwiththevalue0x36.
+k
+0 8 16 24 31
+OPCODE HTYPE HLEN HOPS
+XID
+SECS FLAGS
+Client IP Address
+Your (Client) IP Address
+IP Address of Next Server in Bootstrap
+Relay Agent IP Address
+Client Hardware Address (16 bytes)
+Optional Server Name (64 bytes)
+Boot File Name (128 bytes)
+Options (variable)
+Figure9.DHCPMessageFormat
+message,and2foraBOOTREPLYmessage.Thenextfield,
+htype,isthehardwareaddresstypedefinedbythe“Assigned
+Numbers”RFC[39]. hlenindicatesthelengthofthehard-
+wareaddress. hopsissettozerobytheclientandusedby
+BOOTPrelayagentstodetermineiftheyshouldforwardthe
+message. xidisarandomnumberchosenbytheclient. Its
+iszeropadded use is to permittheclient and theserver to associate mes-
+to sixty four bytes. The result of this MAC is the 160-bit sages between each other. secs is set by the client to the
+SHA1 digestwhichis truncatedto thefirst ninetysix bits. numberof secondselapsed since the start addressacquisi-
+ThesebitsareusedastheMAC. tion process. Currently, only the leftmost bit of the flags
+fieldisusedtohelpsolveanIPmulticastproblem. There-
+3.6 DynamicHostConfigurationProtocol maining bits must be zero. ciaddr is the client address if
+theclientknowsitalready,yiaddris“your”addresssetby
+theserverif theclientdid notknow(or had abad one)its
+The DHCP protocol[12] provides clients the ability to
+address. giaddr is the relay agent address. chaddr is the
+configuretheirnetworkingandhostspecificparametersdy-
+client’shardwareaddress. snameisanoptionalnulltermi-
+namicallyduringthe bootprocess. Thetypicalparameters
+nated string containingthe server’sname. fileis the name
+aretheIPaddressesoftheclient,gateways,andDNSserver.
+ofthebootfile. InAEGIS,thisis thenameofthecompo-
+DHCP,however,supportsupto255configurationparame-
+nent to recover. Finally, options is a variable length field
+ters, oroptions. Currentlyapproximatelyonehundredop-
+containinganyoptionsassociatedwiththemessage.
+tionsaredefinedforDHCP[2]. Oneoftheseoptionsisan
+authenticationoptionwhichisdescribedinSection4.1. Theinitialmessageexchangebetweentheclientandthe
+TheformatofaDHCPmessageisshowninFigure9[12]. serverisshowninFigure10.
+ThefirstfieldintheDHCPmessageistheopcode. Theop- The client begins the process by sending a DHCPDIS-
+codecanhaveoneoftwovalues,1foraBOOTREQUEST COVER message as a broadcastmessage on its local area
+8of13Client Server
+DISCOVER Time
+OFFER
+OFFER
+REQUEST
+ACK
+Figure10.InitialDHCPMessageExchange
+network. The broadcast message may or may not be for-
+wardedbeyondtheLANdependingontheexistenceofre-
+lay agents at the gateways. Any or all DHCP servers re-
+spondwithaDHCPOFFERmessage.Theclientselectsone
+oftheDHCPOFFER messagesandrespondstothatserver
+withaDHCPREQUESTmessage,andtheserveracknowl-
+edgesitwithaDHCPACK.
+Inadditiontoprovidingnetworkingandhostspecificpa-
+rameters, DHCPcan providethe nameandserverlocation
+of a bootstrap program to support diskless clients. After
+theclientreceivestheIPaddressofthebootserverandthe
+nameofthebootstrapprogram,theclientusesTFTP[40]to
+contacttheserverandtransferthefile.
+3.7 TrivialFileTransferProtocol
+TFTP was designed to be simple and small enough to
+fitintoaROMonadisklessclient. Becauseofthis, TFTP
+usesUDPratherthanTCPwithnoauthenticationincluded
+in the protocol. TFTP has five unique messages that are
+identified by a two byte opcode value at the beginning of
+thepacket.TheReadRequest(RRQ)andtheWriteRequest
+(WRQ)packetssharethesameformatandhaveanoptions
+capability[32]. Unfortunately, the option capability does
+notapplytotheremainingthreepackettypes(DATA,ACK,
+andERROR).ThismakesitproblematictouseaMACwith
+TFTPwithoutchangingtheprotocolitself.
+3.8 InitialMutualAuthenticationProtocol
+A Client (AEGIS) and a Server (Trusted Repository)
+wish to communicate and establish a shared secret after
+authenticating the identity of each other. There has been
+no prior contact between the Client and the Server other
+thantoagreeonatrustedthirdparty,orapublickeyinfras-
+tructure, to sign their authorizationcertificates,
+C A R
+thirdparty’spublickey,
+. The
+ServerandtheClientalsoneedtohaveacopyofthetrusted
+P C A
+. TheClientsendsamessage
+to the Server containingthe Client’s authorizationand au-
+thenticationcertificates,
+C A N
+. TheServerreceivesthemes-
+sageandverifiestheClient’ssignatureontheauthentication
+certificateandthatthehashcontainedintheauthentication
+certificate matchesthat of the message,
+M
+. Thesignature
+of the CA on the authorization certificate is also verified
+(orchainofcertificates). Ifallarevalidandthetimestamp
+on the authenticationcertificate is within bounds, then the
+Server sends to the Client a message containingits autho-
+rizationandauthenticationcertificates.Theserver’sauthen-
+ticationcertificatemayincludetheoptionalDHparameters,
+g
+and
+p
+,and
+Y
+,where
+Y = g
+y
+m o d p
+. IftheDHparam-
+etersarenotidentifiedinthecertificate,thendefaultvalues
+for
+g
+and
+p
+areused. Currently,weareusingthesamede-
+faultvaluesas thoseusedin SKIP[5]. Theserver’snonce,
+s n o n c e
+, and the client’s nonce,
+c n o n c e
+, are also included
+in the message. TheClient receivesthis message and ver-
+ifies the signatureson theauthenticationandauthorization
+certificates, that the hash in the serversauthenticationcer-
+tificatematchesthemessagehash,andthat
+c n o n c e
+matches
+thatsentinthefirstmessage. Ifallarevalidandthetimes-
+tampvalueoftheauthenticationcertificateiswithinbounds
+and
+c n o n c e
+matchesthatsentinthefirstmessage,thenthe
+Client sends a signed messageto the Servercontainingits
+DHparameter
+X
+where
+X = g
+x
+m o d p
+,andtheserver’s
+nonce
+s n o n c e
+.TheServerreceivesthemessageandverifies
+thesignatureandthat
+s n o n c e
+matchesthatsentinitsprevi-
+ousmessage. Ifbotharevalid,thentheServercangenerate
+thesharedsecret,
+k
+,usingDH,
+k = X
+y
+m o d p
+.TheClient
+similarlygeneratesthesharedsecret,
+k = Y
+x
+m o d p
+. The
+sharedsecret,
+k
+,cannowbeusedtoauthenticatemessages
+between the Server and the Client until such time as both
+agree to change
+k
+. Figure 11 depicts the entire exchange
+betweentheClientandtheServerwiththeDHCPmessages
+identified. The use of the authentication certificate assists
+inensuringthattheprotocolis“FailStop”throughtheuse
+ofnoncesandashortvalidityperiodforthecertificate. The
+use of
+s n o n c e
+also permits the Server to reuse
+Y
+over a
+limitedperiod.Thisreducesthecomputationaloverheadon
+theserverduringhighactivityperiods. Thepotentialfora
+TCPSYNlikedenialofserviceattack[24]ismitigatedinthe
+same manner by the authenticationcertificate. Theautho-
+rizationcertificatealsopreventsclientsfrommasquerading
+asaserverbecauseoftheclient/servercapabilitytag. This
+isabenefitnotpossiblewithbasicX.509certificates.
+3.9 SubsequentMessageAuthentication
+Aftertheestablishmentofthesharedsecretthroughthe
+protocoldescribedabove,subsequentDHCPmessagesare
+authenticatedthroughtheuseoftheSHA1HMACdefined
+inSection3.5augmentedwithaoneupcountertoprevent
+9of13Client Server
+P P
+CA CA
+Client Client
+C C
+AR , AN ?
+hash = H(M)
+Client
+V ( C )
+CA AR
+Client
+V ( C )
+Client AN
+Server Server Y=g y mod p
+hash =? H(M) C AR , C AN
+?
+cnonce = cnonce
+Server
+V ( C )
+CA AR
+Server
+V ( C )
+Server AN X, snonce, S (M) ?
+X=gx mod p Client snonce = snonce
+V (S (M))
+x Client Client
+k = Y mod p
+y
+k = X mod p
+SHA1MAC(M, k)
+Figure11.AuthenticationMessageExchange
+replays. Thecounterisinitiallysettozerowhentheshared
+secret,
+k
+0 8 16 24 31
+90 Length Protocol
+Authentication Information
+Figure 12. DHCP Authentication Option For-
+mat
+Type Value
+AuthorizationCertificate 0
+ClientAuthenticationCertificate 1
+ServerAuthenticationCertificate 2
+ComponentAuthenticationCertificate 3
+Xvalue 4
+snonce 5
+signature 6
+SHA1MAC 7
+Table2.AEGISTypes
+, isderived. IncomputingtheMAC,thefieldsgi-
+addrandhopsmustbezeroedsincethesefieldsaremutable
+thedatafieldoftheoption. Fortunatelyhowever,wedoso
+byrelayagents.
+byusingtheBTFformatdescribedearlier,andusingmulti-
+Authentication of the subsequent TFTP messages re-
+pleauthenticationoptionfields. Whilethislatterapproach
+quire the use of the IPSEC Authentication header option
+technicallyviolatestheDHCPauthenticationoptionproto-
+describedinSection3.4.
+col, it does not cause any interoperability problems. An
+alternate approach would have required increasing the the
+4 Implementation optionsizefieldfromonetotwobytes.Whileinteroperabil-
+ityissuescouldbemitigated,theapproachstillpresenteda
+Moving from a high level design to an implementation significantchangetotheDHCPprotocol.
+requires a great deal of work. In this section we take the Since wemustusemultipleauthenticationoptionfields
+protocolandcertificatesdescribedinsection4anddescribe in a DHCP message, we must add a field to identify the
+theirimplementationusingDHCPandTFTP.Wealsopro- informationcontainedin theoption. TheresultantAEGIS
+vide the message formats and type information. We con- authentication option format is shown in Figure 13, and a
+clude the section by providing performance information, tabledescribingthevarioustypesisshowninTable2. The
+anddiscussingrelatedwork.
+0 8 16 24 31
+4.1 DHCPAuthenticationOption
+90 Length ÆGIS AEGISType
+DHCPisextensiblethroughtheuseofthevariablelength
+options field at the end of each DHCP message. The for- AEGIS Information
+matanduseofthisfieldiscurrentlydefinedbyanInternet
+RFC [2]. An option for authentication is also defined by
+a draftRFC [11]. The formatof the authenticationoption
+is shown in Figure 12. The DHCP authentication option Figure 13. AEGIS Authentication Option For-
+was designed to support a wide variety of authentication mat
+schemes by using single byte protocol and length fields.
+Unfortunately, a single byte value for the size in octets of
+authenticationinformationseverelylimitstheabilitytoin- clientandserverusethisoptionformattoexchangethein-
+cludepublickey certificates, with reasonablekey sizes, in formationrequiredbyourprotocol.
+10of13Algorithm Time
+IP AH UDP TFTP
+SHA1 6.1MB/sec
+HDR HDR HDR FRAME
+DSAVerify(1024bit) 88msec
+DSASign(1024bit) 26msec
+Figure14.AuthenticatedTFTPDatagramFor- GenerateX,Y(1024bit) 27msec
+mat Generatek(1024bit) 91msec
+Table 3. AEGISrom Cryptographic Bench-
+marks
+InadditiontousingBTFformattedSPKIcertificates,we
+supportthe use of a new DHCP option to permit the con-
+tinuation of the previous option field. Through the use of
+this option, any information that exceeds the two hundred 4.4.1 PerformanceInformation
+and fifty six bytes available in a DHCP option can be ex-
+Thissectionprovidesperformanceestimatesfortherecov-
+tendedintothenextfield. ThispermitstheuseofX.509v3
+eryprotocolbasedonitscurrentimplementation. Thetim-
+certificatesifdesired.
+ings were obtained using a 200Mhz Pentium with 32MB
+ofmainmemoryusinganIntelEtherExpressPro100Bnet-
+4.2 TrivialFileTransferProtocolAuthentication
+work interface card and the AEGIS recovery ROM code.
+TheSHA1codeisfromCryptolib2.0beta,andtheDSAand
+As we discussedearlier, addingauthenticationto TFTP Diffie-HellmanimplementationsweredoneusingGNUMP.
+packetswithinthecurrentlydefinedprotocolisproblematic. TimesforthecryptographicoperationsareshowninTable
+Rather than suffer the potential interoperability problems, 3. Thetimes for DSA Verify and Sign includethecost of
+we use the IPSEC Authentication header[25]. This ap- computingtheSHA1digestoftheresultantDHCPmessage.
+proachhasseveralbenefits. Theforemostisthatitdoesn’t
+requireanychangestotheTFTPprotocolitself,andituses
+aproposedstandardforauthentication.TheresultingTFTP 4.4.2 InitialExchange
+datagramisshowninFigure14.
+The initial authentication exchangeincludes the first three
+DHCP messages, DHCPDISCOVER, DHCPOFFER and
+4.3 UsingDHCP/TFTPastheRecoveryProtocol
+DHCPREQUEST.DHCPDISCOVERrequirestheclientto
+perform one signature operation, and the server must per-
+Once authentication is added to DHCP and TFTP, formtwoverifyoperations.Thus,thetotalcostofthismes-
+AEGIS can use them without further modifications as its sageis202msec. TheDHCPOFFERmessagerequiresthe
+recoveryprotocol. InAEGIS,theclientfollowstheDHCP server to generate
+protocol but adds to the DHCPDISCOVER message the
+name of the required component needed followed by the
+SHA1 hash of the component in the boot file name field.
+OncetheDHCPprotocoliscompletedandthesharedsecret
+established, the AEGIS client contacts the trusted reposi-
+toryusingTFTPwithauthenticationanddownloadsthenew
+component.
+4.4 PrototypeInformation
+We are currently in the process of completing this
+work using the Internet Software Consortium’s DHCP
+server [28], the GNU Multi-Precision Arithmetic package
+(GnuMP)[21],theEtherbootpackage[23],andportionsof
+AT&T’sCryptolib[27]. Currently,theprototypeROMim-
+ageis approximately41 KB. This includesa subset of the
+DHCPprotocolandallofthecryptographiccodedescribed
+inthispaper. ItcurrentlydoesnotcontaintheBTFcertifi-
+cateparsingcode.
+Y
+and performonesignatureoperation.
+The client must perform two verify operations. This re-
+sults in a message cost of 229 msec. The final message,
+DHCPREQUEST,requirestheclientto generate
+X
+and
+k
+,
+andperformonesignatureoperation. Theservermustper-
+form one verify operation, and generate
+k
+resulting in a
+messagecostof323msec. Summingthecostofthesethree
+messagesgivesatotalcostof754msec.
+While the abovetime may seem too high a cost to pay
+for security, the total time is small when compared to the
+total time spent booting a computer system. It is unlikely
+thatuserswillseetheincreaseintimerequiredtoperform
+the authentication. Also, the abovetimes are unoptimized
+atthispointintheprototype.
+4.4.3 SubsequentExchanges
+Subsequent DHCP and TFTP messages use the MAC de-
+scribed earlier, and will likely (in a LAN situation) be
+boundedbythespeedofSHA1,6.1MB/sec.
+11of134.5 RelatedWork mercialplatforms. Whileconfining,thisconstraintensures
+thatAEGISresultswillhaveimpactbeyondsimplytheaca-
+To our knowledge, there is no previousacademic work demiccommunity.
+involvingthesecurerecoveryofbootstrapcomponents.Re- Weintendtofurtherinvestigatethecentralizedmanage-
+cently,however,severalcommercialproductshavebeenan- ment of the bootstrap process. This has many practical
+nouncedthat allow system administratorsto automatically uses,includingdesktopmanagementinLAN-attachedPCs
+updateandmanuallyrepairbootstrapcomponents.Noneof (whereintegrityfailuresmightbestimulatedby virusesor
+theproposedproducts,however,includeautomaticrecovery user-inserted cards), as well as secure, recoverable boot-
+andrepair. strapfornetworkelementswithprocessors,suchasbridges,
+Thereareseveraleffortsatincorporatingauthentication IProuters,and“ActiveNetworks”[1].
+intoDHCP.Microsoft,Intelandothersareworkingonde- The recovery protocol itself will be fully incorporated
+velopingasecurityarchitecturefortheNetPCspecification into the DHCP model, and we intend to propose it as an
+which uses DHCP and TFTP. While an early draft of this authentication RFC standard. We also intend to propose
+paper was provided to members of that group, the group theDHCPoptioncontinuationasastandard. Weexpectto
+hasnotrevealedtheirdraftarchitectureyet. maketheseproposalsattheDecember1997InternetEngi-
+Thereare also two draftRFCs. The first effort[11] in- neeringTaskForcemeeting.
+volvestheuseofasharedsecretbetweentheDHCPclient
+and server. While this approachis secure, it severely lim-
+6 Conclusions
+its the mobility of clients to only those domains where a
+sharedsecretwaspreviouslyestablished. Furthermore,the
+maintenance and protection of the shared secrets is a dif- WeintroducedtheAEGISsecurebootstraparchitecture,
+ficult process. Another effort at incorporating authentica- explained its approach to integrity and the assumptions it
+tion into DHCP is by TIS. ThisproposalcombinesDHCP makesabouttheoperatingenvironment,anddiscussed the
+withDNSSEC[13]. Thisapproachprovidesforthemobil- general idea behind automated recovery in a secure boot-
+ityofDHCPclients, butatasignificantincreaseincostin strap process using a trusted repository. We are currently
+terms of complexity. The client implementation, in order implementing this new automated recovery process in the
+tosupportthisapproach,mustalsoincludeanimplementa- contextof thePC architectureusing asmallportionofthe
+tionofDNSSEC.Thiswillsignificantlyincreasethesizeof BIOS. We haveshownhowitcanbe extendedto recovery
+clientcode-possiblybeyondtheROMsizeavailabletothe overnetworksby use of cryptographicprotocols, andpro-
+client. Recently, Intelhasproposedauthenticationsupport videdonesuchprotocol,withexpecteddatastructuresand
+forDHCP[37]. Theirproposalusesatwophaseapproach. packetformats.
+Inthefirstphase,thecomputersystembootsnormallyusing Webelievethatthisworkhasasignificantimpactonthe
+DHCP.Thesecondphasebeginsafterthesystemcompletes administration and manage-ability of systems. While we
+the DHCP process and uses ISAKMP [33] to exchange a havepreviouslydemonstratedtheneedandprovidedanar-
+securityassociation. Thissecurityassociationisthenused chitectureforasecurebootstrapforanytrustedsystem,here
+toonceagainobtaintheconfigurationinformationfromthe we have shown how that architecture can be utilized in a
+DHCPserverusingasecurechannel,ifsuchachannelcan very realistic environment,with no loss of security. Thus,
+be established. This information is then compared to that wecanbuilddistributedcomputersystemsofnodeswhich
+obtainedin thefirst phase. If theydifferor asecurechan- are in two logical states: (1) non-operational (e.g., down
+nelcannotbeestablished,thenthebootfails. Thebenefitof orrecovering),and(2)operationalandtrusted.Suchsimple
+this approach is that it requires no changes to DHCP. The statesandtransitionsease,andinsomesensemakepossible,
+drawbacksarethesameastheDNSSECapproachwiththe verificationofapplicationsbuiltonthedistributedsystems.
+additionoftwo problems. Thefirst isapossibleracecon-
+ditionvulnerabilityduringthetimebeforethetwoconfigu-
+References
+rationsarecompared.Thesecondisthattheapproachdoes
+notprotectagainstdenialofserviceattacks.
+[1] D.S.Alexander,W.A.Arbaugh,A.D.Keromytis,andJ.M.
+Smith.ASecureActiveNetworkEnvironmentArchitecture.
+5 Future Work
+Technical Report MS-CIS-97-17, University of Pennsylva-
+nia,November1997.
+OneofthemajorgoalsoftheAEGISresearchhasbeen [2] S. Alexander and R. Droms. DHCP Options and BOOTP
+the development of new ideas for the construction of se- VendorExtensions. InternetRFC2132,March1997.
+cure systems, with the additional constraint that the ideas [3] W.Almesberger. LILOTechnicalOverview,version19edi-
+mustberealizabletodayorintheveryneartermwithcom- tion,May1996.
+12of13[4] W. A. Arbaugh, D. J. Farber, and J. M. Smith. A Secure [26] H. Krawczyk, M. Bellare, and R.Canetti. HMAC:Keyed–
+and Reliable Bootstrap Architecture. In Proceedings 1997 Hashing for Message Authentication. Internet RFC 2104,
+IEEE Symposium on Security and Privacy, pages 65–71, February1997.
+May1997. [27] J.Lacy,D.Mitchell,andM.Blaze.Cryptolib2.0beta.Email
+[5] A. Aziz, T. Markson, and H. Prafullchan- tocryptolib@research.att.com,1995.
+dra. Assigned Numbers for SKIP Protocols. [28] T. Lemon. Dynamic Host Configuration Server.
+http://skip.incog.com/spec/numbers.html. ftp://ftp.fugue.com/pub/,1997.
+[6] C. Committee. Recommendation X.209: Specification of [29] H.Levy.CapabilityBasedComputerSystems.DigitalPress,
+Basic Encoding Rules for Abstract Syntax Notation One 1984.
+(ASN.1),1988. [30] P.T.Ltd.SystemBIOSforIBMPCs,Compatibles,andEISA
+[7] C.Committee. X.509:TheDirectoryAuthenticationFrame- Computers. AddisonWesley,2ndedition,1991.
+work. InternationalTelephoneandTelegraph, International [31] C. Madson and R. Glenn. The Useof HMAC-SHA1-1-96
+TelecommunicationsUnion,Geneva,1989. withinESPandAH. WorkinProgress,November1997.
+[8] C.Computer,D.Computer,H.Packard,Intel,andM.Corpo- [32] G.MalkinandA.Harkin. TFTPOptionExtension. Internet
+rations.NetworkPCSystemDesignGuidelines,1.0bedition, RFC1782,March1995.
+July1997. [33] D.Maughan,M.Schertler,M.Schneider,andJ.Turner. In-
+[9] W.DiffieandM.Hellman.NewDirectionsinCryptography. ternet Security Association and Key Management Protocol
+IEEE Transactions on Information Theory, IT–22(6):644– (ISAKMP). Internet–draft, IPSEC Working Group, June
+654,Nov1976. 1996.
+[10] W. Diffie, P. van Oorschot, and M. Wiener. Authentica- [34] Microsoft. Authenticode Techonology. Microsoft’sDevel-
+tionandAuthenticatedKeyExchanges. Designs,Codesand operNetworkLibrary,October1996.
+Cryptography,2:107–125,1992. [35] N.I.ofStandards.DigitalSignatureStandard.TechnicalRe-
+[11] R. Droms. Authentication for DHCP Messages. Work in portFIPS-186,U.S.DepartmentofCommerce,May1994.
+Progress,August1997. [36] N.I.ofStandards. SecureHashStandard. TechnicalReport
+[12] R. Droms. Dynamic Host Configuration Protocol, RFC FIPS-180-1, U.S. Department of Commerce, April 1995.
+2131,March1997. Alsoknownas:59FedReg35317(1994).
+[13] D.Eastlakeand C.Kaufman. DynamicName Serviceand [37] B.V.Patel. SecuringDHCP. WorkinProgress,July1997.
+Security. InternetRFC2065,January1997. [38] M.M.PozzoandT.E.Gray. AModelfortheContainment
+[14] J. Elischer. 386 boot. ofComputerViruses. In1989IEEESymposiumonSecurity
+/sys/i386/boot/biosboot/README.386, July 1996. 2.1.5 andPrivacy,pages312–318.IEEE,1989.
+FreeBSD. [39] J.ReynoldsandJ.Postel. AssignedNumbers. InternetRFC
+[15] C.M.Ellison. SDSI/SPKIBNF. PrivateEmail,July1997. 1700,October1994.
+[40] K.R.Sollins.TheTFTPProtocol(revision2).InternetRFC
+[16] C.M.Ellison,B.Frantz,R.Rivest,andB.M.Thomas. Sim-
+1350,July1992.
+plePublicKeyCertificate. WorkinProgress,April1997.
+[17] R.Finlayson. BootstrapLoadingusingTFTP. InternetRFC
+906,June1984.
+[18] Y. D.G. Davidaand B. Matt. Defending SystemsAgainst
+Viruses through Cryptographic Authentication. In 1989
+IEEESymposiumonSecurityandPrivacy, pages312–318.
+IEEE,1989.
+[19] J. Goldmeer. Re: Re: Pentium pro floating point
+patch. USENETPostingtointel.motherboards.pentium pro,
+November1997.
+[20] L. Gong and P. Syverson. Fail-Stop Protocols: An Ap-
+proach to Designing Secure Protocols. In Proceedings of
+IFIPDCCA-5,September1995.
+[21] T. Granlund. The GNU Multiple Precision Arithmetic Li-
+brary. TMGDatakonsult,2.0.2edition,June1996.
+[22] R. Grimes. AT386 Protected Mode Bootstrap Loader.
+/sys/i386/boot/biosboot/README.MACH, October 1993.
+2.1.5FreeBSD.
+[23] M. Gutschke and K. Yap. Etherboot 3.2.
+http://www.syd.dit.csiro.au/staff/ken/personal/etherboot/,
+July1997.
+[24] L.HeberleinandM.Bishop. AttackClass: AddressSpoof-
+ing.InProceedingsofthe19thNationalInformationSystems
+SecurityConference,pages371–377,October1996.
+[25] S.KentandR.Atkinson. WorkinProgress,October1997.
+13of13

@@ -1,0 +1,214 @@
+T-SGX: Eradica.ng Controlled-Channel
+A8acks Against Enclave Programs
+Ming-Wei Shih Sangho Lee Taesoo Kim Marcus Peinado
+Georgia Ins,tute of Technology Microso6 Research23Intel SGX aims to secure users’ code and data in the cloud
+4Controlled-channel a8ack [Oakland 2015] raises concerns
+• An accurate side-channel a=ack that extracts the SGX-protected data
+• Compromise the security guarantees of SGX
+OS
+SGX CPU
+5How the a8ack works (1/3)
+• Intel SGX protects enclaves against an untrusted OS
+• SGX sJll relies on the OS for resource management
+Enclave
+(e.g., memory mapping)
+OS
+Page Table
+SGX CPU
+6How the a8ack works (2/3)
+• A=acker fully controls the OS
+• Page-fault side channel
+Page C
+• Step 1: Unmap a page
+• Step 2: Enclave accesses the page
+• Step 3: Observe a page fault page fault
+Page Table A B C D E
+SGX CPU
+7How the a8ack works (3/3)
+• If the program’s memory accesses depend on a secret,
+then this secret is being leaked
+Page A
+• A=ack steps
+Page B Page C
+• Offline analysis
+• Obtain page-fault sequence page fault
+Page D
+• Infer the secret Page Table A B C D E
+…
+SGX CPU
+8T-SGX Goals
+• Prevent the controlled-channel a=ack
+• The design should be pracJcal
+• No hardware modificaJon
+• Reasonable performance
+• Minimal developer effort (no need for program rewri=en)
+9Intel TSX
+Program
+• CPU extension present in all recent
+Intel CPUs (since 2013)
+race condiJon
+XBEGIN
+• Supports hardware transacJonal memory
+TransacJon
+XEND
+abort
+• Race condiJons cause transacJon abort
+Fallback code
+• An abort triggers fallback execuJon
+• Rolls back all changes
+• Control transfers to the fallback point
+10Idea: Intel TSX also suppresses page faults
+Program
+• CPU does not deliver page faults to the OS
+Page fault
+• Instead, it aborts the transacJon and
+invokes the fallback code XBEGIN
+TransacJon
+XEND
+• OS cannot observe the page fault abort
+inside a transacJon
+Fallback code
+11The strawman design
+• Make the whole enclave
+Enclave Program
+as a transacJon Page fault XBEGIN
+• Enable the self-detecJon to
+page faults inside the enclave
+TransacJon
+abort
+XEND
+Fallback code
+12Challenges
+Single transac0on cannot be too large, otherwise it will never
+complete
+OS Timer Enclave Program
+XBEGIN
+Cache
+,me constraint Timer interrupt
+cache constraint
+TransacJon
+…
+Cache full
+abort
+abort
+XEND
+Fallback code
+13Solu.on: Break a program into execu.on blocks
+Execu0on Time analysis
+Cache analysis
+OS Timer
+Enclave Program
+Cache
+,me constraint ExecuJon Block
+cache constraint
+…
+Fallback code
+14Op.miza.on: merging .ny blocks (1/2)
+• Problem: Sedng up transacJon comes with a fixed cost (~200 cycles)
+• If conJnuous blocks saJsfy the cache and Jme constraints, we merge
+them
+• Loops
+• If-else statement
+• FuncJons
+15Op.miza.on: merging .ny blocks (2/2)
+• Example: Loop opJmizaJon
+for (i = 1; i < 1000; i++) { XBEGIN
+XBEGIN for (i = 1; i < 1000; i++) {
+… …
+XEND }
+} XEND
+Requires 1000 transac8ons Requires only 1 transac8on!
+ConservaJve staJc analysis
+• Only opJmize when it’s safe
+16This design s.ll leaks informa.on
+ExecuJon Blocks
+TSX instruc8ons are outside of a transac8on
+XBEGIN
+XEND
+Page A
+Page fault
+Page A
+Page B
+Page B
+17Solu.on: Springboard design
+ExecuJon Blocks All transacJons begin and end on the springboard
+• A=acker can only observe page fault on the springboard
+Springboard page
+Page A
+Springboard page
+Page fault
+Fallback code
+Page B
+Leak only single-page informa0on!
+18Springboard design also prevents advanced a8acks
+ExecuJon Blocks CounJng the number of page faults on springboard
+• May sJll leak informaJon
+Page A
+Page A
+Page B
+Page fault, Page fault , Page fault
+Springboard page
+Fallback code
+Page B
+By design, the aAack is imprac8cal! (See paper for details)
+19Implementa.on: T-SGX
+• Based on the LLVM compiler
+• Mostly modifying LLVM backend
+• 4,100 line of code
+• Fully automated program transformaJon
+20Evalua.on
+• How general is the T-SGX approach?
+• How much overhead does a transformed program have?
+21T-SGX works for general C/C++ programs
+Applica8on Line of Code
+• 0 lines of source code change Numeric sort 211
+String sort 521
+Bijield 225
+• Fully-automated compiling
+Fp emulaJon 1,396
+chain
+Fourier 235
+Assignment 490
+Idea 353
+Huffman 448
+Neural net 746
+Lu decomposiJon 441
+Libjpeg 34,763
+Hunspell 24,794
+FreeType 135,528
+22T-SGX incurs reasonable overhead
+• Average 30% memory overhead
+• AddiJonal instrucJons for each execuJon block
+Benchmark programs
+1.4
+1.35
+1.3
+1.25
+1.2
+1.15
+1.1
+1.05
+1
+23
+T-SGXT-SGX incurs reasonable overhead
+• Average 50% runJme overhead (geometric mean)
+• Largely depends on number of loop iteraJons that repeatedly start a
+transacJon
+2.5
+2
+1.5
+1
+0.5
+0
+24
+T-SGXConsistent run.me overhead on concurrent execu.on
+25Conclusion
+• We proposed and implemented T-SGX, which effecJvely protects
+enclaves against the controlled-channel a=ack.
+• T-SGX
+• Requires no hardware modificaJon
+• Incurs reasonable runJme overhead and sJll has potenJal to improve (e.g.,
+using more advanced program analysis or performance profiling)
+• AutomaJcally transforms a program without the need for manual effort
+26Q&A
+27

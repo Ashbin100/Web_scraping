@@ -1,0 +1,856 @@
+PAMINA: A Certificate Based Privilege Management System
+Zoltán Nochta, Peter Ebinger and Sebastian Abeck
+University of Karlsruhe, Institute for Telematics,
+Cooperation and Management IT-Research Group
+Zirkel 2, 76128 Karlsruhe, Germany
+Email:[nochta|ebinger|abeck]@tm.uka.de
+Abstract cate binds a public-key to a set of information that identi-
+In this paper we present PAMINA (Privilege Admini- fies the entity associated with the use of the corresponding
+stration and Management INfrAstructure), a privilege private key. The aim of a certificate management system is
+management system using authorization certificates. Our to offer services that guarantee the authenticity, validity
+system supports distributed environments where autono- and integrity of security information (keys, user rights,
+mous authorities can manage and delegate privileges in etc.) stored in certificates and used by applications for
+accordance with their own policies. We introduce Im- authentication and authorization purposes.
+proved Certification Verification Trees (I-CVTs) that A widely accepted definition of authorization is the
+guarantee very efficient and trustworthy certificate man- granting of access rights to a subject. However, there is a
+agement. I-CVTs can provide undeniable proofs for the difference between the administrative act of asserting that
+non-existence of a given certificate in contrast to CVTs as a subject should be granted access rights (privileges), and
+proposed in [1]. As a result, each authority can store its the operational act of allowing an authenticated subject to
+own I-CVT in a central, non-trusted, and replicable data- access a resource after determining that it holds the re-
+base. This database provides authenticated verifiers with quired set of privileges. The latter process is also referred
+basically only those certificates that are required to de- to as access control decision.
+termine whether a user should be granted access to a An authorization certificate (AC) contains information
+resource or not. Since the system implements the pull that is generated during the authorization and used in the
+model, clients need not to be involved in the access control access control decision process. ACs have many benefits
+decision process. PAMINA handles delegation trees in- in privilege management due to the fact that they can sup-
+stead of simple delegation chains because authorities can port different access control models and privilege delega-
+delegate privileges in one certificate that were assigned to tion schemes, because they are individually protected by
+them by several certificates. In the prototype that we de- digital signatures against fraud. Linn et al. give a good
+scribe here, PAMINA manages certificates based on overview of application scenarios of several types of ACs
+X.509. that contain different kinds of authorization information,
+such as privileges or role definitions [2].
+Surprisingly, only few access control systems exist that
+1 Introduction use authorization certificates. One reason for this fact is
+that both certificate management and verification generate
+The increasing use of the Internet for business critical
+additional computational and communicational costs that
+transactions since the early 90’s implied the development
+customers and providers have to bear. Widely used certifi-
+of different security systems and services, which are often
+cate management techniques, like Certificate Revocation
+based on public-key cryptographic techniques. Basically,
+Lists [3] that have originally been designed for public-key
+there are two mechanisms that can be used by security
+infrastructures, are not very attractive for an efficient sys-
+systems, namely encryption and digital signatures. Nowa-
+tem design, because authorization related information has
+days, the most important applications for both are secure
+other characteristics than public-keys. Access rights can
+key exchange and integrity and authenticity protection of
+change very frequently, the amount of authorization in-
+different kinds of data. In general, a certificate is a data
+formation is usually higher, and authorization certificates
+structure that defines an association between an entity and
+often must be handled confidentially.
+a set of information. A certification authority states its
+Fortunately, there are several novel approaches with en-
+belief in the validity of these associations by digitally
+hanced properties that can make certificate management
+signing the certificate. For example, a public-key certifi-and verification less expensive and, in many cases, more • Efficient certificate lifecycle management: The
+secure as well. system must handle at least certificate generation, up-
+In this paper we introduce PAMINA1 (Privilege Ad- date and revocation. The underlying certificate man-
+ministration and Management INfrAstructure), a cer- agement scheme should optimize communication,
+tificate based system that provides authorization and ac- data maintaining and computational costs. High com-
+cess control in distributed environments. PAMINA is the munication costs between a database storing certifi-
+first system that uses Improved Certification Verifica- cates and the issuing authority can be critical for or-
+tion Trees (I-CVTs) which guarantee very efficient and ganizations that manage a huge number of frequently
+trustworthy certificate management. I-CVTs also provide updated/revoked ACs. In order to make PAMINA at-
+undeniable proofs for the non-existence of a given certifi- tractive for access control applications (verifiers) that
+cate statement in contrast to CVTs as proposed in [1]. The want to verify user rights, communication costs be-
+system supports distributed environments where autono- tween the directory and the verifier should also be
+mous authorities, so called Privilege Management Au- minimized. Optimized computational costs, for exam-
+thorities (PMAs), can manage and delegate privileges in ple by the reduction of the number of required signa-
+accordance with their own policies. Each PMA can store ture verifications, speed up the access control process.
+its own I-CVT in the central, non-trusted, and replicable • Revocation: The system must handle situations, like
+Privilege Database (P-DB). This database provides au- the unexpected change of user privileges before the
+thenticated verifiers with basically only those certificates certificate expiration date or the key compromise of
+that are required to determine whether a user should be an issuing authority.
+granted access to a resource or not. In the first case, the certificate of the affected user has
+The rest of the paper is organized as follows: In the next to be revoked and reissued. Short-lived certificates
+section we summarize the most important requirements can reduce the probability of revocation before expira-
+that PAMINA as a certificate based privilege management tion or even make revocation unnecessary. This leads
+system has to fulfill. In section 3, we describe and com- to increased costs of the issuing authority, since it
+pare different approaches and choose a combination of must sign and distribute certificates very often. There-
+best-fit solutions. We show that CVTs as proposed in [1] fore, the costs caused by certificate signing should be
+are qualified for efficient privilege management if the reduced, in order to use short-lived certificates.
+underlying data structure is chosen properly. In the follow- In the second case, the fast and efficient revocation
+ing section, we describe the concept and the implementa- and re-issuing of all certificates signed by the author-
+tion details of Improved CVTs and certification paths, ity whose key was compromised is required. The sys-
+which reduce the required level of trust placed on the da- tem has to enable the easy exchange of an authority’s
+tabase storing the certificates. Finally, section 5 deals with key pair.
+the design aspects of PAMINA, the components and their • Freshness of certificates: The system should provide
+interactions. The supported delegation model as well as recent authorization information. Certificate status in-
+some technical details are described. formation should be published on a regular basis, even
+if the situation does not change, so verifiers can be
+2 Requirements for PAMINA
+sure that their data is up to date.
+The aim of a privilege management system is to support • Reduced trust on database: From the verifiers’ point
+security critical applications with valid information about of view there are two main types of components in a
+the current status of the users’ access rights (privileges). distributed certificate management infrastructure.
+Digitally signed authorization certificates protecting the Firstly, there are trusted authorities that issue and sign
+integrity and authenticity of privileges enable the realiza- certificates. Secondly, there are also components (e.g.,
+tion of different authorization models in a more secure directories, online responders) that store and distribute
+way than conventional systems do. For example, privilege certificates or information related to certificates (e.g.,
+delegation chains becomes more secure when using cer- revocation status). The latter type of components can-
+tificates. The components of a distributed certificate based not manipulate a certificate, but they can accidentally
+privilege management system must provide proper mecha- or intentionally provide verifiers with incorrect infor-
+nisms, data structures, and tools for the management and mation, e.g. about its revocation status, or they can
+verification of certificates. In the following we summarize hold back relevant information, e.g. the certificate it-
+the most important security and performance related re- self or a revocation list. Due to these facts in many ex-
+quirements that PAMINA has to fulfill, in order to be isting systems a verifier must also trust in these com-
+competitive with existing privilege management systems. ponents, because he is not able to check the correct-
+ness of this kind of information. This trust should be
+reduced, and therefore the database should be able to
+1 Pamina is also a beautiful princess in W. A. Mozart’s The
+prove the non-existence of a certificate if he does
+Magic Flutenot deliver it. Naturally, the database always can just 3.1 Extended public-key certificates vs. separate
+refuse to respond to a request. identity and access control management
+• Privacy: Public-key certificates used for signature
+One possible way to manage access control information
+verification or for encryption have to be available for
+of certified users is the use of extended public-key certifi-
+everyone. On the other hand, ACs storing authoriza-
+cates (PKC). In this case, one authority is responsible for
+tion information should be kept private. This means
+both key (identity) and privilege management. Since there
+that only a fixed set of entities (administrators and
+is only one authority, the verification process becomes
+verifiers) should have controlled access to this infor-
+simpler, because a single trust path reflects both authenti-
+mation.
+• Cryptographic security: In order to protect certifi- cation and authorization of a user. As a result, fewer
+transactions are needed when verifying requests. This
+cates against forgery, the system must use secure
+approach has benefits in systems where the validity
+(long) signing keys. Signing keys should be kept in a
+periods of certified keys and privilege assignments are
+secure environment, which makes it impossible to re-
+similar. On the other hand, in most cases user rights should
+trieve them.
+not be open to the public. Through obtaining an extended
+• Interoperability: In order to provide interoperability
+PKC, one can learn a lot about the internal structure of an
+and usability, PAMINA should support the manage-
+organization, since it is, for example, reflected by the roles
+ment of different (standardized) certificate formats.
+defined in the certificates. In addition, authorization
+For the encoding and representation of certificates
+certificates (ACs) must be often issued with short validity
+platform-independent and standardized storage for-
+periods (e.g. hours), contrasting with PKCs whose validity
+mats should be used.
+period is often measured in years.
+• Flexibility: The system must be able to provide dif-
+Due to these facts, separate access control management
+ferent access control models and policy schemes with-
+is required in most environments. Using this concept,
+out technical impact. Therefore, the model has to deal
+authorization certificate updates have no impact on longer-
+with various certificate types that allow, for example,
+lived identity certificates. This is especially profitable for
+the construction of abstract groups or delegation of
+clients storing PKCs for authentication purposes. In addi-
+permission rights.
+tion, independent authorities issuing their own certificates
+• Availability and robustness: Naturally, the system
+make the system more flexible and this approach is also
+has to make sure that the availability of the certificates
+helpful to eliminate many problems caused by a central
+and their status information is as high as possible. The
+bottleneck. The most important disadvantage of such an
+system must be based on a robust model, which does
+architecture is the increasing complexity of verification
+not allow any manipulation of authorization informa-
+and path processing. In the worst case each AC that must
+tion, even if the underlying computer systems crash.
+be verified for an access control decision can be issued
+For example, in case of a successful attack against the
+from a different authority that belongs to a different verifi-
+directory that stores the certificates it should not be
+cation path.
+possible for the intruder to make a revoked certificate
+We decided to implement the first prototype of
+pass as valid.
+PAMINA for separated management of ACs. Therefore,
+• Auditing and non-repudiation: The system has to
+the system needs the integration of a PKI, which is respon-
+support easy verification of the validity status of a cer-
+sible for the distribution of PKCs that are used for signa-
+tificate at any point of time. In order to provide time-
+ture validation. We believe that the use of appropriate data
+liness of the authorization information, the system has
+structures and algorithms can compensate many of the
+to implement (or utilize) time stamp services. Another
+drawbacks mentioned above.
+important aspect is the accountability for both author-
+ity’s and user’s actions. The system must not allow 3.2 Push model vs. pull model
+the creation of rogue certificates or the unauthorized
+In the so-called “push” model, client, server, and the
+revocation of certificates without being detected.
+certificate management infrastructure are all involved to
+3 Evaluation of certificate management varying degree in the authorization process. A client must
+maintain (e.g., download and store) its certificates and
+approaches for access control purposes
+present them to the targeted server (verifier) by inserting
+In this section different competing management tech- them in its request message. The verifier must make access
+niques are evaluated and compared in order to choose control decisions on the basis of this information. Natu-
+from and combine best-fit methods for our purposes. rally, the verifier must check the correctness as well as the
+validity of the presented information. The infrastructure
+must implement mechanisms to provide all clients with the
+last updated ACs. This is a very expensive task in envi-ronments where user rights can change dynamically. Addi- ture on it and search for the ID of the certificate in ques-
+tionally, users having more than one AC could not know tion. CRL-management can be very expensive for both
+which certificate(s) they should send to a verifier to use a issuing authorities as well as verifiers in access control
+particular service. As mentioned before, ACs often should systems since user rights change frequently and verifiers
+be kept secret, and there is no guarantee for the issuer that should obtain and check many certificates in order to ver-
+(probably unsecured) client machines can protect ACs ify delegation chains. In addition, to provide long-term
+properly. As a result, all clients would need to communi- non-repudiation issuers (verifiers) would have to store not
+cate over an encrypted (and authenticated) channel with only every AC but also every CRL they have ever issued
+the database very frequently which would lead to perform- (received). Another disadvantage of CRLs is given by the
+ance problems in the system. fact that they do not provide non-existence proofs for
+In contrast to the push architectures, in systems built on certificates.
+the “pull” model, verifiers pull ACs from some online The concept of Certificate Revocation Trees (CRTs)
+network service. This approach simplifies clients, because was proposed by Paul C. Kocher [5]. A CRT enables veri-
+they must no longer care about the management of ACs. fiers to get a proof that a certificate has not yet been re-
+Additionally, users are not involved in the authorization voked. Basically, a CRT is a binary hash tree [6], in which
+process and they need not even to know which privilege each leaf consists of the ID of a single revoked certificate
+sets they have. Since there are usually fewer verifiers than and a range of valid IDs all greater than the revoked one.
+clients in a system, this model leads to reduced communi- During verification the verifier obtains the hash path be-
+cation costs in comparison to the push model. Only verifi- longing to the ID of the certificate in question, then it
+ers have to pay a higher price, they must not just check the checks the signature on the root and verifies that the
+validity of certificates but also download them. The main hashes correctly bind the leaf to the root. Finally, it checks
+disadvantage of this approach is that verifiers totally rely whether the ID is the lowest in the leaf.
+on the availability of the infrastructure storing the ACs. CRTs reduce the communication cost between the veri-
+Moreover, the database must decide which particular ACs fier and the directory, but increase the authority’s compu-
+a given verifier may download. tational cost, which is straight proportional to the number
+PAMINA was primarily developed to support the pull of revoked certificates. This fact makes CRTs not very
+model. All certificates managed by the system are stored attractive for an access control management system. CRTs
+in a central database, which can be replicated to get higher do as CRLs not support non-existence proofs for certifi-
+availability and better performance. This database pro- cates. However, the main drawback of this system is that
+vides only authenticated verifiers with those certificates the insertion (deletion) of a new revoked (expired) certifi-
+that are needed to check a given user’s rights. cate might result in the re-computation of the entire tree.
+Naor and Nissim eliminated this problem by replacing
+3.3 Revocation mechanisms vs. freshness
+the suggested binary tree with a more effective B -tree
+2,3
+guaranties
+[7]. In this case, it is no longer required to change the
+Certificate revocation is the mechanism with which an whole tree when inserting or deleting a certificate but just
+issuing authority can revoke a stated association before its one path.
+documented expiration. An authority may wish to revoke All the schemes above are constructed to maintain
+an authorization certificate, for example, in response to a revocation information only. Table 1 shows an overview
+change in the owner’s access rights or because of the com- of the average computational and communication costs
+promise of its own private key. There are many ap- that verifiers and the certificate management system have
+proaches to solve this important problem, here we analyze to take into account. In addition to the listed costs for
+the most important ones of them. managing revoked certificates, there are of course the costs
+Certificate Revocation List (CRL) is the most com- for generation and management of valid certificates. Using
+monly used revocation mechanism in certificate manage- revocation mechanisms the verification process is rather
+ment systems today (e.g., see [3] and [4]). A CRL is a complicated, especially when more than one AC need to
+continuously growing, digitally signed list of revoked be checked, for example for delegation path construction.
+certificates, which is published periodically. In order to The Online Certificate Status Protocol (OCSP) was
+keep the CRL size manageable, certificates are denoted by specified to support the communication between verifiers
+some unique identifier (id), such as a serial number or a and a trusted entity referred to as an OCSP responder,
+fingerprint. When a revoked certificate’s validity period which supports verifiers with information about the revo-
+ends it can be deleted from the CRL. Communication costs cation status of certificates [8]. The main aim of OCSP is
+can be reduced by publishing periodically a delta-CRL, to reduce the communicational and computational costs of
+which is a differential list to the last CRL update. In order the verification process: Instead of checking the revocation
+to verify the status of a certificate, a verifier first needs to status of certificates in question, a verifier sends a simple
+obtain the latest CRL (delta-CRL), then verify the signa- request to the responder containing one or more certificaten: avg. total number of certificates per authority l : length of a certificate identifier (bits)
+id
+r: avg. number of revoked certificates per authority l : length of a revocation status number (bits)
+stat
+u: avg. number of revoked certs since last update per authority l : total length of a signature (bits)
+sig
+Directory update com- Communication costs
+Authority computational Verifier computational
+Revocation scheme munication costs per per verifier,
+costs costs per query
+authority per directory query
+CRL O(u) O(r) r·l +l r·l +l
+id sig id sig
+Delta CRL O(u) O(r+u) u·l +l u·l +l
+sn sig id sig
+CRT worst case O(u·r) O(log(r)) u·l +2·l log(r)+l
+id sig sig
+Naor/Nissim O(u·log(r)) O(log(r)) u·l +2·l log(r)·l +l
+id sig hash sig
+Table 1: Cost analysis of different certificate revocation schemes
+Directory update com- Communication costs
+Authority computational Verifier computational
+Freshness scheme munication costs per per verifier,
+costs costs per query
+authority per directory query
+CRS O(n) O(#updates) n·(l +l ) l
+id stat stat
+CRS2 O(u·log(n)) O(log(n)) u·l +2·l log(n)·l +l
+id sig hash sig
+CVT O(u·log(n)) O(log(n)) u·l +2·l log(n)·l +l
+id sig hash sig
+Table 2: Cost analysis of different schemes providing freshness information
+identifiers. In its response the OCSP responder sends the valid and revoked certificates at once, was invented by
+revocation status of those certificates back to the verifier. Silvio Micali [9]. In the CRS the issuing authority periodi-
+Naturally, to generate such a response the OCSP responder cally sends a signed (and time-stamped) message for every
+has to gather revocation information from some backend certificate stating whether the certificate was revoked or
+system that has to maintain revocation status information, not since the last update. For this purpose an off-line/on-
+for example with the use of a CRL or a CRT. OCSP does line signature scheme is used which reduces computational
+not specify or enhance a particular revocation scheme but costs. CRS uses a one-way hash-function h. Before storing
+it just defines a protocol for retrieving revocation status a certificate in the directory the authority chooses two
+information. The main problem with this approach is that random values R and R and then it computes and pub-
+0 1
+the verifier must trust the responder, he must believe that lishes the hash-values h(R ) and h(…(h(h(R ))…) or more
+1 0
+the revocation status information he gets is correct and up- precisely hk(R ), where k is the expected number of update
+0
+to-date. A signed and time-stamped OCSP response might periods. When the freshness of a still valid certificate
+be a real-time generated message, but the verifier cannot should be stated the authority must compute hi(R ) and
+0
+check when the included information was actually gener- send it to the directory, where i is the total number of pos-
+ated by the issuing authority. Furthermore, since OCSP sible future updates. If a certificate must be revoked the
+responses have to be signed, there must be also a public- authority simply sends R . In order to verify that a certifi-
+1
+key certificate issued for the responder itself which must cate is valid, a verifier has to query the directory for a copy
+be known to the verifier. The verifier should be able to of the most recent update value. As one can see in Table 2
+check the current status of this certificate, too. This can of the authority-to-directory communication costs are high
+course not be done with the help of the OCSP responder, because a new hash value for every certificate must be
+therefore some additional mechanism is needed. Since sent. An improvement (CRS2) that solves this problem is
+online responders (not only OCSP responders) do not based on binary hash trees. In this scheme the current
+improve the underlying revocation scheme and would status of a given certificate is indicated by two bits. These
+raise additional problems, they seem not to be qualified for bits, typically 128 are stored in the leaves of the tree.
+our purposes. Nodes of the tree are computed from the hash of their
+Fortunately, there are also certificate management children. Only the root of the tree must be signed by the
+schemes that can provide the revocation status of a certifi- authority. This modification speeds up the system, verifi-
+cate and freshness information at once. This combination cation becomes cheaper and also communication costs
+reduces data maintaining costs, since there is no more need decrease, as shown in Table 2. In addition, if the Merkle
+to manage two separate databases. tree is constructed carefully, CRS2 can also provide proofs
+The Certificate Revocation System (CRS), which was for non-existence of certificates. Unfortunately, this sys-
+the first system maintaining freshness information for both tem provides information about the current status andexistence of many neighboring certificates, which conflicts be able to utilize all privileges that he or she was actually
+with confidentiality requirements. assigned by the issuing authority. Buldas et al. showed in
+Alternatively, revocation could be accomplished by [11] that one can not generate an undeniable non-existence
+simply removing revoked authorization certificates from proof using the proposed CVTs. The issuing authority
+the directory. This approach would allow authorizations to could construct an incorrectly sorted tree and provide one
+be changed in a very responsive manner, without estab- verifier with a certificate and a second verifier with a con-
+lishing any kind of revocation infrastructure. The problems tradicting “proof” for the non-existence of the same cer-
+to solve are how verifiers can be sure that the directory tificate. Therefore the structure of a CVT should be im-
+contains all valid certificates and that all certificates in the proved in such a way that it is possible to provide an un-
+directory are still valid. deniable proof of non-existence if the directory does not
+Certification Verification Trees (CVTs) recently pro- deliver a requested certificate.
+posed in [1] can solve these problems elegantly. The basic Therefore, we construct Improved Certification Veri-
+idea is that it is not necessary to sign every single certifi- fication Trees (I-CVTs) that are very efficient and more
+cate issued by an authority. Instead, the authors suggest to trustworthy. The underlying data structure of an I-CVT is
+store the unsigned certificates (certificate statements) plus a variant of a balanced search tree (B-tree), a so called B+-
+a hash value in the leaves of a hash-tree [6]. Only the root tree. A B+-tree differs in that way from a B-tree that all
+of the tree must be signed and time-stamped. In order to data is stored in the leaves (see Fig. 1). A B+-tree of order
+check the validity of a given certificate, the verifier must m satisfies the following properties [12]. Every internal
+obtain the certificate and the certification path belonging node of the tree has at least (cid:1)m/2(cid:2) and at most m children.
+to this certificate. The certification path is given by the set The root node has at least 2 children. A non-leaf node with
+of hash values of all siblings of the nodes along the path k children contains k-1 keys. Leaves of the tree contain at
+from the leaf containing the certificate statement in ques- least (cid:1)m/2(cid:2)-1 and at most m-1 keys and as many pointers
+tion to the root. This scheme allows very frequent fresh- to data records (e.g., certificate statements). The leaves of
+ness updates of all certificates at once. The authority does the tree are linked which optimizes sequential access to the
+not need to maintain any extra information about revoked data records. In order to store certificates in a B+-tree, an
+certificates. It can just delete a revoked certificate from the order of the certificates must be defined, e.g. a unique
+tree and then sign the root of the new tree. There are many serial number or a certificate hash value can be used (s.
+other advantages of CVTs; but the most important one is below). B+-trees have the following advantageous proper-
+the enhanced security: The exchange of the root key is ties for certificate management:
+easier and in the case of key compromise an adversary • Each path from a certificate to the root has the same
+cannot manipulate single certificates, he always changes length. Therefore, the certification paths have the
+the signed root, which can be easier detected. Finally, same size and the communicational and computational
+longer and therefore probably stronger keys can be used. costs are similar for all certificates stored in the tree.
+An effective CVT implementation can be based on a B 2,3- • The operations insertion, deletion and searching are
+tree, for example. Some experimental results on this topic very efficient in a B+-tree, because they can be done in
+can be found in [10]. Table 2 compares the average costs
+O(log(cid:1)m/2(cid:2) n) where n is the number of records (certifi-
+of the different freshness schemes. As one can see the
+cates) in the tree [13].
+costs of CVT and CRS2 are very similar. • B+-trees can be optimized for search, insertion, dele-
+The very good performance, the enhanced security and
+tion and also certification path length by choosing the
+the simplicity of implementation convinced us to realize
+parameter m properly.
+PAMINA on the basis of CVTs. However, there are some
+• Easy and efficient search and sequential access to the
+problems with this CVT design that are discussed in the
+certificates.
+next section.
+For certificate management purposes we extend the B+-
+4 Improved Certification Verification Tree tree to a Merkle hash-tree. The signature on the root along
+with a properly constructed hash-path attests that a given
+A problem with the proposed CVTs described above is certificate is stored in the tree and therefore valid.
+the following: When a verifier requests some set of certifi- In [1] the so-called certification path is defined as “the
+cates, for example all certificates issued for a particular path from the leaf containing the certificate statement to
+user, the directory storing the CVT can not prove that it the root, along with the hash values necessary to verify
+actually delivers all of those certificates. Processing the that path. This includes the hash values for all siblings of
+certification paths a verifier can easily check the validity nodes along that path”. If the certification path and the
+of received certificates, but he cannot know whether he got signature on the root hash value are both valid, it is shown
+all valid certificates. In other words, a malicious directory that the certificate is stored in the CVT and thus valid.
+could disclaim the existence of a certificate. This means in
+the case of authorization certificates that a user might notH[8]
+63
+H[6] H[7]
+27 34 71
+H[1] H[2] H[3] H[4] H[5]
+13 27 34 41 63 64 71 78 82
+CS CS CS CS CS CS CS CS CS
+1 2 3 4 5 6 7 8 9
+Figure 1: Improved CVT based on a B+-tree (here m=3)
+Since trust placed on the database storing and publishing Example 2: Non-existence proof for the certificate state-
+the certificates should be minimized, it is important that ment with ID 42 (see Fig. 1)
+the database must deliver also a proof of non-existence if it cp(42) = ((41,63; h(CS ), h(CS )); (27,34; H[1], H[2]);
+4 5
+does not deliver a requested certificate. Otherwise the (63; H[7])) + signature on H[8]
+database could simply deny the existence of a certificate as
+mentioned above. If the system also provides non- Note that the latter certification path can also be used as a
+existence proofs, the verifier does not have to “blindly” certification path for the certificates with ID 41 and ID 63.
+trust in the database. The results of Buldas et al. show that The hash value of the nodes on the path to the root and
+in order to provide an undeniable proof for the non- the positions within their siblings can be omitted, since the
+existence of a certificate, information about the order and hash value of a node is determined by the hash values of
+internal structure of the tree has to be added to the hash- its children and its position within its siblings by the
+path. They have also pointed out that in CVTs as proposed search keys of its parent node. Fig. 2 shows the algorithm
+in [1] this kind of information is missing. for creating certification paths.
+Therefore we add information about the structure and
+the order of the a B+-tree to construct I-CVT (see Fig. 1). Input: Identifier ID of a certificate, I-CVT
+The values H[i] are the hash values that are stored in the Output: Certification path or proof for the non-existence
+nodes of the tree. Each hash-value is computed from the of certificate ID in the I-CVT
+search keys of the particular node and the hash values of cp ← empty certification path
+its children. For example, the value H[1], which is stored n ← leaf node which (should) contain(s) certificate id
+in the leftmost leaf of the I-CVT in Fig. 1, is computed as
+follows: H[1] = h(13, 27, h(CS 1), h(CS 2)), where h must be finished ← false
+a collision resistant hash function.
+while not finished
+Also the search keys - that are stored in the nodes on the
+k ← sequence of keys that are stored in n
+path from the leaf with the certificate to the root - are in-
+h ← sequence of hashes that are stored in n
+cluded in our certification path as follows:
+if n is not a leaf
+pos ← position of ID in k
+Certification path cp = sequence of (sequence of keys,
+(such that k < ID ≤ k )
+sequence of sibling hash values) + signature on root of the i (pos-1) i pos
+delete hash value at position pos in h
+tree
+add (k,h) to cp
+cp = (l , l , ... , l ) + root signature,
+0 1 n-1
+where l = ((k , k , … k ), (h , h , ... h ))
+i i0 i1 it i0 i1 it if n is not the root node
+n ← parent node of n
+Example 1: certification path for the certificate statement
+else
+with ID 27 (see Fig. 1)
+finished ← true
+cp(27) = ((13, 27; h(CS ), h(CS )); (27,34; H[2], H[3]);
+1 2
+(63; H[7])) + signature on H[8].
+return cp and the signature on hash(k, h) (=hash value of
+the root node)
+The proof of non-existence of a certificate is simply the
+certification path for the leaf that would contain the certifi- Fig. 2: Algorithm for creating a certification path
+cate if it were in the I-CVT.One can show that this certification path is an undeni- sources. For example, PMA owns resource R and
+2 B
+able attester as defined in [11]. This way the problems of R (see Fig. 3).
+C
+CVTs we described above are solved. It can also be shown • User: From PAMINAs point of view, users are hold-
+that we get the minimal certification path length for a B+- ers of one or more ACs. Users cannot issue ACs. We
+tree with m=3 (i.e. a B+ -tree), but we expect to get faster assume that each user has a unique identifier (name,
+2,3
+search, insertion and deletion times for bigger m. This public-key) which associates her/him with the privi-
+leaves some scope to optimize the data structure for a leges stored in her/his ACs.
+specific implementation. • Client: In our approach a client is an application that
+In order to make the system flexible and suitable for dif- represents a remote user. Since access control deci-
+ferent scenarios, we want to enable that an authority can sions can only be made if the requesting user’s iden-
+issue more than one certificate for a particular user and tity is available, the client system has to insert identi-
+store them in its I-CVT. A verifier should be able to check fication information of the authenticated user in its re-
+that he gets all certificates issued for this user, to make quest messages.
+sure that access is not denied if the user has the required • Privilege Management Authority (PMA): PMAs
+privileges. Therefore the certificates in the I-CVT are are basically issuers of ACs, they represent organiza-
+sorted by the pair (user–ID, serial number) which is unique tional units, such as companies or divisions of a com-
+since the serial number has to be unique in an I-CVT. The pany. Each PMA owns and/or controls one or more
+user-ID is the more significant part and the serial number resources. PMAs are autonomous; they can manage
+is the less significant part, i.e. all certificates are sorted by privileges in accordance to their own policies. PMAs
+user-ID and all certificates of a specific user are sorted by can delegate privileges to other PMAs in a controlled
+their serial numbers. This way all certificate statements of manner (see below in section 5.2). As shown in Fig. 3
+a particular user are adjacent and form a closed sequence. resource R is owned by PMA , which has delegated
+C 2
+Verifiers get the certification paths for each certificate of some of its privileges to PMA . One can see that
+3
+this sequence and additionally for the certificates directly PMA itself does not own any resources, but this way
+3
+before and after it. As a result, the verifier can be sure that it can authorize its users to access R . Each PMA
+C
+he got all certificates issued for a particular user. maintains exactly one signed I-CVT in which all cer-
+tificates issued by that particular PMA are stored. We
+5 Architecture of PAMINA
+assume that the public (signing) key of the PMA is
+Due to the requirements that we defined and the results managed by an external PKI.
+of the analysis of different competing approaches, we have • Privilege Database (P-DB): The P-DB is a central,
+decided to design PAMINA to support the pull model and non-trusted database storing the I-CVTs of registered
+to use separate certificates for privilege management. The PMAs. In this context non-trusted means that a veri-
+cost analysis shows that CVTs guarantee a very good fier obtaining ACs can always be sure that the P-DB
+performance. In addition, this scheme has enhanced secu- can neither manipulate the ACs, nor it can disclaim
+rity properties. In order to reduce the trust placed on the the existence of a given AC. These properties are
+database storing CVTs and to make the scheme more effi- guaranteed by the digitally signed I-CVTs. PMAs
+cient, we developed I-CVTs. We believe that I-CVT is an must periodically send updated I-CVTs to the P-DB,
+enabling technology for the realization of open directories according to their own update policy. The P-DB con-
+storing certificates issued by one authority. However, trols neither the validity, nor the freshness of the I-
+PAMINA is basically designed for environments where CVTs; it just stores them. ACs can be downloaded by
+delegation of privileges as well as confidential manage- verifiers, which are owned by registered PMAs. In or-
+ment of ACs are needed. Enabling privilege delegation der to avoid performance and availability problems
+implies the coexistence of many I-CVTs that should be the P-DB can be replicated.
+accessible for applications. Due to this fact we develop a • Verifier: In PAMINA a verifier is owned by at least
+central database storing all I-CVTs of the system. Of one PMA. Verifiers control only access to resources
+course, the system can support simpler scenarios, too. that are owned by their owner PMAs. For example,
+At first, we describe the components of PAMINA and V is owned by PMA as shown in Fig. 3. PMAs
+PMA2 2
+their relationships. Fig. 3 shows the subjects and compo- state this ownership with so called policy certificates
+nents of the system including the most important data (see below in section 5.1). Verifiers make access con-
+flows. trol decisions on the basis of the ACs downloaded
+• Resource: Like any other privilege management sys- from the P-DB. A verifier is a program which runs di-
+tem PAMINA maintains authorization information rectly on the targeted system itself, or it is an external
+used for controlling access to different objects, the re- service used by server-sided applications, for exam-
+sources. Each resource is owned by one or more ple. In Fig. 3 client C, that was authorized by PMA ,
+3
+PMAs, and each PMA can own one or more re- wants to use resource R controlled by verifier V .
+C PMA2RR RR RR
+AA BB CC
+oowwnnss ccoonnttrroollss
+ddeelleeggaatteess
+PPMMAA PPMMAA PPMMAA
+11 22 33
+uuppddaatteeddII--CCVVTT
+PP--DDBB
+PPMMAA:: PPrriivviilleeggee MMaannaaggeemmeenntt AAuutthhoorriittyy
+RR:: RReessoouurrccee oowwnneedd bbyy aa PPMMAA
+AACC ddoowwnnllooaadd
+PP--DDBB:: PPrriivviilleeggee DDaattaabbaassee
+CC:: CClliieenntt
+RReeqquueesstt {{ff((RR )),, IIDD}} IIDD:: UUsseerr--IIDD
+CC CC VV
+RReessppoonnssee {{ff((RR )),, IIDD,, YY//NN}} PPMMAA22 ff((RR)):: OOppeerraattiioonn oonn rreessoouurrcceeRR
+CC VV :: VVeerriiffiieerroowwnneedd bbyy PPMMAA
+PPMMAAxx xx
+Figure 3: Architecture scheme of PAMINA
+In this case, the verifier downloads the delegation In the following we describe how ACs as defined in
+chain, which states the privileges of the user that are X.509 can be modified in order to manage them with I-
+needed to execute the requested action, then it verifies CVTs. An X.509 based certificate statement stored in the
+the chain, and finally, it allows or denies the access to leaf of an I-CVT can consist of the following fields (com-
+R . pared to AttributeCertificateInfo in [4], the signature field
+C
+• Administrators: Administrators, who are typically is missing):
+employed by a particular PMA, do daily management
+work. A framework consisting of management tools version, holder, issuer, serialNumber, attrCertValid-
+supports the two main types of administration related ityPeriod, attributes, issuerUniqueID, extensions
+tasks, namely privilege management and certificate
+management. Only administrators of a PMA have ac- The type, format and meaning of these fields remain ba-
+cess to the private (signing) key of this PMA. sically unchanged. Assuming that an I-CVT stored in the
+P-DB consists only of valid (not yet revoked) ACs, one
+5.1 Managing certificates based on X.509 with
+could think that the field attrCertValidityPeriod is unnec-
+PAMINA
+essary. This could be true from the verifier’s point of view,
+Theoretically, any type of (standardized) ACs can be but this would make the administration of the system very
+managed using I-CVTs, because the construction of these complicated, because administrators would not know
+trees is independent from the information stored in the when they had to delete an expired AC from the I-CVT.
+leaves. However, due to the fact that single ACs need not The field serialNumber must uniquely identify an AC
+to be signed, certificate fields holding signature specific within the I-CVT signed by the issuer. The attributes field
+information become needless when using PAMINA. Since contains the privileges associated with the holder of the
+certificate formats often reflect special authorization authorization certificate.
+mechanisms, like delegation, access control model and X.509 supports privilege management on the basis of
+properties of the revocation scheme, other changes could role-based access control policies. There are several other
+also be needed in some cases. The first practical scenario known approaches competing with role-based models, in
+for PAMINA was to manage access control on the basis of which users or privileges can be grouped according to
+ACs as defined in the X.509 standard [4], in order to sup- other strategies. From the certificate managements point of
+port compatibility with existing X.509 PKI products. The view, there is no significant difference between these
+“Attribute Certificate Framework” of X.509 basically models (see also [14]). A privilege management system
+specifies an AC format and recommends the (optional) use has to be able to handle ACs that hold privilege collections
+of CRLs for revocation purposes. This standard also de- that are not issued for a single subject. PAMINA also
+fines a delegation scheme and deals with major aspects of supports this mechanism; the management of role certifi-
+role based access control management. Unfortunately, cates with I-CVTs and their verification do not present any
+practical aspects of the realization of a privilege manage- additional difficulty.
+ment infrastructure, like confidential management of ACs, As mentioned before, each verifier holds so-called pol-
+are out of the scope of this framework. icy certificates issued by its owner PMA. A policy certifi-
+cate is a special AC that is mainly used for the configura-tion of verifiers. The attributes field of a PC can consist of These pointers can be used during the verification process
+information about the caching or access control strategy to ensure that the grantor has sufficient privileges. For this
+which the verifier has to follow. A PC also has a field that purpose [4] recommends the use of the optional field au-
+lists each PMA known to the issuer that has ever delegated thorityAttributeIdentifier, which is a sequence of IssuerSe-
+any of its privileges. This way the verifier knows from rial fields. The IssuerSerial field is specified as a pair
+which I-CVTs he needs either the certificates for the given <issuer, serialNumber>. An AC that contains authorityAt-
+user or a proof for the non-existence of any certificates of tributeIdentifier may include multiple privileges delegated
+this user. The issuer PMA of a policy certificate states to the certificate holder by multiple authorities. The au-
+with its signature that it owns the given verifier. This thorityAttributeIdentifier field can include more than one
+statement is used by the P-DB to control access to the I- IssuerSerial field if the assignment of the delegated privi-
+CVTs. See section 5.3 for more details. leges to the issuer authority was done in more than one
+AC.
+5.2 Supporting delegation
+Assume that a user has more than one ACs issued by
+As mentioned earlier, an important feature of PAMINA different PMAs. In order to answer the requests of a veri-
+is the support of privilege delegation. The basic properties fier for the certificates of this user, the P-DB has to find
+of the delegation model provided by the system are listed those certificates that include privileges that origin from
+here: the verifier’s owner PMA. Before responding, the P-DB
+• Multiple ACs and therefore multiple delegation chains had to compose all possible delegation trees ending with
+can exist for each subject (user or PMA). the user’s ACs, in order to find those that contain an AC
+• PMAs are autonomous, that means that each PMA issued by a PMA that owns the verifier. This could lead to
+performance problems in systems where delegation is
+may delegate all of its privileges to each other subject.
+• PMAs can delegate privileges in one certificate that practiced frequently and delegation chains are long. Natu-
+rally, the P-DB could just send all certificates issued for
+were assigned to them by several certificates. This
+the user inclusive delegation trees to the verifier. In this
+implies that delegation chains are paths of a directed
+case the verifier would also get ACs that have been issued
+tree, a delegation tree.
+• PMAs that delegated privileges must inform the re- for the user by other PMAs and therefore should be hidden
+from this verifier.
+source owners about this act. Resource owners are al-
+In order to make the search for certificates that should
+ways known since each AC consists of its delegation
+be delivered to a verifier more efficient, each AC that
+history (see below). This supports billing in commer-
+belongs to a delegation tree stores information about all
+cial application scenarios.
+ACs in the same tree down to the resource owner. In con-
+• PMAs that delegated privileges must have at least the
+trast to X.509 the complete delegation tree is stored in the
+same privilege at the time of verification. PMAs can
+certificates, instead of inserting only the IssuerSerials of
+delegate privileges for a specific period of time. The
+the direct predecessor certificates. The root of such a dele-
+beginning of this period can be in the future.
+gation tree is the AC itself and the leaves are ACs issued
+• A PMA can determine whether all privileges con-
+by resource owners. This way the database can easier
+tained in a particular AC can be delegated to other
+decide which certificates should be made available to the
+subjects or not. The model does not allow the prohibi-
+verifier in a given situation. Note that this structure also
+tion of the delegation of single privileges. If a PMA
+supports the verification of parts of a delegation tree by
+wants to allow the delegation of a subset of privileges,
+verifiers that are not owned by a PMA which issued one of
+it should issue a separate AC containing only these
+the ACs in a leaf of this tree. One drawback of this solu-
+privileges.
+tion is that the size of ACs depends on the height of the
+• If a PMA allows the delegation of the privileges listed
+delegation trees.
+in an AC, it can define the maximal length of delega-
+Fig. 4 shows an example situation, where user U gets
+tion chains starting with this AC. A
+the privilege P4 through delegation. Role1 holding privi-
+• PAMINA does not support ACs issued by multiple
+lege P4 has originally been associated with C. As you can
+PMAs. When multiple privileges controlled by differ-
+see the certificate issued for C by A consists of an empty
+ent PMAs are needed to perform a particular action on
+delegation tree. Then C delegated privilege P2 (that it got
+a resource, separate ACs must be issued by each of
+from B) together with privilege P4 to D. Therefore, the
+these PMAs.
+delegation tree of D’s certificate consists of two <issuer,
+There are two important technical problems with privi-
+serialNumber> pairs. Finally, D delegates privilege P4 to
+lege delegation, namely to find and to verify ACs that
+user U by issuing the certificate with the serial number 4.
+A
+build a delegation tree. Each AC that belongs to a delega-
+As shown in Fig. 4., the included delegation tree has two
+tion tree must include back pointers to the ACs in which
+leaves. Leaf A,1 points to the originator (A) of the privi-
+the issuer was assigned the corresponding privileges.
+lege P4.AA PP11,, RRoollee11((PP33,,
+PP44))
+PP22,, PP44 PP44
+CC DD UU
+AA
+PP22
+PP55
+BB
+hhoollddeerr:: RRoollee11 hhoollddeerr:: CC hhoollddeerr:: CC hhoollddeerr:: DD hhoollddeerr:: UU hhoollddeerr:: UU
+AA AA
+iissssuueerr:: AA iissssuueerr:: AA iissssuueerr:: BB iissssuueerr:: CC iissssuueerr:: DD iissssuueerr:: BB
+sseerr..nnoo:: 55 sseerr..nnoo:: 11 sseerr..nnoo:: 22 sseerr..nnoo:: 33 sseerr..nnoo:: 44 sseerr..nnoo:: 66
+pprriivviilleeggeess:: pprriivviilleeggeess:: pprriivviilleeggeess:: pprriivviilleeggeess:: pprriivviilleeggeess:: pprriivviilleeggeess::
+PP33,, PP44 PP11,, RRoollee11 PP22 PP22,, PP44 PP44 PP55
+ddeell.. ttrreeee:: ddeell.. ttrreeee:: ddeell.. ttrreeee:: ddeell.. ttrreeee:: ddeell.. ttrreeee:: ddeell.. ttrreeee::
+[[]] [[]] [[]] [[AA,, 11;; BB,, 22]] [[CC,, 33;; [[]]
+[[AA,, 11;; BB,,22]] ]]
+Figure 4: Certificates and delegation trees in PAMINA
+sends the policy certificate to the verifier and contin-
+5.3 Concept of the Privilege Database
+ues the process. If there is no policy certificate stored
+As mentioned earlier the Privilege Database (P-DB) in PMA V’s I-CVT the P-DB sends the certification
+stores all I-CVTs, which are periodically updated by the path for the leaf that would contain the certificate and
+PMAs. The main benefit of this solution is that verifiers disconnects from V. If the verifier does not receive
+checking delegation trees do not have to connect to differ- this non-existence proof it can assume that the P-DB
+ent databases in order to download certificates issued by was compromised.
+different PMAs. Furthermore, PMAs need not to imple- 4. In its later requests to the P-DB V sends the identifier
+ment services providing verifiers; they just have to main- (ID) of the user in question or if possible an authenti-
+tain their own I-CVTs. cated (e.g., signed) request of the client.
+PMAs that want to use the database must be registered 5. The P-DB searches for all certificates issued for the
+before by the P-DB. Registered PMAs may send their user by those PMAs listed in the policy certificate of
+updated I-CVTs periodically over an encrypted channel to V and returns for each a delegation tree consisting of
+the P-DB. The P-DB does not maintain older versions of I- certificate statements incl. certification paths, where
+CVTs. This task remains in the responsibility of the recursively,
+PMAs. PMAs can either send complete updated I-CVTs, issuer i = holders i+1 , for each level i in the tree
+or only the changes (e.g., new signed root) since the last I- and where holder 0 = ID and for some ACs issuer =
+CVT update. PMA V.
+As described above, the P-DB provides verifiers basically The P-DB includes also referenced role certificates.
+only with those certificate statements and corresponding If a certificate was not found the P-DB gives the certi-
+certification paths that are needed for a given access con- fication path to the leaf that would contain that AC if
+trol decision. This makes the P-DB more trustworthy for it were in the particular I-CVT. This path proves for
+PMAs. An informal description of the protocol for obtain- the verifier that the AC does not exist.
+ing ACs is given here: 6. The P-DB sends the ACs to V over the encrypted
+1. Verifier V, which is not necessarily known to the P- channel. It also sends certification paths from each I-
+DB, establishes a mutual authenticated connection CVT of PMAs listed in the verifier’s policy certificate
+with the P-DB. During the authentication process they proving that the user with ID has no ACs issued by
+agree on the use of a shared key, which will be used to other PMAs.
+encrypt the whole communication. At the moment we
+5.4 Specification of a verifier using PAMINA
+use SSL and the services of the external PKI for this
+purpose. Verifiers as specified in this section can typically be in-
+2. After that, V sends the name of its owner PMA tegrated into an application server or an application gate-
+(PMA ) to the P-DB. way. The main responsibility of a verifier is to decide if an
+V
+3. If there is an I-CVT signed by PMA and a valid authenticated user either has access to a particular resource
+V
+policy certificate issued for V by PMA the P-DB or not. It is in the responsibility of the application to de-
+Vtermine the identity of the user (ID) and to correctly for- Every single AC is verified using the algorithm above
+mulate a request. (see Fig. 5). If an AC references a role definition certifi-
+The main tasks that the verifier has to implement are: cate, the verifier must process the AC defining the speci-
+• Establishing a secure authenticated connection to the fied role. The privileges assigned to the role are implicitly
+Privilege Database. assigned to the user and are therefore included among his
+• Requesting the relevant certificate(s) from the P-DB. privileges. If the privileges are delegated to the user by an
+The P-DB delivers all relevant ACs of the user with intermediary PMA, the verifier must ensure that all ACs
+the attached roles and delegation trees. that belong to the delegation tree are valid. Furthermore,
+• Verification of each certificate. the verifier must check whether the delegation trees follow
+• Evaluating the delegation trees and roles to determine the rules defined in section 5.2. The verifier must check
+the set of privileges the user holds. for example if each PMA that issued a certificate in the
+• Deciding if the approved privileges are sufficient. delegation tree was authorized to do so and that no PMA
+delegation privilege is greater than the privilege held by
+that PMA.
+Input: Certificate identifier ID and certification path as
+The policies that the verifier follows during these proc-
+specified in section 4:
+esses are assigned with the policy certificate. The verifier
+Certification path cp = (l , l , ... , l ) + root signature,
+0 1 n-1
+must also check the certificate validity periods. Finally, the
+where l = ( (k , k , ... k ), (h , h , ... h )
+i i0 i1 it i0 i1 i(t-1)
+verifier checks if the union of all user privileges is suffi-
+Output: Validity of the certification path for this certifi-
+cient for the context of use.
+cate
+i ← 0 5.5 Prototypical implementation details
+k ← (k , k , ... k )
+i0 i1 it The first prototype of PAMINA is implemented in Java.
+h ← (h , h , ... h )
+i0 i1 it Java enables to run the system on different platforms, but
+min_id = min(min(k ),id)
+j ij many components, such as the P-DB, would need much
+max_id = max(max(k ),id)
+j ij better performance. The PKI we use for the management
+d ← hash(k||h)
+of PKCs and for the verification of signatures is the En-
+trust/PKI v. 4.0 Developer Edition. The services of this
+i ← i + 1
+PKI are integrated into the system with the use of proprie-
+while i < n
+tary developer toolkits. In PAMINA each AC is stored as
+k ← (k , k , ... k )
+i0 i1 it an XML document. We decided to use XML due to its
+h ← (h , h , ... h )
+i0 i1 it benefits:
+pos ← position of ID in k • Platform independent standard,
+(such that k i (pos-1) < ID ≤ k i pos) • Many tools for converting and processing XML
+documents are available,
+if (k ij in k are not sorted) • Human readable data representation, XML files can
+or (pos>0 and min_id ≤ k )
+i (pos-1) be viewed with any text editor.
+or (pos<t and max_id > k )
+i pos We have also implemented an administration framework
+output "Invalid certification path."
+which provides daily management tasks. This framework
+contains tools that support I-CVT related operations, like
+min_id = min(min(k ),min_id)
+j ij creation, signing and updating of the tree and the parsing,
+max_id = max(max(k ),max_id)
+j ij modification or deletion (revocation) of single ACs.
+insert d in h at position pos Conclusions and future work
+d ← hash(k||h)
+In this paper we introduced PAMINA, a system which
+i ← i + 1
+manages authorization certificates in distributed environ-
+ments. The system utilizes the high performance and en-
+if root signature is NOT valid signature for d
+hanced security of I-CVT, an improvement of a novel
+output "Invalid certification path."
+certificate management scheme, that has been proposed in
+else
+[1]. PAMINA can handle multiple I-CVTs each managed
+if (k , k , ... k ) contains ID
+i0 i1 it by a so-called Privilege Management Authority (PMA).
+output "Certificate ID is in I-CVT."
+Since the system implements the pull model, it can be
+else
+integrated in back-end architectures in which (remote)
+output “Certificate ID is NOT in I-CVT”
+clients need not to be involved in the access control deci-
+Figure 5: Algorithm for validating a cert. path sion process.An important feature of PAMINA is the support of This way PMAs can configure their verifiers with the use
+privilege delegation. Verifiers become more complex in of so-called policy certificates to demand all certificates of
+delegation networks, and a large amount of information a specific user from a limited set of I-CVTs.
+about the user’s relevant privileges has to be collected Our results show that due to the properties of I-CVTs,
+from a lot of different PMAs. This could lead to large this scheme is qualified for privilege management. The
+communication costs and has motivated the development first prototype of PAMINA states that the integration of I-
+of a central database which stores all I-CVTs issued by CVTs in an operational architecture is possible despite the
+different PMAs. The database provides only authenticated special requirements that have not originally been consid-
+verifiers with those certificates that they need to check a ered when this scheme was constructed.
+user’s privileges. In our flexible model a PMA can dele- At the moment PAMINA uses the services of an exter-
+gate privileges within one certificate that were assigned nal PKI since digital signatures are needed for the protec-
+before by several certificates. Therefore, a certificate be- tion of integrity and authenticity of I-CVTs. In the next
+longs to a delegation tree instead of a simple delegation future approach, we will extend the system and add key
+chain. Storing complete delegation trees in certificates is management functionality. Furthermore, we plan to im-
+helpful to implement confidential access to certificates in plement a version of PAMINA which can manage authori-
+an efficient manner. zation information based on SDSI/SPKI.
+Due to the fact that I-CVTs provide proofs for the non-
+Acknowledgments
+existence of certificates, verifiers can always be sure that
+they get all existing certificates with relevant privileges of This research work was supported by the German Re-
+a given user. However, the database storing multiple I- search Foundation (Deutsche Forschungsgemeinschaft,
+CVTs would be able to hide complete I-CVTs storing DFG). The authors would like to thank to Günther Au-
+relevant certificates from the verifier. In order to solve this gustin and David Garces for numerous discussions and
+problem, all PMAs that delegate privileges inform the useful comments that helped to improve PAMINA.
+PMA(s) that own the resource in question about this act.
+References
+[1] I. Gassko, P. S. Gemmell and P. MacKenzie: Efficient and Fresh Certification, Proceedings of the Conference Public Key Cryp-
+tography 2000, v. 1751 of LNCS, pp. 342–353, Springer, 2000
+[2] J. Linn and M. Nyström: Attribute Certification: An Enabling Technology for Delegation and Role-Based Controls in Distributed
+Environments, Proc. of the 4th ACM Workshop on RBAC, pp. 121-130, Fairfax, USA, 1999
+[3] R. Housley, W. Ford, W. Polk, D. Solo: Internet X.509 Public Key Infrastructure Certificate and CRL Profile, IETF Request for
+Comments 2459, January 1999
+[4] ITU-T Recommendation X.509: Information Technology – Open Systems Interconnection – The directory: Public-Key and At-
+tribute Certificate Frameworks, February 2001
+[5] P. C. Kocher: On Certificate Revocation and Validation, Proceedings of the 2nd International Conference Financial Cryptography,
+1465 of LNCS, pp. 172-177, Springer, 1998
+[6] R. C. Merkle, A Certified Digital Signature, Advances in Cryptology: CRYPTO '89, 0435 of LNCS, pp. 218-238, Springer, 1989
+[7] M. Naor, K. Nissim: Certificate Revocation and Certificate Update, Proceedings of the 7th USENIX Security Symposium, pp. 217-
+228, San Antonio, USA, 1998
+[8] M. Myers, R. Ankney, A. Malpani, S. Galperin and C. Adams: X.509 Internet Public Key Infrastructure On-line Certificate Status
+Protocol – OCSP, IETF Request for Comments 2560, June 1999
+[9] S. Micali: Efficient Certificate Revocation, Technical Report, Massachusetts Institute of Technology, 1996
+[10] I. Nestlerode: Implementing EFECT, Master Thesis, Massachusetts Institute of Technology, 2000
+[11] A. Buldas, P. Laud, H. Lipmaa: Accountable Certificate Management using Undeniable Attestations, Proceedings of the 7th ACM
+Conference on Computer and Communication Security, pp. 9-17, Athens, Greece, November 2000
+[12] D. E. Knuth: The Art Of Computer Programming, Volume 3, Sorting and Searching, Second Edition. Addison-Wesley, 1998
+[13] D. Comer: The Ubiquitous B-Tree, Computing Surveys, Vol. 11., No 2., pp. 121-137, ACM, June 1979
+[14] S. Osborn, R. and Q. Munawer: Configuring Role-Based Access Control to Enforce Mandatory and Discretionary Access Control
+Policies, ACM Transactions on Information and System Security, Vol. 3, No. 2, pp. 85–106, May 2000

@@ -1,0 +1,984 @@
+Experimenting with Server-Aided Signatures
+Xuhua Ding, Daniele Mazzocchi, Gene Tsudik
+Information and Computer Science Department
+University of California, Irvine
+{xhding,dmazzocc,gts}@ics.uci.edu
+Abstract vices are in constant contact with a fixed, wired in-
+frastructure. Consequently,accesstomorepowerful
+This paper explores practical and conceptual im- (intermsofbothCPUspeedandnotdependenton
+plications of using Server-Aided Signatures (SAS). batteries) computing platforms is available to end-
+SAS is a signature method that relies on partially- users.
+trusted servers for generating public key signatures At the same time, increased use of digital sig-
+for regular users. Besides its two primary goals of natures accentuates the need for effective revoca-
+1) aiding small, resource-limited devices in comput- tion methods. Revocation of cryptographic cre-
+ing heavy-weight (normally expensive) digital sig- dentials and certificates has been an issue for a
+natures and 2) fast certificate revocation, SAS also long time. However, only now the problem is be-
+offers signature causality and has some interesting coming truly visible, e.g., the recent Verisign fiasco
+features such as built-in attack detection for users where a wrong certificate was issued (ostensibly to
+and DoS resistance for servers. Microsoft) and its subsequent revocation was both
+slow and painful. Furthermore, current CRL-based
+revocationmethodsscalepoorlyandarenotwidely
+1 Introduction used in practice. For example, many current web
+browsers do not bother checking CRLs.
+Digital signatures represent a basic building Effectiverevocationisnotonlyusefulbutvitalin
+block for many secure applications. Their uses some organizational settings (e.g., government and
+range from electronic commerce transactions to se- military) where digital signatures are used on im-
+cure email, secure content (code, video, audio) dis- portant electronic documents and in accessing crit-
+tribution and other, more specialized applications ical resources. Consider a situation when a trusted
+such as document notarization. Traditionally, digi- user (Alice) does something that warrants immedi-
+talsignaturesarebasedonasymmetric(publickey) aterevocationofhersecurityprivileges. Alicemight
+cryptographic techniques which, at least in some be fired, transferred or she may suspect that her
+settings, makes them computationally expensive. privatekeyhasbeencompromised. Ideally–imme-
+While digital signatures are rapidly becoming diatelyfollowingrevocation–nooneshouldbeable
+ubiquitous, one of the major recent trends in com- to perform any cryptographic operations involving
+puting has been towards so-called “smart” devices, Alice’s certificate, i.e., sign with her private key.
+such as PDAs, cell phones and palmtops. Although In addition, when a cryptographic certificate is
+suchdevicescomeinmanyshapesandsizesandare revoked (or simply expires) digital signatures gen-
+usedforavarietyofpurposes,theytendtohaveone erated prior to revocation (or expiration) may need
+feature in common: limited computational capabil- to remain valid. This is difficult to achieve with
+ities and equally limited power (as most operate on current revocation methods since CRLs (and sim-
+batteries). This makes them ill-suited for complex ilar methods like OCSP [1]) do not provide a se-
+cryptographic computations such as large number curemeansofdistinguishingbetweenpre-andpost-
+arithmetic present in virtually all public key con- revocation signature activity. The only way to do
+structs. so is by using a secure timestamping service for all
+Furthermore, in many envisaged setting, such as signatures. Although a secure timestamping ser-
+cell telephony and wireless web access, personal de- vice may provide a secure means of distinguishingbetween pre- and post-revocation signature, it has dataaswellasotherparameters(includingthe
+notbeenwidelyadoptedduetoitsprohibitivecost. one-time ticket). SEM then returns the results
+Finally, we note that compromise of a private key to Alice.
+can lead to an unlimited number of fraudulent sig-
+natures being generated and distributed by the ad- • Alice verifies SEM’s half-signature and pro-
+versary. As often happens in the event of compro- duces her own half-signature. Put together,
+mise, contact with the revocation authority (CA) the two respective half-signatures constitute a
+may not be immediate, e.g., in a sporadically con- regular, full SAS signature. This signature is
+nected wireless network. Therefore, it is important accompaniedbySEM’sandAlice’scertificates.
+to find a way to limit potential damage.
+The two half-signatures are inter-dependent and
+Inthispaperwepresentamethod,calledServer-
+each is worthless in and of itself. This is despite
+Aided Signatures (SAS), that is designed to ad-
+the SEM’s half-signature being a traditional digi-
+dresses the aforementioned issues. Its goals are
+tal signature: in the context of SAS, a traditional
+three-fold:
+signature computed by a SEM is not, by itself, a
+1. Assist small, limited-power devices in comput- SAS signature. The half-signature computed by a
+ing digital signatures user (Alice, in our example) is actually a one-time
+signature [3].
+2. Provide fast revocation of signing capability
+3. Limit damage from potential compromise
+The rest of the paper is organized as follows.
+Next section provides a brief synopsis of our work
+and its contributions. Section 5 describes the SAS
+method in greater detail; it is followed by the secu-
+rityanalysisinSection6. Denialofserviceissuesare
+addressed in Section 7. Then, implementation and
+performancemeasurementsarediscussedinSection
+8. The paper concludes with the summary of bene-
+fits and drawbacks of SAS.
+2 Synopsis
+Figure 1. SAS architecture
+The signature method (SAS) discussed here is
+based largely on a weak non-repudiation technique
+Verifying a SAS signature is easy: verifier (Bob)
+due to Asokan et al. [2]. The most notable feature
+obtains the signature and verifies the two halves
+of the SAS method is its on-line nature. Specifi-
+along with the two accompanying certificates.
+cally, each SAS signature is generated with the aid
+ThemainideaisthataSEM,albeitonlypartially
+ofapartially-trustedservercalledaSEM(shortfor
+trusted, is more secure, and much more capable (in
+SEcurityMediator). Thisfeaturecanbeviewedas
+termsofCPUandpowerconsumption)thananav-
+a mixed blessing. Although it offers a number of
+erage user. It can therefore serve a multitude of
+benefits which are summarized below, the require-
+users. Also, because of its “superior” status, SEM
+ment for on-line help for each signature is clearly a
+is much less likely to be revoked or compromised.
+burden. We discuss the drawbacks, both real and
+Since a signer (Alice) is assumed to have much less
+perceived, in Section 9.
+computing power then a SEM, the latter performs
+Informally, a SAS signature is computed as fol-
+the bulk of the computation, whereas, Alice does
+lows (see also Figure 1):
+comparatively little work. In the event that Al-
+ice’s certificate is revoked, the SEM simply refuses
+• First, a prospective signer (Alice) contacts her
+to perform any further signatures on Alice’s behalf.
+SEMandprovidesthedatatobesignedaswell
+(See Figure 1.) Thus, revocation is both implicit
+as a one-time ticket.
+and fast.
+• SEM checks Alice’s revocation status and, if ThegeneralsystemmodelofSASisagoodfitfor
+notrevoked,computesahalf-signatureoverthe many mobile settings. For example, as mentionedin Section 1, cell phones are only usable when in y is commonly referred to as the hash of x and x is
+touch,viaanearbybasestation,withafixedinfras- referred to as the pre-image of y. A one-way hash
+tructure. Each phone-call requires communication functionh()issaidtobecollision-resistantifitis
+with the infrastructure. This communication can computationallyhardtofindanytwodistinctinput
+beoverloadedtopiggybackSASprotocolmessages. strings x,x0 such that h(x)=h(x0).
+Several secure and efficient collision-resistant
+one-way hash functions have been proposed, e.g.,
+3 Related Work
+SHA or MD5 [11]. In the rest of the paper, h()
+denotes a collision-resistant one-way hash function.
+The SAS method is based on a weak non-
+A collision-resistant one-way hash function can
+repudiation technique proposed by Asokan et al. in
+be recursively applied to an input string. The no-
+[2]. In very general terms, SAS is an instantiation
+tation hi(x) is the result of applying h() i times
+of a mediated cryptographic service. Recent work
+starting with the input x, that is:
+by Boneh et al. [4] on mediated RSA (mRSA) is
+another example of mediated cryptography. mRSA hi(x)=h(h(...h(h(x))...))
+providesfastrevocationofbothsigninganddecryp- | {z }
+tion capability. However, the computation load on i times
+theclientendisincreasedinmRSA,whichissome- Recursive application results ina hash-chain gener-
+thing that SAS aims to minimize. ated from the original input:
+In [5] Reiter and McKenzie propose a the same
+additive splitting technique to improve the security x=h0(x),h1(x), ..., hn(x)
+for portable devices where the private-key opera-
+Hashchainshavebeenwidelyusedsinceearly1980-
+tions are password-protected. Recently, they also
+s starting with the well-known Lamport’s method
+proposed another scheme for the more challenging
+[12].
+problem of mediated (2-party) DSA signatures [6].
+Ganesan[7]alsoexploited(earlier,in1996)thesame
+4.2 Model and Notation
+idea for improving Kerberos security as part of the
+Yaksha system.
+We distinguish among 3 types of entities:
+Another way to look at SAS is as an
+instantiation of “hybrid” multi-signatures [8]. • Regular Users – entities who generate and ver-
+Viewed more broadly, the SAS method can ify SAS signatures.
+be included in the more general framework of
+• Security Mediators (SEMs) – partially-trusted
+threshold cryptography[9] and secure multi-party
+entities assisting regular users in generating
+computation[10].
+SAS signatures.
+There is also much related work on the topic
+of certificate revocation; including CRLs, ∆-CRLs,
+• Certification Authorities (CAs) – trusted off-
+CRTs, 2-3 lists and skip-lists. This is reviewed in
+line entities that issue certificates and link the
+more detail in Appendix B.
+identities of regular users with SEMs.
+SEMs and CAs are verifiable third parties from the
+4 Background
+users’ point of view.
+Allparticipantsagreeonacollision-resistantone-
+Inthissectionwegooversomepreliminariesnec-
+way hash function family H and a digital signature
+essary for the remainder of the paper.
+scheme. In SAS, the latter is fixed to be the RSA
+scheme [13]. Furthermore, each signer (Alice) se-
+4.1 Hash Functions lects a “personalized” hash function h () ∈ H. In
+A
+essence, h () can be thought of as a keyed hash
+A
+Informally, a one-way function f() is a func- (e.g., [14]) with a known key set to the identity of
+tion such that, given an input string x it is easy the signer. When applied recursively, we also in-
+tocomputef(x),whereas,givenarandomlychosen clude the index of the hash function link in each
+y, it is computationally infeasible to find an x such computation, i.e., hi (x) can be thought of as a
+A
+that f(x) = y. A one-way hash function h() is a keyed hash where the known key is the concatena-
+one-way function that operates on arbitrary-length tionofthesigner’sidentity(Alice)andtheindexof
+inputstoproduceafixedlengthdigest. Ify =h(x), the link, i.In order to minimize computation overhead for (We use the notation [x]sem to denote SEM’s sig-
+regular users, h() must be efficient and the digi- nature on string x). Each CA also has its own key-
+tal signature scheme must be efficient for verifiers. pair much like any traditional CA. In addition to
+(This is because, as will be seen below, verification its usual role of issuing and revoking certificates a
+is done by regular users, whereas, signing is done CA also maintains a mapping between users and
+by much more powerful SEMs.) SHA and MD5 are SEMs that serve them. This relationship is many
+reasonable choices for the former, while RSA [13] to one, i.e., a SEM serves a multitude of users. Ex-
+satisfies the efficient verification requirement when actly how many depends on many factors, such as:
+used with a small exponent such as 3, 17 or 65,537. SEM’s hardware platform, average user signature
+request frequency, network characteristics, etc. We
+4.3 Communication Channel expect the number and placement of SEMs in an
+organizational network to closely resemble that of
+We assume that the communication channel be- OCSP Validation Agents (VAs) [1].
+tween each user and a SEM is reliable (but nei- In order to obtain a SAS certificate Cert , Al-
+A
+ther private nor authentic). Reliability of the chan- ice composes a certificate request and submits it to
+nel implies that the underlying communication sys- the CA via some (usually off-line) channel. Alice’s
+tem provides sufficient error handling to detect, SAScertificatehas,forthemostpart,thesamefor-
+with overwhelming probability, all corrupted pack- mat as any other public key certificate; it includes
+ets. Onewaytoachievethisisbyhavingeachproto- values such as the holder’s distinguished name, or-
+col packet accompanied by its hash. Furthermore, ganizational data, expiration/validity dates, serial
+timeouts and retransmissions are likewise handled number, public token key, and so forth. Addition-
+by the communication system with the assumption ally, a SAS certificate contains two other fields:
+that a packet eventually gets through.
+1. Maximum number of signatures n that the en-
+We note that, even if the user is disconnected
+closed public key can be used to generate, and
+fromthenetwork1 aftersendingasignaturerequest
+to its SEM and before receiving a reply, the user 2. Certificateserialnumberand,eitherthedistin-
+will eventually obtain the correct reply (if the re- guishednameortheInternet-stylehostnameof
+questeverreachedtheSEM)wheneverthecommu- the SEM that will serve Alice in the context of
+nication channel is re-established. Specifically, as Cert .
+A
+described in the next section, a SEM always replies
+Once issued, Alice’s SAS certificate Cert can be
+withthelastsignatureitcomputedforagivenuser. A
+made publicly available via a directory service such
+as LDAP [15].
+5 SAS Description
+5.2 SAS Signature Protocol
+Wenowturntothedetailedprotocoldescription.
+The protocol proceeds as follows. (In the initial
+5.1 Setup protocol run the signature counter i = n − 1; it
+is decremented after each run. This counter is
+To become a SAS signer, Alice first generates maintained by both SEM and Alice.)
+a secret quantity SK0 randomly chosen from the
+A
+range of h A(). Starting with this value, Alice com- Step 1. Alice starts by sending a request con-
+putes a hash-chain: taining: [Alice,m,i,SKi] to its assigned SEM. If
+A
+Alice does not wish to reveal the message to the
+{SK0,SK1,...SKn−1,SKn } where
+A A A A SEM, m can be replaced with a suitable keyed (or,
+SKj =hj (SK0)=h (SKj−1) for1≤ j ≤ n moreaccurately,randomized)hashsuchasthewell-
+A A A A A known HMAC [14]. (In that case, Alice would send
+Thelastvalue,SK An,isreferredtoasAlice’sSAS HMAC r(m) where r is a one-time random value
+root key. It subsequently enables Alice to produce used a key in the HMAC computation.)
+(n−1) SAS signatures. Alice may also (optionally) enclose her SAS
+Each SEM is assumed to have a secret/public certificate.
+RSA key-pair (SK ,PK ) of sufficient length.
+sem sem
+1This can happen if a wireless device, e.g., a cell phone, Step 2. Having received Alice’s request, SEM
+ismomentarilyoutofrangeofanybasestation. obtains Cert A (either from the request or fromlocal storage) and checks its status. If revoked, in the last protocol run, she obtained SEM’s half-
+SEM replies with an error message and halts the signature containing SKi.
+A
+protocol. Otherwise, SEM compares the signature
+index in the request to its own signature counter. 5.3 SAS Signature Verification
+In case of a mismatch, SEM replies to Alice with
+the lowest-numbered half-signature produced in SAS signature verification comes in two flavors:
+the last protocol run and aborts. light and full. The particular choice depends on the
+verifier’s trust model. Recall that the philosophy
+Next, SEM proceeds to verify the received public of SAS is based on much greater (yet not uncon-
+key(SKi)basedonAlice’sSASrootkeycontained ditional) trust placed in a SEM than in a regular
+A
+in the certificate. (If this is Alice’s initial request, user. Ifaverifier(Bob)fullysubscribestothis, i.e.,
+the signature counter is initialized to n − 1, as trusts a SEM more than Alice, he can chose light
+mentioned above.) Specifically, SEM checks that verification. Otherwise, if Bob is equally suspicious
+hn−i(SKi) = SKn. In case of a mismatch, SEM of SEMs as of ordinary users, he can choose full
+A A A
+repliestoAlicewiththelastrecordedhalf-signature verification.
+and aborts the protocol. Light verification involves the following steps:
+1. Obtain and verify3 Cert
+Next, SEM signs the requested message with its SEM
+private key to produce: [Cert ,m,i,SKi]SEM.
+A A 2. Verify SEM’s RSA half-signature:
+Other attributes may also be included in SEM’s [Cert ,m,i,SKi]SEM
+A A
+half-signature, e.g., a timestamp. SEM decrements
+Alice’ssignaturecounter,recordsthehalf-signature 3. Verify Alice’s half-signature: h (SKi−1) =?
+A A
+and returns the latter to Alice. SKi
+A
+In the above, SEM assures that – for a given SAS
+Full verification requires, in addition:
+certificate – exactly one signature is created for
+each [i,SKi] tuple. We refer to this property as 4. Verify Cert
+A A
+the SAS Invariant.
+5. Check that i<n
+Step 3. Alice (who is assumed to be in possession 6. Verify Alice’s SAS root key: hn−i(SKi) =?
+of SEM’s certificate at all times) verifies SEM’s A A
+SKn
+half-signature, records it and decrements her A
+signature counter. If SEM’s half-signature fails Note that light verification does not involve check-
+verificationoritsattributesarewrong(e.g.,itsigns ing Alice’s SAS certificate. Although this may
+a different message than m or includes an incorrect seemcounter-intuitive,weclaimthatSASsignature
+signature counter j 6= i), Alice aborts the protocol format (actually SEM’s half-signature) already in-
+and concludes that a hostile attack has occurred.2 cludesCert asasignedattribute. Therefore,fora
+A
+(See Section 7 below.) verifierwhotruststheSEM,step2aboveimplicitly
+verifies Cert .
+A
+Finally,Alice’sSASsignatureonmessagemhasthe Itiseasytoseethat,owingtothetrustednature
+following format: ofaSEMandtheSASInvariant,lightverification
+isusuallysufficient. However,ifastrongerproperty
+SIG =[Cert ,m,i,SKi]SEM,SKi−1 (suchasnon-repudiation)isdesired,fullverification
+i A A A
+may be used.
+The second part, namely SKi−1, is Alice’s half-
+A
+signature. As mentioned earlier, it is actually a 5.4 State and Registration
+one-time signature: h (SKi−1)=SKi.
+A A A
+As follows from the protocol description above,
+Note that Alice must use her one-time keys in both Alice and the SEM maintain state. Alice’s
+strict sequence. In particular, Alice must not re- SAS state amounts to the following:
+quest a SEM half-signature using SKi−1 unless,
+A
+Cert ,Cert ,SK0,i,{SIG ,...,SIG }
+A SEM A n n−i−1
+2Our communication channel assumption rules out non-
+maliciouspacketserrors. 3Thismaybedoneinfrequently.The first three values are self-explanatory. The 6 Analysis
+fourth is Alice’s current signature counter, (i), and
+therestisthelistofpreviouslygeneratedsignatures We now consider the efficiency and security as-
+forthesameCert A. ThestatekeptbytheSEM(for pects of the SAS signature method.
+each user) is similar:
+6.1 Efficiency
+Cert ,i,{SIG ,...,SIG }
+A n n−i−1
+Thecostofoursignatureprotocolcanbebroken
+up as follows:
+The amount of state might seem excessive at first,
+especially considering that some users might be on
+1. Network overhead: round-trip delay between
+small limited-storage devices. There are some opti-
+Alice and SEM
+mizations, however. First, we note that Alice can
+periodically off-load her prior signatures to some 2. SEMcomputation: signaturecomputationplus
+other storage (e.g., to a workstation or a PC when other overhead (including hash verification of
+the PDA is charging). Also, it is possible to dras- user’sone-timepublickey,databaseprocessing,
+tically reduce state maintenance for both users and etc.)
+SEMs if successive signatures are accumulated. For
+3. User computation: verification of the SEM
+example, each SEM’s half-signature can addition-
+half-signature and other (commitment to stor-
+ally contain the hash of the last prior SAS signa-
+age) overhead.
+ture. This optimization results in storage require-
+mentscomparabletothoseofatraditionalsignature
+Clearly, (1) and (3) are extra steps as compared
+scheme.
+withatraditionalsignaturemethod. Theextracost
+Registration in SAS can be done either off- or of light signature verification (referring to the steps
+on-line. In the off-line case, SEM obtains Alice’s intheprevioussection)isonlyinStep3whichcon-
+SAS certificate via manual (local or remote) instal- sists of a single hash operation. Full verification
+lationbyanadministratororbyfetchingitfromthe costsanadditionalcertificatevalidation(Step4)as
+directory service. To register on-line, Alice simply well as (n−i) hash operations in Step 5.
+includes her SAS certificate as an optional field in
+the initial SAS signature request to the SEM. Be- 6.2 Security Analysis
+fore processing the request as described above, the
+SEMchecksifthesamecertificateisalreadystored.
+We claim that the SAS signature method
+Ifnot,itinstallsinthecertificatedatabaseandcre-
+achievesthesamesecuritylevelasatraditionaldig-
+ates a new user entry. (See Figure 2.)
+ital signature scheme if SAS signature and verifica-
+tion protocols are executed correctly. Due to space
+limitations, we only present an informal security
+analysis.
+To forge a SAS signature, an adversary can at-
+tempt to:
+TYPE 1: forge a SEM’s half-signature (i.e., an
+RSA signature) or
+TYPE 2: find a quantity SK∗ such that
+A
+H(SK∗) = SKi. Recall that SKi is
+A A A
+included in SEM’s half-signature.
+Clearly,aTYPE1attackisanattackontheun-
+derlyingsignaturescheme,i.e.,RSA,and,assuch,is
+notspecific totheSASmethod. Therefore, we only
+consider TYPE 2 attacks. However, finding SK∗
+A
+implies a successful attack on either the collision-
+Figure 2. SEM architecture
+resistance or the one-wayness property of the un-
+derlyinghashfunctionh (). Evenweweretoallow
+Athepossibilityoftheadversarymountingasuccess- only hostile DoS attacks are of interest. Also, our
+fulTYPE2attack,theschemeremainssecureiffull channel assumption states that all messages even-
+verification is used. (Recall that full verification in- tually get through; thus, attacks on the communi-
+cludes not only checking H(SK∗)=? SKi but also cation media are ruled out.
+A A
+hn−i(SKi)=? SKn.) TherearetwotypesofDoSattacks: userattacks
+A A A and SEM attacks. The purpose of a user attack
+We observe that, in any practical digital sig-
+is to deny service to a particular user whereas the
+nature scheme, a collision-resistant one-way hash
+purpose of a SEM attack is to deny service to all
+function is first applied to the message in order to
+users served by a SEM. User attacks can be further
+produce a fixed-length digest which is then signed.
+divided into request and reply attacks. Request at-
+Hence, asuccessfulTYPE2attackonaSASsigna-
+tacks involves modifying (or injecting) a user’s sig-
+ture is, at the same time, an attack on the digital
+nature request and a reply attack – modifying a
+signature scheme.
+SEM’s reply.
+6.3 Disputes
+7.1 User Attacks
+Incaseofadisputebetweenasigner(Alice)anda
+verifier (Bob), the latter submits the disputed SAS Suppose that an adversary (Eve) intercepts the
+signature to an unbiased arbitrator who starts by signature request and mounts a request attack. In
+verifying the following: this case, SEM receives a request that is perfectly
+legitimate (well-formed) from its point of view. It
+• Alice’sandSEM’scertificatesarevalidandcer- proceeds to sign it and send the signed reply back
+tified by a CA. toAlice. Clearly,Alicediscardsthereplybecauseit
+contains a signature for a different message. If Eve
+• SEM’s half-signature is valid.
+preventsthereplyfromreachingAlice,shegainsno
+advantagesince,asexplainedabove,forgingasigna-
+• Alice’s one-time key is a hash pre-image of the
+turerequiresEvetocomeupwithaone-timepublic
+value in SEM’s half-signature.
+keywhichshecannotdowithoutbreakingthehash
+• TheSASrootkeyinCert canbederivedfrom function. Even if the reply does not arrive immedi-
+A
+the one-time public key by repeated hashing. ately, according to our communication assumption,
+iteventuallyreachesAlicewhopromptlydetectsan
+ThisisessentiallythefullSASsignatureverification
+attack.
+as described earlier. If any of the above steps fails,
+A slight variation on the above occurs when Eve
+thearbitratorrulesinAlice’sfavor. Otherwise,Bob
+has in her possession the last SAS signature gener-
+wins the dispute.
+ated by Alice. In this case, Eve can contact Alice’s
+Assuming the above procedure succeeds, Alice
+SEMwithawell-formedrequestandwithoutAlice’s
+is asked to produce a different SAS signature with
+knowledge, i.e., Alice is off-line. However, this at-
+the same one-time key (i.e., same one-time signa-
+tackresultsinthesameoutcomeastheabove. This
+ture). If Alice can come up with such a signature
+is because, eventually, Alice requests a new signa-
+(meaning that the message signed is different from
+ture and SEM replies with the last (signed) reply.
+the one in the disputed signature), the arbitrator
+Alice, once again, detects an attack.
+concludesthatAlice’sSEMcheatedorwascompro-
+Wenotethattheseattackscanbeprevented: one
+mised. This conclusion is based on the apparent
+waytodosoisforAlicenottorevealheri-thsigna-
+violation of the SAS Invariant. If Alice fails to
+ture until (i−1)-st signature is computed. In other
+produce a different signature, the arbitrator con-
+words, every other signature would be used strictly
+cludes that Alice attempted to cheat.
+for this purpose. Then, if we suppose that Alice-
+SEM communication is private, revealing SIG to
+i
+7 Denial of Service
+Bob(orEve)issafesinceasuccessfulrequesttoAl-
+ice’sSEMwouldrequireknowledgeofSK which
+i−1
+The SAS signature protocol, unlike traditional Alice does not reveal until the next signature is re-
+signature schemes, involves multiple parties and quested. Yet another solution is to use a second,
+communication. It is therefore subject to Denial different hash chain for the sole purpose to authen-
+of Service (DoS) attacks. Since we assume that the ticate Alice’s requests to the SEM.
+communication channel is reliable (cf. Section 4.3), All in all, request attacks, while possible, are de-tectedbytheSASsignatureprotocolduetoits“fail- to obtain the initial signature from the SEM. Since
+stop” property: any manipulation of the signature SEM has retained all relevant state, it will reply
+request is detected by the user who can then inval- withthelasthalf-signature(includingSEM’ssigna-
+idate its own certificate. ture counter) generated for Alice’s SAS certificate.
+User reply attacks are comparatively less effec- Oncesheverifiesthereply,Alicewillrealizeherloss
+tive. If Eve modifies SEM’s reply, short of forging of state and resort to off-line means. However, if a
+anRSAsignature,Alicedetectsthatthereplyisnot maliciousSEMisawareofAlice’slossofstate,itcan
+what she expected and continues re-transmitting use this to its advantage by forging with impunity
+her signature request. Alice’s signatures.
+If Alice looses her entire storage, including the
+7.2 SEM Attacks SAS certificate, the consequences are not particu-
+larlydire. TheSEMwillsimplykeepstateofAlice’s
+“orphan” certificate until it eventually expires.
+Byvirtueofservingamultitudeofregularusers,
+a SEM is a natural DoS attack target. This is not Any loss of SEM’s state is much more serious.
+unique to SAS. For instance, it is easy to mount an Most importantly, if the SEM looses all state per-
+effective DoS attack against an OCSP [1] (or even taining to Alice’s SAS certificate, the SAS Invari-
+worse, a TSP [16]) server. It suffices for the ad- ant property can no longer be guaranteed. (Con-
+versary to flood the victim server with well-formed sider, for example, malicious Alice re-establishing
+requests, i.e., requests for which the server is “au- state of her SAS certificate on the SEM and then
+thoritative” in OCSP. Since the server must digi- obtaining n signatures with the same hash chain.)
+tally sign all replies, it will slowly grind to a halt.
+In SAS, it is appreciably more difficult for the 7.4 SEM Compromise
+adversary to launch this type of an attack. The
+stateful nature of the SEM requires each signature SEM compromise is clearly the greatest risk in
+request to be well-formed: it must contain the ex- SAS.TheadversarywhogainscontrolofaSEMcan
+pectedvalueofthecurrentone-timepublic-key,i.e., un-revoke or refuse to revoke SAS user certificates.
+thepre-imageofthepreviouslyusedpublic-key. All Moreover, it becomes possible to produce fraudu-
+other requests are promptly discarded. lent user signatures: since state is kept of all prior
+Therefore, in order to force the SEM to perform SASsignatures(correspondingtoactiveSAScertifi-
+any heavy-weight tasks (of which signing is really cates), the adversary can sign on behalf of Alice for
+the only one), the adversary must mount simulta- each (SKi,SKi−1) pair found in SEM’s storage.
+A A
+neoususerrequestattacksonasmanyusersaspos- Nonetheless,adefraudedSEMusercanstillhave
+siblethushopingtofloodtheSEM.However,evenif recourseifshefaithfullykeepsstateofallpriorSAS
+thiswerepossible,theattackwouldquicklysubside signatures. Referring to the SAS dispute resolution
+since the SEM will only perform a single signature procedure,whenanarbitratorispresentedwithtwo
+operation per user before demanding to see a pre- distinct and verifiable SAS signatures for the same
+image (next one-time public key). As we already (SKi,SKi−1)pair,heconcludesthattheSEMhas
+A A
+established, finding the pre-imageofthe lastsigned attempted to cheat.
+one-time public key is computationally infeasible.
+7.5 Suicide in SAS
+7.3 Loss of State
+In order to provide rapid and effective response
+As SAS requires a non-trivial amount of state to topotentialattacks,SASincludesawayfortheuser
+be maintainedbybothusers andSEMs, weneedto to “self-revoke” a SAS certificate. This is easily ob-
+consider the potential disaster scenarios that result tained by placing a new value (X.509 extension) in
+in a loss of state. the SAS certificate. This value, referred to as the
+Suppose that Alice looses all records of her prior “suicide hash”, is the hash of a randomly selected
+signatures along with the signature counter. We secret quantity generated by Alice when composing
+further assume that she still has possession of her her certificate request. To self-revoke the certifi-
+SAScertificateandthesecrethashchainseed. Since cate, Alice simply communicates the corresponding
+these two values are fairly long-term, it is reason- suicide pre-image to the SEM and the CA. As a re-
+ableforAlicetostoretheminmorepermanentstor- sult, the former simply stops honoring any further
+age. Because of the “amnesia”, Alice will attempt signaturerequests(pertainingtoAlice’scertificate)while the latter places a reference to the said cer-
+tificate on the next CRL.
+Asimilartechniquehasbeensuggested(withthe
+value revealed by the CA instead) by Micali [17] as
+partofaproposalforanefficientrevocationscheme.
+8 Implementation and Experiments
+To better understand the implications of using
+SAS and to obtain valuable experimental and prac-
+ticaldata,weimplementedtheSASscheme,firstas
+a limping proof-of-concept prototype and, later, as
+a fully functional and publicly available package.
+The implementation, for the most part, follows
+theprotocolaspresentedinSection5. TheSAScer-
+tificateissuanceisdonestrictlyoff-line: allusersob- Figure 3. Snapshot of signer plug-in
+taintheirSAScertificatesfromtheCAasdescribed
+in Section 5.1. The newly issued certificates are
+mailer showing a SAS-signed email message being
+either transferred to SEM off-line or piggybacked
+received. The user is presented with a signature
+onto each user’s initial SAS signature request. We
+icononthemessagescreen;clickingonitcausesthe
+limit our implementation discussion owing to space
+mailer to invoke the plug-in’s verification function
+limitations; further details, including the SAS sig-
+the output of which is displayed in the Figure 5.
+nature and SAS certificate formats can be found in
+Appendix A.
+8.1 SAS Application Example: Eudora
+Plug-in
+To demonstrate the ease and utility of the SAS
+signatures, we developed a plug-in (on top of the
+SAS user library [18]) for the popular Eudora [19]
+mailer.
+When composing email, the sender simply clicks
+on the plug-in button. When ready to send, the
+plug-inreadstheuser’sSAScertificateandextracts
+the SEM’s address. It then communicates with the
+SEM to obtain a SAS signature on the email mes-
+sage. The resulting signed email is verified auto-
+matically by the Eudora plug-in on the receiver’s
+side. Even if the receiver does not use Eudora, the
+SAS-signed email can be verified by any S/MIME Figure 4. Verifier plug-in: signed email
+capable email client such as Netscape Messenger
+or Microsoft Outlook. The verification, however, Toconservespaceweomitthedepictionofauser
+requires the receiver (verifier) to install a stand- trying to sign email with a revoked certificate. In
+alone SAS email verifier program. This program this case, the plug-in displays an error message in-
+is registered as the viewer for the new MIME type forming the user of his certificate’s demise. Further
+(‘‘x.SAS-signature’’). details on the Eudora plug-in can be found in Ap-
+Figure 3 shows a screen snapshot of the Eudora pendix A.
+messagecompositionwindowwhentheuserisready
+to send a signed email. It is essentially the same as 8.2 Experimental Results
+the normal Eudora screen except for the small SAS
+button at the toolbar along the top of the window. As emphasized in the introduction, one of the
+Figure 4 depicts a screen snapshot of the Eudora maingoalsofSASistooff-loadthebulkofsignaturesurementsonthefouruserplatformswiththeSEM
+daemon running on a 933-MHz PIII. All SAS tim-
+ings include network transmission time as well as
+SEM and user processing times. Finally, Table 8.2
+showstheLANround-tripcommunicationdelaybe-
+tweenthe userandthe SEM,for different keysizes.
+The size of the signature request is determined by
+thedigestsizeofthehashfunction,whereas,SEM’s
+replies vary from roughly 164 bytes for 1024-bit
+RSA key to around 1,060 bytes for an 8K-bit RSA
+key.
+We purposely used fairly conservative platforms
+for both the SEM and test users. The slowest user
+platform is a 233-MHz Pentium I laptop which is
+significantly faster than a typical PDA or a cell
+phone. The motivation was to show that, even a
+relatively fast user CPU, the speedup from SAS is
+Figure 5. Verifier plug-in: verification
+appreciable. Clearly,amorerealisticscenariowould
+involve, for example, a 60- to 100-MhZ PDA as the
+user platform and a 1.7- to 2-GhZ PIV as a SEM.
+computation from the weak user to the powerful
+As is evident from Table 8.2, all four user plat-
+SEM. To validate the goals and experiment with
+forms experience noticeable speed-up as a result of
+the SAS implementation, we ran a number of tests
+using SAS, as compared with plain RSA. It is not
+with various hardware platforms and different RSA
+surprising that the two low-end clients (233-MHz
+key sizes.
+and 500-MHz) obtain a factor 4 to 6 speed-up de-
+All experiments were conducted over a 100 Mbit
+pending on the key size. It is interesting, however,
+Ethernet LAN in a lab setting with little, if any,
+that the seemingly most powerful client platform
+extraneous network traffic. All test machines ran
+(1.2-GHz PIV) also experiences a small speed-up.
+Linux version 2.2 with all non-essential services
+However,lookingatTable8.2,itbecomesclearthat
+turned off. The hardware platforms ranged from
+the1.2-GHzPIVisnotthefastestplatformafterall.
+a measly 233-MHz PI (Pentium I) to a respectable
+The explanation for this oddity rests with the chip
+1.2-GHz PIV (Pentium IV). Note that we selected
+maker.
+the lowest-end platform conservatively: only very
+high-end PDAs and palmtops approach 200-MHz
+Processor Key length (bits)
+processorspeed;mostareinthesub-100Mhzrange.
+1024 2048 4096 8192
+OurchoiceoftheSEMplatformissimilarlyconser-
+PI-233 MHz 13.3 52.4 322.5 2,143.4
+vative: a933-MHzPIII.(Atthetimeofthiswriting,
+PIII-500 MHz 9.1 46.3 302.0 2,070.2
+1.7-GHz platforms are available and affordable.)
+PIII-700 MHz 8.5 45.1 299.0 2,059.6
+PIV-1.2 GHz 8.5 45.4 299.0 2,061.0
+Processor Key length (bits)
+1024 2048 4096 8192
+Table 2. SAS signature timings (ms)
+PI-233 MHz 40.3 252.7 1741.7 12,490.0
+PIII-500 MHz 14.6 85.6 562.8 3,873.3
+PIII-700 MHz 9.2 55.7 377.8 2,617.5 To summarize, as Tables 8.2 and 8.2 illustrate,
+PIII-933 MHz 7.3 43.9 294.7 2,052.0 despite large variances in the four clients’ CPU
+PIV-1.2 GHz 9.3 58.7 401.2 2,835.0 speeds,thedifferenceinSASsigntimeisverysmall.
+Moreover, the SAS sign time is only slightly higher
+Table 1. Plain RSA signature timings than the corresponding value for the SEM (PIII-
+(ms) 933 MHz) in Table 8.2, meaning that – communi-
+cation delay aside – a SAS client can sign almost
+as fast as the SEM. The reason is that, to obtain
+First, we present in Table 8.2 plain RSA timings a SAS signature, a user’s cryptographic computa-
+conductedwithOpenSSLonthefivehardwareplat- tion(whichdominatestheoveralltime)amountsto
+forms. Table 8.2 illustrates the SAS timing mea- message hashing and signature verification. Hash-ing is almost negligible as compared to public key is much less likely to generate high-quality (or
+operations. RSA signature verification is also quite sufficiently long) RSA factors (p,q) and key-pairs
+cheap in comparison to signing since we use small thanamuchmorepowerfulandsophisticatedSEM.
+public exponents.
+Signature Causality. Totalordercanbeimposed
+Processor Key length (bits) over all SAS signatures produced by a given user.
+1024 2048 4096 8192 This is a direct consequence of the hash chain
+PI-233 MHz 0.6 0.7 1.1 1.7 construction and the SAS Invariant. In other
+PIII-500 MHz 0.4 0.5 0.8 1.2 words, total ordering can be performed using
+PIII-700 MHz 0.1 0.2 0.2 0.3 the monotonically increasing signature counter
+PIV-1.2 GHz 0.4 0.5 0.8 1.2 included in each SAS signature.
+Table 3. Network round-trip delay (ms) Dispute Resolution. Signature Causality can be
+used to provide unambiguous dispute resolution in
+case of private key compromise. Recall that the
+compromise of a private key in a traditional signa-
+9 Benefits and Drawbacks tureschemeresultsinchaos. Inparticular,allprior
+signatures become worthless unless the use of a
+secure timestamping service is explicitly mandated
+In summary, the SAS signature scheme offers
+for all signer and signatures. In SAS, once the time
+several important benefits as described below:
+of compromise is established, signatures can be
+Efficient Signatures. As follows from the pro-
+easily sorted into pre- and post-revocation piles.
+tocol description and our experimental results,
+the SAS signature scheme significantly speeds up
+Attack Detection. As discussed in Section 7,
+signature computation for slow, resource-limited
+an adversary can succeed in obtaining a single
+devices. Even where speed-up is not as clearly
+fraudulent half-signature (not a full SAS signature)
+evident (e.g., with small key sizes), SAS signatures
+by substituting a message of its own choosing in
+conserve CPU resources and, consequently, power,
+the user’s signature request. This essentially closes
+for battery-operated devices.
+the door for the adversary since it is unable to
+obtain further service (short of inverting the hash
+Fast revocation. TorevokeaSAScertificate,itis
+function). The real user will detect that an attacks
+sufficient for the CA to communicate to the correct
+has taken place the next time when it tries to run
+SEM. This can be achieved, for example, with CA
+the SAS signature protocol with its SEM.
+simply issuing a new CRL and sending it to the
+SEM. Thereafter, the SEM will no longer accept
+SAS signature requests for the revoked certificate. Limited Damage. Even if the entire SAS hash
+We remark that, with traditional signature chain is compromised (i.e., an adversary obtains
+schemes, the user who suspects that his key has the seed of the hash chain), the damage is con-
+been compromised can ask the CA to revoke the tained since the adversary can generate at most
+certificate binding this key to the user. However, n signatures. Furthermore, a user whose hash
+the adversary can continue ad infinitum to use chain is compromised will detect the compromise
+the compromised key and the verification burden the very next time she attempts to contact the
+is placed on all potential verifiers who must have SEM. (This is because the SEM will reply with
+access to the latest CRL. With SAS, once the SEM its last half-signature ostensibly computed for the
+is notified of a certificate’s revocation, the adver- requesting user.)
+sary is no longer able to interact with the SEM to
+obtain signatures. Hence, potential compromise Alas, the SAS scheme has some notable draw-
+damage is severely reduced. backs as well:
+• Each SEM is a single point of failure and a
+More secure signatures. Since only a SEM performance bottleneck for the users it serves.
+performs real RSA public key operations (key
+generation, signature computation), it can do so •AsdiscussedinSection7,aSEMsigns(withRSA,
+with stronger RSA keys than would otherwise be to produce its half-signature) a response to every
+used by the users. Indeed, a small PDA-like device well-formed signature request. This feature can beexploited by an adversary in order to mount a DoS in Cryptology – CRYPTO ’87 (C. Pomerance,
+attack. However, even the best attack can succeed ed.),no.293inLectureNotesinComputerSci-
+in making a SEM sign at most once for each user ence, (SantaBarbara, CA,USA),pp.369–378,
+it serves. Of course, an adversary can still flood Springer-Verlag, Berlin Germany, Aug. 1988.
+any SEM with malformed requests which can cer-
+[4] D. Boneh, X. Ding, G. Tsudik, and B. Wong,
+tainlyrenderaSEMunavailabletolegitimateusers.
+“Instanteneous revocation of security capabili-
+ties,” in Proceeding of USENIX Security Sym-
+• Unlike other mediated or multi-party signature
+posium 2001, Aug. 2001.
+methods (such as mRSA or 2-party DSA), SAS
+signatures are not compatible with any other basic
+[5] P. MacKenzie and M. K. Reiter, “Networked
+signature type. In other words, SAS signatures are
+cryptographic devices resilient to capture,” in
+nottransparenttoverifiers. Therefore,allpotential
+Proceedings of the 2001 IEEE Symposium on
+verifiers must avail themselves of at least the SAS
+Security and Privacy, pp. 12–25, May 2001.
+verification method.
+[6] P. MacKenzie and M. K. Reiter, “Two-party
+• It is possible, but neither easy nor elegant, for generation of dsa signatures,” in Advances in
+a user to switch among different SEMs in SAS. Cryptology – CRYPTO ’01 (J. Kilian, ed.),
+One way is to have multiple SAS certificates; one no.2139inLectureNotesinComputerScience,
+for a distinct SEM. Another way is to use on-line pp.137–154,Springer-Verlag,BerlinGermany,
+hand-over of a SAS certificate among two SEMs. Aug. 2001.
+Neither solution is particularly attractive due to
+[7] R. Ganesan, “Argumenting kerberose with
+the difficulty of replication of a statfule server. (In
+pubic-key crytography,” in Symposium on
+mRSA [4], for example, a user can swich among
+Network and Distributed Systems Security
+SEMs transparently, where SEM is stateless. )
+(T. Mayfield, ed.), (San Diego, California), In-
+ternet Society, Feb. 1995.
+• SAS involves on-going state retention for regular
+users and SEMs. This burden is particularly heavy
+[8] C.Boyd,“Digitalmulitsignatures,”Cryptogra-
+forSEMs(userscanoff-loadtheirstateperiodically)
+phy and Coding, pp. 241–246, 1989.
+since they must keep complete signature histories
+for all users served. [9] Y. Desmedt and Y. Frankel, “Threshold
+cryptosystems,” in Advances in Cryptology –
+Acknowledgements CRYPTO ’89 (G. Brassard, ed.), no. 435 in
+Lecture Notes in Computer Science, (Santa
+Barbara, CA, USA), pp. 307–315, Springer-
+We thank Dan Boneh for some useful discus-
+Verlag, Berlin Germany, Aug. 1990.
+sions, Ignacio Solis for early prototyping of the
+SASlibraryandYongdaeKimforcommentsonthe [10] O.Goldreich,“Securemulti-partycomputation
+draft of this paper. We also gratefully acknowledge (working draft),” 1998.
+the anonymous referees whose comments served to
+greatly improve the final version of this paper. [11] B. Schneier, Applied Cryptography: Protocols,
+Algorithms, andSourceCodeinC. JohnWiley
+& Sons, Inc, 1996.
+References
+[12] L. Lamport, “Password authentication with
+[1] M.Myers,R.Ankney,A.Malpani,S.Galperin, insecure communication,” Communications of
+andC.Adams,“RFC2560: Internetpublickey the ACM, vol. 24, pp. 770–772, Nov. 1981.
+infrastructureonlinecerticatestatusprotocol-
+[13] R. L. Rivest, A. Shamir, and L. M. Adle-
+OCSP,” June 1999.
+man, “A method for obtaining digital signa-
+[2] N. Asokan, G. Tsudik, and M. Waid- tures and public-key cryptosystems,” Journal
+ner, “Server-supported signatures,” Journal of of the ACM, vol. 21, pp. 120–126, Feb. 1978.
+Computer Security, vol. 5, no. 1, 1997.
+[14] M. Bellare, R. Canetti, and H. Krawczyk,
+[3] R. C. Merkle, “A digital signature based on a “Keying hash functions for message authenti-
+conventionalencryptionfunction,”inAdvances cation,”inAdvancesinCryptology–CRYPTO’96 (N.Koblitz, ed.), no. 1109 in Lecture Appendix A: SAS Implementation De-
+NotesinComputerScience,pp.1–15,Springer- tails
+Verlag, Berlin Germany, 1996.
+A.1 SAS Signature Format
+[15] S. Boeyen, T. Howes, and P. Richard, “RFC
+2559: Internet x.509 public key infrastructure
+The well-known PKCS#7 [20] standard defines
+operational protocols - LDAPv2,” 1999.
+a general cryptographic message syntax for digital
+[16] C.Adams,P.Cain,D.Pinkas,andR.Zuccher- signatures. In it, SignerInfo includes an optional
+ato, “Internet x.509 public key infrastructure set of signed attributes as well as an optional set
+timestampprotocol(tsp),draft-ietf-pkix-time- of unsigned attributes. This flexibility allows us to
+stamp-15.txt,” May 2001. easily extend the PKCS#7 signature syntax to ac-
+commodate SAS signatures. This is because a SAS
+[17] S.Micali,“Enhancedcertificaterevocationsys- signature can be viewed as a regular public key sig-
+tem,” Tech. Rep. TM-542b, MIT/LCS, May nature with an appended extra value, i.e., the hash
+1996. pre-image.
+The format changes are only a few new re-
+[18] “SAS plug-in web page,” available at:
+quirements for authenticatedAttributes and
+http://sconce.ics.uci.edu/sucses/.
+unauthenticatedAttributes of the SignerInfo
+field. In a SAS signature, SignerInfo is the same
+[19] “Qualcomm eudora mailer,” available at:
+as in plain PKCS#7, except:
+http://www.eudora.com.
+• authenticatedAttributes:
+[20] R. Laboratories, “Cryptographic message syn-
+this field is not OPTIONAL, but MANDA-
+tax standard,” Public Key Cryptography
+TORY. It must contain, at a minimum,
+Standards 7, RSA Laboratories, Redwood
+two more attributes aside from those set in
+City, CA, USA, 1993. Available at URL:
+PKCS#7:
+ftp://ftp.rsa.com/pub/pkcs/. 1993.
+– SAS issuer sn: IssuerAndSerialNumber –
+[21] R. Housley, W. Ford, W. Polk, and D. Solo,
+specifies the SAS client’s certificate by is-
+“RFC 2459: Internet x.509 public key infras-
+suer name and issuer-specific serial num-
+tructure certificate and crl profile,” Jan. 1999.
+ber
+[22] “The openssl project web page,” – SAS signed token index: INTEGER –
+http://www.openssl.org. specifies the SAS client signed one-time
+signature index (counter)
+[23] P. Kocher, “On certificate revocation and val-
+– SAS signed token value: OCTET
+idation,” in Financial Cryptography – FC ’98,
+STRING – specifies the SAS client
+Lecture Notes in Computer Science, Springer-
+signed one-time public key
+Verlag, Vol. 1465, pp. 172–177, 1998.
+Note that PKCS#7 requires
+[24] M. Naor and K. Nissim, “Certificate revoca-
+issuerAndSerialNumber in SignerInfo
+tionandcertificateupdate,”inProceedings 7th
+to identify signer’s key. In SAS, this corre-
+USENIX Security Symposium (San Antonio,
+sponds to SEM’s key. Therefore, we require
+Texas), Jan 1998.
+another field SAS issuer sn to identify the
+user’s SAS certificate containing the SAS root
+[25] M. Goodrich, R. Tamassia, and A. Schwerin,
+key.
+“Implementation of an authenticated dictio-
+narywithskiplistsandcommutativehashing,”
+• unauthenticatedAttributes:
+in Proceedings of DARPA DISCEX II, 2001.
+this field is not OPTIONAL, but MANDA-
+TORY. It must contain:
+[26] W. Aiello, S. Lodha, and R. Ostrovsky, “Fast
+digital identity revocation,” in Advances in – SAS preimage token value: OCTET
+Cryptology–CRYPTO’98(H.Krawczyk,ed.), STRING – specifies the SAS user’s one-
+no.1462inLectureNotesinComputerScience, time hash pre-image of the signed token
+Springer-Verlag, Berlin Germany, Aug. 1998. specified in SAS signedtoken value.This attribute is unsigned. It is inserted the SEM and the user share the same CA).
+bytheuserwhentheSEM’shalf-signature Uniquely identifies SEM’s certificate and the
+is received and verified. corresponding public key.
+Because of format compatibility, a SAS signature
+A.3 Eudora Plug-in Details
+can be shipped as a normal PKCS#7 signature.
+However, the verification method is obviously dif-
+We implemented the SAS plug-in as two email
+ferent. The normal PKCS#7 verification routines
+translators defined in Eudora’s plug-in API [19].
+can only verify the SEM half-signature (i.e., RSA
+Specifically, SAS signing is a Q4-Transmission
+public key signature).
+translator and SAS verification is an On-Display
+The extra step in (light) verification of
+translator.
+a SAS signature is the comparison of the
+SAS signing translator is invoked when Eudora
+hash of SAS preimage token value and the
+is ready to send email and is fed with the entire
+SAS signed token value assuming light verifica-
+email message, including its MIME header. When
+tionisused. Otherwise,asdescribedabove,thever-
+SAS signature protocol terminates, the whole SAS
+ifierchecksthevalidityofSAS signed token value
+signature in PKCS#7 format is appended to the
+and SAS signed token index by computing the
+email body as an attachment with the MIME sub-
+iterative hash and comparing the result with the
+type ‘‘x.SAS-signature’’.
+SAS root key in the signer’s SAS certificate.
+SASverificationtranslatoriscalledwhenEudora
+The fact that two parties participate in sign-
+isabouttodisplayaSAS-signedemail. Asintradi-
+ing result in a semantic issue when SAS signa-
+tionalsignatureverification,acertificatechainmust
+tures are used in conjunction with S/MIME. Most
+be at hand. Our plug-in allows users to specify the
+S/MIMEapplicationsenforceapolicyrequiringthe
+root CA certificate, assuming, of course, that the
+sender of the message (as shown in the RFC822
+SEM and the SAS client share the same certificate
+From: field) to match the e-mail address in the
+issuer. It is easy to build a chain by extracting
+signer certificate. Unfortunately, in SAS, the
+SEM and client’s certificate from the PKCS#7 sig-
+sender is the holder of the SAS certificate, e.g., al-
+nature. In this implementation, we chose not to
+ice@wonderland.com. Whereas, the “signer” is the
+adopt opaque signing. If the signature is invalid,
+SEM, e.g., sem@wonderland.com. Therefore, a SAS
+an error message window is popped up while the
+verifier should be aware of the presence of the un-
+original email body is still displayed.
+signed attribute and use the proper email address
+Since SAS signature verification is different from
+in comparison.
+normal S/MIME, non-Eudora applications, like
+NetscapeorOutlook,cannotverifyitwithoutaspe-
+A.2 SAS Certificate
+cial verification program. We provide such a stand-
+alone
+To support SAS attributes, we extended X509v3
+handling[21]inthepopularOpenssllibrary[22]. In
+Appendix B: Related Work on Certifi-
+addition to the usual X509v3 fields, a SAS certifi-
+cate Revocation
+cate also certifies the following:
+• SASHashType: DigestAlgorithmIdentifier–
+• CRLs and ∆-CRLs: Certificate Revocation
+identifiesthehashalgorithmusedingenerating
+Listsarethemostcommonwaytohandlecertificate
+the hash chain;
+revocation. The Validation Authority (VA) period-
+• SASPublicKeyIdentifier: OCTET STRING – ically posts a signed list of all revoked certificates.
+SAS root key in the hash-chain. These lists are placed on designated servers called
+CRL distribution points. Since these lists can get
+• SASPublicKeyPara: INTEGER – length of the quite long, a VA may alternatively post a signed
+hash-chain. ∆-CRL which only contains the list of revoked cer-
+tificates since the last CRL was issued. When ver-
+• SASServerName: STRING – SEM’s host name.
+ifying a signature on a message, the verifier checks
+This field indicates the location of SEM and
+that, at the time that the signature was issued, the
+has no security meaning.
+signer’s certificate was not on the CRL.
+• SASSerialNumber: INTEGER – SEM’s certifi- • OCSP: The Online Certificate Status Proto-
+cate serial number. (Here it is assumed that col (OCSP) [1] improves on CRLs by avoiding thetransmissionoflongCRLstoeveryuserandbypro- is signed by the VA.
+vidingmoretimelyrevocationinformation. TheVA
+sendsbackasignedresponseindicatingwhetherthe A user wishing to validate a certificate issues a
+specifiedcertificateiscurrentlyrevoked. Whenver- query to the closest VA server. Any insecure VA
+ifying a signature, the verifier sends an OCSP (cer- can produce a convincing proof that the certificate
+tificate status request) query to the VA to check if is (or is not) on the CRT. If n certificates are cur-
+the enclosed certificate is currently valid. The VA rently revoked, the length of the proof is O(logn).
+answers with a signed response indicating the cer- Incontrast,thelengthofthevalidityproofinOCSP
+tificate’s revocation status. Note that OCSP pre- is O(1).
+ventsonefromimplementingstrongersemantics: it • Skip-lists and 2-3 trees: One problem with
+is impossible to ask an OCSP VA whether a certifi- CRTsisthat,everytimeacertificateisrevoked,the
+cate was valid at some time in the past. entire CRT must be recomputed and distributed in
+itsentiretytothevariousVAservers. Adatastruc-
+• Certificate Revocation Trees: Kocher [23]
+ture allowing for dynamic updates would solve this
+suggested an improvement over OCSP. Since the
+problem since the secure VA would only need to
+VA is a global service, it must be sufficiently
+sendsmallupdatestothedatastructurealongwith
+replicated to handle the load of all validation
+a signature on the new root of the structure. Both
+queries. This means the VA’s signing key must
+2-3treesproposedbyNaorandNissim[24]andskip-
+be replicated across many servers which is either
+lists proposed by Goodrich [25] are natural data
+insecure or expensive (VA servers typically use
+structures for this purpose. Additional data struc-
+tamper-resistance to protect the VA’s signing key).
+tures were proposed in [26]. When a total of n cer-
+Kocher’s idea is to have a single highly secure VA
+tificates are already revoked and k new certificates
+periodically post a signed CRL-like data structure
+must be revoked during the current time period,
+to many insecure VA servers. Users then query
+the size of the update message to the VA servers is
+these insecure VA servers. The data structure
+O(klogn) (as opposed to O(n) with CRT’s). The
+(CRT) proposed by Kocher is a hash tree where
+proof of certificate’s validity is O(logn), same as
+the leaves are the currently revoked certificates
+with CRTs.
+sorted by serial number The root of the hash tree

@@ -1,0 +1,1007 @@
+Inoculating SSH Against Address Harvesting
+StuartE.Schechter JaeyeonJung WillStockwell CynthiaMcLain
+∗ ∗ ∗
+MITLincolnLaboratory MITCSAIL MITLincolnLaboratory MITLincolnLaboratory
+ses@ll.mit.edu jyjung@mit.edu bigwill@mit.edu cdmclain@ll.mit.edu
+Abstract In 2004, weaknesses in the host authentication prac-
+tices employed by SSH were exploited by a single at-
+Address harvesting is the act of searching a compro- tackertocompromisesystemsatamultitudeofmajoruni-
+misedhostforthenamesandaddressesofothertargetsto versities, corporations, nationallaboratories, supercomput-
+attack, such as occurs when an email virus locates target ing centers, and even military installations [8, 17, 33, 22],
+addresses from users’ address lists or mail archives. We with significant consequences. Operating system source
+examine how host addresses harvested from Secure Shell code used to control routers was stolen from Cisco Sys-
+(SSH) clients’ known hosts files can aid those attack- tems [13]. Other sites had to be taken offline for multi-
+ingSSHservers. Eachuser’sknown hostsfilecontains pledays[17,8,33]. Logsatoneofthecompromisedsites
+the names of every host previously accessed by its owner. showedSSHconnectionstohostsintheknown hostsfile
+Thus,whenanattackercompromisesauser’spasswordor beinginitiatedimmediatelyafterthatfilewasreadbytheat-
+identity key, the known hosts file can be used to iden- tacker[8].
+tifythosehostsonanetworkthataremostlikelytoaccept Attackersaredrawntoknown hostsfiles,maintained
+thiscompromisedcredential. Suchattacksarenottheoret- bytheSSHclientforeachuser,becauseitprovidesanabun-
+ical – a single attacker who targeted host authentication dantharvestofnamesandaddressesofnewtargethoststo
+viaSSHandemployedknown hostsaddressharvesting attack. Each file contains a list of every host previously
+was able to gain access to a multitude of academic, com- contactedviaSSHbytheuser,forthepurposeofmapping
+mercial, and government systems. To show the value of these hosts to their public keys. Hosts are listed in the or-
+known hosts files to such attackers, we present results derinwhichtheywerefirstcontacted,suchthatthebottom
+ofastudyofknown hostsfilesandotherdatacollected ofthelistcontainsthehostsatwhichtheuser’saccesscre-
+from 173 hosts distributed over 25 top level domains. We dentialsaremostlikelytoremainvalid. Suchreliabletarget
+alsocollecteddataonusers’credentialmanagementprac- lists reduceboth the timerequired to findvulnerable hosts
+tices, and discovered that 61.7% of the identity keys we andthelikelihoodthatattackswillraisealarmsduetofailed
+encountered were stored unencrypted. To show how host TCPconnectionattemptsorSSHauthenticationattempts.
+authentication attacks via SSH could evolve if automated, To better understand the consequences of attacks that
+we survey mechanisms used to attack and their suitability harvest addresses from SSH, we have initiated the first
+foruseinself-propagatingcode. Finally,wepresentcoun- multi-institution study on SSH known hosts relation-
+termeasures devised to defend against address harvesting, shipsandkeymanagement,collectingdatafrom2,477user
+whichhavebeenadoptedbytheOpenSSHteamandoneof accountson173hosts.Weusethedatafromthisstudy,pre-
+thetwomaincommercialSSHsoftwarevendors. sented in Section 2, to explain how these known hosts
+fileshaveenabledattackerstorepeatedlycompromisehost
+afterhost,andnetworkafternetwork. Weshowthatasmall
+numberofpromiscuoususersareresponsibleforthemajor-
+1 Introduction
+ityofknown hostsentries, andthatthereexistsasetof
+gatewayhoststhatcontributesignificantlytothevulnerabil-
+The SSH protocol has done much to popularize the use ityofthenetwork.
+ofcryptographyforremotecommandexecution,filetrans- InSection3wediscussthecountermeasuresthatcanbe
+fer, and other services. However, cryptographic channels usedtosafeguardagainstaddressharvestingandthetrade-
+alone are not enough to ensure these services will only be offs they require. In Section 4 we describe an additional
+accessed by their intended users and for the purposes they enhancementtoOpenSSHthatweimplementedtomakeit
+authorize. easierforusersofgatewayhoststoavoidriskypracticesthat
+*ThisworkissponsoredbytheUnitedStatesAirForceunderAirForceContractFA8721-05-C-0002.Opinions,interpretations,
+conclusionsandrecommendationsarethoseoftheauthorandarenotnecessarilyendorsedbytheUnitedStatesGovernment.hostinformation Hosts Hosts
+OSnameandversion TLD root all TLD root all
+SSHclientvendorandversion .edu 12 73 .net 8 22
+IPaddress* .com 10 17 .org 2 7
+Netmask
+.de 4 5 .it 2 4
+.uk 3 3 .kr 1 3
+useridentification
+.pl 2 3 .ca 0 3
+Username**
+.fi 2 3 .dk 1 2
+IPaddress*ofhostexportinguser’shomedir
+.nl 2 2 .be 1 2
+.pt 1 1 .cl 1 1
+known hostsfileforeachuser
+IPaddress*ofeachdestinationhost .ph 1 1 .biz 1 1
+.nu 1 1 .cx 1 1
+authorized keysfileforeachuser .au 1 1 .ee 1 1
+Publicidentitykeys** .gov 0 1 .se 0 1
+.sk 1 1
+identitykeyfilesforeachuser
+Publicidentitykeys** Table 2. Root submitting hosts and all sub-
+Flag:setifmatchingprivatekeyisencrypted mitting hosts grouped by top level domain
+SSHkeyversion (excludeshostswithundefinedPTRrecords)
+Table 1. The contents of the report gener-
+atedby collect-ssh.pl, organizedbydata
+source
+2.1 Collectionmethodology
+exposeauthenticationcredentialstoabuse.
+Thecategoriesofinformationexaminedbyourdatacol-
+In anticipation of more sophisticated attacks, we exam-
+lectionandreportingscriptaresummarizedinTable1.
+inemechanismsusedtoattackhostauthenticationviaSSH
+for their applicability to self propagating malware in Sec-
+AllIPaddressescollected,markedwithastar(*)inTa-
+tion5. Aswecouldfindnopastsurveyofmechanismsfor
+ble 1, have been anonymized using the prefix preserving
+impersonating users to authenticate to hosts via SSH, we
+permutationalgorithmofXuetal.[31]. Theprefixpreserv-
+providesuchasurveyinAppendixA.
+ingpropertyofthepermutationensuresthattwoaddresses
+Related work and related threats are discussed in Sec- withinthesamenetworkbeforeanonymizationwillfallinto
+tion6.WeconcludeinSection7anddiscussindustryadop- thenetworkafteranonymization. Thepublickeysanduser-
+tionofourproposedcountermeasuresintheepilogthatfol- namesreportedbyourscript,markedwithtwostars(**)in
+lows. Table1,arereplacedbytheirSHA1[15]hashes.
+Whenourdatacollectionscriptrunsonasubmittinghost
+itqueriesthehost’sIPaddressandincludestheanonymized
+2 QuantifyingHarvestableData
+addressinitsreport. Wecallthisthesubmitter-viewIPad-
+dress. When we receive the submitted report over a TCP
+connection,wecollectthesourceIPaddressoftheconnec-
+To better understand how attacks can spread via SSH, tion as our data collection server observed it and refer to
+wehaveundertakenamulti-institutionefforttocollectdata the anonymized form of this address the recipient-view IP
+fromusers’known hostsdatabaseentriesandtheirover- address. Submitter-viewIPaddressesallowustodifferen-
+allSSHconfiguration. Wemadeavailableadatacollection tiatetwohostsbehindanetworkaddresstranslation(NAT)
+and reporting script, written in Perl, that could be run on boxthatmayappeartoourdatacollectionserver,whichre-
+eachhosteitherbyindividualuserstocollectdatafromtheir ceivesthesubmissions,tooriginatefromthesameaddress.
+own account or by system administrators to collect data Therecipient-viewIPaddressesareneededtodifferentiate
+from all user accounts. The data collection and reporting hosts behind two different NATs that may have the same
+script is publicly available at http://nms.csail.mit. submitter-viewIPaddress,butareactuallyondifferentnet-
+edu/projects/ssh/. works.1
+0.8
+0.6
+0.4
+0.2
+0
+0 2 4 6 8 10 12 14 16 18 20 22 24 26 28 30 32
+sriap
+tsd/crs
+fo
+noitcarf
+evitalumuc
+100
+empirical data
+reference line 90
+80
+70
+60
+50
+40
+30
+20
+10
+0
+0 2 4 6 8 10 12 14 16 18 20
+bit-wise network distance from source host
+Figure 1. The distribution of bit-wise
+network distances between each unique
+known hosts source/destination address
+pair,wherethesourceisthehostfromwhich
+the known hosts file containing the destina-
+tionaddresswasread.
+2.2 Demographics
+At the time of writing we have received data from 173
+distincthosts,whichwerefertoassubmittinghosts. These
+hosts contain 2,477 user accounts with known hosts
+files,whichinturncontainatotalof37,765known hosts
+entries to 12,035 unique destination addresses. Of those
+2,477 users, 2,359 were submitted by the 63 root submit-
+ting hosts, those submitting hosts on which the collection
+script was run as root and on which data were submitted
+fromallusers. Fortheremaining110submittinghosts,we
+received a total of 118 individual user submissions with at
+mosttwousersubmissionsperhost.
+Our study drew its participants from various locations.
+Table2showsthedistributionofsubmittinghostsacross25
+topleveldomains. Weinferthetopleveldomainofasub-
+mitting host using a reverse DNS lookup of the recipient-
+viewIPaddressbeforetheaddressisanonymized.
+2.3 TheReachof known hostsEntries
+If an adversary gains access to one or more
+known hosts files, where are the entries likely to
+lead? To answer this question we measured the bit-wise
+network distance between each source host and every
+unique destination address in its known hosts files.1
+The bit-wise network distance between two addresses a
+1
+and a is the number of bits that follows their longest
+2
+common prefix. Figure 1 shows the cumulative fraction
+1When the submitter-view of the source address differed from the
+recipient-view(seedefinitionsinSection2.1),wemeasuredthedistance
+fromthesourceaddressthatwasclosertothedestinationaddress.
+)%(
+stnuocca
+resu
+fo
+FDCC
+intermediate
+distant
+close
+# of known_hosts destinations
+(a)
+100
+90
+80
+70
+60
+50
+40
+30
+20
+10
+0
+0 2 4 6 8 10 12 14 16 18 20 22 24 26 28 30 32 34 36 38 40
+)%(
+stsoh
+gnittimbus
+toor
+fo
+FDCC
+distant
+close
+intermediate
+# of unique known_hosts destinations
+(b)
+Figure2.Thecomplementarycumulativedis-
+tribution function of unique known hosts
+destinations of each distance category per
+user(a)andperrootsubmittinghost(b).
+of all unique known hosts source/destination pairs
+that fall within a given bit-wise network distance of each
+other. To illustrate that known hosts destinations are
+locally biased, we placed a reference line representing the
+distributionofdistancesforaddresspairschosenrandomly
+from the uniform distribution (half of destinations would
+have a different high order bit and a distance of 32, one
+quarteradistanceof31,andsoon.)
+We segregated known hosts destination addresses
+intothreecategoriesbasedonthebit-wisenetworkdistance
+from their source host. The roughly 60% of destinations
+found to be within the same /16 (Class B) as their source
+werecategorizedas close tothat source. About 30%were
+in a different /8 than their source and were categorized as100
+80
+60
+40
+20
+0
+0 5 10 15 20 25 30 35 40 45 50
+)%(
+snoitanitsed
+euqinu
+fo
+#
+fo
+FDC
+10000
+1000
+100
+10
+1
+1 10 100 1000
+% of user known_hosts files
+Figure 3. This figure shows the smallest
+possible percentage of user known hosts
+files (X axis) needed to identify a given
+percentage of the unique destinations ob-
+servedinourstudy(Yaxis).
+snoitanitsed
+stsoh_nwonk
+euqinu
+fo
+#
+# of user accounts
+Figure 4. The relationship between the
+number of users with known hosts files
+and the number of unique destinations
+overthesetofrootsubmittinghosts.
+distant. Theroughly10%thatremained,whichfellwithin 2.4 EvidenceofPromiscuousUsersandGateway
+thesame/8astheirsourcebutnotwithinthesame/16,were Hosts
+categorizedasintermediate.
+We then asked, how many known hosts destinations
+ofeachcategorycouldanadversaryexpecttodiscoverona
+The median-based analysis above de-emphaized the
+hostifhecompromisedoneaccountorallofitsaccounts?
+heavy-tail of the distribution that contains the ‘promis-
+Figure 2(a) shows the distribution of unique des-
+cuous’ users and hosts that contributed the most
+tination addresses of each distance category over the
+known hosts entries. From Figure 3 we observe the
+known hosts files collected. Nearly half of all users’
+5% of users that were most promiscuous collectively had
+known hosts files contained entries to one or more dis-
+known hostsentriestoover75%oftheuniquedestina-
+tantdestinations(49%)andfourormoreclosedestinations
+tionaddressescollectedinourstudy.
+(47%). Over 10% of all users had more than ten distant
+known hosts destinations and eighteen or more close Figure 4 shows the expected correlation between the
+destinations. number of users with known hosts files per root sub-
+We show in Figure 2(b) the distribution of unique mittinghostandthenumberofknown hostsentriesper
+known hosts destinations over the set of root submit- root submitting host. In the upper right-hand corner there
+ting host. Unlike the distribution of unique destinations are four hosts with more than 100 users and 1,000 unique
+peruser,therearemoreuniquedistantdestinationsperroot known hosts destinations. We infer from the plethora
+submittinghostthanuniqueclosedestinations,asdifferent of users accounts that these hosts act as gateways – hosts
+users on the same host tend to connect to the same nearby to which users connect via an incoming connection to the
+hosts but different distant hosts. Half of all hosts contain SSH server and then initiate outgoing connections via the
+known hostsentriestofourteenormoredistantdestina- SSH client. When users initiate outgoing connections via
+tions,andmorethanonequartercontainentriestooverforty thegatewayhost’sclient,eithertheuser’scredentialsmust
+distantdestinations. besenttotheclientoraconnectionmustbeforwardedtothe
+Returning to our original question of where user’ssigningagentontheclient. Shouldanadversarycon-
+known hosts entries lead, the data show that an trol a gateway host when a user initiates an outgoing con-
+adversary can not only identify nearby hosts but also nection,theadversarywilleitherbeabletostealtheuser’s
+those on distant networks. In fact, the known hosts credentialsorrequestthatagenttosignonhisbehalf.
+entries from the 173 submitting hosts collectively contain
+destinations to 107 different /8 (class A) prefixes, or 67%
+ofallvalid/8networks.2
+networksand94unallocated/8networks,asdocumentedbytheInternet
+2The160validclassAnetworksarethosethatexcludetwoprivate/8 AssignedNumbersAuthority[9,10]79 79
+72 16 72
+83 83 83
+75 70 61 75 70 61
+80 80
+74 82 74
+84 84
+78 78
+76 76
+73 73
+77 65 77 65
+71 71
+81 81 81 60
+87 87 87
+(a) (b) (c)
+Figure5.Submittinghostswithinonenetworkthatarereachablein1(a),2(b),and3(c)stepsfrom
+asourcehostbytraversingknown hostsedges.
+2.5 The Impact of known hosts Harvesting on SSH servers would respond to between 1% and just over
+RemoteExploitAttacks 1.5% of scans. Within a densely populated academic net-
+work, they found that more than 10% responded to SSH
+Howmuchmorequicklycananattackeridentifyanew scans. RandomlyscanningthefullIPv4addressspace,they
+targetbyusingaddressharvestingthanbyusingalternatives foundthesuccessratewascloserto0.05%.
+such as scanning? The answer depends on whether the at-
+2500
+tackerislookingforanyhostrunninganSSHserveroronly
+thosehoststhatacceptoneofthecredentialsthathehasac-
+2000
+quired. In this section, we focus on the former case, and
+assumethatanattackercanbreakintomostSSHserversby
+1500
+using a software or protocol exploit. We address the latter
+caseinthefollowingsection.
+1000
+Figure 5 illustrates how, given a remote exploit in an
+SSH server, an attacker starting from a single host could
+500
+use known hosts entries to rapidly walk through an in-
+stitutional network from our study. Figure 5(a) shows the
+0
+originhostandthesubmittinghoststhataredestinationsof 1 2 3 4 5
+its known hosts entries. The submitting hosts that are
+destinationsofthesehostsareaddedinFigure5(b). Athird
+stepyieldsthecollectionofsubmittinghostsinFigure5(c).
+To simplify these graphs, the large set of destinations that
+arenotsubmittinghostsornotwithinthesamenetworkare
+notshown.
+Tobetterquantifytherateofpropagation,wecomputed,
+for each of the 173 submitting hosts, the number of addi-
+tional target hosts that are reachable in a given number of
+steps.Figure6showsthemediannumberofreachablehosts
+ateachstep. Overahundrednodesarereachableinthesec-
+ond step and thousands in the third. The propagation then
+diminishesaswereachthelimitsofthedatacollectedinour
+study.
+To put address harvesting in context, we looked at the
+alternativeofscanningforSSHservers. Weuseddatafrom
+the 2001 study of Provos and Honeyman [18], who found
+that/8networkswiththedensestpopulationofresponding
+stsoh
+elbahcaer
+fo
+rebmun
+naidem
+step
+Figure 6. The median number of hosts that
+canbereachedfromanoriginhostbytravers-
+ingallknown hostsedges.
+In summary, a valid known hosts entry can replace
+10 to 2,000 scans, depending on whether the attacker has
+already identified a densely populated network or if he is
+scanning randomly. Whereas known hosts entries can
+be used to reach 2000 hosts in just three propagation cy-
+cles, hundreds of thousands to millions of scans would be
+required to reach this many hosts once nearby targets had
+beenexhausted. Asevena20%connectionsuccessrateis
+lowenoughtoindicatemaliciousbehavior[19],forcingat-
+tackerstoscancanbeaneffectivemeansofmakingattacks
+detectablewhilesimultaneouslyslowingthemdown.2.6 The Effect of known hosts on Speed of Cre- SSH User/Admin
+dentialManagementAttacks Reads Writes Reads Writes
+known hosts X X X X
+Attackershaveusedpasswordcrackingattacksandpass- configfiles X X X
+words collected via trojaned SSH clients to attack SSH logfiles X X
+servers without exploiting any flaws in the software itself.
+Theycouldalsoeasilymodifythesetoolstocrackthepass Table 3. Of the files read or written by SSH
+phrases of encrypted identity keys. For attacks that em- that contain host names/addresses of other
+ploy compromised credentials, the attacker must identify hosts, only known hosts must be readable
+specific SSH servers that accept these credentials. As andwritablebybothSSHanditsusers.
+the attacker may discover and connect to SSH servers at
+whichthecredentialshehasappropriatedarenotaccepted,
+theconnectionsuccessratewillbelowerwhenmeasuredas
+a fraction connections that result in successfully authenti-
+to read or write to it, as illustrated in Table 3, and so dif-
+catedconnectionsthanthosethatsimplycompletetheTCP
+ferentcountermeasures(orvariantsoncountermeasures)to
+handshake. Wethusrecommendthatsystemsbuilttodetect
+addressharvestingmayapplytoeach. Themostchalleng-
+scansbeinstrumentedtoobservetheresultoftheauthenti-
+ingfiletomanageisknown hosts,asitmustbereadand
+cationprocessforSSHconnections.
+modifiedbothbySSHandbythosethatuseandadminister
+Finding distant hosts that accept a given set of creden-
+it. Wewilltakeadvantageofthefactthatthecommoncase
+tials requires vary large numbers of scans. Even if stolen
+isforthefiletobereadandappendedtobytheSSHclient,
+credentialsarevalidat1000distantaccounts,anaverageof
+and that users only need to access the file manually when
+overtwomillionrandomscanswouldberequiredtofindthe
+locatingorremovinganentry.
+firstviabletargetwithinthevalidIPv4space. Withoutare-
+motelyexploitablevulnerability,attackingfromnetworkto
+networkrequiresanapproachmoreeffectivethanscanning. 3.1 Protectingknown hosts
+Anattackerwillneedadditionalinformation,whetheritbe
+obtainedbyharvestingaddressesorwaitingfortheuserof
+TounderstandhowSSHimplementationscouldhidead-
+acompromisedaccounttotypeinthenextdestination.
+dressesinknown hostsdatabases,itisinstructivetolook
+Solongasknown hostsfilesmapuserstotheIPad-
+at how password databases evolved to defend against sim-
+dresses of hosts that are likely to accept their credentials,
+ilar threats. Early multi-user computers stored passwords
+attackersneedlooknofurtherwhenidentifyingnewtargets.
+inplaintextfilesand,likeknown hostsfiles,reliedupon
+thefilesystemtopreventtheirmisusebykeepingthemse-
+2.7 EvidenceofPoorCredentialManagement
+cret. In 1974, Evans, Kantrowitz and Weiss [5] proposed
+that passwords be hashed with a one-way function before
+Inadditiontocollectingknown hostsdata,ourcollec-
+being stored in the password file.4 Their key observation
+tion script checked to see if identity key files were present
+wasthatthehostdidnotneedtostorethepasswordsthem-
+and whether users had encrypted them with pass phrases.
+selves, but only enough information to later verify that a
+Of 447 identity key files collected, 276 (61.7%) were un-
+password provided to the host was the same one the user
+encryptedandopentoabusebyanyonewithaccesstoread
+hadpreviouslyprovided. Thesameholdstrueforanysen-
+them. Ofthe12,035uniqueknown hostsdestinationad-
+sitive datum, such as a host name or address, that must be
+dresses discovered in our survey, 4,314 (or 36% of the to-
+testedforequalityagainstavalueprovidedinthefuture.
+tal)originatedfromuseraccountsinwhichanunencrypted
+We present three similar approaches, summarized in
+identitykeywaspresent.
+Table 4, that also use one-way collision-resistant hash
+functions to obscure the names and addresses of hosts
+3 CounteringAddressHarvestingAttacks
+in known hosts files. Each solution is more harvest-
+resistant than the last, but each comes with an additional
+Hostnamesandaddressesmaybestoredinaprogram’s
+usabilitycost.
+configuration before execution, in its state during or be-
+tween executions (known hosts), and in logs for ac-
+of history files for some time. Fortunately, these files are unlike those
+counting or forensic purposes.3 Each type of file has dif- discussedinthissectioninthattheyarenotneededbytheprogram,not
+ferent restrictions regarding which parties need to be able neededforsecuritypurposes,andtrivialtocleanse.
+4For details on the adoption of this approach, see the early work of
+3Addressesenteredascommandlineparametersmayalsobestoredin Robert Morris and Ken Thompson [14] or more recently Garfinkel et
+shellhistoryfiles. Thesecuritycommunityhasknownaboutthedangers al.[7].Contentsofknown hostsentry Harvestresistance Additionalusabilitycost
+(0) name,ip addr,key None None
+(s ,h(s name)),
+1 1 ◦ Resistsplaintext Newcommandsrequiredtofind/delete
+(1) (s ,h(s ip addr)),
+2 2 ◦ harvesting entries
+key
+(s 1,h(s 1 ◦name)), Resistsofflinedictionary Usercan’tlocateknown hosts
+(2) (s 2,h(s 2 ◦name,ip addr)), attacksonIPv4address entriesusingonlytheirIPaddress
+key sace
+Resistsofflinedictionary Usercan’tdistinguishnewkeysentby
+(s ,h(s name key)),
+1 1
+◦ ◦ attacksontheIPv4 hostinknown hostsfromkeysent
+(3) (s ,h(s name ip addr key)),
+2 2
+◦ ◦ ◦ addressspaceandon byunknownhost. Addsneedforkey
+date and time entry added
+hostnames revocationlists.
+Table 4. A summary of possible organizations for SSH known hosts entries, where h is a one-
+way collision-resistant hash function and salts s and s are randomly generated for each entry.
+1 2
+Each approach is incrementally more resistant to harvesting than the one above it, but incurs an
+incrementalcostinusability.
+Approach(1)–Simplename/addresshashing ulating the known hosts file should the user need to
+do so. remove-knownhost deletes a host entry from
+The simplest approach to prevent harvesting of plaintext
+known hosts by name and ssh-showkey returns the
+host names and addresses is to hash their values as one
+keyofahostspecifiedbynameoraddress.IntheOpenSSH
+would hash a password in the password file. Randomly
+4.0 implementation, these commands are integrated as op-
+generated salts, s and s , are used to ensure that the
+1 2 tionsinssh-keygen.
+work required to stage a dictionary attack against one en-
+Tospeedthetransitiontohashedhostaddresseswepro-
+trycannotbere-usedonotherentries. Thecontentsofthe
+videaprogram, ssh-hostname-encoder, thathashes
+known hostsfileforthissimplehashingstrategyissum-
+all of the addresses in an existing known hosts file. In
+marizedinrow(1)ofTable4.
+OpenSSH 4.0, this functionality is accessible via a com-
+We first implemented this approach into OpenSSH 3.9
+mand option in ssh-keygen. We have also provided
+usingSHA1[15]asourhashfunctionhandbase64encod-
+a Perl script, convert known hosts.pl, that can be
+ingsofrandom64bitnumbersassalts. Inresponsetoear-
+run to convert all known hosts files on a given filesys-
+lier drafts of this paper, the OpenSSH development team
+tem into hashed host address format. As no such script
+coded their own implementation of this approach, which
+was provided by the OpenSSH 4.0 team for their imple-
+firstappearedinOpenSSH4.0.
+mentation, we have provided one at our project website
+When the SSH client is called upon to initiate a new
+(http://nms.csail.mit.edu/projects/ssh).
+connection, it checks the destination host name and ad-
+dress against the known hosts database entry by entry.
+Aspecialstring(‘<’inourimplementationand‘1’inthe Approach(2)–ResistingIPv4dictionaryattacks
+| |
+OpenSSH4.0implementation)indicatesthatthehostname
+or address has been replaced with a hashed token. In this As with password files, the above hashing approach is po-
+case, the destination host name or address is hashed us- tentiallyvulnerabletoanofflinedictionaryattack. OnIPv4
+ing the salt extracted from the token, base64 encoded, and networks, the attackercan expectto identify anIP address
+thencomparedtothehashencodedinthetoken. Matching withaworst-caseaverageof231SHA1calculations. While
+encodings imply with high probability that the addresses this might be time consuming enough to slow spread and
+match. To maintain backwards compatibility with earlier raisealarms,anattackercandecreasetheexpectedworkby
+SSHimplementations, aplaintextcomparisonbetweenad- starting with addresses near that of the compromised host
+dresses takes place when the address in a known hosts (recallFigure1). Allofthenodesonthevictimhost’sclass
+entryisnothashed. Ccanbeidentifiedbyperforminglessthan256SHA1cal-
+Since entries in the known hosts database are cre- culationsperknown hostsentry.
+ated and verified automatically by the SSH client, its be- Thepossibilityofdictionaryattacksleadsustosuggest
+havior will remain unchanged from the user’s perspec- that SSH client implementations may not want to store IP
+tive. We implemented two new commands for manip- addresses at all. It should only be necessary to associatethekeywiththeaddressusedbytheuseronthecommand raiseconcernsforanysophisticateduserorsystemadmin-
+line, which is most often the domain name. If hashed IP istratorwhomaywanttoauditthesefilestoensuretheydo
+addressesmustbestored,thanweproposethatitshouldbe notplacetrustinthewrongremotehosts.
+salted both with a random salt and with the host name, as
+Fortunately, there is more flexibility in designing so-
+illustrated by the known hosts format in row (2) of Ta-
+lutions to this problem than that of the known hosts
+ble4. Thiswillsignificantlyincreasethecomputationcost
+database, as configuration files are not written by SSH.
+to attack networks where reverse DNS lookups and zone
+Thus,solutionsdonotneedtosupportmechanismsthrough
+walking are disabled, and increase the likelihood of detec-
+whichtheSSHclientorservercanchangethefile.
+tionwherereverseDNSlookupsareenabledbutmonitored.
+Toensurethatconfigurationfilescouldbeaudited,ade-
+Approach(3)–Resistingallofflinedictionaryattacks terministicpublickeyencryptionfunctioncouldbeusedin-
+stead of a hash function in order to obfuscate host names.
+Host names are also subject to dictionary attack, espe-
+Anauditorwiththeprivatekeywouldbeabletoreversethe
+cially if common names such as “gateway”, “mail”, and
+functiontoverifyitscontents.
+“database”areusedorifDNSserversareconfiguredtoal-
+low subdomain enumeration (“zone walking”). A design
+approach to eliminate offline dictionary attacks requires
+morefundamentalchangestothewaythatSSHclientscon-
+3.3 Protectinglogfiles
+firm that the host being contacted is indeed one that was
+last contacted at the same address. We propose that rather
+than storing entries that consist of hashed names mapped
+tothehost’skey,theSSHclientshouldinsteadconcatenate
+ThelogfilesgeneratedbytheSSHservernotonlycon-
+the host key onto the value to be hashed for the name and
+tain the names of other hosts running the SSH protocol
+addressentriesasillustratedinrow(3)ofTable4.
+suite, but also the names of users’ with accounts on those
+Whenahostiscontactedinthefuture,itskeywillbere-
+hosts. While this information is dangerous in the hands
+trievedbeforetheknown hostsfileissearchedandsoit
+of an attacker, it is essential to those tasked with detect-
+isstillpossibletocheckwhetherthekeyisassociatedwith
+ing and tracking intrusions. Fortunately, in exploring the
+anyknownhostname/addresspairs. Obtainingthekeysre-
+solutionspacetothisproblemwecantakeadvantageofthe
+quires that the attacker stage an online dictionary attack,
+factthatlogsneednotbewrittenbyusersoradministrators
+contacting hosts that it may not be able to authenticate to
+and, more importantly, that they need not be processed by
+andincreasingthelikelihoodofdetection.
+anyoneotherthanthesystem’sadministrators.
+The additional benefit incurs a significantly higher us-
+ability cost than the previous approaches. First, both the
+We can prevent log entries from being harvested if we
+host name and the key are required in order to identify or
+can encrypt these entries to ensure that, once written, the
+remove an entry from the known hosts database. If a
+datacannotbereadbytherecordinghost. Onlyanauditor
+key was lost and needed to be revoked, a revocation list
+withasecretkeyshouldbeabletotranslatethelogbackto
+would need to be employed to revoke all keys assigned to itsoriginalplaintextform. Ana¨ıvealgorithmtoaccomplish
+that host before the date on which the key was replaced.
+thiswouldencodeeachentryinthelogusingapublickey
+What’s more, users would not be able to differentiate be-
+cryptosystem. Less computationally intensive approaches
+tweentheresponsereceivedwhentheyfirstcontactedahost
+tosecuringauditlogshavebeenintroducedbyYeeandBel-
+andtheresponsereceivedwhenahost’skeychanged. For-
+lare[32],SchneierandKelsey[20],andWatersetal.[28].
+tunately,thecorrectsecuritybehaviorinbothcasesshould
+bethesame–theusershouldcheckthehashoftheserver’s A simplified algorithm that meets our requirements can
+keyagainstahashobtainedthroughasecurealternatechan- beconstructedusingapublickeypair.WhentheSSHserver
+nel. beginsexecuting,itcreatesarandomsessionkeyk 0foruse
+withafastersymmetriccryptosystem. Itthenencryptsthis
+3.2 Protectingconfigurationfiles k with the public key and writes it to the log. Each log
+0
+entrythenbeginswithitssequencenumber,i,followedby
+Host address hashing can also be used to protect ad- theentrycontentsencryptedwithsymmetrickeyk ,where
+i
+dressesinuser-configuredfilessuchasthetrustedhostfile k = h(k ). Oncetheloggingfunctionhasencodedthe
+i i 1
+−
+(.shosts)andtheuser’smainconfigurationfile,solong entry, it immediately calculates k and discards k from
+i+1 i
+asthehostnameneednotbereaduntilthehosttobecon- memory. Toreadapreviousentrywouldrequireonetode-
+tactedhasbeenidentified. However,usingincomprehensi- rivek fromk ,whichinturnwouldrequirebreakingthe
+i i+1
+bletokensinplaceofplaintextaddressesinthesefilesmay one-wayhashfunction.4 EncouragingSaferUseofGatewayHosts ityandlimitationsoftheavailableoptions,it’slittlewonder
+thatmostusershavetakentheroutethat’ssimplestforthem:
+issuingacommandtotheSSHclientonthegatewayhostif
+InSection2.4wesawevidenceoftheexistenceoflarge
+oneisavailable.
+gatewayhosts,idealtargetsforcredentialtheftattackssuch
+as password cracking (see Section A.2) and for harvesting
+addressesofhoststhatmayacceptstolencredentials.
+While hindering attempts to harvest addresses can help 5 Anticipating Future Attacks that Target
+to thwart the spread of attacks through gateway hosts, it HostAuthenticationviaSSH
+is better to avoid running SSH clients on these hosts alto-
+gether. An ideal SSH gateway is one on which the SSH
+server, but not the SSH client, is installed, and through
+ThewidespreadSSHattacksof2004arebelievedtobe
+which users can forward TCP connections but execute no
+the work of a single individual [8, 13] and were not fully
+other operations. To make it easier to use such gateways,
+automated. Oncehehadobtainedauseraccountonahost,
+we have implemented a new SSH client command option,
+theattackerwouldattempttogainrootaccessorfindother
+-H,which indicatesthe start ofa newconnection within a
+waystocompromiseotheraccountsonthehost,suchasby
+chainofcascadingconnections.
+exploiting a vulnerability in NFS [22]. A self-propagating
+ssh -H gateway -H server
+worm armed with a common vulnerability for escalating
+In the above example, the client establishes one con-
+userprivilegestorootprivileges(oratleastgainingaccess
+nectiontogatewayandthenestablishesasecurechannel
+topassword/keyfiles)couldusethesamesetofimperson-
+fromtheclienttoserverthroughgateway. Thesyntax
+ation attacks. Such a fully automated attack would not be
+supportsthecascadingofconnectionsthroughanynumber
+limitedbythetimeavailabletotheattackerandcouldcause
+ofgatewayhosts,allwithencryptedconnectionsbacktothe
+significantly more damage. Many of the components for
+user’s immediate client. Options specified before the first
+such a worm, such as trojan SSH client code, password
+-H are applied to all hosts in the chain, whereas options
+crackingalgorithms,andtoolstoperformonlinedictionary
+specifiedbetweena-Handahostnameareappliedonlyto
+overSSH,arereadilyavailable.Alistofthepotentialmech-
+theconnectiontothathost.TheimplementationusesUNIX
+anisms of attack are summarized in Table 5, and surveyed
+domainsocketsforcommunicationinordertoavoidopen-
+indetailinAppendixA.
+ingTCP/IPportsaccessibletootherusers.
+To spread quickly, an SSH worm would need to infect
+Existing methods do exist for chaining through local
+asmanynewhostsaspossibleimmediatelyaftereachhost
+hostsandaredocumentedinthetextSSH,theSecureShell:
+is compromised. Upon compromising a gateway host, a
+The Definitive Guide [1], but each has serious drawbacks
+worm could impersonate that host’s users by taking over
+thathavekeptthemfrombeingwidelyused. Onesuchap-
+outgoing SSH client sessions (row I1 in Table 5) or by
+proach uses local TCP/IP port forwarding to establish the
+using forwarded agents to authenticate on its behalf (T2)
+connection from the client to the server through the gate-
+and then adding keys to the remote authorized keys
+way. One of the disadvantages of this approach is that
+file (I2). Upon compromising a host of any type, a worm
+other users on the client host could connect to the port to
+could immediately search for unencrypted identity keys in
+bypass the gateway as TCP/IP cannot distinguish between
+thefilesystem(T1)andextractidentitykeysfromrunning
+these users. Another disadvantage is that the method re-
+agents (C2). Obtaining root access to the compromised
+quired proper use of the HostKeyAlias configuration
+hosts would enable these attacks to be carried out using
+option so that the connection forwarded through the local
+data from all of the host’s users, and would then enable
+port isn’t treated as a connection to localhost in the
+thewormtobeginanofflinedictionaryattacktoobtainany
+known hosts database. Finally, the user must use two
+passwordandkeycredentialsthatitdoesnotalreadyhave.
+differentshellsontheclienthosttoinitiateclientsandtheir
+The known hosts file enables the worm to immediately
+connectionstothegatewayandserver.
+identify hosts on distant networks that may accept stolen
+SSH connections could be forwarded through gateway
+credentials.
+hostsbysettingupaproxyintheuser’sSSHconfiguration
+file,butproxyentriesmustbecreatedforeachgateway.The A worm can also steal credentials by interacting with
+presenceofgatewayproxycommandsintheuser’sconfigu- users, recording passwords as users login to SSH servers
+rationwouldalsobecomeanattractivetargetforharvesting it has compromised (C1) and observing passwords sent to
+andcannotbetriviallyobfuscatedusingthetechniquespre- SSH clients and agents that it has compromised (C5). By
+sented in this paper. Proxy forwarding also presents prob- startingthisprocessimmediately,thewormmaybeableto
+lems if the gateway uses any form of interactive authenti- stealcredentialsfromadministratorsshouldtheydetectthe
+cation, such as the use of passwords. Given the complex- wormandlogininanattempttoremoveit.rootnotrequired
+non-interactive
+stealthy
+Attack Eventtriggeringattackopportunity
+Extractunencryptedidentitykeystoredonhost
+T1 User’saccountorhostcompromised * X X
+trustedbycredentialholder
+Compromiseofaccountorhostalready
+T2 Forwardedagentusedtoauthenticateattacker * X X
+runningforwardedagents
+Newpassword-authenticatedsessionto
+C1 PasswordstolenbycompromisedSSHserver X X
+compromisedserver
+Identity key extracted from SSH agent pro- Compromiseofhostrunningagentpro-
+C2 * X X
+cesses cesses
+Authentication initiated with correct
+C3 Onlinedictionaryattackonpasswordfile X X
+username/passwordguess
+Offline dictionary attack on passwords and Passwordhashcomputationcompleted
+C4 X X
+identitykeys withcorrectpasswordguess
+Password or key entered into previously com- SSH client/agent executed on compro-
+C5 X X
+promisedSSHclientoragent misedhost
+I1/2 Session/Credentialinsertionattack User’saccountorhostcompromised * X X
+Table 5. Attacks on SSH and the properties that make them amenable for use in a worm. An X
+indicates either that an attack can be run from a user account (root not required), need not wait for
+interactive user events in order to spread (non-interactive) or would not require excessive network
+traffic (labeled stealthy). A star (*) indicates that the attack can run without root privileges, but only
+againstaccountsavailabletothecompromiseduser.
+6 RelatedThreats&RelatedWork 7 Conclusion
+The Morris worm of 1988 harvested target addresses
+We showed in our study that known hosts files pro-
+from files such as .rhosts and .forward, and used
+vide ample remote targets, with a median of fourteen ad-
+offline dictionary attacks to crack passwords [23]. Be-
+dressestodistantnetworksidentifiedperhost. Eachdistant
+cause the Morris worm predated the advent of SSH,
+known hostsentryanattackerdiscoverssaveshundreds
+known hostsfileswerenotavailableforharvest.
+to thousands of scans to find a distant SSH server to at-
+Trojaned SSH clients that collect passwords have also
+tack, and many more scans if the attacker seeks a server
+becomewidespread,andanumberofthesehavebeenlifted
+thatwillacceptaspecificuser’scredentials. Wealsoiden-
+from compromised hosts [4]. Such a tool was used by the
+tified important outliers in the data, such as gateway hosts
+perpetratorofthemajorSSHattacksof2004,whocompro-
+that contain hundreds of known hosts files with entries
+mised hosts in the U.S. military, NASA, supercomputing
+to thousands of unique destinations. The distribution of
+centersincludingthosesupportingtheTeraGrid,andaslew
+unique destinations per user is heavy-tailed, as just 5% of
+of universities [8, 17, 33, 22]. However, to date there has
+users’known hostsfilescollectedcontained75%ofthe
+been no evidence of a true SSH worm which could spread
+uniquedestinationhostsdiscoveredinourstudy.
+withouttheneedforuserinteraction.
+In anticipation of future attacks, we explored how the
+WormstargetingprotocolsotherthanSSH,suchasLov-
+mechanisms of attack used in the past and their suitability
+gate[27],Deloader[25,6],andGaobot[26]alreadyuseon-
+foruseinself-propagatingmalwarethatcouldresultinsig-
+linedictionaryattackstobypasshostauthenticationwithout
+nificantlygreaterdamagethanpriorattacks.
+userinteraction. Whilesuchbruteforceattacksareamong
+theleasteffective,theyarefrequentlyfoundinthewildbe- In response to last year’s attacks and in anticipation of
+causetheyareamongtheeasiesttowrite.Thetoolsrequired futureattacks, wepresentedaseriesapproachesforhiding
+tocarryoutonlinedictionaryattacksagainstSSHhavebeen known hosts destination addresses. These approaches
+automated and made publicly available [21]. Evidence of includecountermeasuresnotonlyagainstplaintextaddress
+theiruseappearsinourlogs,anecdotalreportsofothernet- harvesting,butalsothosethatprotectagainstdictionaryat-
+work researchers, and publicly available reports from the tacks on local IP addresses and host names. In the epilog,
+SANSInternetStormCenter[3]. wediscusstheadoptionofthesecountermeasures.Epilog References
+[1] D. J. Barrett and R. E. Silverman. SSH, the Secure Shell:
+TheDefinitiveGuide.O’ReillyMedia,Inc.,Sebastopol,CA,
+This paper was first conceived in early 2004 and drafts
+Feb.2001.
+havebeeninprivatecirculationsinceJuneofthatyear.Only [2] M. Bishop and D. V. Klein. Improving System Security
+lateintheyeardidwefirstlearnofthemajorattacksagainst viaProactivePasswordChecking. ComputersandSecurity,
+SSHthatwereunderway. 14(3):233–249,1995.
+[3] S. I. S. Center. Port Graph (for port 22).
+OnFebruary15,2005anupdateddraftwassubmittedto
+http://isc.sans.org/port_details.php?
+officialsatF-Secure,SSHCommunicationsSecurityCorp., port=22&days=70.
+andtheOpenSSHdevelopmentteam. [4] D. Dagon. Georgia Institute of Technology, Email corre-
+spondence,Dec.10,2004.
+OpenSSH responded by creating their own implemen-
+[5] A.EvansJr.,W.Kantrowitz,andE.Weiss. AUserAuthen-
+tation of host address hashing as part of OpenSSH 4.0 on
+tication Scheme Not Requiring Secrecy in the Computer.
+March 9, 2005. Unfortunately, this implementation does CommunicationsoftheACM,17(8):437–442,1974.
+not come with a script with which a system administrator [6] F-Secure. F-SecureVirusDescriptions:Deloder.
+canupdateallofknown hostsfilesonasystem.Wehave http://www.f-secure.com/v-descs/
+providedsuchascriptandinstructionsforturninghashing deloader.shtml.
+onathttp://nms.csail.mit.edu/projects/ssh/. [7] S.Garfinkel,G.Spafford,andA.Schwartz.PracticalUNIX
+&InternetSecurity. O’ReillyMedia,Inc.,Sebastopol,CA,
+WRQ, which took over the F-Secure SSH product line 3rdedition,Feb.2003.
+in October of 2004 and re-branded the product under the [8] V.Hazlewood. SecurityTechnologiesManager,SanDiego
+“reflection” name, has also since committed to provide an SupercomputerCenter(SDSC),Telephonecorrespondence,
+optiontostorehostnamesinahashedformat[29]. Jan.18,2005.
+[9] Internet Assigned Numbers Authority. Internet Proto-
+Petri Sakkinen of SSH Communications Security Corp. col v4 Address Space. http://www.iana.org/
+wrote in an email [16] on May 17, 2005 that “SSH will assignments/ipv4-address-space.
+consider adding key hashing support in future versions of [10] InternetAssignedNumbersAuthority. RFC3330: Special
+SSHTectia,ifourenterprisecustomerswanttodeploythat UseIPv4Addresses. IETF,Sept.2002.
+[11] M.Kaminsky. UserAuthenticationandRemoteExecution
+approach.” Thecompanyalsopostedastatementtoitsweb
+AcrossAdministrativeDomains. PhDthesis,Massachusetts
+site[24].
+InstituteofTechnology,Sept.2004.
+[12] M.Kaminsky,E.Peterson,D.B.Giffin,K.Fu,D.Mazie´res,
+andM.F.Kaashoek.REX:Secure,ExtensibleRemoteExe-
+cution. InProceedingsofthe2004USENIXAnnualTechni-
+Acknowledgments
+calConference,pages199–212,June2004.
+[13] J.Markoff andL. Bergman. InternetAttack CalledBroad
+and Long Lasting by Investigators. The New York Times,
+May10,2005.
+Theauthorsareindebtedtoanumberofunnamedindi-
+[14] R. Morris and K. Thompson. Password Security: A Case
+vidualswhohavecontributedtheirtimeandefforttoeither History. Communications of the ACM, 22(11):594–597,
+anonymouslycontributedatatooureffortsortocajoleoth- 1979.
+erstodoso. [15] N.I.ofStandardsandTechnology. SecureHashStandard.
+FIPSPUB180-1,Apr.17,1995.
+The authors would like to thank Lou Anschuetz, Hari
+[16] Petri Sakkinen, Director, Solution Marketing, SSH Com-
+Balakrishnan, Robert Cunningham, David Dagon, Victor munications Security. “SSH Worm” and SSH Com-
+Hazlewood, Glenn Holloway, Roger Khazan, David Mol- munications Security. Email correspondence, archived
+nar, Scott Pinkerton, Michael D. Smith, Bill Yurcik, and at http://nms.csail.mit.edu/projects/ssh/
+our anonymous reviewers for their advice and comments. SSHIncEmail.html,May17,2005.
+Stuart Schechter would like to thank the National Science [17] S.C.Pinkerton. NetworkSolutionsManager,ArgonneNa-
+tionalLaboratory,Emailcorrespondence,Feb.4,2005.
+Foundation for supporting this work while he was at Har-
+[18] N.ProvosandP.Honeyman.ScanSSH-ScanningtheInter-
+vardundergrantnumberCCR-0310877,aswellastheMIT
+netforSSHServers. InProceedingsofThe15thUSENIX
+LincolnLaboratoryAdvancedConceptsCommitteeandthe
+SystemsAdministrationConference(LISA),2001.
+Air Force for their support since his arrival at the labora-
+[19] S.E.Schechter,J.Jung,andA.W.Berger.FastDetectionof
+tory. JaeyeonJungandWillStockwellwouldliketothank ScanningWormInfections. InProceedingsoftheSeventh
+theNSFforsupportunderCooperativeAgreementnumber International Symposium on Recent Advances in Intrusion
+ANI-0225660. Detection(RAID2004),Sept.15–17,2004.[20] B. Schneier and J. Kelsey. Secure Audit Logs to Support
+ComputerForensics.ACMTransactionsonInformationand
+SystemSecurity(TISSEC),2(2):159–176,1999.
+[21] K.-O. Security. SSH Remote Root Password Brute
+Force Cracker Utility. http://www.k-otik.com/
+exploits/08202004.brutessh2.c.php, Aug.20,
+2004.
+[22] A.Singer. TemptingFate. ;login: TheUSENIXMagazine,
+30(1),Feb.2005.
+[23] E.H.Spafford. TheInternetWormProgram: AnAnalysis.
+TechnicalReportCSD-TR-823, PurdueUniversityDepart-
+mentofComputerSciences,1998.
+[24] SSH Communications Security. Statement: Secure
+Shell and Address Harvesting. http://www.ssh.
+com/company/newsroom/20050518_mit.html,
+May18,2005.
+[25] Symantec. Securityresponse–W32.HLLW.Deloder.
+http://securityresponse.symantec.com/
+avcenter/venc/data/w32.hllw.deloder.
+html.
+[26] Symantec. SecurityResponse–W32.HLLW.Gaobot.AA.
+http://securityresponse.symantec.com/
+avcenter/venc/data/w32.hllw.gaobot.aa.
+html.
+[27] Symantec. SecurityResponse–W32.Lovgate.mm.
+http://securityresponse.symantec.com/
+avcenter/venc/data/w32.hllw.lovgate@mm.
+html.
+[28] B. R. Waters, D. Balfanz, G. Durfee, and D. K. Smetters.
+BuildinganEncryptedandSearchableAuditLog. InPro-
+ceedingsofthe11thAnnualNetworkandDistributedSecu-
+ritySymposium(NDSS’04),Feb.1–6,2004.
+[29] WRQ. A Hypothetical Threat to SSH: What Customers
+Need to Know. http://www.wrq.com/products/
+whitepapers/0976.html,June2005.
+[30] T.Wu. TheSecureRemotePasswordProtocol. InProceed-
+ings of the 1998 Internet Society Network and Distributed
+SystemSecuritySymposium,pages97–111,Mar.1998.
+[31] J. Xu, J. Fan, M. H. Ammar, and S. B. Moon. Prefix-
+Preserving IP Address Anonymization: Measurement-
+based Security Evaluation and a New Cryptography-based
+Scheme. In Proceedings of the 10th IEEE International
+ConferenceonNetworkProtocols(ICNP’02),Nov.12–15,
+2002.
+[32] B.S.YeeandM.Bellare. ForwardIntegrityforSecureAu-
+ditLogs. Technicalreport, UniversityofCaliforniaatSan
+Diego Department of Computer Science and Engineering,
+Nov.1997.
+[33] W. Yurcik. Senior Systems Security Engineer, The Na-
+tional Center for Supercomputing Applications (NCSA),
+Telephonecorrespondence,Jan.28,2005.A HostAuthenticationAttacksviaSSH C1—PasswordtheftbycompromisedSSHserver
+When authenticating via passwords, the SSH client will
+The mechanisms described below exploit access to one send the user’s password credentials to the server over an
+ormorecompromisedaccountsononehostinordertoim- encryptedchannel. Whentheuser’spasswordarrives, itis
+personatethoseuserswhoalsohaveaccountsonotherhosts thendecryptedintoplaintextbeforeitischeckedagainstthe
+inordertogainaccesstothoseotherhosts. passwordfile. Iftheserverbelongsto,orhasbeencompro-
+misedbytheattacker,thentheattackercanmodifytheSSH
+A.1 Exploitingmisplacedtrust servertocollectthesepasswords.Theattackercanthenpro-
+ceedtogainaccesstootherhostsonwhichthispasswordis
+usedforauthentication.
+SSH servers and user accounts are often configured to
+Thisattackcanbethwartediftheclientisconfiguredto
+trustotherhoststoactontheirbehalf,toauthenticateusers,
+authenticateviaachallenge-responseprotocol,suchasSSH
+ortosafelystoreusercredentials. Allofthesepracticesare
+identity-keyauthenticationortheSecureRemotePassword
+potentialtargetsofattack.
+(SRP)extension[30].
+T1—Exploitationoftrustinotherhoststoauthenti-
+C2—Extractionofkeysfromauthenticationagents
+cateuserorsecurestorecredentials
+To free users from the need to retype the pass phrases
+If an attack comes from a compromised host that is listed
+thatprotecttheiridentitykeycredentials,anauthentication
+in the shosts.equiv or hosts.equiv file in the tar-
+agentmustkeepthesecredentialsinitsmemory.
+getserver’s/etcdirectory,orthe.shostsor.rhosts
+file of the targeted user, the attacker will be permitted to Onceanaccountiscompromised,anattackercansearch
+connect to a target user’s account without presenting user the process table for active authentication agent processes.
+credentials. While the SSH agent takes care to instruct operating sys-
+Even if no hosts are explicitly trusted to authenti- tems not to allow its memory to be dumped, an attacker
+cate on behalf of the target host, such trust is often im- withsufficientprivilegeswillbeabletoinspectitsmemory
+plicit. Many users place their public identity keys in their spaceinordertolocateidentitykeycredentials.
+authorized keys files on SSH servers and leave their C3—Onlinedictionaryattacks
+secret identity key unencrypted on hosts they use as SSH Anonlinedictionaryattackisstagedbyrepeatedlyattempt-
+clients, trusting that these accounts will not be compro- ing to authenticate to a remote host using common pass-
+mised. If one such client account or host is compromised, words. Intrusiondetectionsystemscanbetrainedtodetect
+thentheattackercanreadtheunencryptedidentitykeyand theseattacksandterminatecommunicationswithattacking
+useittoauthenticatetothetargethost. hosts.However,ifanattackinghostispermittedtocontinue
+T2—Abuseofforwardedauthenticationagent theseattacksandchoosesalargesetoftargets,itwilleven-
+Authentication agents are programs employed by users to tuallyfindserversthatallowcontinuedconnectionattempts
+authenticateontheirbehalf. Theyfreeusersfromtheneed andemploycommonpasswords.
+toretypethepassphrasesthatprotecttheiridentity-keycre- C4—Offlinedictionaryattacks
+dentialseachtimethattheyauthenticate. Afterobtainingthepasswordfileonacompromisedhost,an
+Ausercanconfigurehisagenttoauthenticateonhisbe- attackercantestcandidatepasswordsagainstthepassword
+half when accessing services from an application run on a file or try to decrypt identity key files in user home direc-
+remotehost. However,mostSSHagentsdonotverifythat tories. While it is likely that an attacker who could access
+theactionsaremotehostperformsaretheactionstheuser the password file could compromise this account without
+intendedtoauthorize.Thus,whentheuserbelievesheisau- the password, chances are that the user employs this pass-
+thorizingaCVStransactionhemayinsteadbeauthorizing word to authenticate to other hosts as well. Such offline
+anSSHconnectiontoahosttargetedbytheattacker.5 dictionaryattacksalsodifferfromtheironlinecounterparts
+inthattheattackerneednotruntheauthenticationprotocol.
+A.2 Credentialtheft Thisisadvantageousbecauseexecutinganetworkprotocol
+increases the risk that alarms will be activated and intro-
+duces a network delay for each password tested. Once a
+Anattackerwhocanobtainauser’scredentialscanim-
+user’scredentialshavebeencompromised,theattackercan
+personate that user on any host that accepts these creden-
+use them to gain access to other hosts on which they are
+tials. Anattackermaychoosefromanyofanumberofap-
+accepted.6
+proachestostealcredentials.
+5TheagentinMichaelKaminsky’sremoteshellclient,REX[11,12], 6A1995studybyBishopandKlein[2]showedthat40%ofpasswords
+provides a partial solution to this problem by verifying that the service werecrackable.Morerecentreliablestatisticsonthepercentofcrackable
+beingauthorized(butnotthecommandorparameterspassedtotheservice) passwordsarehardertofind. Sufficeittosaythatwhileuserawareness
+isindeedtheonethattheuserintended. ofweakpasswordsmayhaveimprovedsincethen,thesophisticationofC5—Eavesdroppingbyclientsoftwareorhost
+A patient attacker who has compromised a user’s account
+can modify or observe the SSH client and agent to collect
+passwords and identity key pass phrases as the user types
+them. The host address, username, and password triplets
+discovered can either be stored or sent directly to the at-
+tacker.
+ManyusersfinditconvenientornecessarytoopenSSH
+clients on hosts to which they are already connected via
+SSH.Weusethetermgatewayhoststodescribethosehosts
+to which a user connects via SSH from a client and from
+which the user then initiates a new SSH connection to an-
+other host running the SSH server. It is often necessary to
+usegatewayhostswhenfirewallspreventdirectaccessfrom
+theuser’simmediateclienttohisorherdesireddestination
+host. SSH may also be employed to protect file transfers,
+CVScommands,orotherservicesrequiredbysoftwarethat
+isrunatagatewayhost. Attackerscanstrikeusersonthese
+gatewayhostsevenifanSSHserverisnotrunontheuser’s
+immediateclient.
+A.3 Insertionattacks
+Anattackermaybeabletoinserthisowncommandsinto
+ausersessionorinserthisowncredentialsinplaceofale-
+gitimateuser’scredentials.Thefirstattackdescribedbelow,
+in which the attacker impersonates the user for part of the
+SSHsession,canbeusedtoperformthelatterattack,which
+allows the attacker to impersonate the user in future ses-
+sions.
+I1—Sessioncaptureandcommandinsertion
+While proper use of identity keys, authentication agents,
+andagentforwardingcanprotectagainstcredentialtheftat
+gatewayhosts,thesepracticescannotprotecttheuserifthe
+hostherunstheSSHclientoniscompromised.Allcommu-
+nicationsaredecryptedandthenre-encryptedattheclient,
+andsoftwareatthishostcaninsert,modify,ordeleteinfor-
+mationatwill.
+I2—Credentialinsertionorreplacement
+An attacker can insert an identity key into the user’s
+authorized keysfile. TheSSHserverdependsonthis
+filetodeterminewhichkeystheuserhasauthorizedtoserve
+ashiscredentials.Ifthecompromiseduser’shomedirectory
+islocatedonasharedfilesystem,theattackerthenusesthe
+inserted identity keys to authenticate as that user to other
+hoststhatmounttheuser’ssharedhomedirectory.
+If the attacker can write to the system password file,
+he can replace any or all user passwords with those of his
+choosing.
+crackingalgorithmshasalsoimprovedandthespeedofcomputersusedto
+crackpasswordshasfollowedtheexpontentialgrowthofMoore’slaw.

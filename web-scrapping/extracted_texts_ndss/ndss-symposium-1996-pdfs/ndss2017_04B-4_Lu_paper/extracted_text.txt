@@ -1,0 +1,1402 @@
+Using Fully Homomorphic Encryption for Statistical
+Analysis of Categorical, Ordinal and Numerical Data
+Wen-jie Lu Shohei Kawasaki Jun Sakuma
+University of Tsukuba University of Tsukuba University of Tsukuba, JST CREST, RIKEN AIP Center
+riku@mdl.cs.tsukuba.ac.jp kawasaki@mdl.cs.tsukuba.ac.jp jun@cs.tsukuba.ac.jp
+Abstract—In recent years, there has been a growing trend Computational resources of cloud computing are com-
+towardsoutsourcingofcomputationaltaskswiththedevelopment pletelyvirtualized,whichhelpstoreducetheoperationalcosts
+of cloud services. The Gentry’s pioneering work of fully homo- of service providers. However, such virtualization makes it
+morphic encryption (FHE) and successive works have opened difficulttokeepcontrolofdata.Inmanydomains;forinstance,
+a new vista for secure and practical cloud computing. In this
+medical, and financial ones, confidentiality and privacy of
+paper, we consider performing statistical analysis on encrypted
+data are one of the principal concerns raised in cloud-based
+data. To improve the efficiency of the computations, we take
+applications.FHEschemesprovideanaturalmethodtoaddress
+advantage of the batched computation based on the Chinese-
+theseconcernsbyencryptingdatainthecloudandperforming
+Remainder-Theorem. We propose two building blocks that work
+with FHE: a novel batch greater-than primitive, and matrix computationsonciphertextswithoutdecryptingthedata.Since
+primitive for encrypted matrices. With these building blocks, we FHE schemes theoretically allow evaluating any function on
+construct secure procedures and protocols for different types of ciphertexts, FHE schemes might enable us to use the cloud
+statisticsincludingthehistogram(count),contingencytable(with foroutsourcingcomputationaltaskssuchasstatisticalanalysis
+cell suppression) for categorical data; k-percentile for ordinal with a guarantee of data privacy.
+data;andprincipalcomponentanalysisandlinearregressionfor
+numericaldata.Todemonstratetheeffectivenessofourmethods, Statistical analysis usually involves a large scale of data
+we ran experiments in five real datasets. For instance, we can with a large number of dimensions. As a result, conducting
+compute a contingency table with more than 50 cells from 4000 statistical analysis in a way that evaluates the corresponding
+of data in just 5 minutes, and we can train a linear regression boolean circuits on FHE ciphertexts might be inefficient in
+model with more than 40k of data and dimension as high as practice, in terms of the memory usage and computational
+6 within 15 minutes. We show that the FHE is not as slow as
+time.Ontheotherhand,wecanavoidencryptingthedatabit-
+commonly believed and it becomes feasible to perform a broad
+by-bittoobtainmoreefficientsolutions.In[24],[31],and[20],
+range of statistical analysis on thousands of encrypted data.
+particular encoding methods are used to obtain computation-
+ally and spatially efficient solutions on FHE ciphertexts. We
+remark that these encoding methods are specifically designed
+I. INTRODUCTION
+for a certain statistical analysis task. Thus it seems difficult to
+Inrecentyears,considerableeffortshavebeenmadeinthe reuse these encoding methods for other tasks.
+field of fully homomorphic encryption. Startingfrom Gentry’s
+Inthispaper,wefocusonapplicationsofFHEtostatistical
+breakthroughworkinconstructingthefirstfullyhomomorphic
+analysis with three types of data. Our goal is to conduct a
+encryption (FHE) scheme [7], successive innovations and
+wide range of statistical analysis on FHE ciphertexts with
+improvements [3]–[6], [24], [27], [28] of fully homomorphic
+computational and space efficiency. To achieve this goal,
+encryption have been proposed. At a high level, FHE enables
+we need to have somewhat generic encodings for statistical
+us to perform addition and multiplication on ciphertexts. Thus
+analysis and fast computing routines on FHE ciphertexts. In
+it allows us to evaluate any function f on ciphertexts. We can
+this work, we present efficient procedures for a wide range of
+decompose the input into bits and encrypt each bit separately.
+statistical analysis using just a few of generic data encodings.
+Since addition and multiplication on {0,1} are equivalent to
+Specifically, we use two encodings to conduct descriptive and
+the AND-gate and the XOR-gate in boolean circuits, we can
+predictive statistics including the histogram (count, histogram
+construct the corresponding boolean circuit for the function f
+order), contingency table with cell suppression, k-percentile,
+and evaluate the boolean circuit on ciphertexts. Such scheme
+principal component analysis, and linear regression.
+has become widely recognized as a technology to enable
+processing of private data without compromising privacy.
+A. Related Works
+The first fully homomorphic encryption (FHE) scheme
+Permission to freely reproduce all or part of this paper for noncommercial is proposed in [7] while the efficiency of FHE is known
+purposes is granted provided that copies bear this notice and the full citation
+as a big question following its invention. During the last
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author few years, considerable effort has been devoted to improving
+(for reproduction of an entire paper only), and the author’s employer if the the performances of FHE schemes [3]–[6], [24], [27], [28].
+paper was prepared within the scope of employment. Moreover, packing techniques for example [28] and [24] to
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+name a few, are used for accelerating the computation on
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23119 ciphertexts and are applied to real applications. In [31] theauthors present a specific string matching method with FHE; the resulting matrix is inconsistent with that of the input [14].
+and in [20], the authors demonstrate a specific method for Ourmatrixprimitive,describedinSectionIV-A,allowsoneto
+conducting a χ2 test with FHE. These methods both leverage conductmatrixadditionsandmultiplicationswithoutchanging
+unique data encoding methods for particular problems. Thus thelayoutofencryptedmatrices.Weachievedthisbyarranging
+these methods might be lacking in generality. The generic matrices in a row-wise manner and coupling the row-wise
+database query system using FHE [1] can support different layout with a replication operation from HElib. Consequently,
+aggregation queries. this layout consistency enables us to conduct iterative algo-
+rithms [13], [22] on encrypted matrices and contributes to our
+Several studies that realize evaluating descriptive statistics
+methods for predictive statistics.
+using FHE have been reported. Evaluating the standard de-
+scriptive statistics such as the mean and standard deviation To show that our building blocks are suitable for secure
+from FHE ciphertexts are presented in [24]. In [29] the statistical analysis, in Section IV-C, we give experimental
+authorsalsoshowhowtocomputetheco-varianceusingFHE. comparisonsofourFHE-basedbGTandmatrixprimitivewith
+Notice that these statistics involve numerical attributes only, the garbled circuit (GC) [30] implementations using the state-
+while in the statistical analysis we can also have categorical of-the-art framework [19]. From the experimental results, we
+and ordinal data. For categorical and ordinal data, we can canseethatourFHE-basedprimitives,insomecommoncases,
+implement procedures for statistics such as histogram and k- are competitive with the GC counterparts.
+percentileusingtheprivatedatabasequerysystemof[1].These
+Wide Range of Descriptive Statistics. We present practical
+implementations might require O(N) multiplicative depths on
+proceduresforconductingthek-percentilequeriesandcontin-
+ciphertexts where N is the number of data points, this might
+gencytableswithcellsuppressionfunctionalityinSectionV-B.
+be impractical for a large scale of datasets.
+We can derive the secure versions of these statistics from the
+For predictive statistics, the earlier study [12] presents the private database query system of [1]. However, it might be
+constructionofbuildinglinearclassifiers(i.e.,theLinearMean impractical to apply it to these descriptive statistics since [1]
+Classifier and Fisher’s Linear Discriminant Classifier) from requiresmultiplicativedepthsofO(N)toperformthecompar-
+FHE encrypted data. More recently, the work of [2] shows ison, where N is the number of the data. On the other hand,
+three protocols for private evaluation of hyperplane decision our procedures only require a constant multiplicative depth,
+classifiers, naive Bayes classifiers and decision tree classifiers which is of particular importance for the FHE scheme.
+on ciphertexts. Notice they focus on the model evaluation
+Our procedure for evaluating the contingency table also
+and the privacy-preserving model building is beyond the
+supports the cell suppression functionality which naturally
+scope of [2]. In [29], the authors also present a protocol to
+requires comparisons. With the use of our bGT primitive, we
+obtain a linear regression model from FHE encrypted data
+showthatwecanachieveanefficientprocedureforevaluating
+using Cramer’s rule or matrix inversion. The computational
+the contingency tables with cell suppression on ciphertexts
+complexityoftheirmethod,thus,blowsupfactoriallywiththe
+without any interaction. Our review of the literature suggests
+data dimension. In other words, their method is only suitable
+that this report is the first approach to secure evaluation of
+for data with small dimensions, i.e., less than 6. To the best
+contingencytableswithcellsuppressionfromFHEciphertexts.
+of our knowledge, no practical FHE solution that trains the
+linear regression model from data with high dimension has Protocols for Building Predictive Models. We describe
+been established. procedures for principal component analysis (PCA) and linear
+regressioninSectionV-C.Ourproceduresapplyiterativealgo-
+B. Contribution rithms that involve matrix additions and multiplications only.
+Thereby,wecanevaluatethesealgorithmsonFHEciphertexts
+In this work, we show that we can evaluate a broad straightforwardly. However, these iterative algorithms require
+range of statistics for three different kinds of data on FHE a large message space whereas HElib only offers a limited
+ciphertexts using two encodings methods. The evaluation of size of message space. In Section V-C, we also propose the
+many descriptive and predictive statistics commonly requires use of Plaintext Precision Expansion (PPE), which provides
+comparison operations and matrix operations. We, thus, pro- desiredmessagespacebycompositingtwoormoreciphertexts
+pose two building blocks: a novel batch greater-than primitive with a limited message space. With our matrix primitives and
+andalayoutconsistentmatrixprimitive.Wegiveconcreteim- PPE, we can evaluate the PCA and linear regression with data
+plementations using an open-sourced library, i.e., HElib [26]. dimension up to 20 which is 4-times larger than that in [29].
+Our contributions are summarized as follows. Ourreviewoftheliteraturesuggeststhatthisreportisthefirst
+practical approach to building a linear regression model with
+Batch Greater-than Primitive. Comparing encrypted num-
+high dimensional data from FHE ciphertexts.
+bers is a common low-level primitive in many cryptographic
+protocols. In Section IV-B, we leverage the packing technique
+of[28]andpresentabatchvariantofthegreater-thanprotocol
+II. PRELIMINARIES
+of[11].Specifically,ourbGTprimitiverequiresO((cid:100)(θ2d)/(cid:96)(cid:101))
+We begin by introducing the notations used in this paper.
+homomorphic operations to compare θ pairs of d-bit inte- We write [d] to denote the set of positive integers {1,...,d}
+gers while the greater-than protocol of [11] needs O(θ2d) and the cardinality of a set D are marked as |D|. We write
+homomorphic operations. Thereby, a large (cid:96) can translate to a $
+x←D to denote that x is sampled uniformly at random from
+substantial improvement in efficiency.
+D. A matrix is shown as a bold uppercase roman letter, e.g.,
+Layout-Consistent Matrix Primitive. The current routine A. We presume vector v forms a column vector following the
+supportsmultiplicationofencryptedmatricesbutthelayoutof convention of statistics. The row vector is represented by the
+2transpose operation, e.g., v(cid:62). Let a(cid:62) denote the i-th row of The efficiency gain of the CRT-packing comes from the
+i
+the matrix A: elements of a matrix are represented by non- element-wise addition and multiplication. We briefly demon-
+boldlowercaseromanletterswithsubscripts,e.g.,a .Matrix- strate this property. Let Pack : Z(cid:96) (cid:55)→ A be the packing
+ij t t
+vector multiplication and matrix multiplication are denoted function, and Unpack : A (cid:55)→ Z(cid:96) be the unpacking function.
+t t
+as Xa and XY, respectively. We denote the element-wise Given vectors x,y ∈Z(cid:96), the CRT-packing works as follows.
+t
+multiplication of vectors as a ×˙ b where (a ×˙ b) = a b
+j j j
+for all possible position j. We write a (cid:28) k (resp. a (cid:29) k) Unpack(Pack(x)+Pack(y))=x+y mod t
+to denote the left-rotation (resp. right-rotation) of the vector Unpack(Pack(x)×Pack(y))=x ×˙ y mod t.
+a with an offset k. We use 1{P(x)} to denote the indicator
+function for the predicate P(x), that is 1{P(x)} = 1 if and If we use Pack to encode the integer vectors before applying
+onlyifP(x)istrue,and0otherwise.Wedenotetheencryption the encryption function, we can perform (cid:96) homomorphic
+of a message x as x . additions (resp. multiplications) by just a single application
+(cid:74) (cid:75) of Add (resp. Mul).
+A. Leveled Homomorphic Encryption Inadditiontoelement-wiseadditionandmultiplication,the
+CRT-packingalsosupportsmanipulationsofencryptedvectors.
+In this work, we specifically examine the Ring Learn-
+Specifically, we can homomorphically rotate an encrypted
+ing with Error [21] variant of the Brakerski–Gentry–
+vector and replicate one element of an encrypted vector.
+Vaikuntanathan (BGV) scheme, a leveled homomorphic en-
+Similarly, let Rotate : A ×Z (cid:55)→ A be the rotation function
+cryption scheme proposed in [3]. t t
+and Replicate : A × Z (cid:55)→ A be the replication function.
+t t
+The message space of the BGV’s scheme works over These functions work over the CRT-packing as follows.
+a polynomial ring modulo a cyclotomic polynomial A :=
+Z t[x]/Φ m(x), where Φ m(x) is the m-th cyclotomic
+pt
+oly-
+Unpack(Rotate(Pack(x),k))=u∈Z(cid:96)
+t
+nomial. Five algorithms specify the encryption scheme: Unpack(Replicate(Pack(x),k))=v ∈Z(cid:96),
+t
+KeyGen,Enc ,Dec ,Add and Mul stand for key genera-
+pk sk
+tion, encryption, decryption, addition, and multiplication re- where we have u j = x j+k mod(cid:96) (rotation) and v j = x k
+spectively.Wewritepkandsktodenotethepublicandprivate (replication) for all 1 ≤ j ≤ (cid:96). For rotation, we can have
+keys, respectively. When the choice of the key is clear, we negative k while we require 1 ≤ k ≤ (cid:96) for the replication.
+drop the pk and sk subscripts. KeyGen takes as input three In this work, we take advantage of the CRT-packing and the
+positive integers m,t, and L; outputs a public-private key vector manipulation operations to give efficient solutions of
+pair (pk,sk). Here m and t determine the message space; L statisticalanalysis.Forinstance,wecanperformmatrixmulti-
+indicatesthemultiplicativedepththattheschemecanevaluate. plicationswithinaquadraticorderofhomomorphicoperations.
+According to the security analysis of [9], to achieve κ-bit We present the matrix primitive in Section IV.
+security, parameters in the KeyGen should follow
+For the sake of simplicity, we write a + b and a · b
+(L(logφ(m)+23)−8.5)(κ+110) to denote Add( a , b ) and Mul( a , (cid:74)b(cid:75)), r(cid:74)es(cid:75)pective(cid:74)ly(cid:75). W(cid:74) e(cid:75)
+φ(m)> , (1) alsousetherota(cid:74)tio(cid:75)n(cid:74)op(cid:75)eratorstoind(cid:74)ic(cid:75)at(cid:74)et(cid:75)heinvocationofthe
+7.2
+Rotatefunction,i.e., a (cid:29)kor a (cid:28)k.Whenweapplythe
+whereφ(·)istheEulerfunction.Inaleveledhomomorphicen- Pack function to vec(cid:74)tor(cid:75)s with le(cid:74)ng(cid:75)th less than (cid:96), we append
+cryption,wehaveadditiveandmultiplicativehomomorphisms:
+zeros to the vectors. We usually assume enough spaces for
+packingvectorsbutwediscussoneexceptioninSectionIV,in
+Dec(Add( a , b ))=a+b mod (Φ (x),t)
+m
+(cid:74) (cid:75) (cid:74) (cid:75) which over-sized vectors are divided into smaller parts before
+Dec(Mul( a , b ))=a×b mod (Φ (x),t),
+m applying the CRT-packing.
+(cid:74) (cid:75) (cid:74) (cid:75)
+where messages a,b ∈ A . Also, the BGV’s scheme supports
+t
+scalar addition and multiplication, that is, given a ciphertext B. Data Representation
+Enc(x) of x ∈ A , we can have operations that output
+t
+ciphertexts Enc(a+x) and Enc(ax) for all a ∈ A . Due to In this paper, we aim to conducta broad range of statistics
+t
+spacelimitation,weomitthedetailsoffunctionsoftheBGV’s of numerical, ordinal, and categorical data. We firstly describe
+schemehere.Wereferto[3]formoreinformationaboutthese data representations for different types of attributes.
+functions.
+Categorical Attributes. The values of categorical attributes
+Packing. One interesting and useful property of the BGV’s represent some states without meaningful order. Let d c be the
+scheme is that it enables us to pack multiple “messages” into numberofcategoricalattributes.Wedenotethedomainofeach
+one ciphertext allowing asymptotically efficient computation categorical attribute as
+on encrypted data [28]. The cyclotomic polynomial Φ (x)
+m C ={sj,sj,··· ,sj }, 1≤j ≤d ,
+factors into (cid:96) irreducible polynomials for some prime modulo j 1 2 |Cj| c
+t. That is Φ (x) =
+(cid:81)(cid:96)
+F (x) mod t. We can pack an
+m j=1 j wheresj isthek-thstateoftheattributeC .Thecross-product
+integer vector u ∈ Z(cid:96) into an element a ∈ A by viewing k j
+t t gives the domain of the categorical attributes C :=C ×···×
+each element of u as a polynomial (only with the constant C . Let c(cid:62) ∈ C be a vector of the categorical da1 ta. Then
+term) and then applying the polynomial Chinese-Remainder- dc i
+c ∈C is a categorical value of the j-th categorical attribute.
+TheoremoverfactorsF (x).Ontheotherhand,theunpacking ij j
+j
+function just takes the residual of the polynomial factors as Ordinal Attributes. Values in an ordinal attribute have a
+u =a mod (F (x),t) for 1≤j ≤(cid:96). meaningful ranking among them. We designate the number of
+j j
+3ordinal attributes as d . Similarly, the domain of each ordinal sq ··· sq Total
+o 1 |Cq|
+attribute is represented as sp µ ··· µ µ(cid:48)
+1 11 1|Cq| 1
+O j ={sˆj 1,sˆj 2,··· ,sˆj |Oj|}, 1≤j ≤d o, . . . . . . ... . . . . . .
+sp µ ··· µ µ(cid:48)
+where sˆj is the k-th state of the attribute O . The order of |Cp| 1|Cp| |Cp||Cq| |Cp|
+k j Total µ ··· µ N
+attribute values is given as sˆj (cid:22)···(cid:22)sˆj . We also present 1 |Cq|
+1 |Oj|
+the domain of the ordinal attributes as the cross-product O := Fig. 1: A contingency table of two categorical attributes C
+p
+O ×···×O . Let o(cid:62) ∈ O be the i-th ordinal data. Then and C of N data points.
+1 do i q
+o is an ordinal value of the j-th ordinal attribute.
+ij
+Numerical Attributes. In this paper, we presume that all the III. PROBLEMSTATEMENT
+numerical values are integers since the BGV’s scheme can
+only process integers. We use a fixed point number of finite In this work, we consider statistical functions including
+precision. Given x ∈ R and M ∈ Z, we have (cid:98)Mx(cid:101) ∈ Z the histogram (count and histogram order) and contingency
+where (cid:98)·(cid:101) rounds a real number to the nearest integer. Let d table (with cell suppression) for categorical attributes; the k-
+n
+be the dimension of numerical data and x(cid:62) ∈Zdn be the i-th percentile for ordinal attributes; and the principal component
+i t
+numerical data. The j-th element of each vector is designated analysis and linear regression for numerical attributes. We
+as the j-th numerical attribute. present these statistics in turn.
+We represent the collections of N categorical, ordinal, and A. Descriptive Statistics
+numerical data points respectively as follows.
+Single Categorical Attribute. Let {c ,...,c } be the j-
+ c(cid:62)  o(cid:62)  x(cid:62)
+th categorical attribute values of N
+d1 aj
+ta
+poinN tsj
+. If c s are
+1 1 1 ij
+C =
+
+. .
+.
+ ∈CN O =
+
+. .
+.
+ ∈ON X =
+
+. .
+.
+ ∈ZN
+t
+×dn encoded by the indicator encoding, then the summation of
+vectors yields the histogram.
+c(cid:62) o(cid:62) x(cid:62)
+N N N
+N
+(cid:88)
+Hist({c ,...,c })=h where h= E (c ). (2)
+C. Data Encoding 1j Nj id ij
+i=1
+The choice of value encoding method can affect the ef-
+The histogram query naturally gives the count and histogram
+ficiency of function evaluation on ciphertexts dramatically. order. The count of the state sj can be given as
+We introduce some encoding methods that are specifically to p
+categorical and ordinal data. Count({c ,...,c },p)=1(cid:62)h, (3)
+1j Nj p
+IndicatorEncodingE id :C j →{0,1}|Cj|.E idtakesasinputan where 1 p is an indicator vector of which the elements are 0
+attribute value sj ∈C and outputs a vector with all elements except the p-th element is 1.
+k j
+zero except the k-th element, which is set to 1. For instance,
+The histogram order reveals the order of the counts of the
+presuming |C | = 3, the indicator encoding of the second
+j histogram h. We define this functionality as
+state sj will be E (sj) = [0,1,0]. We construct protocols
+2 id 2
+of the histogram (count) and the contingency table using this HistOrder({c ,...,c })=k, (4)
+1j Nj
+encoding.
+where the count of the state sj is not less than the count of
+Staircase Encoding E st :O j →{0,1}|Oj|. Staircase encoding the state sj for any 1≤x<k yx ≤|C |.
+takes as input an attribute value sˆj ∈O and outputs a binary ky j
+k j
+vector. The staircase encoding sets the 1-st to the (k−1)-th MultipleCategoricalAttributes.Next,weconsidertheevalu-
+elements as 0 and sets the k-th to the last elements as 1. For ationofcontingencytablesoftwocategoricalattributesC and
+p
+example,presumingthedomainsizeof|O |=3,thestaircase C . Evaluation of a contingency table corresponds to counting
+j q
+e un seco Ed si tn fg orof tht ehe evs ae lc uo an td ionsta ot fe ksˆ -j 2 pew ri cl el nb te ileE .st(sˆj 2)=[0,1,1]. We c µ ino
+u
+sm
+v
+tab nti o cn ea ,t di oeo nnn eos t ce( as ttp u eh g, es oq v rc i) co auf lo nr dt aa tol al f pp t oho ies ns ti cb cole m =b(u i [n ·, a ·v t ·) io ,p n sa pi ,(r s ·s p u. ··,W s ,q
+v
+se ) q. ,w ·Fr ·i o ·te r
+]
+i 2 3
+To apply the CRT-packing to different types of attributes, contributes to the count µ by 1. An example of the contin-
+23
+weprocessthenumericaldatawithconstantmagnificationand gency table of attributes C and C is shown in Fig. 1. We
+p q
+convert the categorical and ordinal data using the indicator define the functionality of contingency table evaluation as
+encoding and the staircase encoding. For instance, we first
+process a categorical value c
+ij
+with the indicator encoding ContingencyTable({c ip,c iq}N i=1)=µ. (5)
+and then encrypt it as Pack(E (c )) . Also, when X is a
+id ij
+matrix, let Pack(X) b(cid:74)e the vector fo(cid:75)rmed by applying the Inacontingencytable,smallcountsrepresentrareindivid-
+operation to each row of X separately. That is Pack(X) = uals or cases of the population. For concerns of individual
+[Pack(x(cid:62)),Pack(x(cid:62)),...]. In this paper, we represent the privacy, applications that evaluate contingency tables with
+1 2
+encryption of matrices and vectors with the CRT-packing by private data collected from different sources usually addition-
+default. We write x to denote the ciphertext of vectors in- ally perform cell suppression [16], [23] to conceal existence
+stead of using Pac(cid:74)k((cid:75)x) for the sake of simplicity. Similarly, of individuals with rare combination of attribute values. A
+X denotes th(cid:74)e cipherte(cid:75)xt of the matrix X. common practice of the cell suppression is to zero-out the
+(cid:74) (cid:75)
+4counts that are smaller than a constant threshold T. The
+TABLE I: Complexity of our primitives. We write “–” to
+functionality of zero-out suppression can be defined as
+indicate that the homomorphic operation is not used.
+CT-Suppression({c ,c }N ,T)=µ¯, (6)
+ip iq i=1 addition multiplication rotation
+where µ¯ =µ ·1{µ >T} for 1≤s≤|C ||C |. Notice that X · u O(d) O(d) O(dlogd)
+s s s p q
+(cid:74) (cid:75) (cid:74) (cid:75)
+µ is the output of ContingencyTable. We describe a novel X + Y O(d) – –
+method to compute CT-Suppression in Section V-B. (cid:74) X(cid:75) · (cid:74) Y (cid:75) O(d2) O(d2) O(d2logd)
+(cid:74) (cid:75) (cid:74) (cid:75)
+bGT O((cid:100)(θD)/(cid:96)(cid:101)) O((cid:100)(θD)/(cid:96)(cid:101)) O(logD)
+Ordinal Attributes. For the ordinal attributes, we consider k-
+percentile.k-percentileisthevaluethatseparatesgivenordinal
+values into two parts so that the one part with lower values The analytical solution w∗ is given as
+contains k % of the data. For instance, the 50-percentile is
+w∗ =(X(cid:62)X)−1X(cid:62)y, (10)
+also named as the median. Letting {o ,...,o } be the j-
+1j Nj
+th ordinal attribute values of N data points, we can sort the where the matrix X and vector y are the collections of
+ordinal values in ascending order as o (cid:22) ··· (cid:22) o . numerical data. The Eq. 10 is immediately solved if we can
+π(1)j π(N)j
+Here, π is a permutation function that returns indices in evaluate the inverse of X(cid:62)X. We leverage a division-free
+descending order. Using the notation of π, we can define the variant of the iterative matrix inversion method from [13] so
+k-percentile functionality as that we can compute the matrix inversion on FHE encrypted
+matrices. Let M be a matrix, λ be a real value, and T be
+k-Percentile(o ,...,o )=o , (7)
+1j Nj N∗j the number of iterations. The division-free matrix inversion
+where N∗ := π((cid:100)(k·N)/100(cid:101)) and o (cid:22) o holds method works as follows.
+π(i)j π(i+1)j
+for all 1≤i<N.
+DF-MatrixInversion (M,λ,T):
+B. Predictive Statistics 1. Initialize A(0) =M,R(0) =I,α(0) =λ.
+PrincipalComponentAnalysis.PCAisastatisticalprocedure 2. For 0≤τ <T, compute
+that converts a set of numerical observations of possibly R(τ+1) =2α(τ)R(τ)−R(τ)A(τ),
+correlated variables into a small number of directions that are
+mutually linearly independent. In PCA, we firstly compute a A(τ+1) =2α(τ)A(τ)−A(τ)A(τ), (11)
+covariance matrix α(τ+1) =α(τ)α(τ).
+N
+Σ= 1 X(cid:62)X−µµ(cid:62) where µ= 1 (cid:88) x(cid:62). (8) 3. Output R(T).
+N N i
+i=1 Here I is an identity matrix. This method approximates the
+Then we compute the eigenvalues and eigenvectors of Σ. inverse of the matrix M. According to the analysis of [13],
+Let the eigenvalues of Σ be λ ≥ ··· ≥ λ , and denote R(τ) converges to λ2τM−1 quadratically if λ is close to the
+1 dn
+the corresponding eigenvectors as u ,...,u . An iterative largest eigenvalue of M.
+1 dn
+algorithm(i.e.,PowerMethod)canevaluatethek-theigenvalue
+λ
+k
+and the corresponding principal component u
+k
+with T IV. BUILDINGBLOCKS
+iterations.
+In the previous section, we have described the descriptive
+PowerMethod (Σ,{λ }k−1,{u }k−1): and predictive statistics that we are going to evaluate. We can
+q q=1 q q=1
+see that the evaluations of these statistics require operations
+1. Σk :=Σ−(cid:80)k−1λ u u(cid:62). including matrix addition, matrix multiplication, and compari-
+q=1 q q q
+son operation. In this section, we present two building blocks
+2. Choose a random vector v(0) ←$ Zdn. formatrixoperationsandcomparisononencryptedvalues.We
+t
+givethesummaryofcomplexitiesofourprimitivesinTableI.
+3. For 0≤τ <T, compute
+v(τ+1) =Σ v(τ). (9) A. Matrix Operations
+k
+v(T) (cid:107)v(T)(cid:107) For our statistical analysis, we process every data in the
+4. Output u = and λ = . form of matrices and vectors. Once matrices are encoded and
+k (cid:107)v(T)(cid:107) k (cid:107)v(T−1)(cid:107)
+encrypted, it requires expensive homomorphic operations to
+Linear Regression. The problem of linear regression is to rearrange the layout of these values. For instance, it requires
+findamodelthatpredictsvaluesofanumericaltargetvariable manyhomomorphicoperationstochangearow-wiseencrypted
+from observations of numerical input variables using a linear matrix to a column-wise encrypted counterpart. To achieve a
+equation. Let {(x(cid:62),y )}N be the given dataset in which x(cid:62) low computation overhead, it is important for us to keep the
+i i i=1 i
+aretheinputvariablesandy isthetargetvariables.Themodel layout consistent throughout each matrix operation. We intro-
+i
+of linear regression is given as y ≈x(cid:62)w. Therein, the model duce layout-consistent matrix operations for FHE encrypted
+w is obtained by minimizing the least-squares error: matrices.
+N Halevi et al. [14] introduced three layouts to represent
+1 (cid:88)
+w∗ =arg min (cid:107)y −x(cid:62)w(cid:107)2. matrixasasingleciphertext:therow-majororder,thecolumn-
+w N i i 2 major order, and the diagonal-major order. In this work, we
+i=1
+5Algorithm 1 Batch greater-than primitive. tions. To this end, we introduce a novel batch greater-than
+- Input: a , and b , where a,b∈[D]θ for D,θ∈Z+. (bGT) primitive.
+- Output(cid:74): (cid:75)γ whe(cid:74)re(cid:75)the length of γ is θD.
+Given integers a,b ∈ [D] for some positive D, we know
+- Remark:(cid:74)O(cid:75)ne can learn 1{a >b }=1{0∈{γ }D−1}
+j j k·θ+j k=0 that a > b if and only if ∃w ∈ [D] such that a−b−w = 0.
+1: Compute a˜ =Repeat( a ,θ,D); b˜ =Repeat( b ,θ,D). Thereby,wecanconstructastraw-manprotocolbyhomomor-
+2: Generate r(cid:74)an(cid:75)dom permuta(cid:74)tio(cid:75)ns π j :[D(cid:74)](cid:75)→[D] for 0(cid:74)≤(cid:75)j <θ. phically computing (a − b − w) · r for all w ∈ [D] where
+3: Compute a θ·D dimension vector w in which w α(j) =π j(α). the random value r is used to hide |a−b|. This straw-man
+Here α(j):=θ·α+j, for α∈[D] and 0≤j <θ.
+4: Compute β = a˜ − b˜ −Pack(w). protocol, thus, requires O(D) homomorphic operations and
+5: Compute (cid:74) γ(cid:75) =(cid:74) β(cid:75) ·P(cid:74) ac(cid:75) k(r) where r←$ (Z t/{0})θ·D. g pe ron te or ca ote ls foO ll( oD w)
+s
+tc hi eph ge rr et aex tet rs -. thT ah ne pi rd oe toa cb oe lh oi fnd [1t 1h ]e
+.
+straw-man
+6: Output γ(cid:74).(cid:75) (cid:74) (cid:75)
+(cid:74) (cid:75) We can reduce the computational cost and the number
+of ciphertexts of the straw-man protocol by using the CRT-
+consider the row-major order in which rows of the matrix packing. Recall that the CRT-packing enables us to pack (cid:96)
+are encrypted separately. It is natural to apply this layout in integers into one ciphertext and the homomorphic addition
+real applications. For instance, some research agents might and multiplication are then carried out on these (cid:96) integers
+independentlyholddatawithadifferentsizebutfollowingthe simultaneously. Thereby, we can compute (a−b−w)·r with
+same data schema. Recall that we apply the CRT-packing to (cid:96) different w by viewing these w as a vector w and using the
+each row of matrices and then encrypt each row. Thereby, we Pack function. Moreover, we need to shuffle the positions of
+write { x(cid:62) }d and { y(cid:62) }d to denote the ciphertexts of eachwbeforepackingthemsince|a−b|willberevealedifthe
+i i=1 i i=1
+eachrow(cid:74) of(cid:75)X andY,r(cid:74)espe(cid:75)ctively.Theciphertextofavector position of w is predictable. This greater-than method, thus,
+u∈Zd is u . requires O((cid:100)D/(cid:96)(cid:101)) homomorphic operations and generates
+t
+(cid:74) (cid:75) O((cid:100)D/(cid:96)(cid:101)) ciphertexts which is a considerable improvement
+Matrix–vector Multiplication.Halevietal.[14]introduceda
+for a large (cid:96).
+generalprocedureforthematrix–vectormultiplication.Forthe
+row-major layout, their procedure requires to “sum up” all the Indeed, we can give a generalized batch greater-than
+slots of the CRT-packing, which might be expensive than the method which takes as input a and b where a,b ∈ [D]θ
+replication operation regarding computational time. However, and outputs 1{a > b } for(cid:74)al(cid:75)l 1 ≤(cid:74) j(cid:75) ≤ θ. The method
+j j
+we give a different routine according to the observation that described above is a specialization of this with θ = 1. The
+weonlyinvolvesymmetricmatricesinthematrix–vectormul- bGT protocol is shown in Alg. 1. The Repeat function (Step
+tiplication (i.e., PCA). We thus can conduct the matrix–vector 1) takes as input u , θ, and R. Repeat duplicates the first
+multiplication as Xu = (cid:80)d x(cid:62) · Replicate( u ,i). θ elements of u f(cid:74)or(cid:75)R times. For instance Repeat( u ,θ =
+The idea of this e(cid:74)quati(cid:75)on followi= s1 (cid:74)thai t(cid:75)the matrix X(cid:74) b(cid:75)eing 3,R=2)= [u 1u 2u 3u 1u 2u 3] . (cid:74) (cid:75)
+symmetric,thus,havingthei-throwequalstothei-thcolumn. (cid:74) (cid:75)
+Repeat( u ,θ,R):
+Matrix Addition & Multiplication. We can simply conduct (cid:74) (cid:75)
+the layout-consistent matrix addition as x(cid:62) + y(cid:62) for 1≤ 1. u˜ = u ·Pack([1...100...]).
+i i (cid:74) (cid:75) (cid:74) (cid:75) (cid:124) (cid:123)(cid:122) (cid:125)
+i ≤ d while we need more delicate oper(cid:74)atio(cid:75)ns t(cid:74)o ac(cid:75)hieve the θ
+matrixmultiplicationwithoutdestroyingtherow-majorlayout. 2. R=(b ···b b ) where b is the most significant bit.
+ρ 1 0 2 ρ
+We hope to conduct XY so that we can evaluate the 3. For 0≤i≤ρ
+inversematrix(i.e.,Eq.11)onencryptedmatrices.Tokeepthe
+a) If b is 1 then u˜ = u˜ (cid:29)k; u˜ = u˜ + u
+i
+layout consistent, we use the Replicate function. We conduct b) u = u +((cid:74)u(cid:75)(cid:29)(cid:74)k)(cid:75) (cid:74) (cid:75) (cid:74) (cid:75) (cid:74) (cid:75)
+the matrix multiplication on encrypted matrices as c) k(cid:74) =(cid:75) k×(cid:74) 2(cid:75) (cid:74) (cid:75)
+d
+(cid:88) 4. return u˜
+Replicate( x(cid:62) ,i)· y(cid:62) for 1≤j ≤d.
+j i (cid:74) (cid:75)
+(cid:74) (cid:75) (cid:74) (cid:75)
+i=1 The Repeat procedure requires O(log R) homomorphic ad-
+2
+We give an example to demonstrate this routine as follows. ditions and rotations.
+ j=1  We operate multiple comparisons in a batch manner. Thus
+(cid:20) (cid:21) (cid:20) (cid:21) (cid:122) (cid:125)(cid:124) (cid:123) we need to avoid collisions of w in different comparisons
+[1 2] [e f] 1·[e f]+2·[g h]
+· = . (Step 3). Moreover, we might do not have enough spaces, i.e.,
+[3 4] [g h] 3·[e f]+4·[g h]
+(cid:96)<θDforpacking.Inthiscase,wecanextendthespaceswith
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+X Y j=2 multiple ciphertexts. The bGT protocol performs comparisons
+Also,wecancompute uu(cid:62) ontheciphertext u inasimilar
+ofθ pairsofintegersandrequiresO((cid:100)(θD)/(cid:96)(cid:101))homomorphic
+manner. Specifically, (cid:74)the ci(cid:75)phertext of the k-(cid:74)th(cid:75)row of the operations and generates O((cid:100)(θD)/(cid:96)(cid:101)) ciphertexts. In this
+matrix uu(cid:62) is given as Replicate( u ,k) · u . We write work, we usually use θ = 1 while we use θ > 1 in
+u · u(cid:62) to denote this operation. (cid:74) (cid:75) (cid:74) (cid:75) the evaluation of the contingency table and k-percentile. We
+(cid:74) (cid:75) (cid:74) (cid:75) usually use the bGT only in the last step of a larger protocol
+since we need to decrypt the output of bGT to obtain the
+B. Batch Greater-than Primitive
+comparison result. However, exceptions do exist when we can
+For conducting statistics such as contingency tables, his- take advantage of the randomness of the output of bGT. For
+togram order, and k-percentile, we need comparison opera- instance,inthiswork,weusethebGTasanintermediatestep
+6100
+10
+1
+0.1
+0.01 4 8 12 16 20 24
+dnoceS
+100
+GC-LAN
+GC-WAN 10
+FHE
+1
+0.1
+0.01
+0.001 2 4 8 16 32 64
+#Bits
+(a)EvaluationTimeofGT
+dnoceS
+10000
+1000
+100
+10
+GC-LAN
+GC-WAN 1
+FHE
+0.1 2 4 8 16 32 64
+Matrix Dimension
+(b)EvaluationTimeofX+Y
+dnoceS
+GC-LAN
+GC-WAN
+FHE
+Matrix Dimension
+(c)EvaluationTimeofXY
+10000
+1000
+100
+10
+1
+0.1
+0.01
+0.001 4 8 12 16 20 24
+BM
+10000
+GC
+1000 FHE
+100
+10
+1
+0.1
+76 88 100 112 124 136 0.01
+0.001 2 4 8 16 32 64
+#Bits
+(d)CiphertextSizeofGT
+BM
+100000
+10000
+1000
+393216 100
+98304
+24576 10
+6144
+1536 GC 1 384 FHE
+0.1 2 4 8 16 32 64
+Matrix Dimension
+(e)CiphertextSizeofX+Y
+BM
+537133056
+67174400
+8404992
+1052672
+132096 GC FHE 16640
+Matrix Dimension
+(f)CiphertextSizeofXY
+1000
+100
+10
+1
+0.1 4 8 12 16 20 24
+dnoceS
+100
+FHE-LAN
+FHE-WAN
+GC-LAN 10
+GC-WAN
+1
+0.1 2 4 8 16 32 64
+#Bits
+(g)OperationTimeofGT
+dnoceS
+10000
+1000
+100
+FHE-LAN 10
+FHE-WAN
+GC-LAN 1
+GC-WAN
+0.1 2 4 8 16 32 64
+#Matrix Dimension
+(h)OperationTimeofX+Y
+dnoceS
+FHE-LAN
+FHE-WAN
+GC-LAN
+GC-WAN
+#Matrix Dimension
+(i)OperationTimeofXY
+Fig. 2: Performance numbers (averaged over 10 runs) of FHE-based and GC-based primitive implementations. LAN and WAN
+were introduced. For the matrix addition and matrix multiplication, matrices with 32-bits values were used. The numbers on the
+figure (g) – figure (i) indicate the number of AND-gates in the garbled circuits.
+to evaluate Eq. 6. Precisely, at Line 5 – Line 7 of the PCT- FHE Setting. In the executions of the FHE primitives, we as-
+Suppression protocol in Section V-B, the output of bGT is sume an encryptor encrypts the private inputs and uploads the
+used to mask the suppressed counts with random values. ciphertexts to the server. The server operates the primitives on
+the ciphertexts and obtains the result. A decryptor downloads
+the result from the server and gets the plain result after the
+C. Comparison with the Garbled Circuit
+decryption. For performance measurement, we used the same
+We experimentally compared our proposed primitives with network (LAN and WAN) as GC. For FHE-based primitives,
+the garbled circuit implementations (Fig. 2). we implemented using eight parallels. We also used different
+parameters in bGT and the matrix primitives. Specifically, we
+GC Setting. For GC, we used a state-of-the-art framework, settheparametersoftheBGV’sschemet=67499andΦ (x)
+m
+ObliVM[19]whichallowsustoimplementthegarbledcircuit with m = 5227 (i.e., (cid:96) = 1742) for evaluating the batch
+with a high-level programming language interface. We used greater-than primitive. On the other hand, we use t = 73213
+twophysicallyseparatedmachinesasthecircuitgeneratorand and m = 27893 (i.e., (cid:96) = 78) for evaluating the matrix
+the circuit evaluator. The generator and evaluator held random primitives.
+sharesoftheprivateinputs.WerantheGCexperimentsontwo
+networksettings:aLocalAreaNetwork(twomachineslocated Performance Measurements. We employed three different
+insidethesamerouter)andaWideAreaNetwork(onemachine performance measurements: evaluation time, ciphertext size,
+located in Japan and the other located on the west coast of and operation time. The operation time of our FHE-based
+USA). The network bandwidth of LAN and WAN was about primitives includesthe timeof encryption, upload,evaluation,
+88 Mbps and 48 Mbps, respectively. In ObliVM, we used the download, and decryption. The evaluation time includes the
+real-mode which provides the garbled-row-reduction [25] and time of evaluation only, which is independent of the network
+free-XOR [17] optimizations. bandwidth. For the GC implementations, we measured the
+7time for circuit generation and the time for circuit evaluation.
+TABLE II: Input-output relationships for the stakeholders. We
+When we use the FHE primitives as an independent two- write “–” to indicate no input or output.
+party computation, the entire computation time is measured
+Stakeholder Possess Input Output
+by the operation time. On the other hand, when the FHE
+encryptor pk x –
+primitives are used as building blocks for a more complicated
+cloud pk – z
+two-party computation, the outputs of the FHE primitives are (cid:74) (cid:75)
+decryptor pk,sk – z
+successively reused without interaction with the other party.
+In such reuses, encryption, upload, and download are not
+thenumberofciphertextsintheFHE-basedmatrixmultiplica-
+processed, and thus the server does not need to communicate
+tion and that of the FHE-based matrix addition were the same
+withencryptorsanddecryptors.Thus,tomeasuretheefficiency
+due to the layout-consistency of our matrix primitives. On
+of our FHE primitives, we measured the evaluation time, too.
+theotherhand,theGC-basedmatrixmultiplicationexchanged
+We note that we can not separately evaluate the evaluation
+more network packets than that of the GC-based matrix
+time from operation time for GC execution. Therefore, the
+addition. We can see that the evaluation time and operation
+evaluation time of GC is the same as the operation time in
+time of the FHE-based matrix multiplication were almost the
+our evaluation.
+same, indicating the time of network communication in FHE-
+We also compared the size of ciphertexts that the FHE- based matrix multiplication is negligible. When we need to
+based primitives output with the size of network packets operate iterative matrix multiplications, the FHE-based prim-
+exchanged during the execution of the GC-based primitives 1. itive, which requires less network communication time, can
+offer better performance in terms of operation time.
+Greater-than. Fig. 2a, Fig. 2d, and Fig. 2g show the perfor-
+mances of the FHE-based and GC-based greater-than imple- From the experimental results, we can conclude that our
+mentations. As shown in the results, our FHE-based greater- two building blocks are viable for cloud-based applications.
+than primitive offers competitive performances to its GC We admit that our greater-than primitive might be inefficient
+counterpart when comparing relatively small integers such as for comparing large numbers, but for many statistics, small
+integers with less than 16 bits. The complexity of the FHE- domains such as sizes of several thousand might be suffi-
+based greater-than grows exponentially with the bit length. cient. Also, we have to transfer hundreds of megabytes of
+Thus,itseemsinefficientforourgreater-thanprimitivetohan- ciphertexts which seems to hinder the performance of our
+dle large numbers. Noting that descriptive statistics of ordinal FHE-based matrix primitives. But we are interested in the
+orcategoricalattributestypicallyassumessmalldomains(e.g., statistical analysis rather than a single matrix addition or
+0 ≤ age ≤ 150), we consider 12 ∼ 16-bits to be sufficient to multiplication. As Eq. 11 shows, we need to perform matrix
+meet regular requirements in many cases. operationsiteratively.FortheFHE-basedmatrixprimitives,the
+number of generated ciphertexts is independent of the number
+Matrix Addition. Fig. 2b, Fig. 2e, and Fig. 2h show the per- of iterations. Thus, after the cloud finishes the analysis, the
+formances of the FHE-based and GC-based implementations cost of transferring the FHE ciphertexts might not be the
+of matrix addition. Since we leverage the CRT-packing for bottleneck. However, the network packets exchanged by the
+FHEencryptedmatrices,theevaluationtimeoftheFHE-based GC-basedimplementationsincreaseslinearlywiththenumber
+matrix addition increases linearly with the matrix dimension. ofiterations.Inotherwords,forevaluatingcomplexfunctions,
+The FHE-based matrix addition can operate faster than its e.g. functions with a large multiplicative depth or functions
+GC counterpart in terms of evaluation time while the size of with large fan-in, the communication time might become the
+ciphertexts generated by the FHE-based matrix addition was bottleneck of GC solutions. Moreover, FHE-based solutions
+two magnitudes larger than that in the GC counterpart. The enable to delegate the computation to the cloud, and allow the
+operationtimeoftheFHE-basedmatrixadditionisthusgreater encryptor to perform encryption only.
+thanthatofitsGCcounterpart.Wecanalsoseethattheevalu-
+ation time of the FHE-based matrix addition was smaller than
+V. COMPUTINGSTATISTICSONCIPHERTEXTS
+the operation time of the GC (Fig. 2b). In the WAN setting,
+the operation times of these two implementations were quite This section presents the details of evaluating the statistics
+close. We emphasize that the performance of the GC-based described in Section III on FHE encrypted data.
+matrix addition and that of the FHE-based matrix addition
+are not directly comparable. If the matrix addition itself is A. Security Model
+the target computation, the GC-based solution works faster.
+Wegiveanoverviewofourdesiredsecurityproperties.We
+However, when we need successive matrix additions in the
+consider three stakeholders: encryptor, cloud, and decryptor.
+middleofalargercomputation,theFHE-basedimplementation
+We assume all stakeholders behave semi-honestly and the
+can provide competitive performance with its GC counterpart.
+cloud does not collude with the decryptor. Let x be a private
+Matrix Multiplication. Fig. 2c, Fig. 2f, and Fig. 2i show the inputoftheencryptorandf beapubliclyknownfunction.We
+performances of FHE-based and GC-based implementations consider the following model (Table II). The encryptor sends
+of matrix multiplication. The GC implementation ran slightly the ciphertext x to the cloud for the computation of a par-
+faster than the FHE-based one in the LAN environment while ticular function(cid:74)f(cid:75). The cloud operates specified homomorphic
+in the WAN environment, these two implementations per- operations on x and sends the resulting ciphertext z to
+formedalmostthesameregardingevaluationtime.Noticethat the decryptor. T(cid:74)h(cid:75)e decryptor decrypts the resulting ciph(cid:74)er(cid:75)text
+and learns z but nothing else. The cloud and the encryptor
+1WecountedthenumberofAND-gates(20byteseach)inthecircuit. learn nothing at the end of the execution of the protocol. The
+8E (c ) E (c ) E (c )
+id ip id ip id ip
+TABLEIII:Asummaryoftheformofciphertextsandstatistics element-wise multi. E (c ) E (c )
+id iq id iq
+contribute to µ µ – µ µ –
+DataType CiphertextForm Statistics 11 22 21 12
+histogram,count,histogramorder
+ciq∈Cq Pack(Eid(ciq)) Fig.3:Onemultiplicationgives2×2combinationsofattributes
+(cid:74) (cid:75) andcontingencytable of c ∈C and c ∈C where |C |=2 and |C |=2.
+oip∈Op Pack(Est(oip)) k-percentile ip p iq q p q
+xi∈Zdc (cid:74) Pack(xi) (cid:75) PCAandlinearregression
+(cid:74) (cid:75)
+the values of the histogram. According to bGT, if 0 ∈ γ
+uv
+encryptor sends the encryption of his private input following holds then we know that the count of state sj is larger than
+u
+thedataprocessingofdifferenttypesofdatainTableIII.Inthe that of state sj. In the protocol, the matrix ∆ just acts as a
+v
+following protocol descriptions, we thus omit the encryption handy helper for us to calculate the histogram order.
+phase of the encryptor.
+Contingency Table. We first present a novel method to
+evaluate the contingency table (Eq. 5) from ciphertexts and
+B. Descriptive Statistics
+thendescribehowtoachievethezero-outsuppression(Eq.6).
+Histogram and Count. The evaluations of Eq. 2 (histogram)
+PrivateContingencyTable({ E (c ) , E (c ) }N ):
+and Eq. 3 (count) on FHE encrypted categorical data are id ip id iq i=1
+(cid:74) (cid:75) (cid:74) (cid:75)
+straightforwardusingtheCRT-packingandindicatorencoding. The cloud:
+ForthecollectionofcategoricaldataC ∈CN,wecancompute
+the histogram of C , i.e. the p-th attribute, as
+(cid:80)N
+E (c ) .
+1. Finds the smallest co-prime integers k
+1
+and k
+2
+such that
+Also, we can comp pute the histograms of multii p= le1 (cid:74)atid tribi up te(cid:75)s k 1 ≥|C p| and k 2 ≥|C q|.
+simultaneously.Forinstance(cid:80)N
+i=1
+E id(c ip)(cid:107)E id(c iq) givesthe 2. For 1≤i≤N, computes
+histograms of C and C . Moreo(cid:74)ver, to give the(cid:75)count of
+p q
+specific attribute values, we need one more homomorphic
+p
+i
+=Repeat( E id(c ip) ,k 1,k 2)
+(cid:16) (cid:17) (cid:74) (cid:75) (cid:74) (cid:75)
+om g fivu tel ht si ep tl h aic te ta rt ici bo i upn th. eerF ote fo xr Ct pe o .x f Sam it mhp e il le ac, ro lu y,n(cid:80) t wf eN i o= r c1 a(cid:74) s nE p 3i ,d g( iic v.ei ep .,) m(cid:75) th ue lt· iptP h leia rdc ck os( ut1 na3 t te)
+s
+3. Computes an(cid:74) dq i o(cid:75) u= tpuR tsep (cid:74)µea (cid:75)t =( (cid:74)E (cid:80)id( N ic =i 1q (cid:74)) p(cid:75), ik (cid:75)2 ·, (cid:74)k q1 i) (cid:75). .
+simultaneously. ThedecryptorobtainsthecontingencytableofC andC from
+p q
+the vector µ. Specifically, the count µ in the contingency
+HistogramOrder.TheevaluationofEq.4requirescomputing uv
+tableisgivenbythex-thelementofµwhere(x−1)≡(u−1)
+the order of the counts in the histogram, which indicates that
+mod k and(x−1)≡(v−1) mod k 2.Wepresentaconcrete
+comparisonsofencryptedintegersareneeded.Ourmethodfor 1 2
+exampleinFig.3,inwhichthedomainsizesare|C |=|C |=
+calculating the histogram order on ciphertexts splits into two p q
+2andk =2,k =3.InFig.3,thewhitecellsindicate0since
+stages:oneforoperatingbGTandtheotherforrecoveringthe 1 2
+we use 0-padding in the CRT-packing. Thereby element-wise
+histogramorderfromtheoutputsofbGT.Inthesecondstage,
+multiplications on these positions only give 0, and thus no
+we need to decrypt the outputs of bGT.
+otherinformationexceptthecontingencytablearerevealedby
+PrivateHistOrder ({ E (c ) }N ): µ.Theideabehindthismethod,tosomeextent,istheChinese-
+(cid:74) id ij (cid:75) i=1 Remainder-Theorem. The coprime duplication plays a major
+The cloud: role in the above evaluation.
+1. Computes the histogram h
+=(cid:80)N
+i=1
+E id(c ij) . Following the PrivateContingencyTable procedure, we
+(cid:74) (cid:75) (cid:74) (cid:75) describehowtoachievethezero-outsuppressionfunctionality.
+2. Computes h =Replicate( h ,p) for 1≤p≤|C |.
+p j Let the suppression threshold be T ∈Z+ and let Σ:=k k .
+(cid:74) (cid:75) (cid:74) (cid:75) 1 2
+3. For all 1≤u<v ≤|C | pairs, invokes the Alg. 1 with
+j
+D =N and θ =1 PCT-Suppression ({ E id(c ip) , E id(c iq) }N i=1,T):
+(cid:74) (cid:75) (cid:74) (cid:75)
+The cloud: Step 1 to 3 follows PrivateContingencyTable.
+γ =bGT( h , h ).
+uv u v
+(cid:74) (cid:75) (cid:74) (cid:75) (cid:74) (cid:75)
+4. Invokes bGT: γ = bGT( µ , T ) with D = N and
+4. Outputs ciphertexts { γ } .
+(cid:74) uv (cid:75) 1≤u<v≤|Cj| θ =Σ for the b(cid:74)G(cid:75)T protocol(cid:74). (cid:75) (cid:74) (cid:75)
+The decryptor:
+5. Computes µ(cid:48) = µ +Pack(δ) where δ ←$ ZΣ.
+5. Constructsamatrix∆∈{0,1}|Cj|×|Cj| accordingtothe (cid:74) (cid:75) (cid:74) (cid:75) t
+decryption of { γ } . 6. Computes γ(cid:48) = γ +Pack(r) where the length of
+(cid:74)
+uv
+(cid:75)
+1≤u<v≤|Cj|
+the vector (cid:74)r is(cid:75)NΣ(cid:74), r(cid:75) = δ for 0 ≤ k < N, and
+a) The diagonal of ∆ is set to 0, that is δ =0. kΣ+x x
+uu
+1≤x≤Σ.
+b) For all (u,v) pairs such that 1≤u<v ≤|C |, set
+j
+δ uv =1{0∈γ uv} and set δ vu =1−δ uv. 7. Samples r∗ ←$ (Z /{0})NΣ and computes γ∗ = γ ·
+t
+6. Outputs a vector k with the value k set as the row- Pack(r∗). (cid:74) (cid:75) (cid:74) (cid:75)
+l
+index of ∆ which contains exactly |C | − l of 1s for
+j 8. Outputs µ(cid:48) , γ(cid:48) and γ∗ .
+1≤l≤|C |.
+j (cid:74) (cid:75) (cid:74) (cid:75) (cid:74) (cid:75)
+The decryptor:
+PrivateHistOrder calls the bGT primitive O(|C |2) times. By
+j
+operating these comparisons, we have obtained the order of 2Indicesstartfrom1.
+99. Finds out the set SZ := {(s,z = kΣ + s)|γ∗ = On the other hand if 0∈{γ }N−1 for all possible n∗,
+kΣ+s k|Oj|+n∗ k=0
+0,1≤s≤Σ,0≤k <N}. we know that sˆj is the k-percentile of the population.
+|Oj|
+10. Initializes µˆ as µˆ = 0 and then sets µˆ = µ(cid:48) −γ(cid:48) for
+s z z
+(s,z)∈SZ. C. Predictive Statistics
+11. Outputs µˆ. Principal Component Analysis. For the evaluation of PCA,
+we can perform the computation of Eq. 8 and Eq. 9 on
+We describe the idea of our PCT-Suppression protocol.
+ciphertexts directly. Given the collection of numerical data
+Without loss of generality, we presume that µ s >T for some X ∈ ZN×dn, we evaluate the first principal component with
+specific 1≤s≤Σ. According to the bGT protocol, we have t
+T iterations as follows.
+oneandonlyone0inthesetΓ :={γ }N−1.Thisenables
+s kΣ+s k=0
+us to hide numbers. If we have only one 0 in Γ , we can PrivatePCA ({ x(cid:62) , x x(cid:62) }N ,T)
+s i i i i=1
+recover the value of µ from the tuple {µ +δ,δ+Γ ,r∗·Γ } (cid:74) (cid:75) (cid:74) (cid:75)
+s s s s The cloud:
+with some non-zero random value r∗. Here the mathematic
+operations are carried out on each element of Γ s. 1. Computes Nµ =(cid:80)N
+i=1
+x(cid:62)
+i
+.
+(cid:74) (cid:75) (cid:74) (cid:75)
+On the other hand, if µ s ≤ T, after the execution of 2. Computes N2Σ =N·(cid:80)N x x(cid:62) − Nµ · Nµ(cid:62) .
+the bGT protocol we have 0 ∈/ Γ s. We can not recover (cid:74) (cid:75) i=1 (cid:74) i i (cid:75) (cid:74) (cid:75) (cid:74) (cid:75)
+the value of µ from the tuple. Thereby, the suppression is 3. Computes v(τ+1) = N2Σ · v(τ) for 0≤τ <T.
+s
+achieved. We aim to hide the rare individuals or cases in the (cid:74) (cid:75) (cid:74) (cid:75) (cid:74) (cid:75)
+4. Outputs v(T) and v(T−1) .
+population by zero-outing the counts in contingency tables.
+(cid:74) (cid:75) (cid:74) (cid:75)
+Our PCT-Suppression procedure hides the counts in the 5. The decryptor outputs the largest eigenvalue as λ =
+1
+contingency table with values smaller than T but enables us (cid:107)v(T)(cid:107)/(cid:107)v(T−1)(cid:107) and the associated eigenvector as
+to learn other counts that with values larger than T. u =v(T)/(cid:107)v(T)(cid:107).
+1
+k-percentile. To compute the k-percentile on ciphertexts,
+Step 1 and Step 2 follow Eq. 8 except we can not perform the
+we leverage the staircase encoding E . We conduct the k-
+st division on ciphertexts. Notice that, in Step 2, the operation
+percentile of the attribute O j on FHE ciphertexts as follows. Nµ · Nµ(cid:62) generates ciphertexts of a matrix. The evalua-
+Privatek-Percentile ({ E (o ) }N ,k) (cid:74)tion i(cid:75)n S(cid:74)tep 3(cid:75)is also straightforward using our matrix–vector
+(cid:74) st ij (cid:75) i=1 multiplication primitives described in Section IV-A.
+The cloud:
+LinearRegression.ToconductthelinearregressionofEq.10,
+1. Computes f
+=(cid:80)N
+i=1
+E st(o ij) . we need to compute the inverse of the design matrix X(cid:62)X.
+(cid:74) (cid:75) (cid:74) (cid:75)
+2. Computes k(cid:48) =(cid:100)(kN)/100(cid:101). To do so, we use the DF-MatrixInversion procedure in
+Eq. 11. The evaluation of Eq. 11 on ciphertexts are straight-
+3. Invokes bGT: γ = bGT( f ,k(cid:48)) with D = N and forward using our matrix multiplication primitive described
+θ =|O j| for th(cid:74)e b(cid:75)GT protoc(cid:74)ol.(cid:75) in Section IV-A. Given the collection of numerical data
+{(x(cid:62),y )}N and the largest eigenvalue λ of the design
+4. Outputs γ . i i i=1 1
+(cid:74) (cid:75) matrix, we can evaluate Eq. 10 with T iterations as follows.
+The decryptor:
+PrivateLR ({ y x(cid:62) , x x(cid:62) }N , λ ,T)
+5. Finds out an index 1 ≤ n∗ ≤ |O j| s.t. 0 ∈/ (cid:74) i i (cid:75) (cid:74) i i (cid:75) i=1 (cid:74) 1 (cid:75)
+{γ }N−1 and0∈{γ }N−1.Ifnosuch The cloud:
+n∗k e|O xj is|+ tsn ,∗ s− e1 tsk th= e0
+value of
+n∗k a| sOj|+n∗ k=0
+1. Computes X(cid:62)y = (cid:80)N y x(cid:62) and X(cid:62)X =
+i=1 i i
+n∗
+=(cid:26) 1 if 0∈/ γ (cid:80)N
+i=1
+(cid:74)x ix(cid:62) i(cid:74) (cid:75). (cid:75) (cid:74) (cid:75) (cid:74) (cid:75)
+|O j| o.w. 2. Invokes the DF-MatrixInversion procedure
+6. Outputs sˆj n∗. λ2 1T (X(cid:62)X)−1 =DF-MatrixInversion( X(cid:62)X , λ
+1
+,T).
+(cid:74) (cid:75) (cid:74) (cid:75) (cid:74) (cid:75)
+The decryptor can derive the k-percentile of the attribute 3. Outputs λ2Tw∗ = λ2T(X(cid:62)X)−1 · X(cid:62)y .
+O j from γ. Indeed, we obtain the cumulative frequencies (cid:74) 1 (cid:75) (cid:74) 1 (cid:75) (cid:74) (cid:75)
+of {o ,...,o } in Step 1 due to the use of staircase 4. The decryptor outputs w∗ by dividing λ2Tw∗ with λ2T.
+1j Nj 1 1
+encoding. For instance, let us consider the ordinal data
+{sˆj,sˆj,sˆj,sˆj,sˆj,sˆj} for N =6. Then the summation in Step Notice that the multiplication in Step 3 is a matrix–vector
+1 2 3 3 1 2 multiplication. The DF-MatrixInversion computes the matrix
+1 gives cumulative frequencies f = [2,4,6]. To get the k-
+percentile, we only need to find out, from left to right, the inversion with a known factor λ2 1T. Thereby, our PrivateLR
+first frequencythatislargerthan(cid:100)(kN)/100(cid:101).Intheprevious procedure computes the linear regression model w∗ with the
+example, we know sˆj
+2
+is the 50-percentile point because factor λ2 1T.
+f <3∧f ≥3. We perform the comparisons using the bGT
+1 2 Plaintext Precision Expansion (PPE). We have described
+protocol.Thus,todeterminethek-percentilefromγ wesimply
+straightforward procedures to conduct the PCA and linear
+findanindex1≤n∗ ≤|O |s.t.0∈/ {γ }N−1 while
+j k|Oj|+n∗−1 k=0 regression on ciphertexts, using our matrix primitives. How-
+0 ∈ {γ k|Oj|+n∗}N k=− 01. For the boundary conditions, we can ever, we still have an issue in implementing these procedures.
+determine that sˆj is the k-percentile point if 0 is absent in γ. That is, the current implementation of the BGV scheme, i.e.,
+1
+10the HElib [26], only allows a maximum of 60-bits plaintext Wefocusonsecureoutsourcinginthispaper.Thus,wedonot
+precisionwhichmightnotbesufficientlylargeenoughforcon- discuss the phase of key generation and key distribution.
+ducting the PCA and linear regression. We show an example
+The outline of our secure outsourcing that evaluates de-
+of this below.
+terministic function f proceeds as follows. We consider the
+We take the PCA as an example. Assume that the d ×d following two models for the security analysis.
+n n
+covariance matrix Σ (as Eq. 8) is B-bounded, i.e. |σ | ≤ B
+ij Model-I (z =f(x)). The encryptor encrypts his private input
+for all σ ∈ Σ. After T iterations, the output from Eq. 9 is
+ij x and sends x to the cloud. The cloud homomorphically
+bounded by dTMT+1BT+1. Recall that we need to introduce
+n evaluates f o(cid:74)n (cid:75)x and sends f(x) to the decryptor. The
+a fixed magnifier M to convert the real values to integers.
+decryptor decryp(cid:74)ts(cid:75)f(x) and o(cid:74)btains(cid:75)f(x).
+Presuming that we use B = 102, M = 103, and d = 5,
+n (cid:74) (cid:75)
+then the estimation above reveals that T =3 iterations are not Model-II(z (cid:54)=f(x)).Theencryptorencryptshisprivateinput
+allowed because d3M4B4 ≈ 273 exceeds 260, the maximum x and sends x to the cloud. The cloud performs specified
+n
+plaintext precision. As a result, the 60-bits precision makes homomorphic(cid:74)o(cid:75)perations on x and sends the resulting ci-
+it possible to perform only a few iterations on ciphertexts. phertext z to the decryptor.(cid:74)Th(cid:75)e decryptor decrypts z and
+However, the iterative algorithms we used for the PCA and obtains z(cid:74). T(cid:75)he decryptor derives f(x) from z by som(cid:74)e(cid:75)local
+linear regression might not give converged solutions within a post-processing.
+few iterations, which means we can obtain only very rough
+We summarize the model classification of the proposed
+approximations for the PCA and linear regression. To address
+protocols in Table IV. We give the security statements about
+this, we need to perform more iterations, which requires a
+the protocols.
+higher plaintext precision.
+Theorem 1: We assume all stakeholders behave semi-
+We introduce PPE to achieve a higher plaintext preci-
+honestly and assume that the decryptor and the cloud do
+sion with the application of the Chinese-Remainder-Theorem
+not collude with each other. Let x be a private input of the
+(CRT) [15]. Let f be the function that we evaluate, and let x
+encryptor.IftheFHEschemeprovidessemanticsecurity,after
+be the input of f. Suppose that f(x)>260. We, thus, cannot
+execution of the protocol for f, the decryptor learns z but
+directlyevaluatef ontheciphertextofxsincewecannotoffer
+nothing else. The encryptor and the cloud learn nothing.
+plaintextwithvalueslargerthan260.Toalleviatethisproblem,
+wewithK distinctplaintextspacesandgetK valuesas{f(x) We give the proof of Theorem 1 in the next paragraph. If
+mod t }K , where t <260 for all k. According to the CRT, z = f(x), Theorem 1 guarantees the security of the protocol
+k k=1 k
+if we have gcd(t ,t ) = 1 for all k (cid:54)= k(cid:48), then from the for f. If z (cid:54)= f(x), we need to show that z reveals nothing
+k k(cid:48)
+set of values {f(x) mod t }K , we can uniquely determine but f(x). For some protocols (i.e. bGT, PCT-Suppression,
+k k=1
+the value which is equal to f(x) mod t for t = (cid:81)K t . Private k-Percentile, and PrivateHistOrder), we show that
+k=1 k
+Thereby we can obtain f(x) by using such small t ’s with z does not reveal any information except f(x). However, in
+k
+product is larger than f(x). If we fix the magnitude of t , our construction, we allow the protocol of PrivatePCA and
+k
+then we can achieve any desired precision by adjusting K for PrivateLR to output z that contains information more than
+a desired precision. Indeed, PPE is achieved at the expense of f(x) for the sake of efficiency. We discuss these points in the
+increasing both computational and communication cost by a following.
+factorK whilePPEistotallyparallelizable.Wecanalsoapply
+Security Analysis. We give a sketch proof of Theorem 1 and
+the PPE to the evaluation of the descriptive statistics.
+defer the full argument to the full version of our paper. Our
+Tuning of Parameters. To obtain a final solution with the prooffollowsthesimulation-basedparadigm[10].Lettheview
+desired precision, we need to appropriately determine the oftheencryptor,decryptor,andthecloudduringtheexecution
+magnification constant M, the number of iterations T, and oftheprotocolbeV e,V d,andV c,respectively.Noticethatthe
+thenumberciphertextsusedforprecisionexpansionK.Given encryptor does not receive any message from other entities.
+a desired precision of the final solution, the number of it-
+Proof of Theorem 1 (Sketch): Let pk be the encryption
+erations required to reach the precision can be determined
+key used by the encryptor. From the construction of the
+by the convergence property of the iterative method (The
+protocol, the security against the semi-honest encryptor and
+powermethodforPCAguaranteesgeometricconvergence.The
+thesemi-honestdecryptorareapparent.So,weomittheproofs
+iterative matrix inversion guarantees quadratic convergence).
+for the encryptor and decryptor.
+Given the desired precision and the number of iterations, the
+bit-length to represent the final solution can be determined. If Security against a semi-honest cloud follows from
+this bit length is shorter than the plaintext size, PPE is not the fact that the view of the cloud, V c, consists of
+needed. If the bit length exceeds the plaintext size, precision {pk,Enc pk(x),Enc pk(z)}. We can simply construct a simu-
+expansion is introduced so that the plaintext space covers the lator S c as follow. S c firstly randomly chooses values x(cid:48) and
+required bit length. We experimentally surveyed the relations z(cid:48).ThenS c simulatesV c byVˆ c ={pk,Enc pk(x(cid:48)),Enc pk(z(cid:48))}.
+betweenthedesiredprecisionofthefinalsolution,thenumber Since the FHE provides semantic security by assumption, V c
+of iterations, the magnification constant, and the bit-length to and Vˆ c are indistinguishable. Thus, our protocols are secure at
+represent the final solution. See Appendix A for the details. the presence of a semi-honest cloud.
+Security Discussion under Model-II.Forprotocolsclassified
+VI. SECURITYANALYSIS
+in the model-II, the decryptor obtains f(x) with some post-
+We also assume that all stakeholders hold the encryption processing on z. We show that z reveals nothing except f(x)
+key pk while only the decryptor holds the decryption key sk. for certain protocols.
+11Class Protocol Inputx Outputz f(x)
+Matrixaddition X,Y X+Y X+Y
+Matrixmultiplication X,Y XY XY
+model-I Histogram {Eid(cij)}N
+i=1
+h h(Eq.2)
+Count {Eid(cij)}N
+i=1
+1(cid:62) ph 1(cid:62) ph(Eq.3)
+PrivateContingencyTable {Eid(cpj),Eid(cqj)}N
+i=1
+µ µ(Eq.5)
+bGT a,b γ 1{a>b}
+PCT-Suppression {Eid(cpj),Eid(cqj)}N
+i=1
+µ(cid:48),γ(cid:48),γ∗ µˆ (Eq.6)
+model-II Privatek-Percentile {Est(oij)}N i=1 γ sˆj n∗ (Eq.7)
+PrivateHistOrder {Eid(cij)}N
+i=1
+{γ uv}1≤u<v≤|Cj| k(Eq.4)
+PrivatePCA {x(cid:62)
+i
+,xix(cid:62)
+i
+}N
+i=1
+v(T),v(T−1) u1,λ1(Eq.9)
+PrivateLR {yix(cid:62)
+i
+,xix(cid:62)
+i
+,λ1}N
+i=1
+λ2 1T w∗ w∗(Eq.10)
+TABLE IV: Model classification
+Batch Greater-Than. In bGT( a , b ) (we assume that PrivateLR. In this protocol, the output z = λ2Tw∗. We can
+1
+θ = 1), if a ≤ b holds then th(cid:74)e(cid:75)o(cid:74)ut(cid:75)put z consists of D see that the only information leaked to the decryptor is the
+uniform random values from Z /{0} and reveals nothing but iteration number T. Precisely speaking, T can contain some
+t
+the output. If a > b, we have one 0 in γ at a position information about the condition number of X(cid:62)X, which is
+selected randomly and values at remaining positions distribute related to the eigenvalues of X(cid:62)X. However, it is not likely
+uniformly on Z /{0}. Thereby, from z the decryptor can only that the decryptor can recover (a part of) X from T. Thereby,
+t
+learn 1{a>b} but nothing else. letting the decryptor perform the division after the decryption
+can lead to a more efficient evaluation.
+PCT-Suppression. We use bGT to compare Σ values in the
+contingency table, i.e., µ, with the threshold T. Since these
+comparisons are independent of each other, we focus on a VII. EXPERIMENTALEVALUATION
+specific µ . γ∗ is the output from the bGT (each element
+s
+Weimplementedourbuildingblocksandalltheprocedures
+are multiplied with non-zero random values). If µ > T, we
+s
+have one 0 in set Γ := {γ∗ }N−1 at a random position that is described in Section V. Our implementations were
+s kΣ+s k=0 written in C++, and we used the HElib library [26] for the
+and remaining values are all random. Otherwise, Γ consists
+s
+of uniform random values on Z /{0}. Presume that, in the implementation of the BGV scheme. We compiled our code
+t
+set Γ , we have γ∗ = 0. Then the decryptor can learn using g++4.9.2 on a machine running Ubuntu 14.04.4 with
+µˆ =s µ(cid:48) −γ(cid:48) whick h(cid:48)Σ i+ ss the desired output. On the other hand eight2.60GHzIntel(R)Xeon(R)E5-2640v3processorsand32
+ifs µ ≤s T, k fo(cid:48) r all 1 ≤ k ≤ Σ, value µ(cid:48) −γ(cid:48) is uniformly GBofRAM.TheproposedproceduresandthePPEtechnique
+distrs ibuted on Z /{0}. Consequently, fros m thek output z, the are parallelizable. We leveraged 8 parallels in our benchmarks
+t
+to accelerate the computation.
+decryptor only learns µˆ and nothing else.
+We used multiple parameter sets in our benchmarks to
+Privatek-Percentile.Theoutputzofthek-percentileprotocol
+show the best performance of our procedures. Our choices for
+comes from the bGT. From z, the decryptor learns that
+cumulative frequencies before sˆj are less than (cid:100)kN/100(cid:101) selecting the parameters of the HElib are shown in Table V.
+n∗
+and cumulative frequencies of sˆj with n(cid:48) > n∗ are larger In this table, we have modulo parameter t k, the number of
+n(cid:48) slots of the CRT-packing (cid:96), levels parameter L, the parameter
+than (cid:100)kN/100(cid:101). That is equivalent to knowing that sˆj is the
+n∗ for cyclotomic polynomial m, the number of coprime moduli
+k-percentile of the population. Since the bGT reveals nothing
+K, and the security level κ. We used at most K = 8
+exceptthecomparisonresults,thek-percentileprotocolreveals
+moduli and for each modulo we set t ≈ 236 to achieve
+to the decryptor no more than that sˆj is the k-percentile. k
+n∗ about 300-bit precision. Specifically, we used parameter set
+PrivateHistOrder.ThehistogramorderprotocolinvokesbGT (I) for evaluating the PrivateHistOrder, Privatek-Percentile
+O(|C |2) times to compare |C | values in the histogram and procedures.TheevaluationsofPrivateContingencyTableand
+j j
+outputsthecomparisonresults.SincethebGTrevealsnothing PCT-Suppression used parameter set (II) while the evalua-
+except the comparison results, it is straightforward to see that tions of PrivatePCA and PrivateLR use the set (III).
+the PrivateHistOrder protocol reveals to the decryptor no
+We conducted experiments on five datasets from the UCI
+more than the order of counts in the histogram.
+Machine Learning Repository [18]. For detailed discussions,
+PrivatePCA. In this protocol, the decryptor receives two we focus on one of them, the Adult dataset, which includes
+vectors, v(T) and v(T−1). He learns the largest eigenvalue 32561 records with 6 numerical attributes, 7 categorical at-
+λ = (cid:107)v(T)(cid:107)/(cid:107)v(T−1)(cid:107) and the associated eigenvector u = tributes, and 1 ordinal attribute. Specifically, to show the
+1 1
+v(T)/(cid:107)v(T)(cid:107). Precisely speaking, the difference of the di- scalability of the PrivatePCA and PrivateLR procedures, we
+rection of v(T) and v(T−1) can contain some information also gave the benchmarks on other four datasets.
+about the inputs. However, due to the geometric convergence
+property of the power method algorithm, the difference of the
+A. Experiment Setup
+directions is negligible after a sufficient number of iterations.
+We consider that it is worth letting the decryptor perform the Parameters of HElib. To achieve the best performance, we
+division after the decryption for the sake of efficiency. need to choose the parameters of the HElib appropriately. We
+12tk (cid:96) L m K κ Attributes N Evaluation Decryption
+(I) 67499 1742 5 5227 1 90 500 35.69±1.55s 3.84s
+(II) 8191 4096 10 16384 1 80 1k 68.42±4.17s 7.45s
+(III) ≈236 ≈70 32 27893 ≤8 110
+|Cp|=8,|Cq|=6
+2k 155.26±20.01s 14.83s
+4K 287.02±10.10s 30.00s
+TABLE V: Parameter sets of the BGV scheme.
+TABLE VII: Benchmark of the PCT-Suppresion procedures.
+Values are averaged over 10 runs.
+Type Domain N Evaluation Decryption
+500 1.26±0.145s 1.26s
+1k 1.31±0.157s 1.23s that standard deviations for decryption times were negligible
+|Cj|=8
+10k 2.72±0.289s 4.80s in our experiments.
+32k 6.28±0.484s 13.2s
+Hist.Order 500 2.42±0.439s 3.27s Histogram Order & K-percentile. Table VI shows the
+1k 2.53±0.336s 3.30s experimental results of the PrivateHistOrder and Priavte k-
+|Cj|=16
+10k 6.24±0.448s 13.6s Percentile procedures. For the histogram order (upper part),
+32k 13.8±1.38s 41.2s werantheexperimentsontwocategoriesworkclassandeduca-
+500 4.768±0.12s 3.27s tion, which respectively consists of 8 and 16 attribute values.
+K-per- 1k 9.487±0.92s 3.11s The time of decryption increases linearly with respect to N
+|Oj|=100
+centile 10k 97.515±1.60s 18.6s and it dominates the evaluation time when N is large. This is
+32k 321.285±21.7s 48.8s because we needed to decrypt (cid:100)(|C |2·N)/(cid:96)(cid:101) ciphertexts. The
+j
+decryption is totally parallelizable so it can be easily reduced
+TABLE VI: Benchmark (adult dataset) of the PrivateHis-
+by using more cores.
+tOrder, and Private k-Percentile. Values are averaged over
+10 runs. For the k-percentile procedures, we conducted the exper-
+iments with the ordinal attribute age from the adult dataset
+and presumed that the domain size |O |=100 (lower part of
+j
+determined the parameters of the HElib based on the three TableVI).Aslongasn<(cid:96)(i.e.,1742),thetimefordownload
+concerns. and decryption were steady. When n>(cid:96), the decryption time
+increased almost linearly with n. To reduce the response time,
+1) To provide the desired security level. the analyst can choose the parameters of BGV that offer a
+2) To offer sufficient spaces of the CRT packing, i.e. (cid:96). larger (cid:96).
+3) To operate the homomorphic rotation efficiently.
+Contingency Table. Table VII shows the benchmarks of the
+In our experiments, we used parameters shown in Table V. PCT-Suppression.Werantheexperimentsontwocategories
+These parameter sets offer at least 80-bit security level and workclass and relationship, which respectively consists of 8
+provide the number of slots up to several thousand. Moreover, and 6 attribute values. The time of evaluation and decryption
+homomorphic rotation on these parameters is efficient. From growlinearlywiththenumberofdataN,butthiscomputation
+the implementation aspect, we choose m and t so that is entirely parallelizable in our PCT-Suppression procedure.
+k
+(PAlgebra is a C++ class in HElib) We can easily accelerate this procedure with a higher level of
+parallelism.
+PAlgebra::numOfGens()==1
+MostofthedecryptiontimeinthePCT-Suppressionpro-
+&&PAlgebra::SameOrd(0)==true
+cedureisthetimeofdecryptingtheoutputofthebGTprotocol
+duetothesuppressionfunctionality,whilethedecryptiontime
+We refer to [8], [9], [26] for the homomorphic rotation.
+in the PrivateContingencyTable procedure is independent of
+Error Ratio. Our PrivatePCA and PrivateLR procedures the number of data N.
+use iterative algorithms and fixed-precision values. It thus
+introduceserror.Wewriteλ∗ andw∗ todenotethesolutionsto PCA & Linear Regression. We used three different magni-
+thePCAandtheLR,respectively.Wewriteλˆ andwˆ todenote fication constants M and three different iteration numbers T
+to benchmark the PCA protocol (only for the first principal
+the outputs obtained from our PCA and LR procedures. We
+component). The results are shown in Table VIIIa.
+define the error ratio of our procedures as follows.
+By applying the CRT-packing, the number of ciphertexts
+|λ∗−λˆ| (cid:107)w∗−wˆ(cid:107)
+Error = Error = 2. to transfer and decrypt during the post-processing phase are
+λ∗ λ∗ w∗ (cid:107)w∗(cid:107) 2 O((cid:100)d n/(cid:96)(cid:101)), which is independent of the number of records
+N. As shown in Table VIIIa, the download and decryption
+This error ratio definition enables us to estimate the loss
+time were steady. It took less than three minutes to evaluate
+of accuracy. We experimentally studied the iteration-error
+one principal component with a low error ratio Error <0.1
+tradeoffs in Appendix A. λ∗
+(i.e., T =5, M =1000 in Fig. 4a in Appendix A).
+The experimental results of the LR protocol are shown
+B. Experimental Results
+in Table VIIIb. We omit here the computation time for ob-
+We measured the time of procedure evaluation and time of taining the largest eigenvalue λ . Similarly, we benchmarked
+1
+decryptionoftheresults.Wegivethestandarddeviationsonly the protocol in nine settings. For the same reason as for
+for the evaluation time due to the space limitation. We remark the PCA protocol, the time to download and the time to
+13M T K Evaluation Decryption M T K Evaluation Decryption
+3 2 67.3 ± 4.89s 0.876s 1 1 173 ± 9.12s 0.475s
+10 4 3 99.9 ± 4.77s 0.848s 10 2 3 341 ± 8.12s 0.428s
+5 3 122 ± 2.63s 0.874s 3 5 672 ± 9.76s 0.618s
+3 3 70.6 ± 4.19s 0.848s 1 2 160 ± 3.97s 0.397s
+100 4 4 104 ± 7.68s 1.27s 100 2 4 400 ± 27.8s 0.649s
+5 4 128 ± 7.93 1.26s 3 7 787 ± 10.5s 0.816s
+3 3 72.7 ± 2.12s 0.96s 1 2 164 ± 8.25s 0.388s
+1000 4 4 108 ± 4.06s 1.25s 1000 2 4 383 ± 10.0s 0.622s
+5 5 136 ± 5.67s 1.43s 3 8 865 ± 11.7s 0.944s
+(a)PCA(forthefirstprincipalcomponent) (b)LinearRegression(thetimeofonecallofPCAwere
+omitted)
+TABLE VIII: Benchmarks of the PCA and LR protocol (adult dataset): M stands for the magnification constant; T denotes the
+number of iterations. K is the expansion factor. Values are averaged over 10 runs.
+Dataset dn N PCA(eval/decrypt) LR(eval/decrypt) ful and insightful comments from the reviewers and thank
+adult 6 32561 141.21/2.36 872.82/1.59
+autompg 7 398 149.80/1.82 950.93/1.47 professor Takashi Nishide from University of Tsukuba for
+wine-equality 12 4898 217.32/1.94 3543.76/1.68 discussions on security analysis. This work is supported by
+forestfires 13 513 299.38/1.87 3757.99/1.59
+JST CREST program “Advanced Core Technologies for Big
+communities 20 1994 472.98/1.86 10871.34/1.76
+Data Integration”. This work is further supported by the JSPS
+TABLE IX: Experimental results of the PCA and LR protocol KAKENHI 24680015 and 16H02864.
+usingUCIdatasets.d standsforthenumberofthenumerical
+n
+attributes. The unit of time is the second.
+REFERENCES
+[1] D. Boneh, C. Gentry, S. Halevi, F. Wang, and D. J. Wu, “Private
+decrypt the output from our LR protocol were negligible. The
+databasequeriesusingsomewhathomomorphicencryption,”inApplied
+matrix inversion converges quadratically. We thus achieved Cryptography and Network Security - 11th International Conference,
+a error ratio Error < 10−3 within a few iterations (i.e., ACNS2013,Banff,AB,Canada,June25-28,2013.Proceedings,2013,
+w∗
+T = 3,M = 1000 in Fig 4b in Appendix A). For the pp.102–118.
+evaluation time, it took about 17 minutes to achieve this error [2] R.Bost,R.A.Popa,S.Tu,andS.Goldwasser,“Machinelearningclas-
+guarantee. sificationoverencrypteddata,”in22ndAnnualNetworkandDistributed
+SystemSecuritySymposium,NDSS2015,SanDiego,California,USA,
+Extra Experiments for the Predictive Statistics. The extra February8-11,2015.
+experimental results of the PCA protocol (the first principal [3] Z. Brakerski, C. Gentry, and V. Vaikuntanathan, “(Leveled) fully
+homomorphic encryption without bootstrapping,” in Innovations in
+component only) and the LR protocol are shown in Table IX.
+Theoretical Computer Science 2012, Cambridge, MA, USA, January
+Here, we used M = 1000 and T = 3, and we listed the
+8-10,2012,2012,pp.309–325.
+evaluation time and decryption time. We can see that the
+[4] Z. Brakerski and V. Vaikuntanathan, “Efficient fully homomorphic
+evaluation time of PCA protocol increases linearly with the encryption from (standard) LWE,” in IEEE 52nd Annual Symposium
+input dimension d , while the evaluation time of the LR onFoundationsofComputerScience,FOCS2011,PalmSprings,CA,
+n
+procedure increases quadratically with d . USA,October22-25,2011,2011,pp.97–106.
+n
+[5] ——, “Fully homomorphic encryption from ring-lwe and security for
+keydependentmessages,”inAdvancesinCryptology-CRYPTO2011-
+VIII. CONCLUSIONS
+31stAnnualCryptologyConference,SantaBarbara,CA,USA,August
+14-18,2011.Proceedings,2011,pp.505–524.
+Weproposedtoconductprivacy-preservingstatisticalanal-
+[6] J.Coron,A.Mandal,D.Naccache,andM.Tibouchi,“Fullyhomomor-
+ysisusingfullyhomomorphicencryption.Also,weintroduced
+phicencryptionovertheintegerswithshorterpublickeys,”inAdvances
+two building blocks, matrix operations of encrypted matrices in Cryptology - CRYPTO 2011 - 31st Annual Cryptology Conference,
+and a novel batch greater-than primitive. With the application SantaBarbara,CA,USA,August14-18,2011.Proceedings,2011,pp.
+of these primitives, we show how to conduct the descriptive 487–504.
+and predictive statistics on FHE ciphertexts efficiently. We [7] C.Gentry,“Afullyhomomorphicencryptionscheme,”Ph.D.disserta-
+experimentally demonstrated the utility of our procedures. For tion,StanfordUniversity(CA,USA),2009.
+example, it took us less than 20 minutes to conduct the model [8] C.Gentry,S.Halevi,andN.P.Smart,“Fullyhomomorphicencryption
+building of a linear regression on about 30k data of 6 features with polylog overhead,” in Advances in Cryptology - EUROCRYPT
+2012 - 31st Annual International Conference on the Theory and
+as input. We conclude that with applications of CRT-packing
+Applications of Cryptographic Techniques, Cambridge, UK, April 15-
+and appropriate data encoding, securely conducting statistical 19,2012.Proceedings,2012,pp.465–482.
+analysis on large-scale datasets using a fully homomorphic [9] ——, “Homomorphic evaluation of the AES circuit,” in Advances in
+encryption is becoming more and more practical. Cryptology - CRYPTO 2012 - 32nd Annual Cryptology Conference,
+SantaBarbara,CA,USA,August19-23,2012.Proceedings,2012,pp.
+Acknowledgment. The authors would like to thank the use- 850–867.
+14[10] O. Goldreich, Foundations of cryptography: volume 2, basic applica-
+Fig. 4: Tradeoffs between the magnification constant, number
+tions. Cambridgeuniversitypress,2009.
+ofiterations,anderrorratios.Thedottedlinesshowthenumber
+[11] P. Golle, “A private stable matching algorithm,” in Financial Cryp-
+of bits of values in Eq. 9 and Eq. 10.
+tographyand DataSecurity,10thInternational Conference,FC2006,
+Anguilla, British West Indies, February 27-March 2, 2006, Revised
+SelectedPapers,2006,pp.65–80.
+(a)TradeoffsofErrorλ∗
+[12] T.Graepel,K.E.Lauter,andM.Naehrig,“MLconfidential:Machine
+learningonencrypteddata,”inInformationSecurityandCryptology-
+ICISC 2012 - 15th International Conference, Seoul, Korea, November
+28-30,2012,RevisedSelectedPapers,2012,pp.1–21.
+[13] C.GuoandN.J.Higham,“ASchur-Newtonmethodforthematrixpth
+root and its inverse,” SIAM J. Matrix Analysis Applications, vol. 28,
+no.3,pp.788–804,2006.
+[14] S. Halevi and V. Shoup, “Algorithms in HElib,” in Advances in
+Cryptology - CRYPTO 2014 - 34th Annual Cryptology Conference,
+Santa Barbara, CA, USA, August 17-21, 2014, Proceedings, Part I,
+2014,pp.554–571.
+[15] J.Hoffstein,J.Pipher,andJ.H.Silverman,Anintroductiontomathe-
+(b)TradeoffsofErrorw∗
+maticalcryptography. (Springer,NewYork,2008).
+[16] N. Kirkendall and G. Sande, “Comparison of systems implementing
+automatedcellsuppressionforeconomicstatistics,”JournalofOfficial
+Statistics,vol.14,no.4,p.513,1998.
+[17] V.KolesnikovandT.Schneider,“Improvedgarbledcircuit:FreeXOR
+gates and applications,” in Automata, Languages and Programming,
+35th International Colloquium, ICALP 2008, Reykjavik, Iceland, July
+7-11,2008,Proceedings,PartII,2008,pp.486–498.
+[18] M. Lichman, “UCI machine learning repository,” 2013. [Online].
+Available:http://archive.ics.uci.edu/ml
+[19] C. Liu, X. S. Wang, K. Nayak, Y. Huang, and E. Shi, “ObliVM:
+A programming framework for secure computation,” in 2015 IEEE
+Symposium on Security and Privacy, SP 2015, San Jose, CA, USA,
+May17-21,2015,2015,pp.359–376. [31] M.Yasuda,T.Shimoyama,J.Kogure,K.Yokoyama,andT.Koshiba,
+[20] W.-J. Lu, Y. Yamada, and J. Sakuma, “Privacy-preserving genome- “Securepatternmatchingusingsomewhathomomorphicencryption,”in
+wideassociationstudiesoncloudenvironmentusingfullyhomomorphic Proceedingsofthe2013ACMworkshoponCloudcomputingsecurity
+encryption,”BMCmedicalinformaticsanddecisionmaking,vol.15,no. workshop,Berlin,Germany. ACM,2013,pp.65–76.
+Suppl5,p.S1,2015.
+[21] V. Lyubashevsky, C. Peikert, and O. Regev, “On ideal lattices and APPENDIX
+learningwitherrorsoverrings,”inAnnualInternationalConferenceon
+the Theory and Applications of Cryptographic Techniques. Springer, A. Iteration-Error Tradeoffs
+2010,pp.1–23.
+To study the tradeoffs between the computation time
+[22] R. Mises and H. Pollaczek-Geiringer, “Praktische verfahren der gle-
+(number of iterations) and the error ratio, we ran a grid-
+ichungsauflo¨sung.” ZAMM-Journal of Applied Mathematics and Me-
+chanics/Zeitschrift fu¨r Angewandte Mathematik und Mechanik, vol. 9, search experiment on the adult dataset. Figure 4a presents the
+no.2,pp.152–164,1929. tradeoffsforError λ∗ (thebaseoflogise).Thisplotenablesus
+[23] S. U. Nabar and N. Mishra, “Releasing private contingency tables,” tochooseparametersforoursystem.Supposetheanalystseeks
+JournalofPrivacyandConfidentiality,vol.2,no.1,p.9,2009. an error ratio of approximately 10−2 with 3 digits preserved.
+[24] M.Naehrig,K.E.Lauter,andV.Vaikuntanathan,“Canhomomorphic The plot indicates that he should use a magnifier that is larger
+encryptionbepractical?”inProceedingsofthe3rdACMCloudCom- than 1000 for preserving the digits, and to use more than 6
+putingSecurityWorkshop,CCSW2011,Chicago,IL,USA,October21, iterations according to the observation that −log10−2 ≈4.6.
+2011,2011,pp.113–124.
+Thereby, he requires a plaintext precision of more than 120
+[25] M.Naor,B.Pinkas,andR.Sumner,“Privacypreservingauctionsand bits. In other words, if the moduli p ≈ 236, the expansion
+mechanism design,” in Proceedings of the 1st ACM conference on k
+factor K >3 is needed for plaintext precision expansion.
+Electroniccommerce,Denver,CO,USA. ACM,1999,pp.129–139.
+[26] V. S. Shai Halevi, “HELib,” http://shaih.github.io/HElib/index.html, The convergence rate of DF-MatrixInversion depends on
+accessed:2014-12-10. thechoiceofλ,whichispreferredtobethelargesteigenvalue
+[27] N. P. Smart and F. Vercauteren, “Fully homomorphic encryption with of the inverse matrix. To demonstrate the effectiveness of our
+relativelysmallkeyandciphertextsizes,”inPublicKeyCryptography
+system, we ran another grid-search experiment. In the second
+-PKC2010,13thInternationalConferenceonPracticeandTheoryin
+grid-search experiment, we ran the regression protocol on
+PublicKeyCryptography,Paris,France,May26-28,2010.Proceedings,
+2010,pp.420–443. the adult dataset in plain, whereas we used the output from
+[28] ——, “Fully homomorphic SIMD operations,” Designs, codes and our PCA protocol as λ. Similarly, the Figure 4b depicts the
+cryptography,vol.71,no.1,pp.57–81,2014. tradeoffs for Error w∗. From the plot, it is apparent that even
+[29] D. Wu and J. Haven, “Using homomorphic encryption for large scale with the approximated eigenvalue, our regression algorithm
+statisticalanalysis,”http://cs.stanford.edu/people/dwu4/FHE-SI Report. works properly. Given the required error ratio and the number
+pdf,2012. of digits to preserve, the way to decide the expansion factor
+[30] A.C.Yao,“Howtogenerateandexchangesecrets(extendedabstract),” K is similar to that in the PCA protocol.
+in 27th Annual Symposium on Foundations of Computer Science,
+Toronto,Canada,27-29October1986,1986,pp.162–167.
+15

@@ -1,0 +1,848 @@
+RICH: Automatically Protecting Against Integer-Based Vulnerabilities
+DavidBrumley,Tzi-ckerChiueh, Robert Johnson
+dbrumley@cs.cmu.edu,chiueh@cs.sunysb.edu,rtjohnso@cs.sunysb.edu
+HuijiaLin,DawnSong
+huijia@cs.cornell.edu,dawnsong@ece.cmu.edu
+Abstract againstinteger-basedattacks.
+Integerbugsappearbecauseprogrammersdonotantici-
+We present the design and implementation of RICH patethesemanticsofCoperations. TheC99standard[16]
+(Run-timeIntegerCHecking),atoolforefficientlydetecting definesaboutadozenrulesgoverninghowintegertypescan
+integer-based attacks against C programs at run time. C becastorpromoted. Thestandardallowsseveralcommon
+integerbugs,apopularavenueofattackandfrequentpro- cases,suchasmanytypesofdown-casting,tobecompiler-
+grammingerror[1–15],occurwhenavariablevaluegoes implementationspecific. In addition, the written rules are
+outoftherangeofthemachinewordusedtomaterializeit, not accompanied by an unambiguous set of formal rules,
+e.g. whenassigningalarge32-bitintto a16-bitshort. making it difficult for a programmer to verify that he un-
+We show that safe and unsafe integer operationsin C can derstands C99 correctly. Integerbugs are not exclusive to
+be captured by well-known sub-typing theory. The RICH C.SimilarlanguagessuchasC++,andeventype-safelan-
+compilerextensioncompilesCprogramstoobjectcodethat guagessuchasJavaandOCaml,donotraiseexceptionson
+monitorsitsownexecutionto detectinteger-basedattacks. some typesof integererrors. However, forthe rest of this
+WeimplementedRICHasanextensiontotheGCCcompiler paper,wefocusonC.
+andtesteditonseveralnetworkserversandUNIXutilities. The first step is to formally define the semantics of in-
+Despitetheubiquityofintegeroperations,theperformance teger operations in C so that we may detect integer bugs
+overheadofRICHisverylow,averagingabout5%. RICH correctly. Onechoiceistowriteoutformallyexactlywhat
+found two new integer bugs and caught all but one of the isspecifiedbytheC99standard. Thiswouldleadtoafor-
+previously known bugs we tested. These results show that malspecificationofwhatmanyprogrammersalreadydonot
+RICHisa usefulandlightweightsoftware testingtooland understand. Inaddition,itwouldleavegapingholesinim-
+run-timedefensemechanism.RICHmaygeneratefalsepos- portant scenarios that the C99 standard defines as imple-
+itiveswhenprogrammersuseintegeroverflowsdeliberately, mentationspecific.
+anditcanmisssomeintegerbugsbecauseitdoesnotmodel Instead, our formal semantics of C integer operations
+certainCfeatures. captures the underlying idea that smaller precision types
+represent subsets of larger precision types with the same
+sign. Sub-typingtheoryisanaturalwaytoexpressthisre-
+lationship,e.g.,int8 tisasubtypeofint16 t,written
+1 Introduction
+int8 t <: int16 t,becausethevaluesofint8 t ⊆
+int16 t. Thisapproachmimicstheapproachinsaferlan-
+Cintegerbugsareanunderestimatedsourceofvulnera- guagessuchasAda,whichallowuserstocreatesub-types
+bilities[1–15]. We presentan evaluationof C integervul- thatqualifyprimitivetypes[17].
+nerabilities and the first automatic tool for efficiently and With the formal semantics in hand, we statically type-
+accuratelydetectingandpreventingalargeclassofinteger- checktheCprogramforsafety. Thepurposeofstatictype
+based attacks against C programs. We have developed a checkingistodecidewhetheraprogramwillbesafetoex-
+staticprogramtransformationtool,calledRICH,thattakes ecute. At a high level, safety means that meaningful in-
+asinputanyCprogramandoutputsobjectcodethatmon- teger bits will not be lost or misinterpreted. Static type-
+itors its own execution to detect integer overflows, under- checking is conservative, meaning that if a program fails
+flows, and other bugs. Our experiments found that pro- type-checking it potentially uses an integer in a way that
+gramstypicallyhavehundredstothousandsofpotentialin- mayleadtodatalossormisinterpretedduringcomputation.
+teger safety violations where bits may be lost or misinter- SinceCisunsafe,itshouldbeofnosurprisethatmanyC
+preted. Despitetheubiquityofintegeroperations,therun- programsdonottype-check.Atthispoint,thereareseveral
+time performance penalty of RICH is very low, averaging options: a) deem the programinvalid and wait for it to be
+lessthan5%. Thisresultshowsthatitispracticalto auto- fixed, b) develop a more elaborate typingscheme that can
+matically transform C programsso that they are hardened betterdistinguishpotentialfromrealproblems,c)automat-ically promote integers such that integer bugs are impos- intentional overflow sites in the program source code, en-
+sible, or d) insert run-time checks that dynamically check abling the run-time detector to abort the program or take
+safety. We found a typical program will have thousands otherpreventativemeasureswheneveritdetectsaninteger-
+ofpotentialunsafeassignments,andifwecountoverflows, basedattack.ExperimentsapplyingRICHtorealprograms
+one potential error per 23 lines of code. Thus option (a) showthatintentionaloverflowsarequiterare,soannotating
+would require immense developereffort in orderto fix all themwouldnotbeaburdenonprogrammers.
+potentialproblems. Option (b)is plausible, but oftenvery We implemented RICH and measured its performance
+expensivesince such analysis typically reasons aboutrun- on severalUNIX serversand utilities. Compilingapplica-
+timebehavior. Forexample,dependenttyping[18](where tionswith RICH requiredno source modifications– just a
+typescandependuponvalues)isonewayofimplementing rebuildwithourtool. FornetworkserverslikeApacheand
+(b), but is typically more expensive to check, and would Samba, the performance overhead of RICH is extremely
+seem to require the programmer to manually supply in- small, about 5%, even when the server is not I/O bound.
+variants and/or would be undecidable. Option (c), auto- FalsepositivesfromRICH-protectedprogramsrevealed32
+promotion, is interesting since it eliminates most integer intentional overflow sites in the 5 programs we bench-
+bugs, andis the approachtaken by severallanguagessuch marked, demonstrating that intentional overflows are rare.
+as SmallTalk and Scheme. Such an approach requires the RICH found2 previouslyunknownintegerbugsin Samba
+ability to perform arbitrary precision arithmetic. This is and ProFTPd, and detected 6 of the 7 previously known
+notpracticalforC, sincetherun-timedatalayoutassumes integer vulnerabilities we tested, missing one vulnerabil-
+fixed-sizeintegers.Furthermore,ourexperimentsshowthat ity because the programtransformationmodelsC pointers
+programmersrarelywantarbitrary-precisionintegerseman- unsoundly. Theseexperimentsshow thatRICH is a useful
+tics, so it does not make sense to make that the language andlightweightsoftwaretesting toolandrun-timedefense
+default. Finally, arbitrary-precisionintegers may result in mechanism that is backwards-compatible, efficient, effec-
+unpredictableperformance. Thatleavesuswithoption(d): tive,andeasytodeploy.
+checkallpotentiallyunsafeoperationsatrun-time. We have also performed a comprehensive study of
+Our choice to check all potential unsafe integer opera- known integer bugs and exploits. Integer bugs fall into
+tionsisa commonwayofback-portingtypesafetyintoan fourbroadclasses:overflows1,underflows,truncations,and
+otherwiseunsafelanguage.Forexample,thetypingrulefor signednesserrors. Integerbugsare usually exploitedindi-
+arraysisunsafeinJava[19]. Asaresult,inJavaeacharray rectly, e.g., triggering an integer bug enables an attacker
+accessispotentiallycheckedatrun-time.Inoursetting,we to corrupt other areas of memory, gaining control of an
+checkeachpotentiallyunsafeintegeroperation. Themain application. The survey results highlight the creativity of
+trick is to make integer checks efficient. Though difficult system hackers, as the surveyed exploits contained over a
+to verify with language designers directly, it is commonly half-dozendifferentexploitstrategies,allbuiltuponminor-
+postedonthewebthatthereasonsomeotherwisetype-safe looking integer bugs. Even though integer bugs are often
+languagessuchasOCamlomitintegerchecksonbaseinte- usedtobuildabufferoverfloworothermemorycorruption
+gertypesistheybelievethemtobetooexpensive.Weshow attack, integer bugs are not just a special case of memory
+thatdespitethenumberofpotentiallyunsafeoperations,we corruptionbugs. If all programswere made memorysafe,
+canimplementcheckssuch thattheyhave verylittle over- attackerswouldstillfindwaystoexploitintegerbugs.
+headforCprograms.
+We implement the checks in two phases. At compile Contributions. This paper presents an automatic ap-
+time, RICH instruments the target program with run-time proachforefficientlyprotectingagainstalargeclassofinte-
+checksofallunsafeintegeroperations. Thecurrentproto- gerbugs, includingoverflows/underflows,truncationbugs,
+type instruments any C operation that could trigger an in- andsignconversionbugsinCprograms.Specifically,we:
+teger bug and our experiments show that the performance
+• Survey195 knownintegervulnerabilitiesand catego-
+overheadof this instrumentationis verylow. At run time,
+rizethemasoverflows,underflows,truncationbugs,or
+theinsertedinstrumentationcheckseachintegeroperation.
+signconversionbugs.
+Whenacheckdetectsanintegererror,itgeneratesawarn-
+• ProvideformalsemanticsforsafeCintegeroperations.
+ingandoptionallyterminatestheprogram.
+Wederiveformaltypingrulessimilartothosefoundin
+Some deliberate integer operations look like integer
+languageswithoutintegerbugssuch as Ada. Our se-
+bugs,makingitachallengetoperfectlydetectinteger-based
+manticsreplacethecumbersomeandun-intuitiveC99
+attacks at run time. For example, programmers may use
+specifications with a few simple sub-typing rules. In
+anintegeroverflowtoperformareductionmodulo232“for
+addition, since C is not type-safe, we also supply C-
+free”. Like all overflows, the C source code contains no
+specific rewrite rules that rewrite any violationof the
+indicationfromtheprogrammerthatthisoverflowisinten-
+type-safetyrulesasadynamicsafetycheck.
+tional.Sincetherun-timedetectorcannotdistinguishinten-
+• ImplementaprototypecalledRICH(Run-timeInteger
+tionaloverflowsfromattacks,thecurrentprototypeimple-
+CHecks)toevaluateourapproachandtechniques.
+mentation generates warnings instead of aborting the pro-
+gram after detecting an integer error. Future versions of 1“Integer overflow” is commonly used to describe integer overflows
+RICH could support programmer annotations to indicate specificallyandintegerbugsingeneral.• Demonstratethroughexperimentsthatpotentiallyun- byprovidinglargeintegervaluestotheinpam.widthand
+safeintegeroperationsarerampantinsourcecode. inpam.heightfields. Theproductofthesevaluesusedin
+• Showhowtoimplementourdynamiccheckswithlow thecalltomallocwilloverflow,resultinginanerroneously
+overhead. Inparticular,althoughthousandsof unsafe smallallocation. Thesmallallocationallowstheexploitto
+operationsmaybefoundandrequirechecking,theav- writeout-of-boundsthroughp→p,shownonthelasthigh-
+erageperformanceoverheadislessthan3.7%. lightedline.
+Underflow. An integer underflow occurs at run-time
+whentheresultofan integerexpressionis smallerthanits
+Outline. Wefirstdescribeseveralreal-worldintegerbugs
+minimum value, thus “wrapping”to the maximuminteger
+andoutlineexploitsagainstthesebugsinSection2. InSec-
+for the type. For example, subtracting 0 − 1 and storing
+tion 3, we precisely define the security goal of our trans-
+theresultinanunsigned16-bitintegerwillresultinavalue
+formation and the theoretical foundations of our program
+of216−1,not−1. Sinceunderflowsnormallyoccuronly
+transformation.Section4describesourtoolRICHandSec-
+with subtraction, they are rarer than overflows, with only
+tion5presentsbenchmarkresults. Wediscussrelatedwork
+10 occurrencesin oursurvey. Figure 1(ii) shows a typical
+inSection6anddrawconcludinglessonsinSection7.
+underflowvulnerabilitywhichoccursinNetscapeversions
+3.0-4.73[3]. Anattackercanspecifythelenfieldas1,re-
+2 Integer Vulnerabilities
+sultingin underflowin the expression len-2, thusassign-
+ing a large value to size. The following call to malloc
+In this section, we first describe the different types of would allocate 0 bytes (due to overflow in the expression
+integer vulnerabilities in C programs. We also present a size+1),allowingtheattackertooverwritememoryonthe
+studyweperformedof195CommonVulnerabilityandEx- subsequentmemcpy.
+ploit (CVE) [20] candidate integer vulnerabilities. This Signedness Error. A signedness error occurs when a
+study shows each type of integer vulnerability is common signedintegeris interpretedasunsigned,orvice-versa. In
+in source code. We then describe how integervulnerabili- twos-complement representation, such conversions cause
+tiescanbeexploitedtogaincontrolofaprogram. the sign bit to be interpreted as the most significant bit
+(MSB) or conversely, hence -1 and 232 − 1 are misinter-
+2.1 IntegerVulnerabilityCategories pretedtoeachotheron32-bitmachines. 44ofthe195CVE
+vulnerabilities in our survey are signedness errors. Fig-
+Each integer type in C has a fixed minimum and max- ure1(iii)showsasignednesserrorfromtheXDR(eXternal
+imum value that depends on the type’s machine represen- Data Representation,used bySun RPC and NFS) routines
+tation (e.g., two’s complement vs. one’s complement), inLinuxkernel2.4.21[2]inwhichthesignedintsizeis
+whether the type is signed or unsigned (called “signed- initializeddirectlyfromunsigned,attacker-controlledXDR
+ness”), and the type’s width (e.g., 16-bitsvs. 32-bits). At data, *p. A negative size value bypasses the signed up-
+a high level, integer vulnerabilities arise because the pro- perbound check but is interpretedas a very large positive
+grammerdoesnottakeintoaccountthemaximumandmini- number by the memcpy function, whose size argument is
+mumvalues.Integervulnerabilitiescanbedividedintofour unsigned,resultinginaninstantkernelpanic.
+categories: overflows, underflows, truncations, and sign Truncation. Assigning an integer with a larger width
+conversion errors. Our study of 195 CVE known integer to a smallerwidthresults in integertruncation. Forexam-
+vulnerabilities indicates vulnerabilities from all categories ple, casting an int to a short discards the leading bits
+areprevalentinsourcecode. of the int value, resulting in potential information loss.
+Overflow. Anintegeroverflowoccursatrun-timewhen Figure1(iv)showsatruncationvulnerabilityfromtheSSH
+the result of an integer expression exceeds the maximum CRC-32CompensationAttackDetector[4].Thelocalvari-
+value for its respective type. For example, the product of able n is only 16-bits long, so the assignment n = l can
+two unsigned 8-bit integers may require up to 16-bits to cause a truncation. By sending a very large SSH protocol
+represent,e.g.,28−1∗28−1 = 65025,whichcannotbe packet,anattackercanforcethistruncationtooccur,caus-
+accuratelyrepresentedwhenassignedtoan8-bittype. Of- ing the xmalloc call on the nextline to allocate too little
+ficially, the C99 standardspecifies that a “computationin- space. The code that initializes the allocated space a few
+volvingunsignedoperandscanneveroverflow”becausethe lineslaterwillcorruptSSH’smemory,leadingtoanattack.
+resultcanbereducedmodulotheresulttype’swidth(page
+34, [16])(signed overflowisconsideredundefinedbehav- 2.2 ExploitingIntegerBugs
+ior,thusimplementationspecific). However,overflowsare
+currentlythe most commonintegervulnerability, account- Integer bugs differ from other classes of exploits be-
+ing for 148 of the 207 CVE vulnerabilities in our survey, causetheyareusuallyexploitedindirectly.Typicalexploits
+indicating many programmerscertainly do not understand include 1) Arbitrary code execution such as when an in-
+oranticipatetheC99semantics. teger vulnerability results in insufficient memory alloca-
+Figure 1(i) shows a typical overflow vulnerability in tion, which is subsequently exploited by buffer overflows,
+GOCR [1], an optical character recognition program for heapoverflows,overwriteattacks,etc;2)DenialofService
+processing images. An attacker can exploit the program (DoS) attacks where the exploit causes excessive memoryvoid getComm(unsigned int len, char *src){
+unsigned int size;
+struct pixmap {
+unsigned char *p; size = len − 2;
+int x; /* xsize */ char *comm = (char *)malloc(size + 1); int detect_attack(u_char *buf, int len, u_char *IV){
+int y; /* ysize */ memcpy(comm, src, size); static word16 *h = (word16 *) NULL;
+int bpp; return; static word16 n = HASH_MIN_ENTRIES;
+};
+typedef struct pixmap pix; } register word32 i, j;
+...... (ii) word32 l;
+...
+void readpgm(char *name, pix * p) {
+static inline u32 *
+/* read pgm */... for(l=n; l<HASH_FACTOR(len/BSIZE); l=l<<2);
+decode_fh(u32 *p, struct svc_fh *fhp) {
+pnm_readpaminit(fp, &inpam); if (h == NULL) {
+p−>x=inpam.width; int size; debug("Install crc attack detector.");
+p−>y=inpam.height; fh_init(fhp, NFS3_FHSIZE); n = l;
+if(!(p−>p=(char *)malloc(p−>x*p−>y))) size = ntohl(*p++); h = (word16 *) xmalloc(n*sizeof(word16));
+F1("Error at malloc"); if (size > NFS3_FHSIZE) } else
+for(i=0; i<inpam.height; i++){ return NULL; for (c=buf, j=0; c<(buf+len); c+=BSIZE, j++){
+pnm_readpamrow(&inpam, tuplerow); memcpy(&fhp−>fh_handle.fh_base,
+for (i = HASH(c) & (n − 1); h[i] != UNUSED;
+for(j = 0; j<inpam.width; j++) p,size);
+i = (i + 1) & (n − 1)) ...;
+p−>p[i*inpam.width+j]=sample; fhp−>fh_handle.fh_size = size;
+} return p + XDR_QUADLEN(size);
+h[i] = j;
+}
+} } }
+(i) (iii) (iv)
+Figure1. (i)GOCR PNMimagesizeinteger overflow vulnerability. (ii) Netscape JPEGcommentlength integer underflow vulnerability. (iii) Linux
+kernelXDRintegersignednesserrors. (iv)SSHCRC-32CompensationAttackDetectorintegertruncationvulnerability. Ineachfigure,theintegerbugis
+highlightedwithapinkbackground;theresultingexploitishighlightedinblue.
+allocation or infinite loops; 3) Array index attacks where 3 Safe Integer Semantics
+a vulnerable integer is used as an array index, so that at-
+tackerscanaccuratelyoverwritearbitrarybyteinmemory; In this section, we present our approach for protecting
+4)Bypassingsanitizationattacks,suchasbypassinganup- against integer vulnerabilities. Our approach is motivated
+perboundscheckthatdoesnottakeintoaccountunexpected bytype-safelanguagesthatdonothaveintegervulnerabil-
+negativeintegervalues;and5)Logicerrors,forexampleas ities. We define type-safety rules for C integer operations
+in NetBSD where an integer vulnerability allowed an at- and applythem to programs. When we find a violationof
+tackertomanipulateareferencecounter,causingtherefer- ourtypingrules,weinsertadynamiccheckwhichdecides
+encedobjecttobefreedprematurely. atrun-timewhetherthe(static)safetyviolationresultsinan
+integerviolation.
+Inthefollowingpresentation,weassumethatallimplicit
+The security costs of integerbugs is severe: 125 of the
+conversionsandcastshavebeenmadeexplicitbeforethese
+207 entries may lead to arbitrary code execution, 70 can
+typing and rewrite rules are applied. We also assume that
+causedenialofserviceattacks,10leadtoprivilegeescala-
+implicit arithmetic, such as the address computation in an
+tion, and 14 resultin invalid memoryaccesses or memory
+arrayreferencea[i],hasbeenmadeexplicit.
+exhaustion.63oftheintegerexploitsarefollowedbybuffer
+overflows; in 14 cases, they pollute the size arguments of
+3.1 Sub-typingRulesforSafeIntegerOperations
+memoryallocation/manipulationfunctions; and in another
+3 instances, they are exploited in conjunction with format
+Our approach adds type-safety to C integers by apply-
+stringvulnerabilities.
+ingsub-typingtheorytointegertypes. Table1summarizes
+ourfourtypingrulesT-UNSIGNED,T-SIGNED,T-US(un-
+Notesolvingbufferoverflows,mallocerrors,andformat signed to signed), and T-UPCAST. Due to space, we pro-
+string bugs would still leave many integer vulnerabilities vide in Appendix A the full set of rules, and a more de-
+exploitable. Many vulnerabilities in our study can be ex- tailed exposition in our companion technical report [23].
+ploitedinmorethanoneway,e.g.,anintegervulnerability Our integer sub-typing rules are similar to those found in
+thatcanbeabusedtocauseabufferoverfloworadenialof type-safelanguages[19],suchasAda[17].Theintuitionin
+serviceattack.Thisindicatesitisinsufficienttofixapartic- ourscenario is to read the sub-typingrelationship“<:” as
+ularwayofexploitinganintegervulnerability,astheremay “⊆”,i.e.,ifintegertypeinta t <: intb t,thentheval-
+bealternatewaysthevulnerabilitycanbeexploitedtotake ues of inta t ⊆ intb t. For instance, T-US specifies
+controloftheprogram. Inaddition,severalofthevulnera- that if n < m, then uintn t <: intm t because any
+bilitiesinoursurveyexploitedapplication-specificlogicer- n-bitunsignedintegercanberepresentedasann+1-bit(or
+rors,thustherearenolikelyapplication-independentquick- greater)signed integer. Similarly, T-UPCAST specifiesup-
+fixes. Previousvulnerabilitypreventionmechanismsuchas casts are always safe since a larger-widthtype can always
+StackGuard [21], CCured [22], etc. can prevent some at- representasmaller-widthtype.Pointerarithmeticistreated
+tacks,buttheyareinsufficienttocombatintegervulnerabil- as unsignedintegerarithmetic, so basic pointeroperations
+ities. arealsohandledbyourtypingrules.uint8 t<:uint16 t<:uint32 t<:uint64 t<:Z
+T-UNSIGNED
+int8 t<:int16 t<:int32 t<:int64 t<:Z T-SIGNED
+n<m Γ⊢e:σ σ <:τ
+T-US (T-UPCAST)
+uintn t<:intm t Γ⊢(τ)e:τ
+Γ⊢e:σ (τ)e σ 6<:τ σ,τ <:Z e e′
+(τ)e (τ)letx:σ =e′inifτ ≤x≤τ thenxelseerror
+R-UNSAFE
+min max
+Γ⊢(e (cid:3)e ):τ
+1 2
+e 1(cid:3)e
+2
+(τ)letx:Z=(Z)e 1(cid:3)(Z)e 2inCHECKτ(Z)(x)
+R-BINOPZ
+Table1. Ourrulesfortypesafety(T-UNSIGNED,T-SIGNED,T-US,andT-UPCAST),andforrewritingpotentiallyunsafeintegeroperations (R-UNSAFE
+andR-BINOPZ)
+Inoursemantics,anintegerexpressionisalwayssafeiff 3.3 Rewriting Potential Overflow and Underflow
+itiswelltyped.Forexample,codeuint8 t b; uint16 t Operations
+a = (uint16 t) b; is safe because it is well-typed, as
+givenbythetypingderivation: InC,addition,subtraction,multiplication,negation,and
+division may all result in overflow or underflow. The first
+threeareself-explanatory,whilenegationanddivisionover-
+T-UNSIGNED
+Γ⊢b:uint8 t uint8 t<:uint16 t flow in a subtle way. Signed integer types with twos-
+Γ⊢(uint16 t)b:uint16 t
+T-UPCAST
+complement representation have asymmetric ranges, i.e.
+[−2n−1,2n−1−1]. When−2n−1 isnegatedordividedby
+-1,theresultoverflowsandwrapsbackto−2n−1itself.
+3.2 RewritingPotentiallyUnsafeTruncationsand
+SignConversions
+We rewrite via R-BINOPZ any arithmetic that may re-
+sultinoverflow/underflowtobeperformedinavirtualtype
+Zwhichhasinfinitewidth.2 ArithmeticinZcannotover-
+Truncations (down-casts) and sign conversions are not flow/underflow.SinceZisnotasub-typeofanyothertype,
+within the type system because they can lead to data loss, weapplyR-UNSAFEtotheresult.Iftherewouldhavebeen
+and are therefore potentially unsafe. Thus, we add new anunderflow/overflowwithouttherewrite,R-UNSAFEwill
+rules that cover potentially unsafe operations. We rewrite raise a warning,i.e., theresultrequiresmorebits torepre-
+potentially unsafe casts as run-time safety checks on the sentthanwehaveinspecifiedtype.
+operands, as shown by rule R-UNSAFE in Table 1. Note In practice, we do not implement arbitrary precision
+theserewritingrulesarenotfoundin(static)type-safelan- arithmetic for Z. Instead, we simply up-castarithmetic to
+guages. Staticallytypedlanguagesrespectaphasedistinc- an appropriate type large enough to represent the result. 3
+tion between compile-time and run-time processing. Our Ifthearchitecturedoesnotsupportalargeenoughtype,the
+rewriting rules introduce run-time checks that ensure type arithmetic is performedin software. For x86 with normal
+safety,i.e.,theymakeCintegeroperationsdynamicallytype C types, casts to software are quite rare and usually only
+safe. happenwith64-bitintegers.Thus,weavoidtheproblemof
+R-UNSAFEstatesthatapotentiallyunsafecast(τ)e :σ, alwaysupcastingtoarbitraryprecisionbyonlyupcastingto
+where e hasbeen rewrittento some otherexpression e′, is the next higher precision, and only potentially using soft-
+rewrittenstatically to anothercastwhere e′ is evaluatedto ware for 64-bit integers. This is different than SmallTalk
+avaluex. Thevaluexischeckedatrun-timefordataloss andSchemeasthereisnoarbitraryprecisiontype.
+(i.e.,ifτ min ≤x≤τ max isfalse);ifso,anerrorisraised. For example, our approach rewrites int8 t a, b,
+Inourimplementation,errorcanbedefinedto abortthe res; res= a+b;as:
+program,orsimplyraiseawarning.
+int8 t a, b, res ; int16 t t16;
+Forexample,considerthepotentiallyunsafedown-cast:
+t16 = ( int16 t ) a + b;
+uint32 t b; uint16 t a =(uint16 t) b; Here σ =
+uint32 t and τ = uint16 t. Since uint32 t 6<: if (t16 > 27−1 || t16 < −27) error ();
+uint16 t, the rewriting rule R-UNSAFE applies. Figure 2 res = ( int8 t ) t16;
+showshowR-UNSAFEisinstantiatedinthisexample.
+NoteweonlycheckCoperationsthatmayresultinover-
+Thus,therewrittenCstatementis:
+flow/underflow.Forexample,bit-wiseandlogicalands,ors,
+if (b > 216−1 || b < −216) then error (); 2Forbrevity,weomitthecorrespondingunaryrule.
+a = b; 3Theoreticallyinsomecaseswemaynotneedup-castingatallbyem-
+ployingvariousmathematicaltricksforthecheck.Γ⊢b:uint32 t uint32 t6<:uint16 t b b′
+R-UNSAFE
+(uint16 t)b (uint16 t)letx:uint32 t=binif−216 ≤x≤216−1thenxelseerror
+Figure2.AninstanceofR-UNSAFEfortheprogramuint32 t b; uint16 t a =(uint16 t) b;
+andnegationsdonotcorrespondtoanyarithmeticoperation few of those operationsrely on otherwise unsafe features.
+onintegers,thusarenotchecked.Ifaprogrammerperforms Overall, we take the approachthatit is betterto checkthe
+arithmeticusingtheseoperationswedonotchecktheresult. thousandsofpotentiallyunsafevulnerabilitiesandhavethe
+Adding such checks is straight-forward, but would likely programmerannotate or rewrite the few seemingly unsafe
+breakmanyprograms.Thus,wedonotimplementthisfea- operations. Ourstudyof195CVEvulnerabilitiessuggests
+ture,asitwouldonlybeusefulinalimitednumberofcases. thiscourseistheprudentchoice. Thus,RICHstrikesabal-
+ancebetweenautomaticprotection,backwardscompatibil-
+3.4 Limitations ity,andcommonprogrammingpractices. Ourexperiments
+indicatethisbalanceseemsappropriateformostprograms.
+False Positives and False Negatives. At a high level,
+Since C specifically allows potentially unsafe behavior,
+because of the above two limitations, our transformations
+it is impossible to ensure safety in a way backward com-
+may result in false positives and false negatives. A false
+patible with all programs. As a result, there are two main
+positive occurs when we raise error when the program-
+limitations to our approach: we do not handle certain un-
+mer deliberately uses potentially unsafe features of C. A
+safepointeraliasingrelationships,andprogramsthatspecif-
+false negativeoccurswhenwe donotraise anerrordueto
+ically rely on certain potentially unsafe C99 features may
+pointeraliasing.
+break.
+Potentially Unsafe Pointer Aliasing. We currently
+do not check potentially unsafe pointer aliasing relation- 4 Implementation
+ships when two pointers of different types alias the same
+memory cell. For example, if data is written to memory
+Weimplementedaprototypeofourstrongintegertyping
+throughauint16 t *pointer,asubsequentreadthrough
+approachinatoolcalledRICH.RICHhastwoimplementa-
+an uint8 t * pointerwill go unchecked. Checkingthis tions: 1)asaplatform-specificcompilerextensiontoGCC
+sort of potential error would require maintaining run-time
+3.4.1, and 2) as a source-to-source transformation. The
+meta-data, a la CCured[22]. Alternatively, we could use
+former approach demonstrates platform-specific optimiza-
+analiasanalysistofindallthepointersthatmayaliaseach
+tions,whilethelatterisplatformindependent.
+other,andrequirethatwritesthroughthosepointerscanbe
+OurGCC3.4.1versionofRICHcheckstheGCCinter-
+safelyreadbyallotherpointersinthealiasset. Thiswould
+mediate representation (IR) of the source code during the
+essentiallyrequirethewritestofallwithinthesmallestcom-
+code-generationphase,andinstrumentsanypotentiallyun-
+montypeofthealiasedpointers.Oursurveyalsoshowsthat
+safe integer operations. By working directly in the com-
+integervulnerabilitiesthroughpointeraliasingisveryrare.
+piler,wecantakeadvantageofarchitecture-specificinstruc-
+Unionscreateasimilaraliasingsituationaspointers.For
+tions to implement R-UNSAFE and R-BINOPZ. Specifi-
+similarreasons,weignorethisaliasing,effectivelytreating
+cally, we use the IA-32 jo, jc, js, instructions, which
+unionslikestructures.
+jump to a given target if the last arithmetic operation re-
+Deliberate Use of Potentially Unsafe C99 Features.
+sulted in an overflow, carry in the high-bit, or result with
+SinceCisnottype-safe,type-safesemanticsingeneraldo
+thesign-bitset.Figure3showsexamplechecksinourGCC
+not directly correspond to C99 semantics. In fact, C99’s
+implementationforseveralcommonarithmeticoperations.
+semanticsaremuchmorecomplicatedthanourtype-safety
+The downside of our GCC implementation is that the
+approach: C99 requires abouta dozen rules to specify in-
+checks may apply to compiler-generated, harmless over-
+teger coercions, while we require only 2 rules. 4 How-
+flows. For example, the compiler’s constant propagation
+ever,someprogramsaredeliberatelywrittentotakeadvan-
+pass may negate unsigned constants. If the GCC module
+tage of potentially unsafe C features. For example, a pro-
+inserts checks for these operations, the program will fail.
+grammaybewrittentotakeadvantageofC99’srulewhere
+We solve this problemby disablingoptimizationsthatcan
+overflow is reduced modulo the destination register size,
+introduce benign overflows. With further work, we could
+e.g., (int32 t)a + (int32 b) b; is written as short-
+likelyworkaroundthisproblem.
+handfor((int32 t)a + (int32 b) b) mod232;. Our
+We have also implemented RICH as a platform-
+approachwillraiseanerrorwhensuchstatementsareex-
+independent source-to-source transformation that works
+ecuted.
+with any compiler[23]. The source-to-sourcetransforma-
+Our experiments indicate a typical program may have
+tioniswrittenasaCILplug-in[24,25],aCanalysisframe-
+thousands of potentially unsafe operations, while only a
+work written in OCaml. CIL reads in the source code,
+4Webelievethesimplicityaloneisastrongreasontosupportourap- performs several semantic-preserving simplifications, and
+proach:complicatedsystemsareusuallythemosterrorprone. thenproducesatypedintermediaterepresentation(IR).Ouradd’ h32,si ← h32,si×h32,si op1, op2 cv′ h32,v¯i ← h32,vi operand
+:=add op1, op2 :=mov operand, %eax
+jo VH and %eax, %eax
+add’ h32,ui ← h32,ui×h32,ui op1, op2 js VH
+:=add op1, op2 cv operand
+jc VH div’ h32,si ← h32,si×h32,si top, bottom
+sub’ h32,si←h32,ui×h32,uiop1, op2 :=xor %ebx, %ebx
+:=sub op1, op2 mov top, %eax
+jc .L1 xor 0x8000000,%eax
+js VH je .L1
+.L1 mov bottom, %eax
+jns VH xor 0xfffffff, %eax
+lo′ h16,si ← h32,ui source, dest je .L1
+:=mov source, %eax mov 1, %ebx
+shrl %eax, 15 L1:
+and %eax, %eax cmp 0, %ebx
+jne VH jne VH
+lo source, dest div dividend, divisor
+Figure3. Instrumented operators andalgorithm forde-reference typecasts. Theinstructions jo, jc, andjsjumptothespecified target ifthelast
+arithmeticoperationyieldedanoverflow,acarryoffthehighbit,orresultwithMSB1,respectively. Thejno,jnc,andjnsinstructionsnegatethese
+tests.TheoverflowhandleriscalledVH.Thecvoperationconvertsbetweensignedandunsigned,andlotakesthelow-orderbitsofitsoperand.
+CIL implementation then performs the transformation de- and the number of checks inserted by the RICH compiler
+scribed in the previous section on the IR, which is then extension. The numbersalso give a roughidea how many
+“unparsed”byCIL and writtento a file. Theresultingfile potentially unsafe integer operationsexist in code, though
+is C source code containing the necessary checks, which since our analysis is conservative it is definitely an over-
+can then be compiled with any standard C compiler. The count.
+primary advantage of this approach is that the compiler Unsafeoperationscangenerallybedividedintotwocat-
+canperformallitsoptimizations. Thedisadvantageisthat egories:potentialruntimeerrorsduetooverflow/underflow,
+thesource-to-sourcetranslationcannotdirectlytakeadvan- and static casting/truncation errors. We found hundreds
+tageofarchitecture-specificoptimizationssuchasusingthe to thousands of static type errors, indicating programmers
+CPUstatusbitstoperformefficientoverflowchecks. ignore safety issues. While many of these errors are not
+Note our CIL-based solution does not implement over- exploitable, they are dangerousenough that type-safe lan-
+flow/underflow checks (R-BINOPZ), only signedness and guages would generally reject a program containing even
+truncationchecks(R-UNSAFE). Forthatreason,thebench- oneerror. Addinginoverflow/underflowraisesthenumber
+markresultsgiveninSection5allusetheGCCimplemen- toaboutonepotentialproblemevery23linesofcode.
+tationofRICH.ExperimentswiththeCILimplementation This shows that programmers use potentially-
+showsimilaroverheads. overflowingorotherwisebuggyoperationsallthetime, so
+the chance that at least one of them is a real, exploitable
+5 Evaluation bug is significant. This highlights the need for a defense
+mechanismlikeRICH.
+WeevaluatedRICHwithseveralserverandutilityappli-
+cations,severalofwhichcontainrealvulnerabilities. Over- 5.2 PerformanceOverhead
+all,wefoundprogrammerstypicallydonotwritesafecode.
+However,theoverheadofprotectingagainstexploitsinthe Although the number of inserted checks can be quite
+unsafecodeisquitelow,averaginglessthan3.7%. high, our experiments indicate the overhead is quite low,
+The evaluation was performed on an Intel Pentium M averagingless than 3.7%. Table 3 shows the performance
+1.6MHz machine with 512MB memory and Linux 2.6.9 overheadof RICH-enabled applications relative to the un-
+kernel. Inourexperiments,wedefinederrortologeach instrumentedversions(bothcompiledwiththesameflags).
+violationofourdynamicchecks. Ourbenchmarksuite in- The Apache web server was tested with the web bench-
+cludes Apache 2.2.0, Samba 2.2.7a, ProFTPD 1.2.10, and mark ab, distributed with Apache, configured to generate
+gzip1.2.4. 20,000requeststo alocalApacheserverandtouse acon-
+currency level of 100 requests. For ProFTPD, we used
+5.1 CheckDensity anopensourceFTP benchmarktool, dkftpbench,thatruns
+a 10-second simulation of 10 users repeatedly logging in,
+Wefirstmeasuredhowmanychecksourapproachinserts transferringa file, and loggingout. For Samba 2.2.7a, we
+intoourtest-suiteprograms.Table2shows,foreachbench- first used Bonnie++, a standard benchmark for hard drive
+markprogram,thenumberoflinesofcodeinthatprogram andfilesystemassessment. SincetheBonnie++benchmarkProgram Size(KLOC) SignedOF/UF UnsignedOF/UF Trunc. SignConv. All
+ApacheHttpd2.2.0 101 3958 2454 2279 642 9315
+ProFTPD1.2.10 48 938 483 478 269 2168
+Samba2.2.7a 189 7399 7597 4603 2195 21794
+gzip1.2.4 7 572 195 421 138 1326
+Table2.Numberofchecksinserted.
+is largely I/O bound, and our checks are CPU bound, we modernCPU’s, executedessentiallyforfree. On theother
+wroteascriptthatperformedseveralsimplefile-systemop- hand,GCC’ssignedoverflowcheckisafunctioncall,thus
+erationsonasmallsetoffilesthatcouldbecachedinmain quiteexpensive. Overall,althoughwecouldperformaddi-
+memory.Weprimedthecachewith5runsofthescriptand tionaloptimizationstoremoveunnecessarychecks(e.g.,re-
+thentimediton645subsequentiterations. dundantcheckelimination),wefoundthecurrentoverhead
+To stress test RICH with a CPU-boundapplication, we solowtherewasnoneed.
+measured the performance overhead for gzip, a compres-
+sion utility. At first, gzip showed over a 300% slowdown 5.3 FalsePositivesandFalseNegatives
+whiledecompressingthearchivelinux-2.6.15.tar.gz.
+Acloserexaminationrevealedthattheintegererrorhandler
+5.3.1 AnalysisofFalsePositives
+wasbeingtriggeredrepeatedlybytwodeliberateintegervi-
+olations in an inner loop of the gzip inflation code. Both WemeasuredthenumberofdeliberateusesofunsafeCfea-
+violationsintentionallymakeuseofoverflowtoperformre- tures,asdiscussedinSection3.4.Table4showsourresults.
+ductionmodulo232. If the prototypeimplementationsup- Wemeasured32totaldeliberateuses,whichwethenbroke
+portedannotations,aprogrammercouldannotatethesetwo downintothefollowingcategories:
+intentionaloverflowsto eliminate boththe check forover- Pseudo-random number generation. Pseudo-random
+flowandtheconsequenterrorcall,eliminatingtheover- numbergeneratorsoftenusepotentiallyunsafeCoperations
+head. Toestimatethespeedupthiswouldyield,werecom- as short-cuts. Examplescan be foundin hash functionsin
+piledgzipwiththeRICH checksinplacebutwitherror Samba,Apache,andPine,aswellasinProFTPD’smemory
+definedasano-op. Thiscuttheoverheadtoonly1.77%. scrubbingfunction.
+Message encoding and decoding. Data-structures in
+network applications sometimes need to be serialized to
+Comparison with GCC’s built-in protection. We also
+messagestoexchangestatusbetweenclientandserver.Dur-
+comparedtheperformanceofRICHwithGCC’s -ftrapv
+ingmarshalingandde-marshaling,typesareoftencastfrom
+option, as shown in the last column of Table 3. The
+onetypetoanotherincompatibletype,e.g.,encodingase-
+-ftrapv option only checks for signed overflows in ex-
+riesofuint16 t’sasanunsignedcharacterbytestream.
+plicit arithmetic operations, so it is much less comprehen-
+IntegerasID.WhenanintegerisusedasanID,onlythe
+sive than RICH and, as our experiments show, has much
+bit sequence matters. Signedness conversionerrors which
+higher overhead. Furthermore, -ftrapv does not allow
+donotaffectbitvaluesarethusbenign.
+a programmer to specify an action when overflow is de-
+Mixed usage of signed and unsigned char. There
+tected; it always aborts. Thus, we could not measure the
+aremanyinstancesofassignmentsbetweensignedandun-
+-ftrapvoverheadforSambaandApachesincetheycon-
+signed char in Samba and Pine, which are essentially in-
+tain overflows. For ProFTPD, -ftrapv slightly outper-
+nocentaslongastheyarenotinterpretedincorrectly(note
+formedRICH, but keep in mind that the protectionit pro-
+evenbenigncasescanoftenresultinportabilitybugs[26]).
+vides is much weaker. However, even for computation
+Explicit casts. Programmers can use explicit casts for
+intensive programs like gzip, RICH greatly outperformed
+several reasons, including to reduce an integer modulo a
+-ftrapv. This is because -ftrapv is implemented as a
+power of two and to access subsets of an integer’s bits as
+function call to a checking routine, while RICH takes ad-
+abit-vector.
+vantage of IA32 instructions like jo to check for integer
+Table 5 shows a break-down for how many false posi-
+errors. Overall,althoughRICH protectsagainstmorethan
+tiveseachprogrammingpatterncausedinourtestsuite.
+-ftrapv, it still achieves better performance by making
+thosechecksextremelyefficient.
+5.3.2 AnalysisofFalseNegatives
+Analysis of Dynamic Check Overhead. The perfor- WetestedRICHonseveralvulnerabilitiesinrealprograms
+mance overhead in Table 3 is somewhat surprising, given toverifythatitcaneffectivelypreventinteger-basedattacks.
+the number of checks inserted. There are several reasons Some vulnerabilities actually consist of two integer bugs,
+the overhead is so low. In RICH, the majority of integer like the Pine and Apache mod auth radius vulnerabilities.
+checksareimplementedasasingleinstruction,anddonot Table6showstheresultsoftheseexperiments.
+requireanyextraloadsorstores. Thus,theinstructionscan Integerexploitsarefragile,soourinstrumentationcould
+bepipe-lined,and giventhe excellentbranchpredictionin potentially perturb the program layout sufficiently to ren-Program Benchmark Overhead(RICH) Overhead(-ftrapv)
+ApacheHttpd2.2.0 ab 8.18% N/A
+ProFTPD1.2.10 dkftpbench 3.59% 0.84%
+Samba2.2.7a Bonnie++ 1.21% N/A
+Samba2.2.7a script 3.59% N/A
+gzip1.2.4 decompresslinux-2.6.15.tar.gz 1.77% 48.46%
+Table3.Performanceoverheadofinstrumentedapplications.
+Program TotalNo. Overflow/Underflow Sign. conversion Truncation RealBug
+Samba2.27a 15 3 1 10 1
+gzip1.2.4 3 2 0 1 0
+Apache2.2.0 7 4 2 1 0
+ProFTPD1.2.10 3 0 0 2 1
+Pine4.55 6 2 2 2 0
+Table4.Technicalbreakdownoffalsepositives.
+der a known exploit inoperative. To get around this prob- 6 Related Work
+lem, we extracted the vulnerable code in each benchmark
+intoa small, standaloneprogramandthencalledthatcode
+C/C++. Severalauthorshaveproposedreplacingsomeor
+witherror-inducinginput. AsTable6shows,RICHcaught
+allintegersinaprogramwithsafeintegersimplementedby
+all but one of the exploitableintegerbugs. The only false
+asharedlibrarythat,likeRICH,checksforintegererrorsat
+negative occurs because the current RICH prototype does
+runtime. TheGCCrun-timelibraryprovidesfunctionsthat
+notsupportpointeraliasanalysisandthereforecannotcatch
+trap on signed arithmetic overflows, such as addvsi3.
+implicitcastingwhenavariableisaccessedthroughpoint-
+However, the library only considers signed addition, sub-
+ers of different types. Table 6 also shows that despite its
+traction, and multiplication, so it is not a comprehensive
+much higher run-time overhead, the GCC -ftrapv op-
+solution.
+tionismuchlesseffectiveatcatchingintegerexploitsthan
+The Microsoft Visual C++ compiler and GCC con-
+RICH.
+sider different, but incomplete, aspects of integersecurity.
+The Visual C++ .NET 2003 compilerprovidesa compiler
+switch,RTCc,thatgeneratesrun-timechecksfortruncation
+5.4 NewBugs withdataloss. TheVisualC++.NET2005compilerisable
+tocatchoverflowsinthe::newoperator,whencalculating
+thebytesize ofa non-characterarray. GNU GCCcompil-
+erssinceversion3.4haveprovidedthe-ftrapvcommand-
+RICH uncoveredtwo new integer vulnerabilities in the
+lineflagthatcausesGCCtogenerateassemblycodeusing
+benchmarkprogramsusedintheperformancetests. Samba
+itssafeintegerfunctionsmentionedabove. Theprotection
+2.27apassesapointerdifference,name-(*start),asthe
+isconfinedtosignedarithmeticanddoesnotincludesensi-
+length argument to strncpy at statcache.c:206, but tiveaddresscalculationsinarrayandcomponentreferences.
+this value was negative in one of the performance bench-
+TheBig LoopIntegerProtection(BLIP)[27]compilerex-
+mark runs, resulting in a signedness error when it is con-
+tensiontransformsprogramstodetectoverlylargecounters.
+vertedto an unsigned int. Thiscauses strncpy’ssize BLIP uses a fixed threshold, resultingin many false nega-
+argumentto becomeunusuallylarge, leadingto a possible
+tivesandfalsepositives.
+buffer overflow. This bug was fixed in CVS as part of a
+David LeBlanc’s SafeInt C++ template class [28] over-
+general rewrite of statcache.c in March, 2003, but we
+ridesalmostallrelevantoperators,includingdivision,nega-
+couldfindnoevidenceinmailinglistsorCVSlogsthatthe
+tion, assignment and comparison. Michael Howard pro-
+developerswerespecificallytryingtofixthisbugwiththat
+vides a small in-line assembly library [29] that checks for
+rewrite.
+arithmeticoverflowsandunderflowsusingexactlytheover-
+ProFTPd 1.2.10 translates the fields of the UNIX flowdetectinginstructions(jo,jc,etc.) asRICH.Howard
+/etc/shadow file into internal data-structures. One step has also released IntSafe [30], a safe integerarithmetic li-
+of this conversion translates the password age fields of brary of unsigned math functions and conversion routines
+/etc/shadow, which are expressed in days, into seconds optimizedforperformanceandreportedlyusedinWindows
+bymultiplyingby86400.Thismultiplicationoverflowedin Vista.
+someofthebenchmarkruns. Anattackercouldpotentially Arbitrary precision arithmetic packages, like the GNU
+usethisoverflowtologinusinganexpiredpassword. This MultiplePrecisionArithmeticLibrary(GMP),canalsohelp
+bugstillexistsincurrentversionsofProFTPd. circumvent integer security problems. They support arbi-Program Total PRNGs I/OMarshaling MixedChars IntegerID Explicitcasts
+Samba2.27a 14 4 3 7 0 6
+gzip1.2.4 3 0 0 1 0 0
+Apache2.2.0 7 2 0 0 3 1
+ProFTPD1.2.10 2 2 0 0 0 0
+Pine4.55 6 2 1 2 1 3
+Table5.Breakdownofprogrammingpatternswhichcausefalsepositives.
+Program Vulnerability Kind(s) Caught(RICH) Caught(-ftrapv)
+Samba2.2.7a statcache.c:206 Signerr Yes No
+Samba2.2.7a replay nttrans()bug[7] OF Yes No
+Samba2.2.7a DirectoryACLbug[12] OF Yes No
+ProFTPD1.2.10 mod auth unix.c:434 OF Yes Yes
+Pine4.55 Headerparsingbug[8] UF,OF Yes,Yes Yes,No
+Mailutil-0.6Imap4d fet io()bug[13] OF Yes No
+PuTTY0.53b SFTPClientbug[11] SignErr Yes No
+mod auth radius1.5.7 RADIUSreplybug[10] UF,Signerr Yes,Yes No,No
+GNURadius1.2 SNMPDoS[9] SignErr No No
+Table6. ResultsoftestingRICHwithrealapplicationvulnerabilities. UFstandsforunderflowwhileOFforoverflow. SignErrissignednessconversion
+error
+trarilylargeintegers,makingoverflowsandunderflowsim- troducea newdenial-of-serviceattackisbeyondthe scope
+possible. As observed above, most programmers do not ofthiswork.
+intend computations to overflow, so providing support for ThereisworkonsafevariantsofC,suchasCCured[33]
+verylargeintegersthatshouldnotariseinpracticemaybe and Cyclone [34]. Our work differs from theirs as we are
+overkillinmanyscenarios. fixingasingleprobleminCwithoutrequiringanyuserin-
+tervention. CCured and Cyclone offer greater protection,
+but often require manual effort to convert a C program to
+Other Languages. We target C specifically. Some lan- thesafelanguagevariant.
+guagesare safe with respect to integeroperations, such as
+LispandAda. Intypicalsafelanguages,thetype-checking
+rules preventdown-casts. We use a sub-typingsemantics, Other techniques. ASTREE is a sound but incomplete
+whichissimilarthatfoundinAda[17],asthebasisforour static analyzer which can prove the absence of integer er-
+type-checkingrules. Overflow/underflowisgenerallyhan- rorsonalimitedsubsetofC(withoutrecursionordynamic
+dled in safe languagesby either inserting run-time checks memoryallocation)[39]. Anotherunsoundandincomplete
+whichraiseexceptions,orautomaticallypromotingintegers approachisextendedstatic checking[40,41]. However,at
+toarbitrary-precisionarithmetic,asdiscussedinSection1. theendoftheday,unsoundorincompletetechniquesoffer
+Interestingly,wesaymanytype-safelanguages,notall,be- noguarantees.
+cause some otherwise type-safe languages do not protect We could reduce the number of checks through addi-
+againstoverflows, e.g., Java and OCaml. As a result, pro- tional analysis. Dataflow analysis [42,43] could be used
+gramswritten in these languagesmay contain errors. Our to reason about possible ranges of values and thus allow
+analysisindicatesthatsuchcheckscanbeimplementedef- us to remove unneeded or duplicate checks. Some of the
+ficiently,andthussuchlanguagesshouldconsideradopting techniques developed by Redwine and Ramsey for port-
+run-timechecksforoverflow/underflow. ing applications to architectures with wider integer word
+Ourapproachwillraiseawarningorthrowanerrorwhen sizes[44]couldalsobeappliedtooptimizeawayunneces-
+an unsafe downcast or overflow occurs at runtime. Run- saryRICHchecks.Initially,weexpectedthatwemayadopt
+timewarnings/exceptionsmayposeadenial-of-servicerisk. someofthesetechniquestopruneoutunnecessarychecks,
+Therehasbeensignificantpreviousworkin provingthata butourperformancenumbersindicatethisisunneeded.
+programwill neverhavean unhandlederrorthatmayhelp Othermoreexpressivetypesystemscouldbebroughtto
+addressthisproblem. Forexample,SPARK/Adacanguar- bear [18,45,46]. Dependent types allow types to depend
+anteeprogramswritten in theirframeworkare freeof run- onvalues[18],andcouldbeusedtoexpressintegersafety.
+time errors such as overflows [31,32]. Model checking Dependenttypes are more powerful, but can also be more
+theCprogramisanotherapproachwhichcouldbeusedto expensivetocheck.Inparticular,itseemeddifficulttocome
+proveruntimeerrorscannothappen,e.g.,[35–38]. up with a type system that was decidable yet more useful
+Our primary goal is to cheaply make existing C pro- thanoursimplesub-typingsystem.
+grams safe from exploits such as buffer overflows. Stati- Since integer violations usually work in tandem with
+callycheckingthatthe insertedrun-timechecksdonotin- other attacks, techniques for preventing buffer overflowsand enforcing input sanitization help alleviate the damage [10] “Apachemod auth radiusmalformedRADIUSserverreply
+of integer violations[22,47,48]. However, these can only vulnerability,”SecurityFocus,Jan2005.[Online].Available:
+beauxiliarysolutionsandcannotsolvetheintegersecurity http://www.securityfocus.com/bid/12217/
+problemingeneral. [11] “Putty 0.53b SFTP client packet parsing integer overflow
+vulnerability,”SecurityFocus,Feb2005.[Online].Available:
+http://www.securityfocus.com/bid/12601/
+7 Conclusion
+[12] “Samba directory access control list remote integer over-
+flow vulnerability,” SecurityFocus, Dec 2004. [Online].
+Thispapersurveysinteger-basedattacksandprovidesa
+Available:http://www.securityfocus.com/bid/11973
+theoreticalframeworkto formallydefine and reason about
+[13] “Mailutil-0.6imap4dremoteintegeroverflowvulnerability,”
+integererrorssoundly. TheRICHcompilerextensionis,to
+SecurityFocus, May 2005. [Online]. Available: http:
+the best of our knowledge, the first comprehensive, auto-
+//www.securityfocus.com/bid/13763/
+maticintegererrorpreventiontoolforC.Experimentswith
+[14] “libtiff STRIPOFFSETS integer overflow vulnerabil-
+realserversandUNIXutilitiesshowthatRICHisbackward
+ity,” iDEFENSE lab, Dec 2004. [Online]. Avail-
+compatible,easytouse,efficient,andeffective.
+able: http://www.idefense.com/intelligence/vulnerabilities/
+display.php?id=173
+Acknowledgments [15] “libtiff directory entry count integer overflow vulner-
+ability,” iDEFENSE lab, Dec 2004. [Online]. Avail-
+able: http://www.idefense.com/intelligence/vulnerabilities/
+We thank Maohua Lu for helping with an early imple-
+display.php?id=174
+mentationoftheRICHcompilerextension. We alsothank
+[16] ANSI,ISO/IEC9899:ProgrammingLangauges-C,1999.
+Joseph Slember for his help with this work in its early
+stages. Finally,wethankNeelKrishnaswami,VyasSekar, [17] Ada95LanguageReferenceManual,ISO/IEC,1995.
+the anonymous reviewers, and Jonathan Shapiro for their [18] B.Pierce,Ed.,AdvancedTopicsinTypesandProgramming
+thoughts,comments,andhelponearlyrevisionsofthispa- Languages. MITPress,2005.
+per. [19] B.C.Pierce,TypesandProgrammingLanguages. TheMIT
+Press,2002.
+References [20] “CVE(version20040901),”CVE.[Online].Available: http:
+//www.cve.mitre.org/cgi-bin/cvekey.cgi?keyword=integer
+[21] C. Cowan, C. Pu, D. Maier, and etc., “Stackguard: auto-
+[1] “Gocr ReadPGM NetPBM remote client-side integer
+matic adaptive detection and prevention of buffer-overflow
+overflow vulnerability,” CVE, April 2005. [Online].
+attacks,”inUSENIXSecuritySymposium,1998,p.63C77.
+Available: http://cve.mitre.org/cgi-bin/cvename.cgi?name=
+CVE-2005-1141 [22] J. Condit, M. Harren, S. McPeak, and etc., “Ccured in the
+realworld,”inProceedingsoftheACMSIGPLAN2003Con-
+[2] “Linuxkernel(priorto2.4.21)XDRroutineintergersigned-
+ferenceonProgrammingLanguageDesignandImplementa-
+nesserror,”CVE,Jul2003.[Online].Available:http://www.
+tion,June2003.
+cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2003-0619
+[23] D. Brumley, D. Song, and J. Slember, “Towards automat-
+[3] “JPEG COM marker processing vulnerability in
+ically eliminating integer-based vulnerabilities,” Carnegie
+netscape browsers,” Solar Designer, July 2000. [On-
+MellonUniversity,Tech.Rep.CMU-CS-06-136,Mar2006.
+line]. Available: http://www.openwall.com/advisories/
+OW-002-netscape-jpeg/ [24] G.Necula,S.McPeak,S.Rahul,andW.Weimer,“CIL:In-
+termediate language and tools for analysis and transforma-
+[4] “SSHCRC-32compensation attack detector vulnerability,”
+tionof C,”in Proc.Conference on Compiler Construction,
+CVE,Feb2001.[Online].Available: http://www.cve.mitre.
+2002.
+org/cgi-bin/cvename.cgi?name=CVE-2001-0144
+[25] ——,“CILversion1.3.3,”http://manju.cs.berkeley.edu/cil/,
+[5] “Linuxkerneldo brk()vulnerablility,”CVE,Dec2003.[On-
+2005.
+line].Available: http://www.cve.mitre.org/cgi-bin/cvename.
+[26] D. Dyer, “The top 10 ways to get screwed by the ”c” pro-
+cgi?name=CVE-2003-0961
+gramming language,” http://www.andromeda.com/people/
+[6] “NetBSDrepeatedTIOSCTTYIOCTLbufferoverflowvul- ddyer/topten.html,2003.
+nerability,”CVE,Sep2002.[Online].Available:http://www.
+[27] O.Horovitz,“Bigloopintegerprotection,”PhrackInc.,Dec
+cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2002-1490
+2002. [Online]. Available: http://www.phrack.org/phrack/
+[7] “Samba function reply nttrans vulnerability,” SecuriTeam, 60/p60-0x09.txt
+Jul 2003. [Online]. Available: http://www.securiteam.com/
+[28] D. LeBlanc, “Integer handling with the C++
+exploits/5TP0M2AAKS.html
+SafeInt class,” Jan 2004. [Online]. Avail-
+[8] “Pine email header parsing vulnerability,” SecuriTeam, able: http://msdn.microsoft.com/library/default.asp?url=
+Sep2003.[Online].Available: http://www.securiteam.com/ /library/en-us/dncode/html/secure01142004.asp
+exploits/5DP0D1PB5Y.html
+[29] M. Howard, “An overlooked construct and an in-
+[9] “GNU mailutils imap4d remote integer overflow vulner- teger overflow redux,” Sep 2003. [Online]. Avail-
+ability,” SecurityFocus, Sep 2004. [Online]. Available: able: http://msdn.microsoft.com/library/default.asp?url=
+http://www.securityfocus.com/bid/11198/ /library/en-us/dncode/html/secure09112003.asp[30] M. Howard et al., “Safe integer arithmetic in C,” [48] J. Yang, T. Kremenek, Y. Xie, and D. Engler, “MECA:
+Feb 2006. [Online]. Available: http://blogs.msdn.com/ anextensible,expressivesystemandlanguageforstatically
+michael howard/archive/2006/02/02/523392.aspx checking security properties,” in Proceedings of the 10th
+ACMconferenceonComputerandcommunicationsecurity.
+[31] P.H.I.Systems,“SPARK/ada,”http://www.praxis-his.com/
+ACMPress,2003,pp.321–334.
+sparkada/sparkprojects.asp.
+[32] J.Barnes,HighIntegritySoftware: TheSPARKApproachto
+SafetyandSecurity. AddisonWesley,2003. A Full Subtyping Rules
+[33] G.C.Necula, S.McPeak, andW.Weimer,“CCured: type-
+saferetrofittingoflegacycode,”inProceedingsoftheSym- Table7showsthefullsub-typingrulesweuseinRICH.
+posiumonPrinciplesofProgrammingLanguages,2002. Eachruleisreadasanimplication:whenthepreconditions
+[34] T.Jim,G.Morrisett,D.Grossman,M.Hicks,J.Cheney,and onthetopofthebararesatisfied,theformulaonthebottom
+Y.Wang,“Cyclone: Asafedialectofc,”inUSENIXAnnual ofthebaristrue. Asafeexpressionhasavalidtype,i.e.,a
+TechnicalConference,2002. typethatcanbederivedviatherules. Here,Γisthetyping
+[35] E.Clarke, D.Kroening, andF.Lerda, “Atoolforchecking storethatmapsavariablenameorexpressiontoatype.The
+ANSI-C programs,” in Tools and Algorithms for the Con- typesinΓ arebuiltviathedeclaredCtypes. T-SUB intro-
+struction and Analysisof Systems (TACAS2004), ser. Lec- ducesthesub-typingsemantics,andsaysifourtypingstore
+tureNotesinComputerScience,K.JensenandA.Podelski, Γsaysvariabletisoftypeσ,andσ isasubtypeofτ,then
+Eds.,vol.2988. Springer,2004,pp.168–176. t is also of type τ. We also add the standard reflexive(T-
+[36] Y.XieandA.Aiken,“Saturn:ASAT-basedtoolforbugde- REFL)andtransitive(T-TRANS)rules. T-FIELDjuststates
+tection,”inProceedingsofthe17thConferenceonComputer that,whentheprogrammerreferencesastructurefield,the
+AidedVerification,2005. expressionusesthedeclaredtypeforthatfield.
+[37] M. Musuvathi, D. Park, A. Chou, D. Engler, and D. Dill,
+“CMC:Aprgramaticapproachtomodelcheckingrealcode,”
+inProceedings of the 5th symposium on operating systems
+designandimplementation,2002.
+[38] T.Ball,R.Majumdar,T.Millstein,andS.K.Rajamani,“Au-
+tomatic predicate abstraction of C programs,” in Program-
+mingLanguageDesignandImplementation(PLDI),2001.
+[39] P. Cousot, R. Cousot, J. Feret, L. Mauborgne, A. Mine,
+D.Monniaux,andX.Rival,“TheASTREEstaticanalyzer,”
+http://www.astree.ens.fr/.
+[40] D.Engler,D.Chen,S.Hallem,A.Chou,andB.Chelf,“Bugs
+asdeviant behavior: Ageneralapproach toinferringerrors
+insystemscode,”inSymposiumonOperatingSystemPrin-
+ciples,2001.
+[41] S.Hallem, B.Chelf, Y.Xie, andD.Engler, “Asystemand
+language for building system-specific, static analyses,” in
+Proceedings of the 24th International Conference on Pro-
+gramming Language Design and Implementation (PLDI),
+2002.
+[42] A. Aho, R. Sethi, and J. Ullman, Compilers: Principles,
+Techniques,andTools. Addison-WesleyPublishingCom-
+pany,1986.
+[43] S.Muchnick, AdvancedCompilerDesignandImplementa-
+tion. AcademicPress,1997.
+[44] K.RedwineandN.Ramsey,“Wideningintegerarithmetic,”
+inProceedingsofthe13thInternationalConferenceonCom-
+pilerConstruction(CC),2004.
+[45] C.Hawblitzel,E.Wei,H.Huang,E.Krupski,andL.Wittie,
+“Low-levellinearmemorymanagement,”inProceedingsof
+the2ndworkshoponSemantics,ProgramAnalysisandCom-
+putingEnvironmentsforMemoryManagement,2004.
+[46] T. Freeman and F. Pfenning, “Refinement types for ML,”
+1991.
+[47] S.Bhatkar,R.Sekar,andD.DuVarney,“Efficienttechniques
+forcomprehensive protectionfrommemoryerrorexploits,”
+inProceedingsofthe14thUSENIXSecuritySymposium,Au-
+gust2005.Γ⊢t:σ σ <:τ σ <:υ υ <:τ
+Γ⊢t:τ
+T-SUB
+σ <:σ
+T-REFL
+σ <:τ
+T-TRANS
+Γ⊢s.i:σ σ <:τ Γ⊢t:τ Γ⊢t:refτ
+T-FIELD T-REF T-DEREF
+Γ⊢s.i:τ Γ⊢&t:refτ Γ⊢∗t:τ
+T-UNSIGNED
+unsigned<:uint8 t<:uint16 t<:uint32 t<:uint64 t
+T-SIGNED
+signed<:int8 t<:int16 t<:int32 t<:int64 t
+Γ⊢e:σ σ <:τ
+(T-UPCAST)
+Γ⊢(τ)e:τ
+Table7.Typingrulesforstatically-safeintegeroperations.
+Γ⊢e:σ (τ)e σ <:τ e e′ Γ⊢e:σ (τ)e σ 6<:τ σ,τ <:Z e e′
+(τ)e (τ)e′ R-SAFE (τ)e (τ)letx:σ =e′inCHECK(τ)σ(x) R-UNSAFE
+σ 6<:τ
+D-CHECK
+CHECKτ,σ(x)≡ifτ
+min
+≤x≤τ maxthenxelseerror
+Table8.R-UNSAFErewritesunsafecastsbyinsertingdynamicchecks: U-S-CHECKforunsignedtosignedcasts,S-U-CHECKforsignedtounsignedcasts,
+andD-CHECKfordown-casts. R-SAFEisaddedforcompleteness:itleavessafeexpressionsas-is.

@@ -1,0 +1,1132 @@
+Dark Hazard: Learning-based, Large- cale Discovery
+s
+of Hidden Sensitive Operations in Android Apps
+Xiaorui Pan∗, Xueqiang Wang∗, Yue Duan†, XiaoFeng Wang∗, and Heng Yin†
+∗Indiana University Bloomington
+Email: {xiaopan, xw48, xw7}@indiana.edu
+†University of California, Riverside
+Email: yduan005@ucr.edu, heng@cs.ucr.edu
+Abstract—Hidden sensitive operations (HSO) such as stealing theproblemandcontributetomoreeffectivedefenseagainstthis
+privacyuserdatauponreceivinganSMSmessageareincreasingly new threat to the mobile platform.
+utilized by mobile malware and other potentially-harmful apps
+(PHAs) to evade detection. Identification of such behaviors is
+hard, due to the challenge in triggering them during an app’s I. INTRODUCTION
+runtime.Currentstaticapproachesrelyonthetriggerconditions The permeation of mobile technologies today also exposes
+or hidden behaviors known beforehand and therefore cannot
+theiruserstonewkindsofsecurityandprivacyrisks.Notablyin
+capturepreviouslyunknownHSOactivities.Alsothesetechniques
+the past years, mobile threats continues to be on the rise [12],
+tendtobecomputationallyintensiveandthereforelesssuitablefor
+not only from malware and other potentially harmful apps
+analyzingalargenumberofapps.Asaresult,ourunderstanding
+(PHA) such as back-doors, fraud apps, ransomware, spyware,
+of real-world HSO today is still limited, not to mention effective
+means to mitigate this threat. etc., as reported by Google [23], but sometime even from large
+organizations’ products that also exhibit unexpected behaviors
+Inthispaper,wepresentHSOMINER,aninnovativemachine-
+like collecting private information (e.g., precise locations)
+learning based program analysis technique that enables a large-
+scale discovery of unknown HSO activities. Our approach lever- without consent, installing unwanted programs, aggressively
+agesasetofprogramfeaturesthatcharacterizeanHSObranch1 advertising, etc. To counteract these threats, major app stores
+andcanberelativelyeasytoextractfromanapp.Thesefeatures today have beefed up their security vetting, putting various
+summarizeasetofuniqueobservationsaboutanHSOcondition, malwarescansinplace.Particularly,GooglePlayandotherbig
+its pathsand therelations between them,and aredesigned to be stores run submitted apps for a short period of time to catch
+general for finding hidden suspicious behaviors. Particularly, we theirsuspiciousbehaviors[43].Whilesuchprotectionworkson
+found that a trigger condition is less likely to relate to the path
+less sophisticated PHAs, it leads to further evolution of attack
+of its branch through data flows or shared resources, compared
+techniques, bringing in a new set of apps that deliberately
+with a legitimate branch. Also, the behaviors exhibited by the
+hide their sensitive behaviors behind the events triggered only
+two paths of an HSO branch tend to be conspicuously different
+in their target situations. For example, a PHA only pops up
+(innocentononesideandsinisterontheother).Mostimportantly,
+eventhoughtheseindividualfeaturesarenotsufficientlyaccurate advertisements and collects a user’s contacts when it runs
+forcapturingHSOontheirown,collectivelytheyareshowntobe on a physical device (not an emulator) and interacts with a
+highlyeffectiveinidentifyingsuchbehaviors.Thisdifferentiating human (Section II). Understanding and effective detection of
+power is harnessed by HSOMINER to classify Android apps, these hidden sensitive operations (HSO, including both hidden
+which achieves a high precision (>98%) and coverage (>94%), behaviors and their triggering conditions) is becoming the new
+andisalsoefficientasdiscoveredinourexperiments.Thenewtool frontier in the fight against mobile malice.
+was further used in a measurement study involving 338,354 real-
+world apps, the largest one ever conducted on suspicious hidden HSO in mobile apps. Actually, HSO has been extensively
+operations. Our research brought to light the pervasiveness of studied in desktop malware, for example, attempts to identify
+HSO activities, which are present in 18.7% of the apps we
+the presence of a virtual machine (VM) and change behaviors
+analyzed, surprising trigger conditions (e.g., click on a certain
+to evade detection [19] [9]. Similar tricks are also played by
+region of a view) and behaviors (e.g., hiding operations in a
+mobile PHAs and in some cases, legitimate apps. An example
+dynamically generated receiver), which help better understand
+is gaming apps, which stop providing services when they run
+in an emulator. On the other hand, the unique software and
+1Abranch,unlessotherwisespecified,referstoabranchingstructure,which hardwareresourcesonmobiledevicesenableappstocovertheir
+containsaconditionandmultiplepaths. behaviors with a wider spectrum of triggers, that is, conditions
+underwhichthehiddenoperationswillbeperformed.Examples
+include locations or SMS messages (e.g., collecting personal
+Permission to freely reproduce all or part of this paper for noncommercial informationonlyataspecificlocation),asreportedbytheprior
+purposes is granted provided that copies bear this notice and the full citation
+studies [34], and user input patterns, system servers and other
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author system events, as newly discovered in our study (Section IV).
+(for reproduction of an entire paper only), and the author’s employer if the In general, although it is perceived that HSO does exist in
+paper was prepared within the scope of employment. mobile ecosystems, little has been done so far to gain an in-
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+depth understanding of its security impact and technical trend,
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23265 as well as unexpected tricks already out there.This lack of understanding is mainly attributed to the research, we utilize lightweight program analysis techniques to
+challenges in finding the hidden operations, particularly pre- recover these features from the branching structures within an
+viously unknown ones, on a large scale. Most desktop HSO Android app, and run a machine learning algorithm to identify
+malwaretodayhasbeencapturedusingsomelevelsofdynamic those involving HSO. Our evaluation shows that HSOMINER
+analysis, the only viable solution for finding evading behaviors achieved a precision over 98% and a recall above 94%, at a
+from binary code. The analysis, however, is limited by its speed of 13 minutes per app over the apps with a much larger
+coverage and scalability. For Android apps, their byte-code is size (typically around 8.43 MB) than those studied in the prior
+more accessible and can therefore be inspected using static research [34], [51]. This level of performance enabled us to
+analysis. The trouble is that determining the presence of conduct a measurement study on HSO at an unprecedented
+triggers is notoriously hard: essentially, a trigger is just a scale: we scanned over 338,354 Android apps (including
+branch condition (also called a check in our study), one of 124,207 from Google Play and 214,147 from VirusTotal), and
+the most common program structures; it is hard to link such discovered 63,372 containing HSO; among them, 1773 involve
+a condition to the intention for hiding suspicious activities. the HSO techniques never reported before (Section IV).
+Current solutions rely on either carefully specified security-
+sensitive behaviors (e.g., permission-protected methods, read Findings. Our measurement of HSO, the largest of its kind,
+from sensitive Content Providers [51]) or well defined trigger brings to light the pervasiveness of hidden activities across
+conditions [34] to avoid false positives. A prominent example the Android ecosystem: about 18.7% of the apps were found
+is TriggerScope [34], which utilizes a set of narrow conditions, to involve some suspicious behaviors they attempt to cover.
+as supported by symbolic execution, to identify suspicious In addition to known triggers, such as time, location and
+triggers. The problem is that the condition here needs to be SMS, we found that suspicious behaviors (e.g., sending SMS)
+precise and therefore restrictive (e.g., comparison between a are protected by monitoring various system events, including
+time value and a constant), which limits the approach only to incoming Intent, new package added, screen locked etc. and by
+known types of triggers (time, location and SMS in the paper). detecting the presence of human users: e.g., setting a threshold
+Likewise, the specific behaviors used for detection only work for the interval between two consecutive clicks on the screen.
+on a known set of suspicious activities covered by triggers. As Even for the old tricks, such as identifying an emulator, new
+a result, none of the existing techniques are capable of finding techniques have been employed, such as checking certain bits
+unknown HSO. Also, the use of heavyweight techniques (e.g., of /system/bin/linker to find out whether the app is running on
+symbolic executions) renders the approaches like TriggerScope an X86 system. Further, HSO techniques seem to evolve with
+less suitable for a large-scale study. Android, leveraging new functionalities added to the OS and
+new services it supports: an example is a PHA that uses the
+Our approach. In this paper, we present a new technique that device managertohide thebehaviorsofstealinguserdata.
+makespossiblelarge-scalediscoveryandanalysisofpreviously- Further our study shows that HSO code has been disseminated
+unknown HSO within Android apps. Our approach, called throughthelibrariessharedacrosstechnicalforums/repositories
+HSOMINER, is built upon a set of unique features shared such as GitHub and pudn [14]. Also new techniques proposed
+acrossdifferenttypesofHSO.Morespecifically,anHSOtends in the academia have been quickly picked up by PHA authors.
+to check only system inputs (e.g., time, SMS, keys entered by For example, Anti-emulation techniques proposed on HITCON
+the user, etc.), rather than its hosting app’s internal inputs, for 2013 [10] were found to be used in real-world PHAs.
+triggeringhiddenbehaviors.Further,suchbehaviors,performed
+by the hidden path of the trigger condition, are very different Contributions. The contributions of the paper are summarized
+from the operations on the other path that serve to cover the as follows:
+sensitive activities when they are not triggered (e.g., sending
+• New technique. We developed HSOMINER, a novel machine-
+SMSvs.simplyexitingthecurrentmethod).Mostinterestingly,
+learning based program analysis technique for automated detec-
+except their control dependency, the trigger and the hidden
+tion of hidden sensitive operations, including those previously
+behaviors tend to be unrelated: e.g., consider a time bomb that
+unknown, on a large scale. HSOMINER is built upon a set of
+uses time to determine when to perform malicious activities
+simple yet salient program features, leveraging their collective
+(e.g., stealing private data); rarely does the time also serve as
+differentiating power to identify HSO. In this way, we keep
+an input to the activities. Fundamentally, a trigger is meant
+the features general, thereby allowing the technique to work
+to check whether an app is running in the target situation
+on new types of triggering conditions and suspicious behaviors.
+(right moment, location or device), which is often orthogonal
+Also, the high-level idea of using lightweight program features
+to what the app intends to do in that situation (data stealing,
+and machine learning to avoid complicated code analysis could
+SMS sending, etc.). This is different from a normal branch, in
+find its application in other security domains.
+which the operations on either path are often connected to the
+condition through data flows or shared resources (e.g., if the • New discoveries. Using HSOMINER, we carried out so far
+camera is ready, take a picture through the camera). the largest study on HSO. In the study, over 330K recent
+apps were scanned, which led to the discovery of over 60K
+None of these features is dependent on specific trigger
+apps with hidden behaviors. Analysis of these apps further
+conditionsorsensitivebehaviors,whichpotentiallyallowsthem
+reveals new HSO techniques and their evolving trends. This is
+to be used to find previously unknown HSO. Also importantly,
+invaluableforbetterunderstandingofthemobileHSOrisksand
+they are relatively easy to extract from a program and even
+the enhancement of our defense against this emerging threat.
+thougheachindividualofthemmaynotbeaccurateenoughfor
+detection (incurring false positives), collectively they provide a
+Roadmap. The rest of the paper is organized as follows:
+more precise description of suspicious hidden activities. In our
+Section II presents the background of our research; Sec-
+2tionIIIelaboratesourdesign,implementationandevaluationof specific forms of trigger conditions (e.g., comparison between
+HSOMINER; SectionIVdescribesourlarge-scalemeasurement a time value and a constant, as did in the prior research [34]),
+studyandfindings;SectionVsurveystherelatedpriorresearch; as long as the triggers involve system (device build info, state
+Section VI discusses the limitations of our techniques and of a sensor, etc.) or user inputs (Section III-B); nor do we limit
+potential future research, and Section VII concludes the paper. the hidden operations to a set of manually selected security-
+sensitivebehaviors,aslongassuchoperationsindeedinvolveat
+least one API that once abused, can cause harm to the app user
+II. BACKGROUND
+(Section III-C). Examples of such sensitive APIs are provided
+In this section, we explicate the HSO activities studied in by the Android official security documentation [7]2. Further,
+our research and existing HSO techniques, particularly those just like all prior effort on static analysis of HSO [37], [33],
+used in Android apps. We also present the assumptions made we do not consider the apps whose branch conditions have
+in our study. been deeply obfuscated. Finally, as also found in the prior
+research [34], legitimate apps can also exhibit some evasive
+HSO and Android. As mentioned earlier, we use the term
+behaviors. A prominent example is gaming apps, many of
+“hidden sensitive operations” (HSO) to describe the branch
+which stop running within the emulator. So it is important
+condition (the trigger) that hides security-sensitive behaviors
+to note that this study aims at understanding such behaviors,
+and the behaviors along one path of the trigger that can only
+not directly detecting PHAs, though discovery of HSO often
+be invoked when the condition is satisfied. Such HSO tricks
+indicates the presence of potentially-harmful behaviors.
+have long been utilized by malware authors to evade dynamic
+analysis.Here,thetriggerconditionservestodeterminewhether
+the malware is running in its target environment, which is
+III. FINDINGHSO
+typicallyfoundthroughasetofheuristics:forexample,looking Hereweelaboratethedesign,implementationandevaluation
+for differences in the outputs of certain APIs, the presence of our techniques.
+of virtual machine (VM) related system files or observable
+performance degradation related to virtualization, etc. [18]. A. Overview
+Further, detection of human interactions and the use of various
+The design of HSOMINER focuses on the structure of
+analysis engines (e.g., FireEye Multi-Vector Virtual Execution
+a branch, which exhibits unique features when it involves
+Engine[11])alsobecomespopularindesktopHSO.Inthecase
+hidden behaviors, regardless of the details of the operations.
+that such behaviors are not triggered, sophisticated malware
+Such features can be observed from the relations between the
+can even display a message to disguise the disruption of its
+branch’s individual components, including its condition and
+service as configuration troubles [20].
+paths, and the relation between the components and system
+Similarly, tricks for detecting emulator form the mainstay events. More specifically, a trigger condition is always related
+of the HSO techniques employed by Android apps. These to system inputs (time, location, screen touches, etc.), whereas
+approachestendtoexploitinformationleaksonQEMUandVir- a non-HSO branch may rely on an app’s local data alone
+tualBox,includingtheiruniquesystemfilesandconstantvalues (e.g., a comparison between a loop variable with a constant).
+in the results of certain API calls like getDeviceId, IMEI, Further comparing the paths controlled by the trigger, one with
+Build.FINGERPRIN, getLine1Number [48]. Moreover, sensitive operations and the other not (serving as a cover for
+a mobile device today is characterized by its abundant built-in the former), we can see a significant discrepancy between their
+sensors and strong support for user interactions, which also behaviors (e.g., retrieving accurate location data on one path
+opens new avenues for hiding sensitive code: for example, and displaying UI elements on the other), with the latter acting
+checking the presence of camera to find out whether an app less alarmingly to avoid any suspicion about the whole branch.
+indeed runs on a phone or the patterns of clicks on the screen Alsointerestingly,atriggerismuchlesslikelythanalegitimate
+to determine whether indeed a human (instead of an automatic condition to share resources with the sensitive operations: as
+tester) is using the device (Section IV-C). an example, for a legitimate Intent handler, after the content
+TodefeattheHSOforevadingemulatorsandotheranalysis of an incoming Intent is checked, the follow-up operations
+environments,techniqueshavebeenproposedtocoverthetraces will also happen on the Intent; in the case that the branch just
+of these environments [45]. As an example, without protection, serves as a disguise for an HSO, however, the operations can
+a call to android.os.Build.MODEl immediately returns becompletelyunrelatedtotheIntent(datastealing,sendingout
+google_sdkintheAndroidemulator;toavoidthisexposure, SMS and others). From these three categories of relations, our
+one can enhance the emulator by hooking such APIs and approach extracts 7 features (see Section III-B) that describe
+forcing them to output fake values that mimic those of real- the connections between a condition and system events and
+world devices: e.g., SM-G920F. Alternatively, popular apps between the condition and its security-sensitive path, and also
+can be installed on real phones and analyzed there. A problem thebehaviordistancebetweentwopaths.Thesesalientfeatures,
+is that such anti-HSO measures entirely rely on the knowledge as demonstrated by their differentiating powers (Section III-B),
+about specific HSO behaviors, and therefore tend to be less are then used collectively to capture an HSO branch.
+effective on unknown HSO. So discovery and understanding
+Architecture. Figure 1 illustrates the architecture of
+of new HSO behaviors becomes important to mitigate this
+potential security threat.
+HSOMINER,whichincludesapre-processor,afeatureextractor
+and a classifier. The pre-processor unpacks an app’s APK
+Assumptions.Weconsiderasituationwheretheappdeveloper and then decompiles and converts its code into intermediate
+utilizes all kinds of system events to determine when to trigger
+hidden sensitive operations. Note that we do not assume any 2ThelistcontainsonlyasubsetofAPIsweconsidersensitive(SectionIII-C)
+3Fig. 1: Overview of components in HSOMINER.
+is defined and finds that it has been determined by a system
+input returned by getInstalledPackage, which includes
+the list of all installed packages. Also looking at the difference
+between the two paths, our approach discovers that sensitive
+APIs getPhoneNumber and getLatitude are present on
+onepathandneithershowupontheother.Finally,thecondition,
+which is related to the package list, does not have any data
+dependency or other resource sharing (e.g., through a common
+object) with the statements on the security-sensitive path. As a
+result, our classifier flags the branch as suspicious. Following
+we describe the details of the features selected and individual
+system components.
+B. Features
+As mentioned earlier, HSOMINER relies on a set of
+unique program features to identify HSO activities, including
+those characterizing the constraint on a trigger condition,
+Fig. 2: A possible implementation of HSO.
+behavior differences across different paths and trigger-behavior
+relations. Here we present such features, and demonstrate their
+differentiatingpowersusing213VirusTotal[16]appsconfirmed
+language, which is ultimately transformed into a global control-
+to contain HSO activities and 213 randomly chosen Google-
+flow graph (CFG). The CFG, built on top of Soot [15],
+Playappsconsideredtobelegitimate.TheVirustotalappswere
+comprisesasetofsubgraphsaccordingtotheapp’sentrypoints.
+those matching the signatures of known Android malware,e.g.,
+The subgraphs are further linked together with asynchronous
+Android.HeHe [5], RCSAndroid [22] and those reported by the
+tasks, lifecycle of Android components and inter-procedural
+prior studies [35], [48], and the Google-Play apps were cleared
+invocations. HSOMINER automatically processes these sub-
+by VirusTotal and double-checked manually.
+graphs, identifies potential conditional branches, and outputs
+them for feature extraction. To fully understand the triggers Trigger condition. The trigger of an HSO is meant to identify
+involvedinconditionalstatements,abackwarddatadependency the situation for invoking hidden activities. For almost all the
+graph (DDG) is constructed for the variables appearing in the HSO instances discussed in the literature [5], [22], [45], [4],
+statements, while the behaviors of paths are directly identified [2], such a situation is characterized by some system properties
+duringconstructionoftheCFG.Thepre-processoralsoclusters (e.g.,OSorhardwaretracesofamobiledevice)orenvironment
+packages in apps (Section III-C), which helps to minimize the parameters (time, locations, user inputs, etc.), which are only
+set of entry points to be analyzed. exposed to an app through system interfaces. As a result, an
+The feature extractor takes trigger conditions and their HSO condition is expected to involve, directly or indirectly,
+corresponding paths as its inputs and outputs a set of features oneormoreAPIcallsforinteractingwiththeOS.Forexample,
+collected from them (Section III-B). These features, together Android time bombs tend to directly compare the current time
+with a set of confirmed HSO or Non-HSO training instances, (returned by java.util.Calendar) with a constant [3], which is
+areutilizedtolearnaclassificationmodel,whichservetodetect often directly embedded within a trigger condition. As another
+other HSO apps. example, the boolean variable containsAV, as illustrated in
+Figure 2, is related to the call getInstalledPackages.
+Example. Here we use an example in Figure 2 to explain
+It is important to note that ordinary conditions unrelated to
+how HSOMINER works. The highlighted branch condition
+HSO may also involve system inputs. However, in most cases,
+!containsAV in the figure checks whether any Anti-Virus
+they use local variables only, for example, comparing a loop
+scanner exists on the current device. If not, the app collects the
+variable during each iteration. Interestingly, we found that a
+user’s phone number and precise location (which are sent out
+simple binary feature on whether any system input is involved
+later); otherwise, it just attaches blank content to the message.
+in a condition, denoted by SI (system input), gives a good
+When analyzing the branch, HSOMINER traces back to the indication for the presence of HSO. As shown in Table I, the
+program location where the boolean variable containsAV F-scoreofSIis0.85(withprecisionat0.812)whenidentifying
+4Fig. 4: Checking account balances.
+Fig. 3: Accessing MAC.
+paths often indicates the existence of such a relation. In the
+HSO instances over our ground truth dataset. The details for aboveexample,contentlikethekeyofsharedpreferenceshows
+extracting the feature from the apps’ bytecode is provided in up across the paths, for the purpose of updating the value of
+Section III-C. account balance. Intuitively a legitimate branch is more likely
+to have data dependency across its paths than an HSO branch.
+Behaviordifferences.InthecasethatanHSOconditionisnot Based upon this observation, we utilize another feature in
+satisfied, an ”exposed” path, without hidden activities, would our research, called DD (data distance), to complement AD.
+b one t ta hk ee hn i. dI dn et nuit pi av te hly s, ht oh ue ldap bp eb ce oh na sv idio er rs abo ln y t dh ii fs fep rea nth t:a an sd shth oo ws ne S arp eec thifi ec sa ell ty s, oD fD var= iab1 l− es21 (e( xV V cl l∩ ∪ luV V dr r in+ gF F thl l∩ ∩ oF F sr r e) l, ow cah le lyre dV el finan edd V onr
+inFigure2,thehiddenpathinvolvesasetofsensitiveAPIcalls current path), and F and F are the sets of referenced class
+l r
+(getPhoneNumberandgetLatitude),whiletheexposed
+fields on two paths of a branch statement. Table I shows the
+path has none. Apparently in this example, a Jaccard distance: F-scores for both AD and DD over our ground-truth dataset.
+D ope= rat1 io− nsOO oll ∪∩ nOO rr tw, owh pe ar te hsO ol fan ad bO rar nca hre st th ae tes met es nto ,f ds ee sn cs ri it biv ee
+s Condition-pathrelation.Further,weobservethatforabranch
+different behaviors between hidden and exposed paths. Such involving hidden behaviors, the link between its condition and
+behaviors are specified by the APIs that are considered to have the operations along its paths is often remarkably thin. Indeed
+security and privacy implications, as provided by the Android theformersitsrightonthecontrolflowofthelatter.Exceptfor
+official documentation [7] and a few other lists (PScout [26] this relation, however, a trigger typically does not propagate
+and DroidSIFT [52]) and other system properties and Android any data flow to its paths or share other resources with the
+settings. Note that the API set we choose is more general operations there. Fundamentally, while an HSO condition is
+than that adopted in prior research. Also importantly, we place meant to determine the right situation for running its hidden
+less restrictions on the relations (e.g., the order between a code,thecodeitselfisnotmeanttoprocessanyinputsprovided
+data retrieval API and sinks) of different types of APIs, which by the condition. For example, when an HSO app reads from a
+makes it more likely to capture unknown HSO activities. registertofindoutwhetheritisrunninginsideanemulator,the
+code for stealing private user data, as invoked by the condition,
+In practice, however, the situation could be more compli-
+is not supposed to take the OS fingerprints as its input. To
+cated. Figure 3 illustrates a legitimate branch, whose paths in-
+leverage this property, we come up with two unique features,
+volvedifferentsensitiveAPIs,eventhoughtheyallperformsim-
+as elaborated below.
+ilaroperations,thatis,queryingtheMACaddressofthedevice.
+Interestingly,thecrosspathbehaviorslooknotsodifferentifwe Specifically, we attempt to find out whether any operation
+focusondifferentgroupsofsimilarAPIsandothersystemprop- or variable on paths has data dependency with any variable
+erties: e.g., NetworkInterface and WifiInfo can all be within the condition. This is done through a define-use
+used to collect network information; other examples include analysis performed on every single variable on each path (see
+system or Android properties such as ‘https.proxyHost’ Section III-C for details). Also analyzed in our research are
+and ‘android_id’, whose content can also be acquired implicit condition-path relations: we recover system-related
+through the APIs like Proxy.getDefaultHost() and object instances from variables on each path, in order to check
+TelehonyManager.getDeviceId(). To address this is- whether these resource objects (e.g., LocationManager)
+sue, we group APIs or system keys based upon the similarity are also related to the variables, APIs or system keys (e.g.,
+of their functionalities. Our distance D across different paths is ‘location_providers_allowed’) within the condition.
+calculatedoverthegroupidentitiesofindividualAPIsorsystem For example, an implicit relation can be a check on the
+properties, which we call AD (Activity distance). Table III key location_providers_allowed within the condi-
+shows the AD of the branch illustrated in the figure. tion (whether location information can be accessed), and an
+accesstoLocationManagerinthepath(useofthelocation
+Further, even when both paths involve different groups of
+data). Some of the relations can be found through program
+APIs, they might still perform similar operations. Figure 4
+analysis, in the case of shared object instances (e.g., check
+shows another example: API groups on both paths are quite
+the state of default SIM card by getSimState() with a
+different. The path under condition “operatorCode equals 01”
+TelephonyManager instance and get phone number by
+includes SMS APIs, whereas the other path does not. This case
+getLine1Number() of the same instance in the path). In
+could be flagged as HSO if AD is used alone for detection.
+other cases, we need domain knowledge to determine whether
+However, it turns out to be completely legitimate: the branch
+a key relates to an API or whether two APIs are related. In
+is actually within a utility app for network providers in Russia,
+our research, we collected such relations from legitimate apps,
+which gives options to their customers to check her account
+using the most pervasive API-API or key-API pairs observed
+balance through SMS or Unstructured Supplementary Service
+from their branches. The details are presented in Section III-C.
+Data (USSD). Identifying such a subtle relation across paths
+is clearly nontrivial. However, in our research, we observed Features describing such trigger-behavior relations include
+that the presence of shared variables and constants across the DF (data dependency), which is the ratio of the variables on
+5a path connected to the condition through data flows, and IR hardly be linked to any damaging operations. Once such a
+(implicit relation), which is the number of variables, keys and sensitive block is discovered, the preprocessor goes backward
+APIs implicitly related to the condition. The F-scores for both over the CFG to find all the branch statements (e.g., if-then,
+features, as measured on our ground-truth set, are illustrated switch-case, etc.) predicate the block. Once found, the scope of
+in Table I. such a branch is determined on the subgraph through exploring
+different paths of the branch until the program location where
+the paths converge. Further, a backward data-flow analysis
+TABLE I: F-score of features
+is performed for each branch, generating the DDG for the
+SI AD DD DF2 IR2 variables its condition carries. The DDG and the scope of the
+HSO 0.85 0.579 0.67 0.766 0.774 branch forms a new graph, called condition-path graph (CPG),
+1F-score is calculated based on classification with which is used for the follow-up feature extraction. An example
+eachsinglefeature. CPG is shown in Figure 5. As we can see from the figure, like
+2EachofDF andIRisrelatedwithtwopaths.
+the subgraph, the CPG is inter-procedural, fully preserving the
+information for a precise branch analysis.
+C. Detection
+All the features are chosen based not only upon their Feature extraction. Over the CPG, the feature extractor
+differentiating powers but also upon their relative convenience automatically identifies the branch features for HSO finding,
+of collection from an app’s code. Following we explicate how as elaborated below.
+to run lightweight, localized program analyses to recover these
+• SI. As mentioned in Section III-B, SI is used to determine
+features and how to use them to detect HSO activities.
+whetherabranchconditionisrelatedtosysteminputs,whichis
+Pre-processing. Given an app, the preprocessor first runs more pervasive among trigger conditions than innocent condi-
+Apktool[6]tounpackitandextractsbytecodefromitsapkfile. tional branches (those not involving any HSO). To extract this
+Then,ouranalysistool,builtontopofSoot[15],looksforentry feature from a given branch, HSOMINER inspects all variables
+points of different packages, including lifecycle callbacks (e.g., inthebranchconditiontofindoutwhethertheyareaffected(via
+onCreate), user interactive callbacks (e.g., onClick) and accessibility analysis on backward DDG) by any APIs that re-
+broadcastreceivercallback(i.e.,onReceive),aspriorstudies ceiveinputseitherfromsystemresources(suchasgeo-locations,
+do [41], [52]. From each of the entry points, HSOMINER IMEI, etc.) or from user interfaces. Examples of such APIs in-
+exploreallreachablecodetocreateacontrol-flowgraph(CFG), clude <Date getTime()>, <Locale getCountry()>
+which we call global subgraph with regard to the entry or and<Settings$Secure getInt(···)>.In ourresearch,
+simply global subgraph. To improve the performance of this the list of such APIs are obtained using SuSi [25], which
+analysis, we use a technique to automatically identify the automatically classifies Android API into sources and sinks.
+packages analyzed before [49], based upon a set of features Our implementation includes the sources identified by SuSi
+(e.g., call frequency of a set of Android APIs, total number as system inputs, with 18,076 APIs for Android 4.2.3 Note
+of API calls, and other statistical features in meta-data) that that system inputs not always come from APIs. Actually
+fingerprint them. For those packages, which almost always are an app can directly read from system properties such as
+shared libraries, our approach skips their entry points, without android.os.Build and receive data from Intents or other
+building their global subgraphs. system events. Therefore, we also add these properties and
+events to the list (so a condition related to these properties and
+A global subgraph models the Android Activity/Service
+events is considered to receive system inputs).
+life-cycles and handles inter-component communications (ICC)
+and asynchronous tasks: ICC is analyzed using Epicc, an Given the list of system inputs, our feature extractor
+open-source ICC mapping system [44], in our implementation automatically traverses the CPG of a branch to look for the
+and asynchronous classes within the Android framework are presence of the inputs on the DDGs of the branch’s conditional
+described using the calling convention table provided by variables. The SI for the branch linked to any of such inputs
+DroidSIFT[52].Ourapproachalsosupportsacontext-sensitive, is set to one. Otherwise, it becomes zero. It is important to
+flow-sensitive and inter-procedural backward data-flow analysis note that this constraint on the condition (relation with system
+on selected variables to construct their data-dependency graphs inputs) is much looser than that of Triggerscope [34], which
+(DDG). This technique serves the purpose of discovering the utilizes specific constraints like whether the current time is
+origins of selected variables within the conditions leading after ‘2016-12-22’. In this way, we expect the feature, together
+to sensitive APIs (Section III-B), which is important to the with others, can help find unknown types of HSO.
+missions such as establishment of the link between a branch
+• AD and DD. AD and DD are used to measure the behavior
+condition and system inputs.
+differencebetweentwopathsofthesamebranch.Asmentioned
+Over each subgraph, HSOMINER first locates all basic earlier, our study shows that paths associated with a true
+blocks (a block of statements not involving any branch) HSO tend to act differently than those attached to a normal
+containingsensitiveactivities,whicharerepresentedbyabroad branch (Section III-B) due to the fact that the hidden activities
+set of APIs as defined by the Android documentation [7]. (such as accessing location data, sending SMS and modifying
+Note that unlike other prior work with description of an app’s system settings) are clearly dissimilar to, and often completely
+behaviors, here we intend to adopt a much more general list, independent of those exposed. To extract AD, our approach
+with almost all prominent APIs onboard except for those of simply goes through the paths attached to a branch on its CPG
+fundamental classes in Java/Android (e.g., java.lang.*), to identify all the sensitive APIs and the operations involving
+utility classes (e.g., android.util.Log) and other classes
+related to data format (e.g., JSONObject), since they can 3NotethatthesetofAndroidAPIsisrelativelystable.
+6Fig. 5: The condition-path graph (CPG) of a branch.
+sensitivesystemproperties(SectionIII-B)alongthepaths,maps apps and picked up top 50 pervasive API-API and key-API
+themtotheircorrespondingbehaviorgroups beforecalculating pairs from the branches (see Table II for the examples). During
+the Jaccard distance between these two sets of behavior groups its operation, HSOMINER automatically inspect the CPG of
+(on two paths respectively). a branch, looking for the variables associated with the same
+resource object and related APIs or key-API pairs between the
+To discover the data dependency between paths, a generic
+condition and the paths. A path’s IR is then calculated as the
+approach is to backtrack the data flow for each variable on a
+number of its related APIs, variables and keys.
+path to find out whether indeed it is related to some variable(s)
+on the other path: that is, they are all traced back to the same It is important to note that all these features, SI, AD,
+assignment or definition statement or all referring to the same DD, DF and IR, are identified through a localized analysis,
+object. This analysis is clearly heavyweight and does not seem whichfocusesonabranch’sCPG.Inthisway,wemakefeature
+to be necessary: for all the legitimate branches with such extractionlightweight,whichiscriticalforachievingscalability
+relations found in our study, we observed that related variables for an HSO analysis.
+are all associated with a common statement (assignment or
+definition) within the CPG of the branch or an object passed to Classification. As illustrated in Table I, those lightweight
+the method hosting the branch through an inter-procedural call. features do contribute to the detection of HSO activities
+Therefore, we can establish the data dependecies between the individually. However, such a contribution is limited, coming
+variablesacrosspathsbysimplyanalyzingtheirdataflowsover with significant false positives and negatives: the precisions of
+the CPG of the branch and the current method. This enables us these features range from 56.4% to 84.6% and their coverage
+to conveniently calculate DD, as described in Section III-B. from51.4%to84.3%.Clearlynoneofthemisperfectandnone
+ofthemcanworkalone.Thisismainlycausedbythegenerality
+• DF and IR. Like other features, both DF and IR, which preserved by these features, which is important for finding
+describe the explicit data-flow and implicit relations between a unknown HSO: for example, instead of precisely specifying
+branchconditionanditspath,arealsoextractedfromabranch’s how a trigger condition should look like (e.g., a time variable
+CPG. Specifically, DF measures how variables on paths are compared with a constant [34]), we only expect the condition
+affected by the condition through data flows. This feature is to involve system inputs. The key idea of HSOMINER is to use
+extracted from a branch through a define-use analysis: that is, these imperfect yet lightweight features collectively to enhance
+whether any variable used on a path has actually been defined their effectiveness in finding hidden activities. For this purpose,
+at the condition. Here “define” means that the variable is the we resort to machine learning techniques, using a classification
+target of the operation performed by either a definition or an model to predict whether a branch is indeed an HSO. Our
+assignment statement (that is, where the variable gets a new study shows that this approach significantly elevates the quality
+value). Given a set of variables on a path, v 1,··· ,v n, our of HSO detection, raising precision to 98% and coverage to
+approach simply inspects each variable on the CPG to find out 94.4% (Section III-D).
+whether it has been defined in the condition. DF is calculated
+Specifically, we construct a feature vector v =
+as k,withk beingthenumberofthoserelatedtothecondition.
+n (SI,AD,DD,DF ,DF ,IR ,IR ), where l and r represent
+l r l r
+Also as mentioned in Section III-B, a branch condition the left and right paths of a branch, respectively. For simplicity,
+can be linked to a path implicitly, through shared thevectorhereonlydescribesthebranchwithtwopaths.When
+resources, particularly, common object instances (e.g., it comes to those involving multiple paths, we can use AD
+java.net.Socket, whose isConnected() property is and DD to represent the largest distance across all pairs of
+checked in the condition and getInputStream() method paths, and add DF and IR for each path to v. Table III shows
+is used in the path), related APIs (e.g., <Environment a few examples of the feature vectors, including a time bomb
+getExternalStorageState()>and<OutputStream that triggers hidden behaviors on a certain day (the trigger
+write(···)>), related system key-API pairs (e.g. continuouslychecksthecurrentdateusingacalendar),abenign
+“ACCESS_FINE_LOCATION” and <LocationManager instance that checks INTERNET permission before initiating
+requestLocationUpdates(···)>). In our research, we network procedure, and two other instances (accessing MAC
+systematically collected a set of such related resources through and checking account balance) described in Section III-B.
+inspecting 11,463 branches within 1500 popular legitimate
+7TABLE II: Examples of APIs and key/API pairs used in IR
+Itemincondition Iteminpath
+〈android.location.LocationManager:isProviderEnabled(···)〉 〈android.location.LocationManager:requestLocationUpdates(···)〉
+〈android.webkit.WebViewClient:〈init〉()〉 〈android.webkit.WebView:loadUrl(···)〉
+〈android.net.NetworkInfo:getState()〉 〈android.net.ConnectivityManager:getNetworkInfo(···)〉
+〈android.os.Environment:getExternalStorageState()〉 〈java.io.File:mkdir()〉
+‘location providers allowed’ 〈android.location.LocationManager:getLastKnownLocation(···)〉
+‘PACKAGE CHANGED’ 〈android.content.pm.PackageManager:java.util.ListgetInstalledPackages(···)〉
+‘GET ACCOUNTS’ 〈android.accounts.AccountManager:getAccountsByType(···)〉
+Using the vector, a classification model is then trained over Fortheperformanceevaluation,werandomlyselected3000
+a ground-truth dataset. The dataset in our research includes popular apps from Google Play, with their sizes ranging from
+confirmedHSOappslikeAndroid.HeHe[5]andlegitimateones 36KB to 90MB. Further, 35 relatively small apps used by the
+(Section III-D). The machine learning algorithm implemented priorresearch[34]werealsotested,togiveussomeideaabout
+in HSOMINER is support vector machine (SVM), which was how our system performs compared with the prior one. These
+chosen in our research due to its over-fitting resistant feature. experiments were conducted on a Dell desktop with 3.3GHz
+Like other learning-based approach, we trained and then Intel Core i5 processor and 16GB RAM. The timeout of the
+evaluatedtheSVMmodelusingcross-validation,beforerunning analysiswassetto60minutes,inlinewiththepriorstudy[51].
+it against 330K real-world apps. Section III-D provides the
+details of this study. Effectiveness. To understand the effectiveness of HSOMINER,
+we first trained the classifier over the labeled sets, using a
+polynomial-kernel based SVM. Our 4-fold cross validation
+TABLE III: Feature vector for HSOMINER shows that HSOMINER achieved a precision of 98% for HSO
+detection and a recall of 94.4%. The detailed results are
+SI AD DD DFl IRl DFr IRr presented in Table V.
+timebomb(Calendar) True 1.0 1.0 0.0 0 0.0 0
+permissioncheck False 1.0 1.0 0.31 2 0.0 1
+accessMAC True 0.0 1.0 0.0 0 0.0 0
+accountbalance True 1.0 0.5 0.0 1 0.0 0 TABLE V: Detailed accuracy of SVM
+classifier
+D. Evaluation Precision Recall F-score
+HSO 0.98 0.944 0.962
+In this section, we report our evaluation of HSOMINER, Non-HSO 0.946 0.981 0.963
+in terms of its capability to identify HSO activities and its WeightedAvg. 0.963 0.962 0.962
+performance. Wethenranthetrainedmodeltopredictunknowninstances
+across all 338,354 apps. Altogether, 63,372 apps with 70,660
+Settings. Our implementation was evaluated over a labeled
+branches were flagged as suspicious HSO. Among them, we
+bad set, a labeled good set and an unknown set. To avoid
+randomly sampled 125 apps (with one flagged branch each) for
+overfitting caused by unbalanced data, we made the good set
+a manual validation. All except two instances were considered
+and bad set of same size. The bad set contains confirmed 213
+to be true positives, with a precision of 98.4%, in line with
+PHAs, each with one HSO branch. The good set involves 213
+what we found from the labeled set. In the two likely false
+Google-Play apps that have never been flagged by any Anti-
+positives, the apps first attempt to retrieve Device ID and if
+Virus (AV) service hosted on VirusTotal [16]. To overcome the
+unsuccessful,trytoreadthecurrentdevice’sMACaddress.We
+potential overfitting caused by small training set and make our
+did not see concrete evidence that the apps intend to hide such
+classifiermoregeneric,wedidtworoundsofretrainingbyusing
+activities through some narrow trigger conditions. Nor did we
+manuallyconfirmedclassifiedsamplesastrainingsamples.The
+observe that sensitive user data was leaked. As a result, we did
+unknown set has 338,354 apps, with 124,207 of them collected
+not count them as true positives. In all other cases, clearly we
+from Google Play, and the rest 214,147 randomly downloaded
+foundHSObehaviorssuchastriggeringhiddenactivitiesbased
+from VirusTotal. The details of our data sources are described
+upon time, UI inputs, environment types (emulator or not), etc.
+in Table IV. Note here that although a large number of apps
+Table VI presents the types of trigger conditions discovered
+were flagged by at least one VirusTotal scanner, many of them
+from these instances. Top on the list are “Time”, “Device Info”
+can actually be innocent, due to the false positives introduced
+and “System Event”. Our approach also revealed some less
+by these 57 scanners, which are particularly sensitive to the
+known triggers such as “progress bar”, “account manager”, as
+apps with rich functionalities such as collection of location
+well as unique hidden behaviors, like broadcast relay
+information. Also many apps hosted by VirusTotal are also
+andsystem version inference.Detailsofourfindings
+legitimate.
+from the unknown set are presented in Section IV.
+Performance. To understand the performance of HSOMINER,
+TABLE IV: Details of the unknown set
+we ran our prototype on 3000 randomly-selected apps from
+(with the number of the apps flagged by
+Google Play, with an average size of 8.43 MB. On average,
+at least one VirusTotal scanner)
+HSOMINER spent 765.3s on each app (except 8.4% apps
+that were partially analyzed before timing out). Further, we
+Notflagged flagged Total
+GooglePlay 52,319 71,888 124,207 attempted to compare our approach with TriggerScope [34],
+VirusTotal 47,937 166,210 214,147 a logic-bomb detector. Without access to its code, the only
+Total 100,256 238,098 338,354
+8TABLE VI: Trigger condition of detected HSO
+Cases Count
+SystemEvent screenon,bootcompleted 19
+Time calendar,currenttime,date 43
+DeviceInfo deviceid,buildinfo 41
+DeviceSettings systemsettings 6
+Location/Environment latitude,country,networkoperator 8
+UI keyrepeatcount,progressbar 2
+Miscellaneous uid,accountmanager 4
+Fig. 7: How HSO instances are distributed across apps. Here
+“Degree of HSO instance” means the number of apps affected
+byoneHSOinstance.Aswecansee,alargeproportionofHSO
+instances are used only once (see solid line); However, many
+apps include shared libraries with HSO activities (indicated by
+dotted line).
+Fig. 6: Distribution of apps by number of AV scanners. number of Anti-Virus (AV) scanners that flag them (with about
+a third of them considered to be legitimate). On average, the
+sizeoftheseappsis5.98MBandamongall2,245,235packages
+thing we could do is to test HSOMINER on the apps also extracted from them, 94.2% were successfully processed by
+used to evaluate TriggerScope. Altogether, we got 35 of such HSOMINER without causing any time-out.
+apps, whose sizes range from 14KB to 461KB. All other apps
+apparentlyaretooobsoletetobefoundonline.Withtheanalysis
+Pervasiveness. From the 338,354 apps, HSOMINER reported
+that63,372ofthem(18.7%)containHSObranches.Formostof
+timeout set to 60 minutes, HSOMINER successfully processed
+these apps, however, their hidden behaviors come from shared
+each of these apps within 42 seconds on average, with 255
+libraries. Altogether, we found 3,491 unique HSO instances
+seconds in the worst case and less than 60 seconds for 79.2%
+from these apps. The distribution of these instances across all
+of the apps. Note that the prior research reports an average
+flagged apps is illustrated in Figure 7. Specifically, 60.9% of
+performanceof219.21secondsperapp,around5.2timesslower
+these instances are present in no more than two apps (thus
+compared with our approach, though this comparison may not
+apparently unrelated to libraries), while remaining 39.1% are
+beentirelyfair,duetothelackofthecodeofTriggerscopeand
+inside the libraries extensively shared by tens to thousands
+uncertainty about its evaluation environment. At the very least,
+of apps. Also note that 12.6% of VirusTotal apps contain
+the study does show that HSOMINER indeed works efficiently.
+such non-library HSO branches while only 8.0% of Google
+Play apps contain this kind of branches. As an example, a
+IV. MEASUREMENTANDDISCOVERIES
+time bomb within the library com.baidu.kirin was shared by
+The efficiency of HSOMINER enables us to study HSO
+9,710 apps; the HSO involves accessing device information
+on a scale that has never been achieved before. Through a
+and initiating a network updating procedure only during a time
+systematic analysis of over 330K apps, including popular apps interval specified by the constant kirin_open_period.
+fromGooglePlay,ourresearchrevealsthepervasivenessofthe
+Further we show in Figure 8 the distribution of these HSO
+HSO activities, which were found in 18.7% of the apps, and
+appsacrossdifferentcountries(recoveredfromthe“C(country)”
+the diversity of triggers (based on patterns of UI events, states
+attribute of developer certificate). As we can see from the
+of system servers, etc.) and hidden activities (dynamic code
+figure,whichincludesthe15countrieshostingmostHSOapps,
+loading, video recording, etc.). Also importantly, HSOMINER
+Russia, Israel and China are top on the list. Also interestingly,
+discoverednewHSOactivitiesneverreportedbefore.Examples
+apparently there is a correlation between the number of HSO
+include user data collection happens only after 10 ms of video
+instances in a country and the Cost Per Install (CPI) there.
+playing and sensitive activities invoked only when a specific
+Using the CPI data provided by AppBrain [8], we found that
+area on the screen is clicked upon. Further our study sheds
+the higher the CPI, less likely an app is involved in HSO
+light on how HSO activities evolve and HSO techniques are
+activities.
+disseminated. Following we elaborate these findings.
+HSO and PHA. Also we found that HSO indeed relates
+A. Landscape
+to potentially harmful apps. Figure 9 shows a comparison
+Ourmeasurementstudywasconductedonatotalof338,354 between the ratios of the non-HSO apps (those not reported
+Android apps, of which 214,147 were randomly selected from by HSOMINER) flagged by VirusTotal and the HSO apps. Our
+those cached by VirusTotal and 124,207 from Google Play. studyshowsthat69.71%oftheformerweredetectedbyatleast
+Duplicate apps were removed according to their SHA256. oneAVscannerwhile93.08%ofthelattertriggeredalarm.The
+Distribution of the apps’ release time shows that: although gap between these two sets of apps becomes even wider when
+there are apps published years ago, most (about 70.9%) of we set the threshold of alarm to at least 9 scanners. In this
+them are new and submitted after 2015. Further we illustrate case, 59.01% of the non-HSO apps were reported and 88.22%
+how those cached by VirusTotal were selected in Figure 6. The of the HSO ones found to be PHAs. This finding shows that
+apps downloaded from there were randomly selected across the HSO can serve as an indicator for detecting PHAs.
+9Fig. 8: Geographic distribution of HSO apps. Note here CPI is normalized and data for China is not available.
+Fig. 9: VirusTotal result of Non-HSO and HSO apps Fig. 10: Categories of HSO trigger conditions.
+package com.feicong sends SMS in background only when it
+Triggers. We summarize the HSO trigger conditions observed receives a SMS on a certain day.
+fromdetectedappsinto7categories,asillustratedinFigure10, Among all the trigger conditions discovered, more conven-
+including time, location, device information, device setting, tional ones like time, location, device information dominate the
+user interface, system event and system services. Specifically, pack (with nearly 3,253 out of 3,491 instances). The remaining
+sensitive behaviors are invoked at a certain time, within a 236 instances, however, demonstrate that sensitive activities
+certain longitude and latitude range, or when the device is could be hidden and invoked in more surprising ways. The
+served by a certain network operator. Also, device specific details of these cases are presented in Section IV-B.
+information is found to be extensively used to detect emulators:
+forexample,thepresenceofthedeviceID“9774d56d682e549c” Hidden behaviors. Further we looked into the HSO behaviors
+may indicate that the app is being analyzed by Bouncer [43]. hidden by the triggers. Table VII presents the 10 categories
+Further we observed that the setting of a mobile device is used of activities discovered in our study. As we see from the
+to monitor the state of the device and determine the situation table, network operations are among the most prevalent ones,
+for running sensitive code. Examples include packers that stop showing up in nearly 70% of all the HSO instances studied
+decrypting executables or loading hidden code from resource in our research. Other common activities include accessing
+files if isDebuggerConnected is True, and PHAs that device information (e.g., phone number) (15.27%), sending
+install/uninstall apps silently when adb_enabled is set. SMS (12.32%) and reading location data (7.02%), which
+Inadditiontotheaforementionedtriggers,whichhavemore
+are all considered security-sensitive. In addition, HSOMINER
+identified a dozen of apps that dynamically load code, modify
+or less been mentioned by the prior research [34], [51], [30].
+system settings, record audio/video, take pictures and access
+Our approach also identified a set of conditions never reported
+user accounts once triggered. These behaviors, obviously, are
+before. Particularly, UI widgets were found to guard sensitive
+potentially harmful to the device users.
+operations in clever ways. System events like reboot or date
+change are also leveraged to activate hidden behaviors. Even
+Android system services are used to trigger HSO operations:
+for example, when the telegram account becomes available B. Understanding HSO
+in AccountManager, a PHA steals device owner’s privacy In this section, we focus on the most interesting findings
+like phone number, network operator and locale. Of particular made in our research, including new types of HSO, evolution
+interest is the finding that multiple trigger conditions are of such hidden behaviors and the channels that propagate HSO
+combined together to cover HSO activities. As an example, the techniques across app developers.
+10TABLE VII: Hidden behaviors of HSO.
+behaviorcategory numberofrelatedHSO percentage
+getnetworkstate 1708 48.93%
+accessnetwork 709 20.31%
+accessdeviceinfo 533 15.27%
+SMS 430 12.32%
+readlocationdata 245 7.01%
+dynamicloading 10 0.29%
+modifysystemsetting 22 0.63%
+recordaudio/video 5 0.14%
+accessaccounts 12 0.34%
+Fig. 11: Evolution of HSO.
+takepictures 17 0.49%
+New HSO. As mentioned in Section IV-A, not only has
+of the apps including HSO goes up most of the time. The
+HSOMINER brought to light the pervasiveness of known HSO
+finding indicates that HSO is gaining popularity in recent years
+triggers,liketimeandlocation,butitalsorevealedseveraltypes
+and becomes increasingly prominent in countering program
+of less known triggering conditions, including UIs, system
+analysis.
+events and system services. Specifically, we found 51 apps
+Further,weidentifiedvariantsofpackageswithinappsbased
+whose sensitive behaviors can only be invoked by some unique
+upon their common package names. From these packages, we
+UI events. Some of these HSO are surprisingly complicated,
+found that 355 of them actually include HSO versions. For
+leveraging the states of various UI widgets. For instance,
+example, the package net.daum.adam within an app stamped
+the hidden behaviors of the package com.jackeey cannot be
+2014-05-13 has not been found to have any HSO behaviors,
+triggered by simply clicking on its widget. Instead, the HSO
+while the variant of the same package within a different app
+conditionneedstobesatisfiedbytherightdistanceandvelocity
+with a time stamp of 2015-06-26 uses multiple factors (e.g.,
+ofaflingevent:networkoperationsareactivatedonlywhenthe
+device ID, Build model, build platform) to determine whether
+velocity of the wipe on the screen goes above 20.0 in pixels.
+itisrunninginsideanemulator,andwhenitisnot,thepackage
+As another example, the package com.FREE APPS 237 does
+uploads user information and request an advertisement from
+not exhibit any sensitive behaviors before a predefined area
+the server.
+of a specific view is clicked. All such HSO can easily evade
+a dynamic analysis, even the one using the state-of-the-art
+Propagation. Our study also provides new clues about how
+UI automation tools [13], [42]. Also found in our study are
+HSO techniques are spread. We found that HSO instances are
+the combinations of multiple more conventional triggers. For
+apparentlydisseminatedthroughonlineforums.Asanexample,
+example, the HSO within jp.co.benesse.maitama can only be
+the package com.feicong, which was designed to hide its
+activatedbyclickingaviewbeforeagivendate.Otherintriguing
+behaviors from 360 Security [1], was posted online (i.e., pudn)
+cases include hiding behaviours in an app’s progress bars or
+andlatershowedupwithinfourappsinoursamples.Interesting,
+video views, which we elaborate in Section IV-C.
+theseappswerefirstscannedbyVirusTotalinJune,2015though
+WealsodiscoveredthatAndroidsystemservicesareutilized it was released as early as October, 2012. Another observation
+in HSO activities. Such system services (also known as system is that some new HSO techniques proposed in academia
+servers) include a large number of interfaces for device users are quickly adopted by app developers. For example, some
+to access and manage system configurations. For example, anti-emulator/taint/monkey techniques published on HITCON
+AccountManagerservesasacentralizedregistryformanag- 2013 [10] were discovered in a library com.uc108, which was
+ing the user’s accounts. In our research, HSOMINER detected further integrated into 6 apps in our samples, all in year 2014.
+20 apps that leverage these services to cover their sensitive
+operations. As a prominent example, an app with a package C. Case Study
+com.nrs first checks whether org.telegram.account Here we elaborate a few real-world HSO cases found in
+exists in AccountManager and if so, it moves on to disable our study.
+the Wi-Fi state of the current device and updating user’s
+information (like IMEI, mobile country code) to a server Video trigger. Figure 12 shows an app discovered in our
+though mobile data connection. Another example involves study that utilizes VideoView in its HSO trigger condition.
+DeviceManager: when the service is not activated for the Specifically, the app monitors the status of video playing
+current user, the app package com.example.comandroid does through getCurrentPosition: if the video has been
+not exhibit any suspicious behaviors (just displaying its main played for 100 ms, it starts collecting device ID and location
+activity); however, once the service is launched, the app data. While 100 ms is a very short time frame, the trick
+immediatelyhidesitselfbydisablingitsmainactivityandstarts turns out to be quite effective against UI exploration tools
+a service to steal incoming SMS messages in background. like monkeyrunner, since such tools typically do not wait
+until the video is fully loaded to generate another user event.
+Evolution. Our study also reveals the trend of HSO activities. Our study found that similar techniques are used in 27 HSO
+Specifically, we collected meta-data from each app’s APK instances in our dataset.
+files, including its ZipModifyDate (when the file has
+been changed) and certificate information, and analyzed the Trapdoor on view. The UI of a normal app is designed in
+popularity of such techniques over time. Figure 11 shows the a way that specific functionality is associated with a single
+evolution of HSO apps from 2008 to 2016, based upon the widget/subview. However, we observed that some HSO apps
+timestamps of their hosting apps. We found that the percentage hide their operations behind a specific region on a view. For
+11Fig. 14: Click interval.
+determinetheexistenceof/system/bin/linker64.These
+conditions (whether running on emulator or current system is
+Fig. 12: Video trigger. 64bit) serve as a trigger for hidden behaviors, which includes
+unpacking and dynamically loading hidden code.
+Broadcastrelay.Inadditiontothenoveltriggerconditions,we
+also observed some interesting hidden behaviors that provide
+an additional layer of protection for suspicious activities.
+Specifically, we found that an app continuously monitors
+phone state change by registering a BroadcastReceiver
+receiver1.Interestingly,thisreceiverfurtherdefinesanother
+BroadcastReceiver receiver2, loads its code from
+the app’s resource file and invokes it through reflection. Also,
+receiver1 did not cause any alarm on VirusTotal while
+Fig. 13: Trapdoor on view. receiver2 was flagged. This approach could make the
+hidden activities even more difficult to detect.
+Version inference. Our study also shows that the behaviors
+the app shown in Figure 13, each time when its view is clicked
+undercovercouldbesubtlerthantheyappeartobe.Asapromi-
+upon, the app checks whether the coordinates of the touch lie
+nentexample,wediscoveredanappthatonceitshiddenpathis
+within a rectangle at the middle of the view with a height of triggered, invokes setMobileDataEnabled, compares the
+50 pixels and the width half of the whole view; only when mobile state (acquired using getMobileDataEnabled) be-
+this “trapdoor” is hit, will the app invoke its hidden activities,
+foreandaftertheinvocation,andsendsthecomparisonresultto
+includingsendingSMS.Althoughitisnotentirelyclearwhether
+itsserver.Acloselookattheapp’scoderevealsthatthisunusual
+these apps are actually malicious, this trick indeed makes it
+operation actually serves the purpose of inferring the version
+harder for the UI automation tools to trigger sensitive HSO of the current OS: the API setMobileDataEnabled is
+operations.
+available before Android L but no longer supported afterwards;
+this can be revealed from whether the attempt to call that API
+Click interval. Another UI-based trigger technique found in
+cango through.Indeed, we foundthat theapp putsthe inferred
+our study is for detecting the presence of a human user. The
+version ID in the message it sends out. Apparently, it does
+approachleveragestheobservationthattheseautomatictoolsare
+not want to directly call Build.Version to get the version
+designedtoaggressivelyexploreuserinterfaces,whileahuman
+number and instead uses the inference to hide its intention.
+alwayshasadelaybetweenherconsecutiveinteractionswiththe
+app. Therefore, the app (com.unjiaoyou.mm) monitors the time
+V. RELATEDWORK
+interval between two clicks, as illustrated in Figure 14, under
+the function unFastDoubleClick(): it starts collecting Trigger conditions. Hiding sensitive behaviors with various
+user information (phone number, serial number of SIM card trigger conditions has been studied for a decade, starting
+and IMSI) when the interval is greater than 0.5 seconds and from binary executables [29], [27], [40], [39], [28] and more
+simply exits OnClickListener otherwise. recently moving onto Android apps. Most prior work is on
+detecting virtual machines (or the emulator for Android)
+Platform-specific attribute. Most known HSO techniques for and evading dynamic analysis. As a prominent example,
+detecting emulators rely on device ID or Build information. RCSAndroid [20], a monitoring suite of HackingTeam, detects
+However, HSOMINER found a new approach that differentiates emulator by static properties like ‘ro.kernel.qumu’. In
+mobile and desktop systems from an executable’s platform- another example [45], the presence of sensors (based upon
+specific content. Specifically, an app playing this trick reads the features such as usage of virtual program counter and
+from /system/bin/linker to inspect its e_machine cache) are identified to differentiate a real mobile device
+field (which is 19th and 20th byte) in the ELF format. This from an emulator. Also leveraged as a trigger condition is the
+field is 0 for ARM and 3 for X86, which discloses whether the performancedifferencebetweenplatforms[48].Suchheuristics
+system is running on a real mobile device or in an emulator. could even be discovered automatically, as demonstrated by
+Also discovered in the app is a class that reads memory map to prior work [35].
+12In addition to VM or emulator detection, other trigger could be differentiated from their context, e.g., UI events,
+conditionsleveragetime,locationandSMStoidentifytheright system events and environment property methods. Although
+situationonamobiledeviceforrunningsensitivecode[3],[34]. similar to HSOMINER in terms of using learning techniques,
+A more recent study [31] expands the scope of HSO triggers AppContext focuses more on PHA detection than on HSO
+by proposing to distinguish a human user from an automated behavior discovery.
+UI exploration tool, so that security-sensitive operations only
+happen in the presence of humans. Defense. In addition to the attempts to detect HSO, effort has
+been made to make an HSO technique less effective. As an
+A problem for these prior studies is that they work on a
+example, Ether [32] leverages hardware virtualization exten-
+relatively small set of apps, a few thousand typically. As a
+sions to stay transparent to malware. Another technique [36]
+result, little is known about what are happening in the wild. In
+dynamicallymodifiestheexecutionofawhole-systememulator
+our research, we performed a measurement study over more
+to mimic a real device in the face of anti-emulation malware.
+than 330K real-world apps and discovered a large number of
+Similarly in Android, implementations have been proposed
+HSOinstances,includingthoseneverreportedbefore,widening
+to make emulator transparent through runtime hooking and
+the eyes for the research on thesubject. As an example, the UI-
+Android source modification [21], [24].
+based approach, as proposed recently [31], turns out to already
+be in the wild, together with other complicated, surprising
+tricks (Section IV) like utilizing the status of video playing.
+VI. DISCUSSION
+With its significant step towards understanding and ulti-
+Detection. Also many new techniques have been proposed to matelydefeatinghiddensensitiveoperations,thecurrentdesign
+automatically detect HSO activities, in binary executables or andimplementationofHSOMINERarestillpreliminary,leaving
+mobile code [29], [27], [40], [39], [38], [28], [34], [9], [53]. more to be desired. Here we discuss a few limitations of our
+Several studies propose to capture the behavior deviation approach and potential future directions.
+fromthepotentiallyharmfulappsindifferentenvironments[29],
+[27], [40], [39], [38]. The idea is based upon the observation
+Accuracy and completeness. HSOMINER is built on top of
+existing static analysis techniques, which are known to be less
+that anti-emulator HSOs are very likely to act differently when
+accurate, particularly when it comes to handling the Android’s
+running in an analysis environment and when operating on
+Inter-Component Communications (ICC). It is possible, for
+uninstrumented devices. Since such a behavior comparison
+example, that the define-use analysis we employed gives
+needs to be done using the same execution trace, these
+inaccurate results. Also more likely, some apps are simply too
+approachesusuallyrecordanapp’sinteractionswiththesystem
+complicatedtobeanalyzed,asobservedinourstudy.Although
+in one environment and replay them to the same app in
+improving the precision and completeness of the underlying
+another. As we can see here, these approaches target on anti-
+static analysis techniques are out of the scope of this study, it
+emulator, while HSOMINER is designed for a more general
+purpose,aimingatdifferentkindsofHSOactivities.Alsothese
+is important to point out that HSOMINER is designed to be
+less dependent on accuracy of individual features. Instead, we
+dynamic analysis based techniques tend to be heavyweight and
+attempt to leverage a collection of attributes extracted from a
+less comprehensive. By comparison, our approach uses static
+program to identify HSO behaviors, even when the individual
+analysis and can therefore be scaled to the level of hundreds
+attributes are contaminated with a certain level of noise. We
+of thousands of apps.
+strongly believe that leveraging the collective power of less
+Another line of research focuses on trigger analysis [28],
+accurate yet differentiating program features opens a promising
+[34], based on the observation that trigger conditions usually
+new direction for a more cost-effective security analysis.
+rely on some unique inputs of interest to the adversary (e.g.,
+time, network), and sensitive operations are triggered only
+Also,eventhoughthedesignofHSOMINERismoregeneric
+than existing approaches, which enables it to catch new HSO
+when a narrow requirement is met (e.g., current date equals a
+instances, it is still based on a set of assumptions that fail to
+predefined trigger date; mobile device is located in a certain
+cover some HSO cases. For example, theoretically, a trigger
+area). To automatically identify such trigger-based behaviors,
+condition does not need to involve any system inputs: hidden
+these approaches often leverage techniques like symbolic
+behaviors could be activated once an activity has been visited
+execution, dynamic instrumentation and formal verification.
+for a certain number of times. In practice, however, the trick
+Among them, most relevant to our work is TriggerScope [34],
+of this type has never been observed before. Most importantly,
+whichaimstodetectsometypesoflogicbombs(time-,location-
+and SMS-triggered HSOs). Compared to HSOMINER, one
+HSOMINER classifies a branch structure based upon a set of
+features, which limits the impact of a single feature, and could
+main difference is that TriggerScope is designed to capture
+still capture the case mentioned above. This needs to be further
+known HSO cases and its expected trigger conditions are
+investigated in the future research.
+very specific. In contrast, HSOMINER only assumes that a
+trigger condition is supposed to receive certain system inputs,
+Evasion. Just like all existing approaches [51], [34],
+which makes it possible to identify unknown HSO. Another
+HSOMINER could be evaded by carefully designed HSO
+important difference is that TriggerScope is built on heavy-
+techniques. An HSO branch can always be built in a way that
+weight techniques like symbolic execution, while HSOMINER
+mimicslegitimatebranchestomakeourtechniquelesseffective.
+utilizesefficientfeatureextraction,whichmakesitmoresuitable
+On the other hand, we argue that the design philosophy of
+for a large scale analysis.
+HSOMINER will make such attacks more difficult to succeed:
+Also related to our research is AppContext [51], a PHA the adversary may not be able to bypass our defense by
+detection system based on supervised machine learning. It simply avoiding one or two features; she needs to consider the
+leverages the observation that benign and malicious behaviors identification power from the combination of multiple features
+13tocarefullycomeupwithastrategytocheatourclassifier.Even In this paper, we report an innovative technique that
+when the features selected for our implementation become less makes it possible to analyze and discover unknown HSO
+differentiating in the presence of a new attack, the framework instances across a large number of real-world Android apps.
+of HSOMINER can easily accommodate other features, further Our approach, HSOMINER, is built upon a set of unique
+raising the bar to the evasion attempts. Therefore, we have observationsaboutanHSOcondition,itspathsandtherelations
+reason to believe that techniques like HSOMINER can be more between them. Particularly, we found that such a condition
+robust than the approach based upon a single feature, like tends to involve system inputs, but is less likely to link to its
+TriggerScope[34].Inthemeantime,futureresearchiscertainly branch paths through data flows or shared resources. Further
+needed to better understand the cost of evasion under our the behaviors between a hidden path and the counterpart
+approach and find new ways to enhance our technique against that covers it are often very different. Features summarized
+such a threat. over these observations were found to be easy to extract and
+highly effective when used collectively. In our research, we
+Also our current implementation cannot handle the HSO
+implemented a prototype system that runs a classifier to detect
+embedded in the native code. However, our design could be
+HSOinstanceswiththesefeatures.Itwasdesignedtobegeneral,
+extended to help identify the hidden behaviors there. Further,
+well-equipped to catch previously unknown HSO instances.
+HSO triggers can be deployed on the server side, which cannot
+Our study shows that the new technique achieved over 98%
+be directly observed by our static analyzer. On the other
+precision and over 94% coverage. It is also efficient, enabling
+hand, such a technique requires the server to send commands
+us to perform a large measurement study over 330K recent
+to the app, which will also need to be checked within the
+apps. This study sheds new light on Android HSO activities
+app. This just provides an opportunity for identifying hidden
+in the wild, and reveals the pervasiveness of HSO behaviors
+operations using our technique. Further, the adversary could
+and new techniques deployed by the HSO authors, including
+obfuscate the code using reflection and other techniques to
+the extensive use of UIs, system events and services as trigger
+undermine the effectiveness of HSOMINER. Such attempts,
+conditions and surprising hidden behaviors. Our new technique,
+however, could be detected by existing techniques [50], [47],
+together with the new understanding, contributes to the better
+making a PHA less stealthy. UI based HSO activities can also
+protectionagainstthisemergingthreattothemobileecosystem.
+be hard to capture, due to the challenge in differentiating them
+from legitimate UI related operations. The problem could be
+addressedthroughleveragingthesemanticrelationsbetweenUI ACKNOWLEDGMENT
+textandappbehaviors,usingAutoCog[46]andexistingNatural
+We thank anonymous reviewers for their insightful com-
+Language Processing tools to extract this feature. However, for
+ments. This work was supported in part by the National
+the UI related behaviors solely based on callbacks rather than
+Science Foundation under grant 1223477, 1223495, 1527141,
+the traditional branch structure, new techniques need to be
+1618493, 1664315, U.S. Army Research Office under grant
+developed to detect them.
+W911NF1610127,AirForceResearchLabundergrantFA8750
+-15-2-0106, and DARPA under grant FA8750-16-C-0044. We
+Further optimization. As mentioned earlier, HSOMINER is
+wouldalsoliketothankVirusTotalforgrantingustheprivilege
+meanttobeefficient,performingonlylightweightcodeanalysis
+for the large scale query and app downloading.
+for feature extraction. Our current implementation, however,
+still involves some heavyweight techniques. Particularly, build-
+ingglobalsubgraph,whichrequiresanalyzingICC,isexpensive. REFERENCES
+In practice, however, we found that in the most cases, features [1] 360security. http://www.360securityapps.com/en-us.
+identified locally (without ICC mapping) are sufficient for [2] Android malware evasion techniques-emulator detection.
+catching HSO branches. Future research may look into the http://www.oguzhantopgul.com/2014/12/android-malware-evasion-
+potential to extract features from Intent construction and ICC techniques.html.
+components for behavior classification, to avoid the expensive [3] Android malware set for july 4 carries political message.
+https://blogs.mcafee.com/consumer/android-malware-set-for-july-
+mapping of ICC, and other alternatives to further improve the
+4-carries-political-message/.
+scalability of our approach.
+[4] Android security: Adding tampering detection to your app.
+https://www.airpair.com/android/posts/adding-tampering-detection-to-
+your-android-app#4-1-emulator.
+[5] Android.hehe: Malware now disconnects phone calls.
+VII. CONCLUSION
+https://www.fireeye.com/blog/threat-research/2014/01/android-hehe-
+Hidden sensitive operations (HSO) have long been used malware-now-disconnects-phone-calls.html.
+by malware to evade detection. Today, the techniques of [6] Apktool-a tool for reverse engineering android apk files. https:
+this kind gain new traction in the mobile PHA community. //ibotpeaches.github.io/Apktool/.
+With the reports about various anti-emulation apps against [7] Applicationsecurity. https://source.android.com/security/overview/app-
+the vetting process of app markets [17], [43] and other security.html.
+HSO strategies, little is known about the pervasiveness of [8] Averagecpipercountry. http://www.appbrain.com/stats/android-cpi-per-
+country.
+the threat, their technical trends and impacts, due largely to
+[9] Detecting malware and sandbox evasion techniques.
+the challenges in systematically discovering and analyzing
+https://www.sans.org/reading-room/whitepapers/forensics/detecting-
+real-world HSO instances. Although effort has been made to
+malware-sandbox-evasion-techniques-36667.
+detect such activities statically, existing techniques are tuned
+[10] Dexeducation201:Anti-emulators. http://hitcon.org/2013/download/
+toward specific trigger conditions or hidden behaviors, and also Tim%20Strazzere%20-%20DexEducation.pdf.
+pretty heavyweight, rendering them less effective in detecting
+[11] Fireeye multi-vector virtual execution (mvx) engine. http://www.
+previously unknown HSO apps on a large scale. threatprotectworks.com/MVX-engine.asp.
+14[12] Mobile threat report-mcafee. http://www.mcafee.com/us/resources/ 30thAnnualComputerSecurityApplicationsConference,pages216–225.
+reports/rp-mobile-threat-report-2016.pdf. ACM,2014.
+[13] monkeyrunner. https://developer.android.com/studio/test/monkeyrunner/ [36] M.G.Kang,H.Yin,S.Hanna,S.McCamant,andD.Song. Emulating
+index.html. emulation-resistantmalware. InProceedingsofthe1stACMworkshop
+[14] Programmersuniteddevelopnet. http://en.pudn.com. onVirtualmachinesecurity,pages11–22.ACM,2009.
+[15] Soot, a framework for analyzing and transforming java and android [37] A.Kapravelos,Y.Shoshitaishvili,M.Cova,C.Kruegel,andG.Vigna.
+applications. https://sable.github.io/soot/. Revolver:Anautomatedapproachtothedetectionofevasiveweb-based
+malware. InPresentedaspartofthe22ndUSENIXSecuritySymposium
+[16] Virustotal-free online virus, malware and url scanner. https://www.
+(USENIXSecurity13),pages637–652,2013.
+virustotal.com.
+[17] Blackhatusa2012-adventuresinbouncerland.http://www.securitytube. [38] D. Kirat and G. Vigna. Malgene: Automatic extraction of malware
+net/video/8880,November2013. analysisevasionsignature. InProceedingsofthe22ndACMSIGSAC
+ConferenceonComputerandCommunicationsSecurity,pages769–780.
+[18] Virtualmachinesandhowmalwareauthorsknowwhentheyarebeing
+ACM,2015.
+watched. https://securityintelligence.com/virtual-machines-malware-
+authors-being-watched/,October2013. [39] D. Kirat, G. Vigna, and C. Kruegel. Barecloud: bare-metal analysis-
+basedevasivemalwaredetection. In23rdUSENIXSecuritySymposium
+[19] Doesmalwarestilldetectvirtualmachines? http://www.symantec.com/
+(USENIXSecurity14),pages287–301,2014.
+connect/blogs/does-malware-still-detect-virtual-machines,August2014.
+[20] Hackingteamrcsandroidsourcecode. https://github.com/hackedteam/ [40] M.Lindorfer,C.Kolbitsch,andP.M.Comparetti.Detectingenvironment-
+core-android/blob/master/RCSAndroid/src/com/android/dvci/Core.java, sensitivemalware. InInternationalWorkshoponRecentAdvancesin
+December2014.
+IntrusionDetection,pages338–357.Springer,2011.
+[21] Mindmac/hideandroidemulator. https://github.com/MindMac/ [41] L. Lu, Z. Li, Z. Wu, W. Lee, and G. Jiang. Chex: statically vetting
+HideAndroidEmulator,October2014. androidappsforcomponenthijackingvulnerabilities. InProceedingsof
+the2012ACMconferenceonComputerandcommunicationssecurity,
+[22] Hackingteamrcsandroidspyingtoollistenstocalls;rootsdevicestoget
+pages229–240.ACM,2012.
+in. http://blog.trendmicro.com/trendlabs-security-intelligence/hacking-
+team-rcsandroid-spying-tool-listens-to-calls-roots-devices-to-get-in/, [42] A.Machiry,R.Tahiliani,andM.Naik. Dynodroid:Aninputgeneration
+July2015. systemforandroidapps. InProceedingsofthe20139thJointMeeting
+onFoundationsofSoftwareEngineering,pages224–234.ACM,2013.
+[23] The google android security team’s classifications for potentially
+harmfulapplications. https://static.googleusercontent.com/media/source. [43] J.OberheideandC.Miller. Dissectingtheandroidbouncer. Summer-
+android.com/en//security/reports/Google Android Security PHA Con2012,NewYork,2012.
+classifications.pdf,April2016.
+[44] D. Octeau, P. McDaniel, S. Jha, A. Bartel, E. Bodden, J. Klein, and
+[24] Xposedmodulerepository. http://repo.xposed.info/,August2016. Y. Le Traon. Effective inter-component communication mapping in
+[25] S.Arzt,S.Rasthofer,andE.Bodden.Susi:Atoolforthefullyautomated android:Anessentialsteptowardsholisticsecurityanalysis.InPresented
+classificationandcategorizationofandroidsourcesandsinks.University aspartofthe22ndUSENIXSecuritySymposium(USENIXSecurity13),
+ofDarmstadt,Tech.Rep.TUDCS-2013-0114,2013. pages543–558,2013.
+[26] K. W. Y. Au, Y. F. Zhou, Z. Huang, and D. Lie. Pscout: analyzing [45] T. Petsas, G. Voyatzis, E. Athanasopoulos, M. Polychronakis, and
+theandroidpermissionspecification. InProceedingsofthe2012ACM S. Ioannidis. Rage against the virtual machine: hindering dynamic
+conferenceonComputerandcommunicationssecurity,pages217–228. analysisofandroidmalware. InProceedingsoftheSeventhEuropean
+ACM,2012. WorkshoponSystemSecurity,page5.ACM,2014.
+[27] D.Balzarotti,M.Cova,C.Karlberger,E.Kirda,C.Kruegel,andG.Vigna. [46] Z.Qu,V.Rastogi,X.Zhang,Y.Chen,T.Zhu,andZ.Chen. Autocog:
+Efficientdetectionofsplitpersonalitiesinmalware. InNDSS.Citeseer, Measuringthedescription-to-permissionfidelityinandroidapplications.
+2010. InProceedingsofthe2014ACMSIGSACConferenceonComputerand
+[28] D.Brumley,C.Hartwig,Z.Liang,J.Newsome,D.Song,andH.Yin. CommunicationsSecurity,pages1354–1365.ACM,2014.
+Automaticallyidentifyingtrigger-basedbehaviorinmalware. InBotnet [47] A.Reina,A.Fattori,andL.Cavallaro. Asystemcall-centricanalysis
+Detection,pages65–88.Springer,2008. andstimulationtechniquetoautomaticallyreconstructandroidmalware
+[29] X.Chen,J.Andersen,Z.M.Mao,M.Bailey,andJ.Nazario. Towards behaviors. EuroSec,April,2013.
+anunderstandingofanti-virtualizationandanti-debuggingbehaviorin [48] T.VidasandN.Christin. Evadingandroidruntimeanalysisviasandbox
+modernmalware.In2008IEEEInternationalConferenceonDependable detection. InProceedingsofthe9thACMsymposiumonInformation,
+Systems and Networks With FTCS and DCC (DSN), pages 177–186. computerandcommunicationssecurity,pages447–458.ACM,2014.
+IEEE,2008.
+[49] H.Wang,Y.Guo,Z.Ma,andX.Chen.Wukong:Ascalableandaccurate
+[30] J.R.Crandall,G.Wassermann,D.A.deOliveira,Z.Su,S.F.Wu,and two-phaseapproachtoandroidappclonedetection. InProceedingsof
+F.T.Chong. Temporalsearch:Detectinghiddenmalwaretimebombs the2015InternationalSymposiumonSoftwareTestingandAnalysis,
+withvirtualmachines.InACMSigplanNotices,volume41,pages25–36. pages71–82.ACM,2015.
+ACM,2006.
+[50] L.Weichselbaum,M.Neugschwandtner,M.Lindorfer,Y.Fratantonio,
+[31] W.Diao,X.Liu,Z.Li,andK.Zhang. Evadingandroidruntimeanalysis
+V. van der Veen, and C. Platzer. Andrubis: Android malware under
+throughdetectingprogrammedinteractions. InProceedingsofthe9th
+the magnifying glass. Vienna University of Technology, Tech. Rep.
+ACMConferenceonSecurity&PrivacyinWirelessandMobileNetworks
+TRISECLAB-0414,1:5,2014.
+(WiSec),2016.
+[51] W.Yang,X.Xiao,B.Andow,S.Li,T.Xie,andW.Enck. Appcontext:
+[32] A.Dinaburg,P.Royal,M.Sharif,andW.Lee. Ether:malwareanalysis
+Differentiatingmaliciousandbenignmobileappbehaviorsusingcontext.
+viahardwarevirtualizationextensions. InProceedingsofthe15thACM
+In2015IEEE/ACM37thIEEEInternationalConferenceonSoftware
+conference on Computer and communications security, pages 51–62.
+Engineering,volume1,pages303–313.IEEE,2015.
+ACM,2008.
+[52] M. Zhang, Y. Duan, H. Yin, and Z. Zhao. Semantics-aware android
+[33] Y.Feng,S.Anand,I.Dillig,andA.Aiken.Apposcopy:Semantics-based
+malwareclassificationusingweightedcontextualapidependencygraphs.
+detectionofandroidmalwarethroughstaticanalysis. InProceedingsof
+InProceedingsofthe2014ACMSIGSACConferenceonComputerand
+the22ndACMSIGSOFTInternationalSymposiumonFoundationsof
+CommunicationsSecurity,pages1105–1116.ACM,2014.
+SoftwareEngineering,pages576–587.ACM,2014.
+[34] Y.Fratantonio,A.Bianchi,W.Robertson,E.Kirda,C.Kruegel,and [53] C. Zheng, S. Zhu, S. Dai, G. Gu, X. Gong, X. Han, and W. Zou.
+G. Vigna. Triggerscope: Towards detecting logic bombs in android Smartdroid:anautomaticsystemforrevealingui-basedtriggerconditions
+applications. 2016. inandroidapplications.InProceedingsofthesecondACMworkshopon
+Securityandprivacyinsmartphonesandmobiledevices,pages93–104.
+[35] Y. Jing, Z. Zhao, G.-J. Ahn, and H. Hu. Morpheus: automatically
+ACM,2012.
+generatingheuristicstodetectandroidemulators. InProceedingsofthe
+15

@@ -1,0 +1,863 @@
+Software Self-Healing Using Collaborative Application
+Communities
+MichaelE.Locasto,SteliosSidiroglou,andAngelosD.Keromytis
+Network SecurityLab,DepartmentofComputerScience,ColumbiaUniversity
+flocasto,stelios,angelosg@cs.columbia.edu
+Abstract applicationacrossthenetwork. Suchattackshavethepo-
+tentialtorapidlycausewidespreaddisruption,asevidenced
+Software monoculturesare usually considered danger- byseveralincidentsoverthelastfewyears[5,3,4,2].The
+ousbecausetheirsizeanduniformityrepresentthepoten- severity of the problem has fueled research behind intro-
+tialforcostlyandwidespreaddamage. Theemergingcon- ducingdiversityinsoftwaresystems. However,creatinga
+cept of collaborative security provides the opportunity to largenumberofdifferentsystems manually[11] notonly
+re-examine the utility of software monocultureby exploit- presentscertainpracticalchallenges[31]but can resultin
+ing the homogeneity and scale that typically define large systemsthatarenotdiverseenough[36,16].
+software monocultures. Monoculture can be leveraged to Asaresult,recentresearchhasfocusedoncreatingar-
+improve an application’s overall security and reliability. ti(cid:2)cialdiversity,byintroducing(cid:147)controlleduncertainty(cid:148)in
+WeintroduceandexploretheconceptofApplicationCom- oneofthesystemparametersthattheattackermustknow
+munities: collectionsof large numbersof independentin- (andcontrol)inordertocarryoutasuccessfulattack.Such
+stances of the same application. Members of an applica- parameters include, but are not limited to, the instruction
+tion community share the burden of monitoring for flaws set [33, 12, 15], the high-level implementation [48], the
+andattacks,andnotifytherestofthecommunitywhensuch memory layout [13], the operating system interface [23]
+aredetected. Appropriatemitigationmechanismsarethen andothers,with varyinglevelsofsuccess [50, 44]. How-
+deployedagainstthenewlydiscoveredfault.Weexplorethe ever,runningdifferentsystemsinanetworkcreatesitsown
+conceptofanapplicationcommunityanddetermineitsfea- setofproblemsinvolvingcon(cid:2)guration,management,and
+sibilitythroughanalyticalmodelingandaprototypeimple- certi(cid:2)cationofeachnewplatform[56,10].Incertaincases,
+mentationfocusingonsoftwarefaultsandvulnerabilities. runningsuchmulti-platformenvironmentscandecreasethe
+Specifically,we identifya set of parametersthat define overallsecurityofthenetwork[47].
+applicationcommunitiesandexplorethetradeoffsbetween Giventhedif(cid:2)cultiesassociatedwitharti(cid:2)cialdiversity
+theminimalsizeofanapplicationcommunity,themarginal and the pervasive nature of homogeneous software sys-
+overhead imposed on each member, and the speed with tems,canweidentifyascenarioinwhichahomogeneous
+which new faults are detected and isolated. We demon- softwarebasecanbeusedtoimprovesecurityandreliabil-
+strate the feasibility of the scheme using Selective Trans- ity,relativetoasingleinstanceofanapplication? Specif-
+actional EMulation (STEM) as both the monitoring and ically, given a large number of almost identical copies of
+remediation mechanism for low-level software faults, and the same applicationrunningautonomously,is it possible
+provide some preliminary experimental results using the toemployacollaborativedistributedschemethatimproves
+Apache web server as the protected application. Our ex- theoverallsecurityofthegroup?
+perimentsshowthatACsarepracticalandfeasibleforcur- To answer this question, we introduce the concept of
+rentapplications: anACof15,000memberscancollabo- anApplicationCommunity1 (AC),acollectionofalmost-
+ratively monitor Apache for new faults and immunize all identical instances of the same application running au-
+membersagainstthemwithonlya6%performancedegra- tonomously across a wide area network. Members of an
+dationforeachmember. AC collaborate in identifying previously unknown (zero
+day) (cid:3)aws/attacks and exchangeinformationso that such
+1 Introduction failuresarepreventedfromre-occurring. Individualmem-
+bersmaysuccumbtonew(cid:3)aws;however,overtimetheAC
+Softwaremonocultureshavebeenidenti(cid:2)edasamajor shouldconvergetoastateofimmunityagainstthatspeci(cid:2)c
+sourceofproblemsintoday’snetworkedcomputingenvi-
+1Toourknowledge,theterm(cid:2)rstappearedinthetitleoftheDARPA
+ronments[30,27,52].Monoculturesactasforceampli(cid:2)ers
+Application Communities Workshop, in October 2004. This paper ex-
+forattackers,allowingthemtoexploitthesamevulnerabil-
+pandsonourshortpaper that introduced someoftheconcepts that we
+ity across thousands or millions of instances of the same exploreindepthhere[41].
+1fault. Thesystemlearnsnewfaultsandadaptstothem,ex- previouslyunknowngeneralsoftwarefailuresandvul-
+ploitingtheACsizetoachievebothcoverage(indetecting nerabilities.
+faults)andfairness(indistributingthemonitoringtask).
+Paper Organization We elaborate on the Application
+Thisde(cid:2)nitionraisesseveralquestions. First,istheap-
+Community concept in more detail in Section 2, and ex-
+proach feasible and, if so, for what types of faults? Sec-
+plorethetradeoffsbetweenthevariousparametersofsuch
+ond,howexpensivecanthemonitoring,coordination,and
+systems in Section3. We discuss ourpreliminaryexperi-
+reactionmechanismsbe,andisitpossibletosharethebur-
+mentalresultsinSection4. Section5givesanoverviewof
+denequitablyacrosstheACmembers?Whatistheperfor-
+relatedwork.
+manceimpactoftheadditionalcomputationonindividual
+AC members? How small can an AC be to achieve cov-
+2 ApplicationCommunities
+erage and share fairness at the same time? Finally, how
+can this scheme be achieved in the presence of mutually
+untrusted(orpossiblysubverted)participants? An Application Community (AC) is a collection of
+We do not attempt to answer all of these questions in congruent instances of the same application running au-
+this paper, althoughwe outlinepossibledirectionsforfu- tonomouslyacross a wide area network, whose members
+tureresearch. Instead,weprovideahigh-levelanalysisof cooperateinidentifyingpreviouslyunknown(cid:3)awsorvul-
+the basic parametersthat governan ApplicationCommu- nerabilities. Byexchanginginformation,theACmembers
+nity. We then apply this analysis in a prototype AC that canpreventthefailurefrommanifestinginthefuture. Al-
+is targeted against remotely exploitable software vulnera- thoughindividualmembersmaybesusceptibletonewfail-
+bilities and input-data-drivenfaults. We use the Selective ures,theAC shouldeventuallyconvergeona stateofim-
+TransactionalEMulator(STEM)techniquefrom[51]both munity against a particular fault, adding a dimension of
+for fault-monitoring and immunization. Members of the learningandadaptationtothesystem. ThesizeoftheAC
+AC emulatedifferent(cid:147)slices(cid:148) oftheapplication,monitor- impactsbothcoverage(indetectingfaults)andfairness(in
+ing for low-level failures (such as buffer over(cid:3)ows or il- distributingthe monitoringtask). An AC is composedof
+legal memory accesses). When a fault is detected by an three main mechanisms, for monitoring, communication,
+member, the relevant information is broadcast to the rest anddefense,respectively.
+of the AC. Members may verify the fault and use STEM Thepurposeofthemonitoringmechanismisthedetec-
+on the identi(cid:2)ed vulnerable code slice, possibly combin- tion of previously unknown (zero day) software failures.
+ing this with input (cid:2)ltering. Our scheme also takes into Thereexistsaplethoraofworkinthisarea,namely,using
+consideration input from code analysis tools that identify the compilerto insert run-timesafety checks[25], (cid:148)sand-
+speci(cid:2)ccodesectionsaspotentiallymorevulnerabletoat- boxing(cid:148)[29],anomalydetection[8]andcontent-based(cid:2)l-
+tacks. BecauseoftheuseofSTEM,itispossibletowrap tering[1]. While shortcomingsmay be attributed to each
+thenecessaryfunctionality(cid:147)around(cid:148)existingapplications, of the approaches [18, 57, 53], when they are considered
+withoutrequiringsourcecodemodi(cid:2)cations. withinthescopeofanACadifferentsetofconsiderations
+OuranalysisindicatesthatAC’sareanachievablegoal. needto beexamined. Speci(cid:2)cally, the signi(cid:2)canceof the
+Speci(cid:2)cally,weanalyzetheeffectsofriskassessmentand securityversusperformancetradeoffisnotasimportantas
+theimpactofprotectionmechanismsontheoverallwork- the the ability to employ the mechanism in a distributed
+loadfortheAC.Wedeterminethatareasonably-sizedap- fashion.TheadvantageofutilizinganACisthattheuseof
+plication(e.g., the Apacheweb server)requiresan AC of afairlyinvasivemechanism(intermsofperformance)may
+about17,000members, assuminga normal(random)dis- beacceptable,sincetheassociatedcost canbedistributed
+tributionoffaults. OurexperimentalevaluationofApache totheparticipatingmembers. Byemployingamoreinva-
+showsthatanACcanbeapracticalmethodofprotection; siveinstrumentationtechnique,thelikelihoodofdetecting
+inthebestcase,anACofsize15,000canexecuteApache subversionand identifyingthe source of the vulnerability
+withaperformancedegradationofonly6%ateachmem- isincreased. Themonitoringmechanisminourprototype
+ber. A small AC of 15 hosts can execute Apache with a is an instruction-levelemulatorthat can be selectively in-
+performancedegradationofapproximately73%. Thispa- voked for arbitrarysegments of code, allowing us to mix
+permakesthefollowingnovelcontributions: emulatedandnon-emulatedexecutioninsidethesameex-
+ecutioncontext[51].
+(cid:15) Introducethe concept of an ApplicationCommunity
+Once a failure is detected by a member’s monitoring
+asawaytoexploitlarge-scalehomogeneoussoftware
+component, the relevant information is distributed to the
+environments towards improving the security of the
+AC. Speci(cid:2)cally,the purposeofthe communicationcom-
+AC’smembers.
+ponent is the dissemination of information pertaining to
+(cid:15) Presentthevariousparametersthatde(cid:2)neanApplica- the discovery of new failures and the distribution of the
+tionCommunityandanalyticallyexplorethevarious work load within the AC. The choice of the communi-
+tradeoffsamongthem. cation model to be employed by an AC is subject to the
+(cid:15) Illustrate thefeasibility ofthe AC conceptbyimple- characteristicsofthecollaboratingcommunitysuchassize
+menting and experimenting with a prototype geared and(cid:3)exibility.Theimmediatetrade-offassociatedwiththe
+towards detecting and immunizing software against communicationmodelistheoverheadinmessagesversus
+2the latency of the information in the AC. In the simplest a properly OS-mapped page, or that a memory-write to
+case, acentralizedapproachis arguablythemostef(cid:2)cient controlinformationon the stack (e.g., the returnaddress)
+communicationmechanism, however, there are a number is using input-supplieddata (which may indicate a buffer
+ofissues associatedwiththis approach. Ifthereisa(cid:2)xed overrun), similar to TaintCheck [43] and Minos [26]. In
+numberofcollaboratingnodes,asecurestructuredoverlay the latter case, interesting future work includes identify-
+network[34,21]canbeemployedwithexemptionfromthe ingnon-controlhijackingover(cid:3)owattacks[22],whichisa
+problemsassociatedwithvoluminousjoinsandleaves. If non-trivialproblem. Inaddition,STEMmaintainsalogof
+nodes enter and leave the AC at will, a decentralized ap- allmemorychangesdoneduringemulationofthecode.
+proach may be more appropriate. Ef(cid:2)cient dissemination Onceafaultisdetected,andithasnotbeenseenbefore,
+ofmessagesisoutsidethescopeofthispaper,buthasbeen the emulator enters an (cid:147)error virtualization(cid:148) phase. The
+thetopicofresearch,e.g.,[6]. goalis to determinehowtomodifyprogramexecutionso
+The (cid:2)nal componentof our architecture is responsible thatthisfault(whichtheprogramisnotdesignedtohandle)
+forimmunizingthe AC againsta speci(cid:2)c failure. Ideally, istranslatedintoanerrorthattheexistingprogramcodecan
+uponreceivingnoti(cid:2)cationofanexperiencedfailure,indi- recoverfrom. Theintuitionisthatbysimulatinganerror-
+vidualmembersindependentlycon(cid:2)rmthevalidityofthe returnof the functionwithin which the fault occurred, its
+reportedweaknessandcreatetheirown(cid:2)xinadecentral- caller may be able to handle the error appropriately(i.e.,
+ized mannerthus reducing issues regardingtrust. At that throughexistingerror-checkingcodethattheprogrammer
+point,eachmemberintheACdecidesautonomouslywhich wrote).
+(cid:2)xtoapplyinordertoinoculateitself.Asindependentver-
+STEM simulates an error-returnby (cid:2)rst taking a snap-
+i(cid:2)cationofanattackreportmaybeimpossibleinsomesit-
+shotoftheprogramstate(memoryandregisters)atthetime
+uations,amember’sactionmaydependonprede(cid:2)nedtrust
+ofthefault,puttinganappropriateerrorcodeinthereturn
+metrics. Dependingonthelevel oftrust amongusers, al-
+value(cid:2)eldonthestack,undoingallmemorychangesmade
+ternativemechanismsmaybeemployedfortheadoptionof
+duringemulationusingthelog,andreturningexecutionto
+universal(cid:2)xesandveri(cid:2)cationofattackreports.Inthecase
+the caller. Currently, STEM uses certain heuristics to de-
+ofsystemswherethereisminimaltrustamongmembersa
+terminethecorrectvaluetouseasanerrorcode,whichre-
+votingsystemcanbeemployedatthecostofanincreased
+quireknowledgeofthereturntypeofeachfunction.STEM
+communicationoverhead.Finally,giventhata(cid:2)xcouldbe
+uses both (cid:0)1 and 0 as return codes (testing these sepa-
+universallyadoptedbytheAC,specialcaremustbeplaced
+rately)forfunctionsreturninganintegeroralong,anduses
+inminimizingtheperformanceimplicationsoftheimmu-
+NULLasanerrorcodeforfunctionsreturningapointerof
+nization.
+anytype. Ofcourse,thesearenotguaranteedtobecorrect
+Theinoculatingapproachthatcan be employedby the
+conventions,althoughtheirimpactcanbeveri(cid:2)edthrough
+ACiscontingentonthenatureofthedetectionmechanism
+testing. Static program analysis or programmer-supplied
+and the subsequent information provided on the speci(cid:2)c
+annotations(eitherinthecodeorout-of-band)maybeused
+failure. The type of protection can range from statistical
+toachievebetteraccuracy,butthisremainsa topicforfu-
+blocking,behavioralorstructuraltransformation. Forex-
+turework. Inpractice, these heuristics workin over80%
+ample, IP address and content(cid:2)ltering [1], code random-
+ofallcasesexamined(seeSection4).
+ization [33] and emulation [51] may be used for the pro-
+If forcing an error-return of the top-most function on
+tection of the AC. For the defense component in our ex-
+thestackdoesnotwork(i.e.,theprogramexhibitsanother
+perimental prototype, we use the STEM instruction-level
+faultshortlyaftersimulatingthiserror-return),STEMsim-
+emulator.
+ulates error-return from the second top-most function on
+the stack. This process is repeated until the application
+2.1 SelectiveTransactionalEMulation
+doesnotterminateabnormallyafterSTEMforcesanerror-
+returnofafunctioncallsequence.Intheextremecase,the
+STEM is an x86 instruction-levelemulator that can be
+whole application could end up being emulated, at a sig-
+selectivelyinvokedinthespatialortemporaldomaindur-
+ni(cid:2)cant performance cost. We give some indications on
+ingaprogram’sexecution. Inotherwords,wecandecide
+theeffectivenessandperformanceimpactofthisapproach
+whichroutinestoemulateduringprogramexecution(with
+inSection4.Formoredetails,see[51].
+therestofthecoderunningnativelyonthesystemCPU),
+andwhethertoemulateorrunnativelyanyspeci(cid:2)croutine If the program does not crash after the forced return,
+eachtimeitisinvoked. AlthoughSTEMallowsustoop- STEM has found a (cid:147)vaccine(cid:148) for the fault, which it can
+erateatthegranularityofindividualinstructions,wecon- useasaremediationtechniqueifafaultis detectedinthe
+(cid:2)neourselvestoemulating(ornot)wholeroutinesbecause future. Ifthefaultisnottriggeredduringanemulatedexe-
+theserepresentconvenientabstractionsthataidinprogram cution,emulationhaltsattheendofthecodesegment,and
+recovery,asweshallseesoon. programexecutionrevertstothenativeCPU.
+Whenapieceofcodeisbeingemulated,STEMchecks The overhead of emulation is incurred at all times
+the validity of every instruction’s operands prior to emu- (whether the fault is triggered or not). To minimize this
+latingthatinstruction. Forexample,STEMcanverifythat cost, STEM must identify the smallest piece of code that
+the destinationaddress of a memory-writeoperation is in itneedstoemulateinorderto catchandrecoverfromthe
+3fault.Usinganapplicationcommunitytodividetheemula- the AC is already(cid:2)xed, then W dictates howmuchwork
+tiontaskacrosslargenumbersofapplicationinstancescan eachmembershoulddo.Ifitisnotyet(cid:2)xed,thenW serves
+minimize the performance cost on any speci(cid:2)c instance. asalowerboundonthesizeofthe(cid:147)optimallyfair(cid:148)AC.If
+Once a fault is identi(cid:2)ed by one application, the relevant thevalueof(cid:147)fairness(cid:148)ispredetermined,fallingbelowthe
+information (faulty function, recovery strategy) is propa- minimum set of AC members means that we must either
+gatedacrossthecommunity. AllACmembersthenbegin reducecoveragetomaintainfairnessorreducefairnessto
+emulatingtheproblematiccodeandthusbecomeimmune maintaincoverage. If fairnessmeans thateachnode does
+tothespeci(cid:2)cfailure. an equal amount of work, the system can degrade grace-
+fully.
+3 Analysis
+3.1 WorkCalculation
+Here,wepresentananalysisofthepropertiesthatgov-
+ern the AC. Subsection 3.1 explains the calculations that The cost, ci, of executing each fi is a function of the
+affectthesizeoftheACbasedontheparameterswelistin amountofcomputationpresentinfi (wedenotethiscom-
+Table1. We considertheproblemofdistributingworkto putation as xi) and the amount of risk present in fi (we
+theACmembersinSubsection3.2andpresentsomesim- denote this risk as vi). All the information (an annotated
+pleapproachestoaddressingit.Subsection3.2alsode(cid:2)nes callgraphofapro(cid:2)lingrun)neededtoperformtheanaly-
+the general formof the workdistributionproblem, which sisis presentateachmemberoftheAC.Thecalculations
+wetermtheAC-CALLGRAPH-KNAPSACK problem. Inad- canbekeptinaformsimilartoTable2.
+dition, we outlinea strategyfor solvingthis problemthat Thecalculationofxi canbedrivenbyatleasttwodif-
+optionally takes into consideration member-local policy. ferentmetrics: oi,therawnumberofmachineinstructions
+Subsection 3.3 brie(cid:3)y discusses the probability of catch- executedas partoffi, orti, theamountoftime spentex-
+ing new faults by duplicating monitoring responsibilities. ecuting fi. Since the cost of certain functions (as noted
+Subsection3.4presentstheresultsofouranalysisandsim- above)may not be easy to extrapolate from total instruc-
+ulations. tions executed, the experimental evaluation in Section 4
+To make our analysis concrete, we consider an AC uses the running time of a function as a measure of xi,
+aimedatlow-levelsoftwareattacksandfaults(e.g.,buffer but this analysis will assume either metric may be used.
+over(cid:3)ows, illegal memory dereferences, exceptions aris- Bothoi andti canvaryasafunctionoftimeorapplication
+ingfromillegalinstructionoperands,andotherfaultsthat workloadaccordingtotheapplication’sinternallogic2.For
+causeprocesstermination). ACsprotectingagainstdiffer- example, an application may perform logging or cleanup
+enttypesoffailuresarepossible;wedonotconsiderthem dutiesafteritpassesathresholdnumberofrequests. Code
+furtherinthispaper,excepttotheextentthatouranalysis thatnormallyliesdormantwouldthenbeexecuted.Future
+applytosuchsystems. workwillexplorefunctionsthatapproximatexi’svalueat
+WorkOverview Weformalizethenotionoftotalworkin agiventimeforeither metric(oi orti), aseitherparame-
+theAC,W,asafunctionofboththecostofthemonitoring ter may changeduring the lifetime ofan AC (e.g., dueto
+mechanismsandtheperceivedvulnerabilityofeachfunc- hardwareorsoftwareupgrades).
+tion. Theactualworkdonecanbecalculatedbytworun- The risk factor is somewhat harder to characterize, as
+timemetrics: (a)thenumberofmachineinstructionsexe- it is morelikelyto varyduringruntimeandit is notclear
+cutedbythefunctionduringarequest,and(b)theamount howtoclassifyriskintermsofexecutiontimeornumberof
+ofrealtimethatafunctiontakestoexecutearequest.Each machineoperations. Weapproximatetheriskbya simple
+metrichasadvantagesanddrawbacks. Forexample,while scalingfactor(cid:11)basedonastatisticalmeasureofvulnera-
+instructioncountisanintuitiveunitandisstraightforward bilityintroducedbytheCoSAKproject3. Othermeasures
+to measure, there is a clear differencein computationbe- (e.g.,staticanalysistools)maybeused;exploringtherange
+tween100logical(cid:147)AND(cid:148)operationsand100(cid:3)oatingpoint ofriskmetricsisinterestingfuturework.
+(cid:147)MUL(cid:148)operations(everythingelse,likedatadependencies Let vi represent a vulnerability (or risk) score for fi.
+andstructuralhazards,beingequal).Ontheotherhand,us- Thisvi maybetheresultofacomplexfunctionthatcalcu-
+ingonlytiminginformationcanobscuretheeffectsofnon- lates risk or may be a simple scalar factor (cid:11). Its purpose
+determinismorinteractionwithothersystemseventhough istoweightafunctionsuchthatmoremembersmonitorit.
+n
+itmayprovideamorerealisticsenseofsystemresponseor LetT = i=1xi.Ifweexpresstherelativecostofexecut-
+throughput. ingeachPfi assomecostfunctionci = C(fi;xi;vi), then
+Ourmainfocusisoncalculatingtheamountofworkin thetotalamountofworkinthesystemcanberepresented
+n
+the system and determiningthe level of resourcesneeded bytheequation:W = i=1C(fi;xi;vi).
+toachievebothafaircoverageandafullcoverage.Thatis, P
+we wish to determine an assignment of monitoring tasks 2Inordertogaincon(cid:2)denceinthevalueofx i,wedeterminex iover
+arangeofrequeststoseeiftheapplicationsomehowvariestheamountof
+that dictates an equal amount of work for each member
+instructionsitexecutesbasedonthenumberofrequestsithashandledso
+oftheACwhilesimultaneouslyguaranteeingthatallfunc-
+far.
+tionsinanapplicationarebeingmonitored. Ifthesize of 3http://serg.cs.drexel.edu/projects/cosak/
+4Variable Description Variable Description
+N totalACmembersneeded F setofapplicationfunctions
+n thesizeofF E setofedgesforF
+G directedcallgraphof(F;E) W thetotalamountofwork
+Z thebaseunitofwork C acostfunction
+M thesetofACmembers mi theith memberofM
+fi theith memberofF ci thetotalcostofexecutingfi
+xi theperformancecostoffi vi theriskcostofexecutingfi
+Table1.VariousparametersanddatasetsforanApplicationCommunity.Theriskscoreandperformancescoreforeach
+functioncombinetodefinetheamountofworkinthesystem.Tobefairtoeachmember,anequivalentamountofresources
+mustbeallocatedtothemonitoringofsomesubsetoffunctions.
+We provide a cost function in two phases. The (cid:2)rst 3.2 WorkDistribution
+phase calculates the cost due to the amount of computa-
+tion for each fi. The second phase normalizes this cost AftereachACmemberhasaclearideaoftheamountof
+andappliestheriskfactorvi todeterminethe(cid:2)nalcostof workinthesystem,workunits(slices)mustbedistributed
+eachfi andthetotalamountofworkinthesystem. Ifwe to each member. In the simplest scenario, a central con-
+letC(fi;xi) = x Ti (cid:3)100,thenwecannormalizeeachcost trollersimplyassignsapproximately W
+N
+workunitstoeach
+by groupinga subset of F to represent one unit of work. node. A more robust method of work distribution would
+Membershipinthissubsetcanbearbitrary,butismeantto be for each AC memberto autonomouslydetermine their
+providea(cid:3)exiblemeansofde(cid:2)ningwhataworkunittrans- workset. Eachmembercansimplyiteratethroughthelist
+latestointermsofcomputationaleffort. Agoodheuristic ofworkunits,(cid:3)ippingacoinweightedwiththevaluevi(cid:3)ri.
+istogrouptheklowestcostfunctionstogetheranddeclare Iftheresultofthe(cid:3)ipis(cid:147)true(cid:148)thenthememberaddsthat
+thesumoftheirworkasthebaseworkunit,Z.Everyother workunit to its work set. A memberstops when its total
+function’scostisnormalizedtothisworkunit,andrirepre- workreaches W . Suchanapproachoffersstatistical cov-
+N
+sentstherelativeweightofeachfi withrespecttoZ. Asa erageoftheapplication. A moreelegantmethodofwork
+n
+result,weknowthatW =Nbase = i=1rirepresentsthe distribution is possible; since a full treatment of it is be-
+totalnumberofACmembersneedePdtoobtainfullcover- yondthescopeofthispaper,weonlyprovideanoverview
+ageofanapplicationwhenweonlyconsiderperformance. oftheapproach.
+However, we still have to account for the measure of Distributed Bidding Theproblemofassigningworkto
+a function’s vulnerability (or alternatively, the risk level individualmembersintheACcanbeseenasaninstanceof
+of executingthe function). We can treat the vulnerability thegeneralKNAPSACKproblem. Wecallthisproblemthe
+score of a function as a discrete variable with a value of AC-CALLGRAPH-KNAPSACK problem. Forthecallgraph
+(cid:11)(where(cid:11)cantakeonarangeofvaluesaccordingtothe G,eachnodehasaparticularweight(vi (cid:3)ri fromabove).
+amountofrisk).Thus, Theproblemisthentoassignsomesubsetoftheweighted
+nodes in F to each member of M such that each mem-
+vi =
+(cid:11) iffi isvulnerable,(cid:11)>1;
+(1) berdoesnomorethan
+W
+N work. We canrelaxthethresh-
+(cid:26) 1 iffi isnotvulnerable: W
+oldconstrainttobeapproximately withinsometunable
+N
+range(cid:15). Thus,(cid:15)isameasureofthefairnessofthesystem.
+Giventhescalingfactorviforeachfunction,wecandeter-
+W
+Once the globally fair amount of work is calculated,
+minethetotalamountofworkinthesystemandthetotal N
+each AC membershould be able to adjust their workload
+number of members needed to monitor every function is
+n (cid:15) by bargainingwith other AC members via a distributed
+W =Nvuln = i=1vi(cid:3)ri
+biddingprocess.
+P
+Two additional considerations impact the assignment
+fi xi ri vi T C(fi;xi) ri(cid:3)vi
+of work units to AC members. First, we would like to
+a() 100 1 (cid:11)1 600 16 (cid:11)1
+preferentially allocate work units with higher weights, as
+b() 200 2 (cid:11)2 600 33 2(cid:11)2
+theseworkunitslikelyhaveaheavierweightduetoanin-
+c() 300 3 (cid:11)3 600 50 3(cid:11)3
+creasedvulnerabilityscore. Evenif the weight is derived
+solely from the measure of performance cost, assigning
+Table 2. An example of AC work calculation. Each more members to it is bene(cid:2)cial because these members
+member of the AC can calculate this table indepen- canround-robinthemonitoringtasksothatanyonemem-
+dently. Here, the AC is executing an applicationwith ber does not have to assume the cost alone. Second, in
+threefunctions. Thechoiceof(cid:11)issomewhatarbitrary somesituations,thevaluevi(cid:3)riwillbegreaterthantheav-
+W
+andcanvarybasedonthecontextofaparticularfunc- erageamountofwork N. Achievingfairnessthenmeans
+tion. thatthevaluevi (cid:3)ri de(cid:2)nesthequantityofAC members
+thatmustbeassignedtoit, andthesumofallthesequan-
+5tities de(cid:2)nes the minimumnumberof membersthat must
+1
+participateinanACtoachieveafairandfullcoveragefor
+aparticularapplication.
+0.8
+Ouralgorithmworksintworounds.First,eachmember
+calculates a table similar to Table 2. Then, AC members
+enter into a distributed biddingphase to adjust their indi- 0.6
+vidual workload. The distributed algorithm uses tokens
+to bid; tokens map directly to the numberof time quanta 0.4
+that an AC member is responsible for emulating the exe-
+cutionof a particularcode slice. A nodewill accumulate
+0.2
+tokensbytakingonextracomputation. Thedistributedal-
+gorithmmakessurethateachnodeshouldnotaccumulate
+0
+morethanthetotalnumberoftokensallowedbythechoice 0 2 4 6 8 10
+of(cid:15). SincewecurrentlyassumeacollaborativeAC,useful
+future work can analyze what can be done to protect the
+biddingprocessinthefaceofvariousthreats(e.g.,insider
+accumulatingtokens)andconstraints(e.g.,anonymityfor
+ACmembers).
+3.3 OverlappingCoverage
+While (cid:147)full coverage(cid:148) means that every work unit (or
+slice) of an application is being monitored for the given
+time unit, it does not mean that every AC member’s in-
+dividual application is being fully monitored. Consider
+thefollowingsituation: memberAismonitoringfunction
+Z, and memberB is monitoringfunctionY. If a fault is
+present in function Z, B will miss it. Even though the
+community may catch the fault (by virtue of A’s willing-
+nesstomonitorZ),theremayexistindividualserversthat
+havenotyetdetectedthefault(e.g.,B,orevenAifAisex-
+ecutinganotherpartoftheapplicationandnotZ).Thereis
+atradeoffbetweentheamountofindividualcoverageand
+howquicklytheACcanidentifyanewfault.
+If AC membersmonitor morethan their share (e.g., A
+alsomonitorsY andB alsomonitorsZ,thenwehavein-
+creasedcoverageto200%andmadesurethatthefault, if
+present, is detected as quickly as possible. A similar sit-
+uation is presented in Table 3. Assuming a uniform ran-
+dom distribution of new faults across AC members, the
+probabilityof a fault happeningat a particularmemberk
+is: P(fault) = 1 . The probability of member k detect-
+N
+ingtheerrorisafunctionofk’sindividualcoveragelevel.
+ForAliceinTable3,P(detection) = 1 . Thus,theproba-
+4
+bilityofAlice detectinganewfaultistheprobabilitythat
+thefaulthappensatAlice and thatAlicedetectsthefault:
+P(faultatAlice^detection) = 1 (cid:3) 1 . GiventhatN = 4
+N 4
+forAlice’sAC,theprobabilitythatAlicewilldetectanew
+1 faultis . Similarcalculationsforeachmembershownin
+16
+Table3showthattheapplicationhasanoverallnewfault
+3
+detectionprobabilityof . If every AC memberadds the
+8
+missing functions to its auxiliary set, then each member
+1
+has a chance of detecting the new fault: this probabil-
+4
+1
+ity is exactly , their best possible chance (because the
+N
+faultcouldhappentooneoftheotherthree).Atthecostof
+400%coverage,theAChasreachedaprobabilityof1for
+new fault detection. We can generalize this relationship:
+etaR
+noitceteD
+laudividnI
+Progression of New Fault Detection Probability
+AC size
+Figure1.RateofdetectionvarieswithACsize.Each
+line represents a member-local coverage level in 10%
+increments, with 10% being the bottom curve. Note
+how detection degrades as the AC size grows: each
+memberisonlydoingaconstantamountofextracov-
+erage. However, whenevery member performs 100%
+localcoverage,theyregainthebestchancetodetectthe
+fault,andachieveacommunityprobabilityof1thatthe
+faultisdetectedwhenitfirstoccurs;e.g.,anACofsize
+2 with each member doing 100% coverage gives each
+member a probability of 1 in detecting the fault, i.e., 2
+theprobabilitythatthefaultisseenbythatmember.
+theprobabilityoftheACdetectingthefaultis
+N
+1
+P(ACdetect)= (cid:3)ki (2)
+N
+Xi=1
+where ki is the percentageof coverage at AC member k.
+Figure 1 shows how the AC’s detection rate improves as
+individualmembercoveragetendstowards100%.Aseach
+ki goes to 100%, Equation 2 becomes N
+i=1
+N1 , or N N, a
+probabilityof 1 that the fault is detectedPwhen it (cid:2)rst oc-
+curs. The worst case in terms of performanceis the best
+case in terms of rapid detection and requires N (cid:3) 100%
+coverage.
+3.4 AnalyticalResults
+Our simulations explore the in(cid:3)uence of various parame-
+ters onthe amountofworkin the AC: (a) the size of the
+application(numberof functions it contains), (b) the dis-
+tributionofworkbetweenfunctions,(c)thelevelofwork
+presentineachfunction,and(d)thepolicyfordetermining
+the(cid:11)score(andthusvi)foreachfunction.
+Wesimulateanapplicationwithasmall,medium,large,
+andmassive(20,200,2000,and20000functions,respec-
+tively)size.Similarly,thelevelofworkforeachfunctionis
+small,medium,large,andmassive(50,500,5000,50000,
+respectively)normalizedworkunits. Theworklevelisin-
+terpreteddifferentlyforeach distributionscheme. Weex-
+amine three types of distributions of ri. The even distri-
+butionde(cid:2)nesanequalworklevelforeveryfunction. The
+6ACMemberID MonitoredSet AuxiliarySet
+Alice fA,Fg f;g
+Bob fB,Cg fA,Fg
+Carol fD,Eg fG,Hg
+David fG,Hg f;g
+Table 3. Adistributionofworkandoverlappingmonitoring. Here,AliceandDavidchoosenottodoextramonitoring.
+However, BobandCarolareeachmonitoringtwomorefunctionsthanstrictlynecessaryfor“fairness”and100%appli-
+cationcommunitycoverage. BobandCarolhaveincreasedtheirindividualcoveragefrom25%to50%,andtheiroverall
+chancesofdetectinganewfaultfrom 1 to 1.
+16 8
+norm distribution is an approximately (cid:147)normal(cid:148) distribu- diation mechanism we use an instruction-level emulator,
+tionthatiscenteredonanaveragevalueoftheworklevel. STEM, that can be selectively invoked for arbitrary seg-
+Theskewdistributionsetsthecostofmostfunctionsrela- ments of code, allowing the mix of emulated and non-
+tivelylow, butincludesa fewfunctionsthataccountfora emulatedexecutioninsidethesameexecutionrun.Theem-
+largepartoftheexecutioncost. ulatorallowsusto(a)monitorforthespeci(cid:2)ctypeoffail-
+Wedetermine(cid:11)accordingtotwopolicies: expandflat. urepriortoexecutingtheinstruction,(b)undoanymemory
+Theflatpolicyappliesastaticfactorof10foreveryfunc- changesmadebythecodefunctioninsidewhichthefault
+tiondeemedvulnerable. Theexp policyexponentiallyin- occurred,byhavingtheemulatorrecordallmemorymod-
+creasesthevalueof(cid:11)for(cid:147)morevulnerable(cid:148)functions.Ev- i(cid:2)cations made during its execution, and (c) simulate an
+ery function is assigned a default (cid:11) value of 1. For both error-return from said function. One of the key assump-
+policies, we determine if a function is vulnerable or not tions behind STEM is that we can create a mapping be-
+by examining the distance of the function (in the appli- tweenthesetoferrorsandexceptionsthatcouldoccurdur-
+cation call graph) from a read() system call, using the ingaprogram’sexecutionandthelimitedsetoferrorsthat
+heuristics proposedby the COSAK project. For our sim- areexplicitlyhandledbytheprogram’scode. We callthis
+ulations, we assume that the path length from each func- approach(cid:147)errorvirtualization(cid:148).
+tion fi to a read() system call is normally distributed In a series of experiments using a number of open-
+around a mean of log(n), where n is the size of the call source server applications including Apache, OpenSSH,
+graph,leavingexplorationof differentdistributionsas fu- andBind, we showedthat our(cid:147)errorvirtualization(cid:148)map-
+ture work. Thus, our simulation assigns a normally dis- ping assumption holds for more than 88% of the cases
+tributed distance aboutthis mean to each function, repre- we examined. Testing with real attacks against Apache,
+sentingthedistancefromaread()systemcall. Ifapro- OpenSSH, and Bind, we showed that this technique can
+gram is heavily saturated with read()’s, our simulation beeffectiveinquicklyandautomaticallyprotectingagainst
+underestimatestheweightthatshouldbeassignedtoeach zerodayattacks. Althoughfullemulationisprohibitively
+function. However,thisisnotaproblem,asthissituation expensive (30-fold slowdown), selective emulation im-
+canbeeasilydetectedfromtheapplication’scallgraph,and poses an overhead between 1:3 and 2, depending on the
+everyfunctioncanbescaledaccordingly. Thebehaviorof size of the emulated code segment, assuming the fault is
+theflat policyis seen in Figure2. Figure3shows there- localizedwithinasmallcoderegion.
+lationshipbetween a program’ssize and the workloadW
+of the AC. While the values forworkloadare quite large,
+Performance Inordertounderstandtheperformanceim-
+theyarebasedonaprogramwhereeachfunctionperforms
+plications of an AC, we run a set of performance bench-
+about50000workunits.Oursimulationsforsmallerwork-
+markswhichweusetoexplorethetradeoffspresentedby
+loadsshowthesamerelationshipwithlowertotalcost.We
+oursystem. WeemploySTEMontheApachewebserver
+also consider a more realistic case (see Figure 2) for an
+andmeasuretheoverheadofourprotectionmechanismin
+Apache-likeapplication: of mediumsize (200functions),
+termsofcoverageandfairness.
+withanormaldistributionofxi (cost)andaflatpolicyfor
+determining(cid:11). Before we explore the costs associated with using an
+AC,weexaminethecostofprotectingasingleinstanceof
+Apache. Wedemonstratethatemulatingthebulkofanap-
+4 Evaluation
+plicationentailsasigni(cid:2)cantperformanceimpact. Inpar-
+ticular, weemulatedthemainrequestprocessingloopfor
+Inthis section, wequantitativelymeasurethetradeoffs Apache (contained in ap process http connection()) and
+presentedinSection3,namely,thesizeoftheanapplica- compared our results against a non-emulated Apache in-
+tioncommunityandthelengthoftheworktimequantum. stance. Inthisexperiment,theemulatorexecutedroughly
+MeasurementsareconductedusingtheApachewebserver 213,000instructions.Theimpactonperformanceisclearly
+as the protectedapplicationand STEM as the monitoring seeninFigure4,whichplotstheperformanceofthefully
+andremediationcomponent. emulatedrequest-handlingprocedure.
+Effectivenessof STEM Forourmonitoringandreme- To get a morecomplete sense of this performanceim-
+750
+45
+40
+35
+30
+25
+20
+15
+10
+5
+0
+0 20 40 60 80 100 120 140 160 180 200
+snoitcnuf
+fo
+#
+1e+11
+Distribution of Work Units for a Server-type Workload
+unscaled weight 1e+10
+vulnerability weight
+1e+09
+1e+08
+1e+07
+1e+06
+100000
+10 100 1000 10000 100000 1e+06 1e+07
+function weight
+Figure 2. Workloadscalingforarealisticparameterset.
+Foranapplicationofabout200functionsinsize,witheach
+function’sworknormallydistributedaroundanormalized
+r iof10andaflatpolicyfor(cid:11),theworkload(W)scalesfrom
+2020to16897.
+)daolkrow
+fo
+ezis(
+W
+Comparison of Actual and Weighted Workloads
+unweighted workload (norm)
+unweighted workload (even) unweighted workload (skew)
+weighted workload (norm-exp)
+weighted workload (even-exp)
+weighted workload (skew-exp)
+weighted workload (norm-flat)
+weighted workload (even-flat)
+weighted workload (skew-flat)
+program size (# of functions)
+Figure 3. A logscale comparison of workloads given a
+vulnerability policy. Note that the raw values are quite
+high,butaredrawnfromdatathatassumesamassivevalue
+(50000) fornormalizedworkload. Moreimportantis how
+therelationshipbetweenthesizeoftheprogramandtheto-
+talworkloadisaffectedbythechoiceofvulnerabilitypolicy.
+Slicesize Requests/sec Numberofservers
+Apache trials Mean Std.Dev.
+10.34 148(27%) 15
+Normal 18 6314 847
+5.24 333(62%) 30
+STEM 18 277927 74488
+0.25 380(70%) 635
+0.14 497(92%) 1135
+0.04 471(87%) 3973 Table 5. Timingofmainrequestprocessingloop. Times
+0.01 506(94%) 15893 areinmicroseconds.Thistableshowstheoverheadofrun-
+ning the whole primary request handling mechanism in-
+side the emulator. In each trial a user thread issued an
+Table 4. Work-time quantums and their effects on
+HTTPGETrequest.
+ApacheperformanceandACsize.
+pact,wetimedtheexecutionoftherequesthandlingproce- proceed with the emulation of different functions repre-
+dureforboththenon-emulatedandfully-emulatedversions sentingvaryingwork-timequantumsandmeasuretheper-
+ofApachebyembeddingcallstogettimeofday()wherethe formanceoverheadintermsofrequestspersecond.Specif-
+emulationfunctionswere(orwouldbe)invoked. ically,allfunctionsinvokedatleastoncepertransactionare
+For our test machines and sample loads, Apache nor- examined for their relative cost (time spent in function).
+mally (e.g., non-emulated) spent 6.3 milliseconds to per- Given the per function cost, we sample 6 functions that
+form the work in the ap process http connection() func- representacharacteristicdistributionofworkdoneperre-
+tion,asshowninTable5.Thefullyinstrumentedlooprun- quest.Atthatpoint,wewrapeachfunctionwithSTEMand
+ningintheemulatorspendsanaverageof278milliseconds measuretheperformanceoverheadimposedbytheemula-
+perrequestinthatparticularcodesection. tion.
+Tocalculatetheamountofworkinthesystemanddeter- ThemachinewechosetohostApachewasasinglePen-
+minethelevelofresourcesneededtoachievefaircoverage tium IV at 3GHz with 1GB of memory running RedHat
+andfull coverage as explainedin Section 3, we (cid:2)rst need Linuxwith kernel2.4.24. The client machinewas a Pen-
+togetadetailedanalysisoftherun-timecharacteristicsof tium IV at 2 GHz with 1GB of memory running Debian
+theprotectedapplication. Forthis purpose,we rana pro- Linuxwithkernel2.6.8-1. Fortheperformanceevaluation
+(cid:2)ledversionofApacheagainstasetoftest suitesandex- ofApache,weuseApacheBench,acompletebenchmark-
+aminedthesubsequentcall-graphgeneratedbythesetests ingandregressiontestingsuite.Examinationofapplication
+withgprofandValgrind[49]. Theensuingcalltreeswere responseispreferabletoexplicitmeasurementsinthecase
+analyzedinordertoextractthetimespentdoingworkfor ofcomplexsystems,asweseektounderstandtheeffecton
+eachfunction. Usingthecorrespondingcosts,weevaluate overallsystemperformance.Speci(cid:2)cally,welookatthere-
+theperformanceofApacheinrequestspersecond,byem- questspersecondservedbyApachefor10000requestsata
+ploying STEM as the protection mechanism on different concurrencyof5.Weusetheaverageof100runsomitting
+worktimequantumstoachievefullcoverage. statisticaloutliers.
+Westartwiththeexaminationoftheperformanceofan As illustrated inFigure5 andTable4, weexaminethe
+unmodi(cid:2)ed Apache server using ApacheBench. We then use of a variety of work-time quantums on raw Apache
+8Figure4.Performanceofthesystemundervariouslevelsofemulation.Whilefullemulationisfairlyexpensive,selective
+emulationofinputhandlingroutinesappearsquitesustainable.
+performanceand coverage. As expected, emulating large parametersassociatedwiththerequirementsofanAC.
+(cid:147)slices(cid:148)usingSTEMtranslatesintolowerperformancefor
+each participatingmemberbut requiresthe smallest com- 5 Related Work
+munity size for 100% coverage. Concretely, using the
+largest work-time quantum translates into a performance Thesynthesisofoursystemdrawsonworkfrommany
+degradation of 73% per member and an AC size of 15 otherareas. Mostnotably,themajorthemesofoursystem
+members. As the(cid:147)slice(cid:148) size is reduced(usinga less ex- are distributed large-scale collaborative security and sur-
+pensive function as the base), the performance overhead vivablecomputing. Traditional fault-tolerancetechniques
+permemberisdecreasedatthecostofalargercommunity. arearelatedareaofwork,althoughtheyareprimarilyin-
+Forthesmallestwork-timequantum,aperformanceover- tendedtosupplyenoughresourcesforaparticularenclave
+head of 6% is experiencedper memberwhilst the size of to survive an attack by outlasting the resources of an at-
+theAC growsto15893. Theseresults areveryencourag- tacker.
+ingandcloselyfollowtheintuitionprovidedinSection3 Secure survivable architectures are typically very
+Figure6illustratestheeffectofvaryingthevulnerabil- application- or domain-speci(cid:2)c. Ghosh, et al. [28] pro-
+ity index on the size of the community for 100% cover- pose (cid:147)fault injection analysis(cid:148) applied to software, while
+age. Inthisexample,wedoublethenumberofserversre- Strunk,etal.[55]applyalow-levelapproach:theypropose
+quiredtocoveran(cid:11)region. Westartwiththecasewhere an intrusion detection and recovery model at the storage
+25% of the code is considered potentially vulnerableand layer. Kreidl, et al. [37] propose a formalized feedback-
+incrementthe(cid:11)valueuntiltheentirecodebaseiscovered. driven model for individual COTS applications. SABER
+As expected, when a higher percentage of the code base [35] is a generalized, application-neutralarchitecturethat
+isdeemedvulnerable,thecommunityneedstobelargerto encompassesabroadarrayoftools.TheAPODproject[9]
+realizefair coverage. Note thatthe effectonApacheper- uses a combination of intrusion detection, (cid:2)rewalls, TCP
+formanceislineardespiteanaggressiveprotectionpolicy. stackprobes,virtualprivatenetworks,bandwidthreserva-
+OurexperimentsdemonstratethattheuseofanACcanal- tion,andtraf(cid:2)cshapingmechanisms,toallowapplications
+leviatetheproblemsassociatedwithusinganinvasivepro- todetectattacksandcontainthedamageofsuccessfulin-
+tectionmechanismbyfairlydistributingworktoparticipat- trusionsbychangingtheirbehavior. Theyalsodiscussthe
+ingmembers. Furthermore,weshowthatthe(cid:3)exibilityof useofrandomizingtechniques,suchaschangingtheTCP
+ourprotectionmechanismcan facilitate theadjustmentof portsapplicationslistento.
+920000
+1000
+800 15000
+600 10000
+400
+5000
+200
+0 0
+1 10 100 1000 10000
+ces/sqer
+srevres
+fo
+rebmuN
+STEM: Evaluation
+Reqs/sec 35000
+1000 Number of servers
+30000
+800
+25000
+600 20000
+15000
+400
+10000
+200
+5000
+0 0
+1 10 100 1000 10000
+Slice Size
+Figure 5. The effect of different work-time quantums on
+request/secforApacheandonthesizeoftheAC.
+ces/sqer
+srevres
+fo
+rebmuN
+STEM: Evaluation
+Reqs/sec
+Number of servers
+with alpha at 20%
+50%
+75% 100%
+Slice Size
+Figure 6. The impact of the vulnerabilityindex on the
+sizeofanAC.
+[54,40]explorethenotionofcollaborativesecuritywith relevant information is described in [19]. [59] describes
+speci(cid:2)c application to coordinatingIDS alerts for worms an architecture and models for an early warning system,
+and scanning attacks across administrative domains. In- where the participatingnodes/routerspropagatealarm re-
+dra[32]isanotherschemethatprovidesapeer-to-peerap- portstowardsacentralizedsiteforanalysis. Thequestion
+proachto intrusiondetection. In addition, a collaborative ofhowtorespondtoalertsisnotaddressed,and,similarto
+approachto containingthe spread of worms has been the DOMINO,theuseofacentralizedcollectionandanalysis
+focus of current research [42, 46, 7]. Vigilante [24] pro- facilityisweakagainstwormsattackingtheearlywarning
+posestheconceptofSelf-CertifyingAlerts,whichareex- infrastructure.
+changedbetweenhosts as a result ofa newlydetectedat- Gamma [45, 14] is an architecture for instrumenting
+tack. Therecipientcan verifythevalidityofthealertand softwaresuchthat informationthatcan leadto futureim-
+useanappropriateprotectionmechanism.InVigilante,ev- provements of the code can be gathered in a central lo-
+eryhostchecksforallattacksallthetime,incontrasttoour cation,withoutimposingexcessiveoverheadto anygiven
+moregeneralload-sharing-capableapproach.Furthermore, code instance. Their technique, software tomography, is
+weproposeasoftware-basedprotectionmechanism(asop- similar to our code-slicing approach, and has been com-
+posedtotheiruseof(cid:2)ltering)thatbothprotectsagainstat- binedwithadynamicsoftwareupdatemechanismthatal-
+tacksandalsomaintainsapplicationavailability,thuspro- lowscodeproducersto(cid:2)xbugsastheyaredetected. Our
+vidinganelementofreal(cid:147)softwarehealing.(cid:148) workisdifferentprimarilyinthat(a)weintroduceafully
+O’Donnelland Sethu [44] study algorithmsforthe as- automatedmechanismforsoftwarehealing,(b)whichdoes
+signment of distinct software packages (whetherrandom- notrequiremergingofthemonitoringinformationfromthe
+izedorinherentlydifferent)toindividualsystemsinanet- differentsoftwareinstances.
+work, towards increasing the intrinsic value of available The Cooperative Bug Isolation project [38, 39] uses a
+diversity. Their goal is to limit the ability of a malicious sampling infrastructureto gather information from a pro-
+nodetocompromisealargenumber(orany)ofits neigh- gram’sexecutionandcommunicatesits (cid:2)ndingsto a cen-
+bors with a single attack. Unfortunately,their abstraction tral databasewhere the datais analyzedto extract debug-
+does not translate well to the end-to-endsemantics of the ginginformationautomatically. Inordertoreducethein-
+Internet, where any host can contact another without (in strumentationcosttheystatisticallyspreadthemonitoring
+mostcases)needingtopassthroughaseriesofotherhosts. acrossanapplicationandalargeuserbase.
+Theirworkcan beviewedas a situationwherea commu- Finally, a numberofeffortshavebeenmadeto protect
+nity of nodes collaboratively diversi(cid:2)es, where our work applications via the introduction of diversity [33, 12, 15,
+seeks to collaboratively protect a homogeneous group of 48,13,23,50,44].Theabilitytorollback[17]andcleanly
+nodes. restart[20]iscriticaltooursystem,andweexpecttointe-
+DOMINO[58]isanoverlaysystemforcooperativein- gratesuchcapabilitiesinourfuturework.
+trusion detection. The system is organizedin two layers,
+with a small core of trusted nodes and a larger collection 6 Conclusions
+ofnodesconnectedtothecore. Theexperimentalanalysis
+demonstratesthatacoordinatedapproachhasthepotential The growing concern about monocultures at all levels
+ofprovidingearlywarningforlarge-scaleattackswhilere- of computingsystems has engendereda bodyof research
+ducingpotentialfalsealarms. A similarapproachusinga that seeks to increase system diversity. Given the large
+DHT-basedoverlaynetworkto automaticallycorrelateall legacybaseandthecontinuingneedforcomputingsystems
+10tocommunicateandinteroperate,introducingarti(cid:2)cialdi- [11] A. Avizienis. The n-version approach to fault-tolerant
+versity is no easy task, and it is often hampered by extra software. IEEE Transactions on Software Engineering,
+managementcomplexity. While we supportthe notionof 11(12):1491(cid:150)1501,1985.
+arti(cid:2)cial diversity and actively explore its use, this paper [12] E. G. Barrantes, D. H. Ackley, S. Forrest, T. S. Palmer,
+introduces the concept of Application Communities: our D. Stefanovic, and D. D. Zovi. Randomized Instruction
+SetEmulationtoDisruptBinaryCodeInjectionAttacks.In
+contributionisamethodforexploitingtheresourcesavail-
+Proceedingsofthe10thACMConferenceonComputerand
+able in large scale monocultures to provide protection to
+CommunicationsSecurity(CCS),pages281(cid:150)289, October
+eachmemberofthecommunity.Wepostulatethatsystems
+2003.
+thatmaynottoleratetheintroductionofarti(cid:2)cialdiversity
+[13] S. Bhatkar, D. C. DuVarney, and R. Sekar. Address
+orcannoteasilytakeadvantageofitmaybene(cid:2)tfromthe Obfuscation: an Ef(cid:2)cient Approach to Combat a Broad
+useofanAC. Range of Memory Error Exploits. In Proceedings of the
+Ourexperimentalandanalyticalresultsshowthatmem- 12thUSENIXSecuritySymposium,pages105(cid:150)120,August
+bers of an application community can reasonably deploy 2003.
+our novel monitoringframework(STEM) and collaborate [14] J.Bowring, A.Orso, and M. J.Harrold. Monitoring De-
+to share the overhead of its protection mechanisms. We ployedSoftwareUsingSoftwareTomography. InProceed-
+ings of the Workshop on Program Analysis for Software
+validate our analysis of workload and fault discovery by
+ToolsandEngineering(PASTE),November2002.
+experimentingwiththe Apacheweb server. Furthermore,
+[15] S. W. Boyd and A. D. Keromytis. SQLrand: Preventing
+AC memberscan employ STEM to automatically recover SQLInjectionAttacks. InProceedingsofthe2nd Applied
+from attacks and preemptivelynoti(cid:2)y other AC members
+Cryptography and Network Security Conference (ACNS),
+of new faults, thus inoculatingthe communityat the cost
+pages292(cid:150)302,June2004.
+ofafewfailedmembers. [16] S.Brilliant,J.C.Knight,andN.G.Leveson. Analysisof
+FaultsinanN-VersionSoftwareExperiment. IEEETrans-
+References actionsonSoftwareEngineering,16(2),February1990.
+[17] A. B. Brown and D. A. Patterson. Undo for Operators:
+BuildinganUndoableE-mailStore. InProceedingsofthe
+[1] UsingNetwork-BasedApplicationRecognitionandAccess USENIXAnnualTechnicalConference,pages1(cid:150)14,2003.
+ControlListsfor Blocking the(cid:148)Code Red(cid:148) WormatNet- [18] BulbaandKil3r. BypassingStackGuardandStackShield.
+workIngressPoints. Technicalreport,CiscoSystems,Inc. Phrack,5(56),May2000.
+[2] CERT Advisory CA-2001-19: ‘Code Red’ Worm [19] M.Cai,K.Hwang,Y.-K.Kwok,S.Song,andY.Chen.Col-
+Exploiting Buffer Over(cid:3)ow in IIS Indexing Service laborative Internet Worm Containment. IEEE Security &
+DLL. http://www.cert.org/advisories/ PrivacyMagazine,3(3):25(cid:150)33,May/June2005.
+CA-2001-19.html,July2001. [20] G.CandeaandA.Fox. Crash-onlysoftware. InProceed-
+[3] CERT Advisory CA-2001-26: Nimda Worm. ingsofthe9thWorkshoponHotTopicsinOperatingSys-
+http://www.cert.org/advisories/ tems,May2003.
+CA-2001-26.html,September2001. [21] M. Castro, P. Drushel, A. Ganesh, A. Rowstron, and
+[4] Cert Advisory CA-2003-04: MS-SQL Server D.Wallach.Secureroutingforstructuredpeer-to-peerover-
+Worm. http://www.cert.org/advisories/ laynetworks. InProceedingsofOSDI,2002.
+CA-2003-04.html,January2003. [22] S.Chen,J.Xu,E.C.Sezer,P.Gauriar,andR.K.Iyer.Non-
+[5] CERT Advisory CA-2003-21: W32/Blaster Worm. Control-DataAttacksAreRealisticThreats.InProceedings
+http://www.cert.org/advisories/ ofthe14th USENIXSecuritySymposium,pages177(cid:150)191,
+CA-2003-20.html,August2003. August2005.
+[6] D.AgrawalandA.Malpani. Ef(cid:2)cientdisseminationofin- [23] M. Chew and D. Song. Mitigating Buffer Over(cid:3)ows by
+formation in computer networks. Comput. J., 34(6):534(cid:150) OperatingSystemRandomization.TechnicalReportCMU-
+541,1991. CS-02-197,CarnegieMellonUniversity,December2002.
+[7] K. Anagnostakis, M. B. Greenwald, S. Ioannidis, A. D. [24] M.Costa,J.Crowcroft,M.Castro,andA.Rowstron. Can
+Keromytis, and D.Li. A Cooperative Immunization Sys- We Contain Internet Worms? In Proceedings of the 3rd
+temforanUntrustingInternet. InProceedingsofthe11th WorkshoponHotTopicsinNetworks(HotNets),November
+IEEEInternationalConferenceonNetworks(ICON),pages 2004.
+403(cid:150)408,October2003. [25] C.Cowan,C.Pu,D.Maier,H.Hinton,J.Walpole,P.Bakke,
+[8] F.Apap,A.Honig,S.Hershkop,E.Eskin,andS.J.Stolfo. S. Beattie, A. Grier, P. Wagle, and Q. Zhang. Stack-
+Detecting Malicious Software by Monitoring Anomalous guard: Automatic adaptive detection and prevention of
+Windows Registry Accesses. In Proceedings of the 5th buffer-over(cid:3)owattacks. InProceedingsofthe7thUSENIX
+InternationalSymposiumonRecentAdvancesinIntrusion SecuritySymposium,January1998.
+Detection(RAID),October2002. [26] J.R.Cranalland F.T.Chong. Minos: ArchitecturalSup-
+[9] M.Atighetchi, P.Pal,F.Webber, and C.Jones. Adaptive portforSoftwareSecurityThroughControlDataIntegrity.
+UseofNetwork-CentricMechanismsinCyber-Defense. In InProceedingsoftheInternationalSymposiumonMicroar-
+Proceedingsofthe2ndIEEEInternationalSymposiumon chitecture(MICRO),December2004.
+NetworkComputingandApplications,April2003. [27] D.E.Geer.MonopolyConsideredHarmful.IEEESecurity
+[10] D. Aucsmith. Monocultures Are Hard To Find In Prac- &Privacy,1(6):14&17,November/December2003.
+tice. IEEE Security & Privacy, 1(6):15(cid:150)16, Novem- [28] A. K. Ghosh and J. M. Voas. Innoculating Software for
+ber/December2003. Survivability. CommunicationsoftheACM,42(7),1999.
+11[29] I.Goldberg,D.Wagner,R.Thomas,andE.A.Brewer. A Conference on Computer and Communications Security
+SecureEnvironmentforUntrustedHelperApplications. In (CCS),pages121(cid:150)131,October2004.
+Procedingsofthe1996USENIXAnnualTechnicalConfer- [45] A.Orso,D.Liang,M.J.Harrold,andR.Lipton. Gamma
+ence,1996. System: Continuous Evolution ofSoftwareAfterDeploy-
+[30] G.Goth. Addressing the Monoculture. IEEESecurity& ment.InProceedingsoftheACMInternationalSymposium
+Privacy,1(6):8(cid:150)10,November/December2003. onSoftwareTestingandAnalysis(ISSTA),July2002.
+[31] J.GrayandD.Siewiorek.High-availabilityComputerSys- [46] P.Porras,L.Briesemeister,K.Skinner,K.Levitt,J.Rowe,
+tems. IEEEComputer,24(9):39(cid:150)48,September1991. and Y. A. Ting. A Hybrid Quarantine Defense. In Pro-
+[32] R. Janakiraman, M. Waldvogel, and Q. Zhang. Indra: A ceedings of the ACM CCS Workshop on Rapid Malcode
+peer-topeer approach to network intrusion detection and (WORM)2004,October2004.
+prevention.InProceedingsoftheIEEEInternationalWork- [47] V. Prevelakis. A Secure Station for Network Monitoring
+shopsonEnablingTechnologies:InfrastructureforCollab- and Control. InProceedingsofthe 8th USENIXSecurity
+orativeEnterprises(WETICE),WorkshoponEnterpriseSe- Symposium,August1999.
+curity,June2003. [48] J.C.Reynolds,J.Just,L.Clough,andR.Maglich.On-Line
+[33] G. S. Kc, A. D. Keromytis, and V. Prevelakis. Counter- IntrusionDetectionandAttackPreventionUsingDiversity,
+ingCode-Injection Attacks WithInstruction-SetRandom- Generate-and-Test,and Generalization. InProceedingsof
+ization.InProceedingsoftheACMComputerandCommu- the36th AnnualHawaiiInternationalConferenceon Sys-
+nicationsSecurity(CCS)Conference,pages272(cid:150)280, Oc- temSciences(HICSS),January2003.
+tober2003. [49] J. Seward and N. Nethercote. Valgrind, an open-source
+[34] A.D.Keromytis, V.Misra, and D.Rubenstein. SOS:Se- memorydebuggerforx86-linux. http://developer.
+cureOverlayServices.InProceedingsofACMSIGCOMM, kde.org/˜sewardj/.
+pages61(cid:150)72,August2002. [50] H.Shacham,M.Page,B.Pfaff,E.Goh,N.Modadugu,and
+[35] A. D. Keromytis, J. Parekh, P. N. Gross, G. Kaiser, D. Boneh. On the Effectiveness of Address-Space Ran-
+V.Misra,J.Nieh,D.Rubenstein, andS.Stolfo. AHolis- domization. InProceedingsofthe11th ACMConference
+tic Approach to Service Survivability. In Proceedings of on Computerand Communications Security (CCS),pages
+the1stACMWorkshoponSurvivableandSelf-Regenerative 298(cid:150)307,October2004.
+Systems(SSRS),pages11(cid:150)22,October2003. [51] S. Sidiroglou, M. E. Locasto, S. W. Boyd, and A. D.
+[36] J.C.KnightandN.G.Leveson. AnExperimentalEvalu- Keromytis. BuildingAReactiveImmuneSystemforSoft-
+ation of the Assumption of Independence in Multiversion wareServices. InProceedingsofthe11thUSENIXAnnual
+Programming. IEEE Transactions on Software Engineer- TechnicalConference,pages149(cid:150)161,April2005.
+ing,12(1):96(cid:150)109,January1986. [52] M.Stamp. RisksofMonoculture. Communicationsofthe
+[37] O.P.KreidlandT.M.Frazier.FeedbackControlAppliedto ACM,47(3):120,March2004.
+Survivability: AHost-Based Autonomic Defense System. [53] A. Steven. Defeating compiler-level buffer over(cid:3)ow pro-
+IEEETransactionsonReliability,2002. tection. USENIX;login:,30(3):59(cid:150)71,June2005.
+[38] B.Liblit,A.Aiken, A.X.Zheng, and M. I.Jordan. Bug [54] S.J.Stolfo. WormandAttackEarlyWarning. IEEESecu-
+isolationviaremoteprogramsampling. InProceedingsof rityandPrivacy,2(3):73(cid:150)75,May-June2004.
+theACMSIGPLAN2003ConferenceonProgrammingLan- [55] J.D.Strunk,G.R.Goodson,A.G.Pennington,C.Soules,
+guageDesignandImplementation,SanDiego,California, andG.Ganger.IntrusionDetection,Diagnosis,andRecov-
+June9(cid:150)112003. ery with Self-Securing Storage. Technical Report CMU-
+[39] B.Liblit,M.Naik,A.X.Zheng,A.Aiken,andM.I.Jor- CS-02-140,CMUComputerScience,May2002.
+dan. Scalable statisticalbug isolation. In Proceedingsof [56] J. A. Whittaker. No Clear Answers on Monoculture Is-
+theACMSIGPLAN2005ConferenceonProgrammingLan- sues. IEEE Security & Privacy, 1(6):18(cid:150)19, Novem-
+guageDesignandImplementation,Chicago,Illinois,June ber/December2003.
+12(cid:150)152005. [57] J. Wilander and M. Kamkar. A Comparison of Publicly
+[40] M.Locasto,J.Parekh,S.Stolfo,A.Keromytis,T.Malkin, AvailableToolsforDynamicIntrusionPrevention. InPro-
+and V. Misra. Collaborative Distributed Intrusion Detec- ceedings of the Symposium on Network and Distributed
+tion.TechnicalReportCUCS-012-04,ColumbiaUniversity SystemsSecurity(SNDSS),pages123(cid:150)130,February2003.
+DepartmentofComputerScience,2004. [58] V.Yegneswaran, P.Barford, and S. Jha. GlobalIntrusion
+[41] M.Locasto,S.Sidiroglou,andA.D.Keromytis. Applica- DetectionintheDOMINOOverlaySystem.InProceedings
+tionCommunities: Using Monoculture for Dependability. ofNDSS,February2004.
+InProceedingsofthe1st WorkshoponHotTopicsinSys- [59] C.C.Zou,L.Gao,W.Gong,andD.Towsley. Monitoring
+temDependability(HotDep),pages288(cid:150)292,June2005. andEarlyWarningforInternetWorms. InProceedingsof
+[42] D.Moore,C.Shannon,G.Voelker,andS.Savage. Internet the10thACMInternationalConferenceonComputerand
+Quarantine:RequirementsforContainingSelf-Propagating CommunicationsSecurity(CCS),pages190(cid:150)199, October
+Code. In Proceedings of the IEEE Infocom Conference, 2003.
+April2003.
+[43] J.NewsomeandD.Dong.DynamicTaintAnalysisforAu-
+tomatic Detection, Analysis, and Signature Generation of
+Exploits on Commodity Software. In Proceedings of the
+12th AnnualSymposiumonNetworkandDistributedSys-
+temSecurity(SNDSS),February2005.
+[44] A.J.O’DonnellandH.Sethu. OnAchievingSoftwareDi-
+versity for Improved Network Security using Distributed
+Coloring Algorithms. In Proceedings of the 11th ACM
+12

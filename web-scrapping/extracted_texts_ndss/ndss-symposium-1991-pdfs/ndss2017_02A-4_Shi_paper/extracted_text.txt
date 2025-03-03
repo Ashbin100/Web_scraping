@@ -1,0 +1,1295 @@
+Deconstructing Xen
+Lei Shi∗†, Yuming Wu∗†, Yubin Xia∗†, Nathan Dautenhahn‡, Haibo Chen∗†,
+Binyu Zang†, Haibing Guan∗, Jinming Li§
+∗Shanghai Key Laboratory of Scalable Computing and Systems, Shanghai Jiao Tong University
+†Institute of Parallel and Distributed Systems, Shanghai Jiao Tong University
+‡Department of Computer and Information Sciences, University of Pennsylvania
+§Huawei Technologies, Inc.
+{sleepytodeath@gmail.com, yumingwu233@gmail.com, xiayubin@sjtu.edu.cn, ndd@cis.upenn.edu
+haibochen@sjtu.edu.cn, byzang@sjtu.edu.cn, hbguan@sjtu.edu.cn, lijinming@huawei.com}
+Abstract—Hypervisors have quickly become essential but are channels), and memory management. As Xen’s functionality
+vulnerabletoattack.Unfortunately,efficientlyhardeninghypervi- has increased so too has its code base, rising from 45K
+sorsischallengingbecausetheylackaprivilegedsecuritymonitor lines-of-code (LoC) in v2.0 to 270K LoC in v4.0. Such a
+and decomposition strategies. In this work we systematically large code base inevitably leads to a large number of bugs
+analyzethe191XenhypervisorvulnerabilitiesfromXenSecurity
+that become security vulnerabilities [31]. Attackers can easily
+Advisories, revealing that the majority (144) are in the core
+exploit a known hypervisor vulnerability to “jail break” from
+hypervisor not Dom0. We then use the analysis to provide
+a guest VM to the hypervisor to gain full control of the
+a novel deconstruction of Xen, called Nexen, into a security
+system. For example, a privilege escalation caused by non-
+monitor, a shared service domain, and per-VM Xen slices that
+are isolated by a least-privileged sandboxing framework. We canonical address handling (in a hypercall) can lead to an
+implementNexenusingtheNestedKernelarchitecture,efficiently attacker gaining control of Xen [13], undermining all security
+nesting itself within the Xen address space, and extend the in multi-tenant cloud environments.
+Nested Kernel design by adding services for arbitrarily many
+protectiondomainsalongwithdynamicallocators,dataisolation, TounderstandthesecuritythreattoXen,wesystematically
+and cross-domain control-flow integrity.The effect is that Nexen studied all 191 security vulnerabilities published on the Xen
+confines VM-based hypervisor compromises to single Xen VM Security Advisories (XSA) list1 [35], of which 144 (75.39%)
+instances, thwarts 74% (107/144) of known Xen vulnerabilities, are directly related to the core hypervisor. Among the 144
+and enforces Xen code integrity (defending against all code vulnerabilities, 61.81% lead to host denial-of-service (DoS)
+injectioncompromises)whileobservingnegligibleoverhead(1.2% attacks, 15.28% lead to privilege escalation, 13.89% lead to
+onaverage).Overall,webelievethatNexenisuniquelypositioned
+information leak, and 13.20% use the hypervisor to attack
+to provide a fundamental need for hypervisor hardening at
+guest VMs. Furthermore, we found that more than half of
+minimal performance and implementation costs.
+the core vulnerabilities are located in per-VM logic (e.g.,
+guest memory management, CPU virtualization, instruction
+I. INTRODUCTION emulation).
+Virtualizationisoneofthekeyenablingtechnologiesofto-
+While there has been much work aiming at improving the
+day’smulti-tenantcloud.Throughaddingaprivilegedsoftware
+security of the virtualization layer [37], [12], [23], none of
+layer (i.e., the hypervisor), virtualization can simultaneously
+it has provided an efficient way to harden the Xen core. For
+support tens, hundreds, or even thousands of guest virtual
+example, CloudVisor [37] uses an “out-of-the-box” approach
+machines (VMs) on a single server. However, as the number
+by introducing a tiny nested hypervisor to protect VMs from
+of concurrent VMs increases so too does the impact of a
+the potentially malicious Xen. Colp et al. [12] propose an
+hypervisor compromise,i.e.,anysingle exploitundermines all
+approach to decomposing the management VM of Xen (i.e.,
+VM security.
+Dom0) into multiple unprivileged domains while Nguyen et
+al. [23] propose Min-V, a hypervisor based on Microsoft’s
+Unfortunately, one of the most widely-used hypervisors,
+Xen [7], is highly susceptible to attack because it employs Hyper-V to disable non-critical virtual devices for a VM,
+a monolithic design (a single point of failure) and com- reducing the attack surface. However, none of them aim at
+hardening the hypervisor itself. While DeHype [34] aims at
+prises a complex set of growing functionality including VM
+management, scheduling, instruction emulation, IPC (event removing KVM out of the globally shared trusted computing
+base (TCB), the hosted hypervisor, which includes a complete
+Linux, remains in each VMs TCB while being large and
+Permission to freely reproduce all or part of this paper for noncommercial vulnerable (including all Linux vulnerabilities).
+purposes is granted provided that copies bear this notice and the full citation
+on the first page. Reproduction for commercial purposes is strictly prohibited As our security analysis demonstrates, the Xen core is
+without the prior written consent of the Internet Society, the first-named author fundamentallyatrisk.However,itisunclearhowtoeffectively
+(for reproduction of an entire paper only), and the author’s employer if the
+paper was prepared within the scope of employment.
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA 1The actual number is 201, but 7 of them are not used, XSA-166 is too
+Copyright 2017 Internet Society, ISBN 1-891562-46-0 vague to be counted in our study, XSA-161 was withdrawn, and XSA-99 is
+http://dx.doi.org/10.14722/ndss.2017.23455 irrelevantmitigate these threats. Therefore, we present Nexen, a novel
+TABLEI. XENMODULESTHATTHEATTACKSTARGET
+deconstruction and reorganization of Xen that separates and
+Target Ratio Target Ratio
+confineshypervisoroperations.ThedesignofNexenisinspired
+Memorymanagement 25.69% Domaincontrol 4.17%
+by the principle of least privilege [24] and informed directly
+byourvulnerabilityanalysis.WedecomposeXenintomultiple CPUvirtualization 21.53% Domainbuilding 3.47%
+internal domains (iDoms): a privileged security monitor, one Codeemulation 13.19% Eventchannel 2.08%
+shared service domain, and multiple per-VM Xen slices. A
+I/O 9.03% XSM 1.39%
+VM-slice contains a subset of duplicated Xen code and per-
+Exceptionhandling 5.56% Scheduler 0.69%
+instance private data. In this way, a malicious slice cannot
+directly access data within guest VM address spaces, and Granttable 4.86% Others 3.47%
+a malicious guest VM cannot affect other VMs or the host Global 4.17%
+system, even if it has compromised the per-VM slices.
+In addition to deconstructing Xen we also address the
+worstofall,3) anunprivilegedVMmayattackthe hypervisor
+core challenge of efficiently enforcing separation, a unique
+through vulnerable hypercalls or buggy code emulation, fully
+issue for Xen because the hypervisor operates at the highest
+compromising all security on the system.
+hardware privilege level. Nexen achieves this through same-
+privilege memory isolation [14], [4] to enforce cross-VM In this section we summarize our investigation of Xen
+data and control-flow integrity. Specifically, Nexen extends attacks as they relate to the target code module, vulnerability
+the privileged security monitor from the Nested Kernel ar- steps,andhighlevelcompromiseresult.Ourresultsarederived
+chitecture, to isolate and control the memory management fromanalyzingtheXenSecurityAdvisories(XSA)vulnerabil-
+unit (MMU), which mediates all memory mapping updates to itydatabase,whichlists191discoveredvulnerabilitiesbetween
+provide high level security policies. Nexen extends the Nested early 2011 to the middle 2016. A comprehensive evaluation
+Kernelbyaddingsecureandprivatememoryallocators,multi- and analysis of these results as well as how Nexen defends
+slice support, secure slice control transfers, and private and against them is presented in an online appendix located at
+shared slice data control: in this sense a slice is analogous to http://ipads.se.sjtu.edu.cn/xsa/ [1].
+a lightweight process.
+Alargeportionofsuchvulnerabilities(75.39%)arerelated
+Wehaveimplementedaprototypeofourdesignwhichmit- to the hypervisor. They either directly target the hypervisor or
+igates 107 out of 144 vulnerability (74%). Evaluation results aims at VMs but take advantage of bugs in the hypervisor.
+also indicate that the performance overhead is negligible. Otherones(24.61%)aremostlyflawsinQEMUandtoolstack,
+whichreside in Dom0. Since the latter ones canbe effectively
+Our contributions: To summarize, this paper makes the
+mitigated by disaggregating drivers and domain management
+following contributions:
+tools, e.g., using different driver domains and management
+• Asystematicanalysison191Xenvulnerabilities(Sec- domains for different guest VMs, we focus on vulnerabilities
+tions II and V). related to the hypervisor in this paper.
+• Nexen, a novel deconstruction of Xen into a security We classified these vulnerabilities in three different ways.
+monitor, shared service domain, and sandboxed per- The first way is based on target, i.e., the functionality module
+VM slices (Section III) implemented in Xen (Sec- where the exploit happens. Table I presents the distribution
+of vulnerabilities. We can see that I/O, memory management
+tion IV) that efficiently uses paged based isolation
+mechanisms for fine-grained data isolation. andCPUvirtualization(includingcodeemulation)arethemost
+dangerous modules, while modules like scheduler and event
+• As informed by the analysis, a novel least-privilege channel has nearly no known vulnerabilities.
+decomposition strategy that places highly vulnerable
+The second way is based on the result that a vulnerability
+code into per-VM slices while maintaining high per-
+may cause. We can observe from the Table III that most of
+formance and either eliminating vulnerabilities en-
+these vulnerabilities cause host DoS, information leakage or
+tirely or confining exploits (evaluated in Section V).
+privilege escalation to the hypervisor.
+• Efficient code, memory, and control-flow integrity
+Table II shows the result of our third way of classification
+enforcement between Xen and VMs (evaluated in
+based on the key step of exploiting a vulnerability. Here live
+Section VI).
+lock means long non-preemptible operation can be performed
+without rate limiting. An observation is that most vulnerabil-
+II. MOTIVATION AND BACKGROUND
+ities simply cause a CPU hanging or a fault that will kill
+A. Attack Surface of Xen the host. Although many vulnerabilities can cause memory
+corruption, their affecting ranges are usually very limited. As
+TheXenvirtualizationlayercomprisestheXenhypervisor,
+shownintheabovetable,onlyafewofthemhavethepotential
+a privileged VM (i.e., Dom0) and a number of unprivileged
+to eventually achieve privilege escalation.
+VMs. Each of these can be compromised in one of the fol-
+lowing ways: 1) an unprivileged VM may attack another VM Another key observation is that, although most of the
+through inter-domain communication (mostly shared mem- catastrophic vulnerabilties and CPU hangings can be caught,
+ory); 2) a malicious platform user may compromise Dom0 inmostcases,thehandlerstillhastokilltheentirehostinstead
+through the management interface, resulting in control of all ofrecovering.Themainreasonisthatthehypervisorlacksthe
+management operations and I/O stacks of other VMs; and precision to identify individually corrupted components.
+2VM-1 VM-2 VM-2 VM-1 VM-2 Dom0 VM
+Xen
+Dom0
+CloudVisor
+Xen Xen Xen
+0moD
+VM-1
+BmoD
+L2:
+Qemu
+VM-1 VM-2 VM VM-1 VM-2 VM-1 VM-2
+L2:
+Linux
++KVM
+Qemu L1: Qemu KVM KVM Qemu
+Qemu
+Hyperlet Hyper KVM KVM Lock
+Linux+KVM L1: Linux+KVM
+Linux Linux
+edom
+toor-noN
+edom
+tooR
+3-gnir
+0-gnir
+3-gnir
+0-gnir
+VM-1 VM-2
+Dom0
+ShdSrv Slice-1 Slice-2
+Secure Monitor
+edom
+toor-noN
+edom
+tooR
+3-gnir
+0-gnir
+3-gnir
+0-gnir
+(a) Xen (b) Disaggregated Xen (c) Xoar (d) CloudVisor (e) Nexen
+(f) KVM (g) Turtles KVM (h) DeHype (i) HyperLock
+neX
+MVK
+Trusted Component
+Fig.1. ComparisonbetweenhypervisorreorganizationapproachesforbothXenandKVM.
+TABLEII. KEYSTEPSOF TABLEIII. THERESULTSOF
+hardware privilege layer each component resides: ring-0 or
+VULNERABILITY DIFFERENTATTACKS
+ring-3 and root mode or non-root mode.
+KeyStep Ratio Result Ratio
+The top half of the figure shows the architectures securing
+Memorycorruption 45.14% HostDoS 61.81% Xen. Xen has a Dom0, which is a privileged para-virtualized
+Misuseofh/wfeature 22.22% Privilegeescalation VM that is responsible for I/O operations2. VMs run in
+15.28%
+(tohost) non-root mode without modification, a.k.a., hardware-assisted
+Livelock 8.33%
+virtual machine (HVM). Disaggregated Xen [22] decomposes
+Infoleak 13.89%
+Infiniteloop 6.25% Dom0, moving all the code for building a guest VM to a
+GuestDoS(self) 6.25%
+FalseBUG_ON 6.25% separate VM named DomB (“B” for “Builder”). Thus any
+GuestDoS(other) 2.78% vulnerabilities of the domain builder can be isolated within
+Generalfault 4.86%
+Privilegeescalation the VM boundary without affecting other VMs or the host
+Runoutofresource 4.17% 3.82%
+(toguestkernel) system. Xoar [12] takes a further step by decomposing Dom0
+Deadlock 3.47% into 7 different kinds of VMs, each focusing on just one
+functionality,toachievebetterfaultisolationandsmallerattack
+TABLEIV. COMPARISONONATTACKSDEFENDING. surface.CloudVisor[37]targetsadifferentgoal:toprotectthe
+guest VMs from a malicious hypervisor. It leverages nested
+Guestapplication
+Hypervisorillegally Guestcauses virtualizationthatputsXenandDom0innon-rootmodesothat
+hacksitsownVM
+accessesVM’sdata hostDoS
+byhypervisor all privileged operations will trap to CloudVisor for security
+DisaggregatedXen[22] No No No checking. CloudVisor can effectively defend against attacks
+Xoar[12] No No No leveraging the hypervisor’s vulnerabilities to attack the guest
+TurtlesKVM[9] No Yes No VM, e.g., in-guest privilege escalation. Most of these systems
+DeHype[34] No Yes No
+HyperLock[33] No Yes No focus on isolating Dom0’s vulnerabilities, but none of them
+CloudVisor[37] Yes No Yes can defend against host DoS attacks through Xen exploits.
+Nexen Yes Yes Yes
+The bottom half of the figure shows hardening of KVM.
+UnlikeXen,KVMisakernelmoduleinLinux.Itonlyhandles
+Overall,webelievethatareliableisolationmechanismwith hardware events generated by the CPU, leaving most of the
+the ability to limit the privilege of each part of the hypervisor resource management (like the virtual CPU scheduling and
+can effectively prevent most attacks, which we demonstrate in memory management) to the Linux kernel. Qemu emulates
+the rest of the paper. devices at user-level. The Turtles project [9] has implemented
+nested virtualization for KVM that can run guest VMs inside
+a guest VM as a sandboxing mechanism. Xen has since
+B. Previous Solutions added support for nested virtualization as well [16]. Although
+Intel keeps updating its processor to have better support for
+Prior research has explored various hypervisor hardening
+techniques. Figure 1 classifies core related efforts according 2Dom0 typically runs in ring-3 in x86-64 and ring-1 in x86-32. Here we
+to their platform (Xen or KVM), trusted components, and the onlyconsiderx86-64.
+3TABLEV. ATTACKSCONSIDERED&NOTCONSIDEREDBYNexen.
+Guest attack boundary
+Malicious StealorTamper
+GuestDoS HostDoS
+Component withVM’sData
+VM(User) N.A. Considered Considered
+Domain-0 Para-VM Full-VM
+Non-root Mode VM(Kernel) NotConsidered N.A. Considered
+OtherVM Considered Considered Considered
+Root Mode XenSlice Considered Notconsidered Considered
+SharedService Considered Notconsidered Notconsidered
+Xen slice Xen slice Xen slice
+would be providing valuable security enhancement. This is
+Shared Service Communicate
+through gate similar to the device driver isolation literature, where highly
+Nexen Secure Monitor susceptible code is sandboxed [38], [26].
+Therefore, NexendecomposesXen into per-VM slices that
+Fig.2. Thearchitectureoverview.
+are naturally sandboxed from all other components in the
+system. Each Xen slice is bound to one VM and serves only
+this VM. VMs will only interact with their own Xen slice
+nested virtualization [11], performance overheads are still
+during runtime. Xen slices share code but each has its own
+non-negligible. DeHype [34] and HyperLock [33] decompose
+data.Theyaretheleastprivilegedinternaldomains,anderrors
+KVM by creating a KVM instance for each guest VM. As a
+in one Xen slice are not considered dangerous to the whole
+resultguestVMscanonlyimpact(e.g.,crash)itsowninstance.
+system or other VMs.
+DeHype puts the KVM instances in ring-3, resulting in high
+performance overhead. HyperLock implements an in-kernel Unfortunately, a simple decomposition of all functionality
+isolation mechanism that enables different KVM instances intoslicesisuntenablebecausesubsetsoffunctionalityinteract
+running within ring-0 to reduce the performance overhead across slice boundaries. High frequency privilege boundary
+while still retaining isolation. crossing cause high performance degradation. So we create
+a single, slightly more privileged shared service domain—but
+III. DESIGN still not as privileged as the security monitor. Deciding what
+to place in per-VM slices and the shared services domain is
+TheprimarygoalofNexenistohardenXenagainstvarious
+non-trivial and one of the key contributions of this work.
+securitythreats.ThisischallengingbecauseXenoperateswith
+ultimatesystemauthority:thereisnoprivilegelayertoenforce In the following sections, we first introduce the design of
+thehardening.OurkeyideaistodeconstructXenintoseparate the core security monitor. Then we describe how to build in-
+protection domains that apply the principle of least privilege ternal domains basedon the security monitor, along with their
+and to do so at a single privilege level. interfacesandproperties.Finally,weshowhowtodeconstruct
+the hypervisor to minimize its vulnerability.
+In this section we overview Nexen, present our technique
+to obtainsingle privilege layer isolation, describethe isolation
+B. Assumptions and Threat Model
+services that enable least-privilege, and present our decompo-
+sition strategy for informed separation. Weconsider thatan attackercantake full control of a user
+application running in a guest VM, and tries to gain higher
+A. Nexen Overview privilege or issue DoS attack by exploiting the hypervisor and
+itsownOS.Weconsidertheattackagainsthypervisorthrough
+The Nexen architecture (Figure 2) decomposes the mono-
+itsflaws.WealsoconsidertheattackagainstguestOSthrough
+lithic hypervisor into a minimal, fully privileged security
+the hypervisor’s vulnerability, but not through the guest OS’s
+monitor, monitor, a less privileged shared service domain,
+own bugs.
+and fully sandboxed Xen slices. All these domains run in
+the highest privilege of the system, i.e., ring 0 of the root We also consider that an attacker can deploy a complete
+mode. The core challenge of doing this at a single privilege malicious guest VM on the virtualized platform, and try to
+layer is obtaining a tamper-proof protection mechanism with attackthehypervisortofurtherattackotherVMsandtheentire
+whichtoenforceisolationwithinXen.Todosoweutilizeand platform through illegal data accessing or DoS attacks.
+extend the Nested Kernel Architecture design [14] to isolate
+The Xen slices and shared service are not in the TCB
+the security monitor while operating in root-mode.
+of our system. Even if they are compromised, they cannot
+Nexen uses the isolated security monitor to control all illegally access guest VM’s data. However, they can issue
+updates to the MMU. By controlling the MMU Nexen can DoS attack. Specifically, a Xen slice can just stop serving
+guarantee isolation between internal domains and manage its own VM, while the shared service may crash the host by
+privileges. With carefully designed policies, Nexen can ensure disabling scheduling. However, we do not consider physical
+each internal domain has only the necessary privileges, which attacksaswellassidechannelattacksbetweendifferentVMs.
+significantly reduces the attack surface of the whole system. A complete threat model matrix is listed in Table V.
+The nextchallenge Nexenconsidersis to devisea valuable
+C. Isolating the Monitor
+deconstruction of Xen. In our security analysis we observed
+that many vulnerabilities are localized to specific units of The monitor is the most fundamental element to Nexen
+functionality in Xen. If we sandbox this functionality then we protections. If the monitor is compromised all security in the
+4system is lost—this is true of any protection system. The • void* nx_secure_malloc(size_t size,
+monitor must therefore be tamper-proof without creating high int owner,int policy)
+overheads or forcing large changes to the Xen code base.
+• void nx_free(void* p)
+Instead of deprivileging Xen by moving it into Ring-3 we
+These interfaces are open only to the shared service which is
+use nested MMU virtualization [14], which nests a memory
+responsible for building new domains. Since we use memory
+protectiondomainwithinthelargersystematasingleprivilege
+mapping basedisolation mechanism, eachdomain has its own
+level. The benefit is that Nexen creates minimal performance
+addressspace.nx_create_dom()willcreateanewaddress
+degradation and modification to Xen while gaining a tamper-
+space for the specified new domain and return the address of
+proof monitor. Nested MMU virtualization works by monitor-
+its root page table. This is called during guest VM booting.
+ing all modifications of virtual-to-physical translations (map-
+nx_secure_malloc() is used to assign a memory region
+pings) and explicitly removing MMU modifying instructions
+forstoringaninternaldomain’s owndata.Anownerwillhave
+from the unprivileged component—a technique called code
+full read/write access to the data. Access permissions exposed
+deprivileging.
+to other domains are specified by the ‘policy’ argument. The
+Nexen virtualizes the MMU by configuring all virtual othertwofunctionsaresimplythereverseoperationsforthem,
+address translations (mappings) to page-table-pages as read- used during the shutdown or force a destruction of a domain.
+only.Thenanyunexpectedmodificationstothepagetablescan
+2)Controlling Memory Access Permissions: Memory ac-
+bedetectedbyhavingtrapsgodirectlytothemonitor.Further,
+cess permission is the first class of privileges controlled by
+accesses to the MMU through privileged instructions must be
+Nexen.Memoryregionsaremappeddifferentlyindifferentin-
+protected.ThisincludesaccessestoCR0controllingthepaging
+ternaldomainssothatoneinternaldomaincanonlysee/modify
+and to CR3 controlling the address spaces. Nexen removes
+what’s safefor it to see/modify. Mappingsin internal domains
+all instances of such operations from the deprivileged Xen
+are initialized during domain building and updated later using
+code base such that there are no instructions that can modify
+a tracing mechanism in the monitor if necessary. monitor
+the MMU state: we validate this assumption by performing
+controls all MMU updates to make sure no internal domain
+a binary scan to ensure no aligned or unaligned privileged
+could break the isolation and violate memory access policies
+instructions exist. The last element is to ensure that none of
+by modifying page tables.
+theXencomponentsinjectprivilegedinstructions.Becausethe
+monitor has control of the page-tables it can easily enforce The memory accesspermissions are presentedin Figure 3.
+code integrity and data execution prevention. Shared service is allowed to manage memory access permis-
+sionsthroughthenx_secure_malloc()interface.Various
+By restricting control of the MMU to the monitor, Nexen policies are available for different purposes. For example,
+greatly reduces the TCB for memory management and iso- during booting, shared service will declare its own data as
+lation services. It also enables the monitor to control critical invisibletoallslices.WhenbuildinganewXenslice,itsinner
+privileges in Xen including properties like code execution and datais“granted”toit,whichmeanstheycanbemodifiedonly
+entry gates. in this internal domain. By default, everything inside a guest
+VM should not be visible to any internal domain.
+D. Intra-Domain Slicing
+Self-VM Other VM read / write read only not mapped
+TheprimarygoalofNexenistoenhanceXen’ssecurityby
+deconstruction. To do this Nexenprovides the core abstraction
+Guest VM
+of a slice to represent internal domain. Nexen extends the
+monitor to provide a set of basic functionality that is required
+Xen Slice
+to securely create, manage, and permit interactions between
+internal domains. As shown by our vulnerability analysis,
+isolation and minimizing privileges are effective ways to limit Shared Service
+the attack surface and control the damage.
+Nexen enables two types of internal domains. The global Secure Monitor
+shared service and per-VM Xen slices. Components like the
+Object
+scheduler and domain management are placed in the shared Viewer Guest VM Xen Slice Shared Service Secure Monitor
+service while functions related to only one VM, e.g., code
+emulation and nested page table management, are replicated Fig.3. MemoryaccesspermissionsofdifferentcomponentsofNexen.
+to each Xen slice.
+The security monitor does not have its own address space.
+1)Internal Domain API: Nexen provides an internal do- Itissharedbyallinternaldomains.Everydomaincandirectly
+main to the shared service for the management of slices. request its services, but no one is able to tamper with the
+Shared service and the monitor are built as the system boots. monitor’s inner data. Shared service and every Xen slice have
+AllXenslicesmustbebuiltbyexplicitlycallingthefollowing their own address space. Shared service has its own piece of
+interfaces provided by the monitor. data and code. Xen slices share the same code while each has
+its own data.
+• void* nx_create_dom(int dom_id)
+3)Controlling Privileged Instructions: Privileged instruc-
+• void nx_destroy_dom(int dom_id) tionisthesecondclassofprivilegecontrolledbyNexen.Many
+5specialinstructionsmaypotentiallyviolatethememoryaccess the hypervisor to VMs. On entering the hypervisor, the gate
+policies or even directly harm other internal domains than the keeper records the trap frame and dispatch the control flow
+caller. Execution of these instructions must undergo careful to the correct internal domain. On exiting the hypervisor, the
+examination. We treat them as “privileged” instructions. gate keeper checks VMCS and other necessary running states
+tomakesurenopolicyisviolated.Ifthereasonofenteringthe
+Nexen limits the instruction set each internal domain can
+hypervisor is an interrupt, the control flow will be transferred
+execute to avoid abuse of privileged instructions. No direct
+to the shared service. The shared service will deal with the
+execution of privileged instructions is allowed outside the
+interruptitselfordispatchittoaVMandexittocurrentVM’s
+security monitor. Internal domains request the monitor to
+Xen slice. For other reasons, mainly a hypercall or a code
+execute the instructions for them. The monitor enforces a
+emulation, the control flow directly goes to current VM’s Xen
+sound sanity check to prevent unauthorized use and malicious
+slice.
+use of these instructions.
+AXensliceusuallydealwiththerequestitself.Itmayuse
+4)Control Flow: To support the interaction between in-
+some services provided by shared service or security monitor.
+ternal domains, Nexen provides a secure call gate for domain
+The control flow will always return to the Xen slice except
+switching:
+for scheduling. Eventually, the control flow goes to the gate
+• nx_entry(int domain_type, int dom_id) keeper to return to the VM.
+We explicitly forbid switching between Xen slices since
+Thedomain_typeargumentspecifieswhethertheswitchtarget
+no such a need exists. This eliminates the possibility that a
+isaXensliceorthesharedservice.WhendomaintypeisXen
+maliciousXenslicecandirectlyintrudeintoanotherXenslice
+slice, ‘dom_id’ shows the ID of the target Xen slice.
+orfurtherattacktheboundVM.Theonlywaytoswitchcontrol
+The call gate guarantee the following features: flow from one VM and its Xen slice to another is scheduling.
+Since the scheduler doesn’t receive any input generated by
+• Non-bypassable:Itisimpossibletoswitchtoanother
+a guest, and the context after the switch is decided by the
+internal domain without calling the gate.
+target VM and its Xen slice, an attacker can hardly intrude
+• Unforgeable: Any call gate not called from its ex- through this way, which is also evidenced by the scheduler’s
+pectedpositionisnotaccepted.Eachcallgateisbound low vulnerability ratio even in unmodified Xen.
+to both its return address and its domain_type
+Communication between Xen slices and shared service is
+argument, which must be hard-coded.
+strictlylimitedtopreventamaliciousXenslicefromattacking
+• Atomic: Switches of control flow and address space the shared service. The only situations where control flow is
+are atomic. Any attempt to switch to an internal allowed to transfer from a Xen slice to shared service are
+domain’s address space while redirecting the control discussed in the next subsection. We’ll show that all these
+flow to another one will fail the return address check transfersaresecureenoughandcanhardlybeusedasanattack
+and be rejected. surface.
+Even if the attacker has successfully exploited a vulnerability
+leading to privilege escalation, she will only gain full control E. Decomposing into Slices
+inside one internal domain, which normally is a Xen slice. To
+Themonitorandslicingservicesprovidepowerfulisolation
+do any meaningful attack, the attacker must try to intrude into
+and code integrity properties for Xen. They form the founda-
+another domain through the call gates, which is much harder
+tion for Nexen to apply security relevant partitioning of Xen.
+than the initial exploit.
+Our deconstruction strategy is to apply the principle of
+We carefully restrict control flows to minimize the possi-
+least-privilege: minimize the authority of each domain in the
+bility for internal domains to attack each other.
+system. The best solution would be to create a complete Xen
+slice for each VM. Unfortunately, there is functionality that
+Guest VM interactsacrossmuchofthe Xensystem.Anotherchallengeis
+to select partitions that minimize the interface between the
+shared service and per-VM slices to minimize API abuse.
+Significant data structures must also be wisely arranged to
+Xen Slice
+avoid destructive corruption.
+As such Nexen must deconstruct Xen in a way that
+Nexen Shared Srv
+intelligently partitions functionality—maximize the value of
+least-privilege while minimizing cross-domain interactions.
+To manage this we identify functionality that is shared and
+Gate Kee p e r Secure Monitor place it in the Nexen shared service domain, which operates
+at a slightly higher privilege level than per-VM slices. The
+higher privilege enables special data and cross-domain calling
+Fig.4. ThecontrolflowbetweencomponentsinNexen. privileges solely for the shared service domain.
+There is a small piece of code called gate keeper that Another high level idea of our strategy is to derive our
+controlsallexitsfromVMstothehypervisorandentriesfrom partitioning from the vulnerability analysis. Much like device
+6driver isolation was motivated by the high degree of vulnera- Since event channel buckets are tightly bound to VMs, we
+bilityofdrivers,weidentifytheXenfunctionalitythatis most puteachVM’sbucketinitsownXenslicetoavoidabusefrom
+likely to be corrupted and place that into the per-VM slices. other VMs. Interrupts related to one VM will be forwarded to
+Ontheothersideweidentifycorecomponentsthatmustbein its Xen slice, so delivery of events bound to interrupts are
+thesharedservicedomainduetothenatureoftheiroperations. done byXenslices.Whena VM sendeventto anotherVM,it
+will have difficulty writing the pending bit in the target VM’s
+To sum up, we follow three principles in decomposition
+port for the lack of writing permission. We proxy this request
+work to enhance the security of the system. The first one
+through the shared service, which is another interface open
+is to avoid inserting dangerous functionalities into the shared
+to Xen slices. This request is safe enough because the only
+service, which is very intuitive. The second one is to avoid
+information provided by the sender is the target VM’s port
+runtime communication. Components in shared service can
+number, which is easy to examine.
+be safe even if it contains relatively more vulnerabilities as
+long as guests are not able to invoke them actively during
+runtime. The third one is to separate mechanism from policy. Memory Management contains everything related to
+Complexcalculationanddecisionmakingcanbeprocessedby memory operation, mainly memory allocation and memory
+untrusted code. But the final security sensitive operation must mapping update. The core data structures are page tables and
+be performed by trusted code. This principle can effectively a page_info region maintaining the usage state of each
+reduce the size of trusted code and alleviate the burden of physical page. Allocator’s free page list is built based on the
+sanity check. linked list field in page_info structure. Other information
+in page_info is referred to and updated during memory
+1)Significant Component Decisions: In decomposing Xen
+mapping update.
+there are several significant decisions to make either because
+the functionality is pervasive or it is a highly vulnerable
+component. In this section we provide further analysis of Allocatorisonlyusedduringbootinganddomainbuilding,
+ourdeconstruction.TheScheduler,MemoryManagement,and sowekeepitinthesharedserviceanddonotexposeanyinter-
+EventChannelsareallorpartlyplacedinNexensharedservice. face to Xen slices. Memory mapping update is mostly related
+Due to its high complexity and vulnerability, Code Emulation toonlyoneVM.Xenslicesareallowedtomanagetheirbound
+andI/O are splitacrossper-VM slices.Note thatthis is not an VM’s memory mapping update. One challenge here is that
+exhaustive list. page_info region is required by both functionalities, each
+in a different type of internal domain. Fortunately, memory
+Scheduler determines which VCPU currently runs on one
+regionofXenandeachVMhasaclearboundary.Wemapthe
+CPU. Each VCPU has a credit used to calculate its priority. It
+region in every internal domain, but only grant to each Xen
+burns as a VCPU runs. Each CPU has a runqueue recording
+slice the writing permission of their own page information.
+all VCPUs and their priority. The queue is periodically sorted
+Both functions work nicely in this way. Apart from that, no
+to maintain the priority order of VCPUs. There are also some
+internal domain has the permission to write page tables. After
+global parameters controlling the speedof burning credits, the
+making the page table update decision, they must request the
+rate limit of scheduling and other issues. When a scheduling
+monitor to perform the operation. Such updates are carefully
+operation happens, the VCPU with the highest priority is
+checked to make sure no policy is violated.
+picked to run in next round.
+We can observe that all significant data is naturally closed
+CodeEmulationandI/OarerelatedtoCPUfeaturesmore
+for scheduler’s inner use. Credit burning, runqueue sorting
+than memory. These parts of the hypervisor provide virtual
+and scheduling are all triggered by timer interrupts without
+CPU and devices for VMs by catching and emulating VM’s
+any interference from guests. Further, CPU is usually shared
+privileged operations. The emulation code sometimes runs the
+between VMs and is not suitable to be assigned to any Xen
+privileged instructions itself to get necessary data. This whole
+slice. Hence, we put the whole scheduler inside the shared
+processisextremelyerror-prone.Attackersmaydirectlycause
+service. No Xen slice is allowed to modify the state of the
+an exception, corrupting memory in another module, or steal
+scheduler.
+sensitivedatafromotherVMsthroughthemisuseofhardware
+There are occasions where a guest wants to yield, sleep features.
+or wake its VCPU. We open these three interfaces to Xen
+slice. Their only input is the VCPU pointer used to find
+We run the emulation code in each VM’s Xen slice and
+its corresponding data structure inside the scheduler, whose
+grant VM’s VCPU running state to the Xen slice. Although
+validity will be checked on the shared service’s side. Nothing
+the misused hardware features are largely out of our control,
+changes except for the guest’s own VCPU’s existence in the
+attempt to corrupt other parts of the system must go back
+runqueueaftertheseoperations.Hardlycananymaliciousdata
+to memory. Even if the attacker has successfully raised her
+be delivered through this interface, nor can any dangerous
+privilegetothatofthehost,Nexencanstillenforcethememory
+behavior be performed.
+accesspolicies.TheattackerwillbeisolateintheXensliceand
+Event Channel delivers various events between guest achieve nothing worthwhile. If the attacker chooses to trigger
+VMs,thehypervisorandhardware.EachVMhasitsownevent a deadly exception, the handlers are modified so that only
+channel bucket, which contains a number of event channel the Xen slice, instead of the whole system, is destroyed. We
+ports. A port can be bound to an interrupt or another VM’s are able to do this because Nexen’s memory isolation gives
+port. VMs maintain their own buckets while the hypervisor the guarantee that no crucial data are corrupted during the
+helps to deliver the events. exception.
+7TABLEVI. CONTENTOFSHAREDSERVICE
+and free memory region. When building a domain, the shared
+servicewillaskformemoryfromtheallocatorforthenewXen
+Sharedservicecontent
+slice’sdatastructures.Thepolicyisgiventothemonitoralong
+Scheduler
+Allocatorpartofmemorymanagement withtherequest.Alltheinformationisrecordedinthememory
+Interrupthandlers pool. When the new address space is eventually created, the
+Domainbuilding
+monitor will traverse the memory pool and modify mappings
+Eventdeliveryofeventchannel
+for recorded memory regions according to their policy. As is
+described in the invariants, mappings for protected data will
+IV. NexenIMPLEMENTATION notbechangedoncetheownerVMhasstarted.Sonoonecan
+trick the monitor into exposing other domain’s data.
+We implemented a prototype of Nexen based on Xen
+version4.5forIntelx86-64architecture.Thissectiondescribes Frequently used policies are:
+how we address three main technical challenges: First, how
+• Grant: Data is granted to a Xen slice. They can be
+to enforce inter-domain isolation and memory access policy?
+modified by its owner Xen slice. In other internal
+Second, how to control privileged instructions? Third, how to
+domains they are mapped read-only.
+monitor the interposition between the hypervisor and VMs?
+• Half Grant: Data is granted to a Xen slice. They can
+A. Isolation between Internal Domains be modified by the owner Xen slice and the shared
+service. In other Xen slices they are mapped read-
+We used an isolation mechanism based on memory map-
+only.
+ping. Each internal domain resides in its own virtual address
+space.Thepermissionbitsinpagetableentriesaresetaccord- • GrantandHide:DataisgrantedtoaXenslice.They
+ing to memory access policies. In this way, Nexen controls can be modified by owner Xen slice. In other internal
+what every internal domain is allowed to read and write. domains they are unmapped.
+Toachievethis,Nexeninterposesmemorymappingupdates • Limit: Data is granted to the shared service. In all
+and enforces a set of carefully selected invariants to provide Xen slices they are mapped read-only.
+flexibility in applying policies on any memory region. Addi-
+• LimitandHide:Dataisgrantedtothesharedservice.
+tionally, Nexen allows interaction between internal domains
+In all Xen slices they are unmapped.
+while retaining the isolation.
+1)Control Memory Mapping Update: Nexen maps all 4)SecuringCallGate: Nexenprovidesagateallowingthe
+page-table-pagesasread-onlyinalladdressspacesandenables switch between internal domains. It is a function call with the
+the Write Protection (WP) bit, forbidding mapping updates. targetinternaldomain’stypeandidasarguments.Thefunction
+The security monitor’s internal data is also mapped read-only itself switches the address space to that of the target domain.
+to avoid modification from malicious domains. As control The return address determines the target domain’s entry point.
+flowsintothemonitortheWP-bitisflippedsothatthemonitor
+To make sure the switches of control flow and address
+canupdatepagetablesandmaintainitsinternaldatastructures.
+space happen atomically, we turn off interrupt during the
+On exiting the monitor, WP-bit is enabled. Interrupts are
+execution of the gate and check the validity of the function
+disabledwhileexecutinginthemonitortomakesurenoentity
+call’sreturnaddress.Allgatesareplacedatfixedplacesinthe
+can hijack the control flow when the WP-bit is turned off.
+code.Callingthroughafunctionpointerisforbidden.Allvalid
+In this way, the monitor completely controls all mappings.
+return addresses for an internal domain are collected with the
+Memory mapping updates in internal domains are replaced
+help of the compiler and stored in a table. At each call of the
+by calls into the monitor, but the logic for their management
+gate, the return address is searched in the table. Only if it is a
+remains in the domain.
+valid one recorded in the table will the address space switch
+2)Enforcing Memory Invariants: Before each memory be executed.The table is sorted and searchwith binary search
+mapping update, the security monitor needs to do sanity to speed up the process.
+checking to enforce certain invariants. These invariants are
+independent of policies and have the highest priority in all B. Confining Privileged Instructions
+rules. They keep the memory layout and the most significant
+To ensure isolation, Nexen must control the execution of
+data structures of the system intact in any condition. The
+sensitive instructions. Nexen achieves this with two methods:
+invariants of each type of memory are shown in Table VII.
+“monopolize” and “hide”. Internal domains are deprivileged
+The monitor maintains an internal data structure recording fromdirectaccesstosensitiveinstructions.Similartomemory
+the usage of each physical page. Invariants are mostly based mapping validations, any uses of sensitive instructions are
+on the memory page’s usage type and owner. forwardedtothesecuritymonitor, whichensuresallinvariants
+to maintain isolation.
+3)Enforcing Memory Isolation Policies: To provide a
+flexible way to protect internal domains’ data, memory of A “monopolized” instruction only has one instance within
+Protected Data type can have various policies. The monitor the monitor’s code. Under this constraint, the instruction is
+has a special allocator inside itself for allocating protected stillvisibletointernaldomains.Theattackercaneithercallthe
+data,throughwhichpoliciescanbespecifiedforeachmemory monitor’sinterfaceordirectlyjumptotheinstructionifshehas
+region. The allocator has an inner memory pool recording the successfully hijacked control flow. If the bad consequence of
+address,sizeandpolicyrelatedinformationforeveryallocated theinstructiondoesnotoccurimmediatelyaftertheexecution,
+8TABLEVII. PROTECTIONINVARIANTSFORDIFFERENTTYPESOFMEMORYPAGES
+PageType ProtectionInvariants
+GuestMemory ThesepagesbelongtoaVM.TheyareinvisibletothewholehypervisorbutcanbeaccessedbytheirXenslice,whichcanchangetheirmapping
+andtypewhentheVMwantstoexchangepageswiththehypervisor.
+SensitiveGuestMemory ThesepagescontainguestVM’ssecretdata.TheyareinvisibletothewholehypervisorandcannotbeaccessedbyevenitsownXenslice.
+Theyaredeclaredbytheguestusingaspecialhypercallandcannotbechangedbythehypervisor.
+HostCode Thesepagescontainthecodeofthehypervisor.Theyareinitializedduringbootingandwillneverchange.Theyaretheonlynon-userpages
+withexecutionpermissionandshouldalwaysbemappedread-only.
+MonitorData Thesepagescontainthesecuritymonitor’sinnerdata.Theyarealwaysread-onlytointernaldomains.
+ProtectedData Thesepagescontaininternaldomain’sowndata.Theirmappingsareinitializedaccordingtothepoliciesappliedtothem.Theyareinitialized
+duringowner’sdomainbuildingandwillneverchange.
+PageTable Thesepagescontainthehypervisor’spagetables.Theycanbedeclaredandundeclaredbythesharedservice.Theyarealwaysmappedas
+read-only.Theirtypewillnotbechangedunlessexplicitlyundeclared.
+NestedPageTable Thesepagescontainnestedpagetablesdescribingguestphysicaltohostmachinememorymapping.Theycanbedeclaredandundeclaredby
+owner’sXenslices.Theyarealwaysmappedasread-only.Theowner’sXenslicecanrequesttoupdatetheircontent.Rulesforthisupdateis
+relativelysimple:pagesofotherVMsandthewholehypervisorexceptforitsXenslicearealwaysinvisible.
+Others Othertrivialandunusedpagesaredescribedbythislabel,whichNexenprovidesnospecialprotectionfor.
+the monitor could do sanity checking after the instruction and emulated, it will also call the security monitor module which
+fix the misuse. willthenaccessVM’sdataandcheckifitisOKtoberetrieved
+by the handler. A Xen slice can update VMCS arbitrarily.
+“Hide” is based on “monopolize”. It takes a step further
+When returning to a guest VM, the VMCS will be checked
+and unmaps the only presence of the instruction. Only when
+against a list of fields allowed to be modified for the certain
+the operation is used and the sanity checking is passed will
+VMExit reason. Unnecessary updates are rolled back before
+the page be mapped. After execution, the instruction will
+resuming the guest VM.
+immediately be unmapped to avoid abuse. If the execution
+of the instruction instantly disables isolation without control-
+D. Export Nexen to Other Platforms
+flow going to the monitor, it should be hidden. When hidden,
+the attacker must go through the monitor and sanity checking Nexen can be exported to any other platform with mem-
+since she does not have the privilege to “unhide” via mapping ory mapping mechanisms similar to x86’s. Memory related
+updates.Amaliciousexecutionoftheinstructionwillnotpass policies, invariants and design decisions are independent of
+the sanity check. platforms.Theycanmostlybereused.Controlinstructionsand
+control registers are specific to x86 platform. The system in
+We did a binary code scanning to make sure such instruc-
+the new platform must find alternatives to following features:
+tions, aligned to instruction boundaries or not, do not exist
+controlingmemoryaccesspermissionsofthehighestprivilege
+in unwanted code region. To prevent an attacker generating
+level, forbidding arbitrary code generation and execution,
+new privileged instructions, we must guarantee the integrity
+capturing all interrupts, exceptions and interpositions between
+of hypervisor’s code. The invariants in the memory protection
+the hypervisor andVMs.Instructions relatedto thesefeatures,
+part has already guaranteed that code section is always read-
+alongwith anyMMUupdatinginstructions,shouldbe consid-
+onlyandnonewkernelmodecodemappingisallowed.Instead
+ered privileged intructions and be protected.
+of directly modifying the code section, an attacker may want
+to generate code using data region or guest VM’s memory
+region. To block these two bypasses, we explicitly forbid the
+V. SECURITY ANALYSIS
+executionofusercodeinprivilegedcontext.TableVIII shows ThissectionpresentsasecurityanalysisonhowNexencan
+privileged instructions and invariants. ensure security isolation and defend against exploits on each
+category of security vulnerabilities.
+C. Interposition between VM and Xen
+A. Security Isolation
+Apart from enforcing isolation inside the hypervisor, the
+monitor plays the role of a gate keeper between guest VMs An attacker gaining control of a Xen slice may try to
+and the hypervisor. All interpositions between VMs and the undermine the isolation enforced by Nexen in four ways. Yet,
+hypervisor are monitored to enhance bidirectional security. none of them will succeed:
+The monitor dispatches the event to a proper internal Escalating memory access privilege: Either writing pro-
+domainwhenVMstraptothehypervisor.OnceaguestVMis tected memory region directly or writing page table to gain
+runningandaVMExitoccurs,theCPUwilltraptothemonitor access to protected memory will result in a page fault. Nexen
+first, which will check the VMExit reason. If the VMExit will kill the attacker’s Xen slice and VM in this case. If
+is VM related, e.g., instruction emulation or hypercall, the an attacker tries to intrude through the secure call gate, she
+monitor will transfer control to the corresponding Xen slice will either lose execution control or fail to gain the desired
+tohandleit.Forotherreasonsliketimerinterrupt,themonitor permissionduetothesanitycheckingenforcedbythemonitor.
+will transfer control to a shared service component like the
+Abusingprivilegedinstructions:Sinceprivilegedinstruc-
+scheduler.OncetheVMExithasbeenhandled,thehandlerwill
+tions have been removed from the per-VM slices, the attacker
+transfer control to the monitor, which will eventually resume
+hastoreusethoseinthesecuritymonitor.Ifshenormallycalls
+the execution of guest VM.
+monitor’s interface, the malicious behavior will not pass the
+If a VMExit handler needs to access some data of the sanity checking. If she forges a malicious context and directly
+guest VM as auxiliary information, e.g., the instruction to be jumps to the instruction, the attacker will lose execution
+9TABLEVIII. INSTRUCTIONPROTECTIONINVARIANTS.
+Instruction ProtectionInvariants
+MOVCR0 ThesepagesbelongtoaVM.TheyareinvisibletothewholehypervisorbutcanbeaccessedbytheirXenslice,whichcanchangetheirmappingand
+typewhentheVMwantstoexchangepageswiththehypervisor.
+MOVCR3 Bythisinstruction,anattackercanchangethewholeaddressspaceandwillprobablyredirectthecontrolflow.Consideringthat,wehidethisinstruction
+andforbidanyuseofthisinstructionexceptforsecurecallgatesandcontextswitch.Thetargetpagetablebaseaddressmustpointtoadeclaredroot
+pagetable.
+MOVCR4 SMEPbitinCR4forbidstheexecutionofusercode,whichiscrucialforcodeintegrity.Consideringthisinstructionwillnotdirectlyhijackthecontrol
+flow,wecanprotectitwiththesamemethodforCR0,bymonopolizingandcheckingloop.
+MOVIDTR Themonitor mustcontroltheentrypointsofalltraps.Interruptdescriptortable(IDT)ismappedasread-onlytoavoidarbitrarymodification.IDTR
+recordsthebaseaddressofIDT,whichmustbesettoaverifiedvalue.Sinceinterruptisturnedoffinsidethemonitor,anymodificationtoIDTRwillnot
+takeeffectbeforeexiting.Thereisnoneedtohidethisinstruction.
+WRMSR TheNX(Non-eXecutable)bitcontrolsnon-executablememoryexecution.SimilartoCR0andCR4,acheckingloopisenoughforthisinstruction.
+VMOFF ThisinstructionturnsofftheVMX(VMeXtension)modeofCPU,whichisdestructiveinavirtualizationsystem.Thiswillfurtherallowanattackerto
+turnonrealmode,whichwillprobablyhijackthecontrolflow.Sincetheconsequenceisimmediate,wehidethisinstruction.
+VMRESUME ThisinstructionimmediatelyreturnscontrolflowtoguestVM.Anattacktargetingtheguestwillworkafteritsexecution.Anattacktargetingthehypervisor
+bycorruptingtheVMCSwilltakeeffectonnextVMExit.Sanitycheckisnecessarybeforetheinstruction.WehidethisinstructionandonlyallowXen
+slicestorequestitsexecution.SincethecontrolregisterswillbeloadedfromtheVMCSonnextVMExit,wecheckandenforcethesameinvariantsas
+listedabovebeforetheresume.
+control for a while before exiting the monitor. This is because described how to achieve (1) by moving the most vulnerable
+instructionsthatcanimmediatelyhijackthecontrolflowareall partsintoXenslices.Theycontainmostofvulnerabilitiesthat
+hidden from the attacker. The monitor will do sanity checking can be exploited as the key step. So the attacker has to be in
+and fix the misuse during this period. thecontextofaXenslicetodothekeystep.Inthissubsection,
+wewill discusswhyNexencanachieve(2) bygivingconcrete
+Fooling The Monitor: The attacker may try to trick
+data and examples corresponding to each result type.
+the monitor into giving her extra privileges. If the attacker
+directly requests an operation for which she does not have
+Defended Not Defended No CVE
+the permission, the monitor will immediately discover the
+violation of invariants and reject the request. Instead, the Attack Privilege Host DoS Guest DoS Info Leakage Iago Attack
+Target Escation (Non-Iago) (Non-Iago)
+attacker may pretend to be another iDom. Nexen will not give
+her any chance since the only identification used by Nexen is Memory Management 7 26 1 2 1
+a unique number mapped into the read-only region of each CPU Virtualization 1 17 6 4 3
+iDom’s address space. I/O Module 2 8 0 0 3
+Grant Table 1 5 0 1 0
+Fooling Xen: The Nexen architecture largely reused Xen
+Code Emulation 3 4 4 5 3
+hypervisor’s code. Since Nexen has more restrictions on each
+Domain Control 0 4 0 2 0
+component’s permissions than the original Xen, such reused
+Event Channel 1 2 0 0 0
+code may assume themselves having more permissions than
+those allowed by Nexen. However, since memory and in- Shared Service 7 20 0 0 0
+struction invariants and policies are enforced by the security
+Fig.5. Effectivenessbasedontargetandresult
+monitor, which has the highest privilege in the system, these
+operations performed by the less privileged Xen slice code
+Figure 5 is a summary of Nexen’s effectiveness based on
+will not succeed, nor will they give the attacker any extra
+the key step’s target and result types. In this figure, we only
+permission.
+consider the final results of an attack because Nexen stops
+most attacks in the last step. Most attacks can only cause
+B. Effectiveness in Preventing Exploits
+one result, which are counted with a colored bar representing
+In this subsection we analyze how Nexen defends against whether Nexen prevents them. Exceptions are those attacks
+different types of vulnerabilities. that can potentially achieve privilege escalation, which is an
+intermediate state that can lead to all kinds of results. They
+In total, there are 144 vulnerabilities related to the Xen
+should have been counted once in each of the result types.
+hypervisor. 127 of them are on the Intel x86 platform. We
+However, we list their numbers in a separate column to avoid
+can directly test the effectiveness over them. Our system can
+confusion.
+effectively defend against 96 (75.59%) of them. The other 17
+vulnerabilitiesarespecifictoARMorAMDprocessors.Given ThereisaclearboundarybetweenthoseattacksNexencan
+an equivalent implementation of Nexen in these platforms, and can not prevent. Attacks with their key steps happening
+11 (64.71%) of them can be prevented. In total, Nexen can in Xen slices can mostly be prevented. This is because Xen
+effectivelydefendagainst107outof144vulnerabilities(74%). slice is a sandbox that can be sacrificed. Exceptions are those
+trying to crash or leak information to a guest VM with Iago
+Whenconsideringhowtopreventattacks,akeyobservation
+attacks. They do not try to harm the hypervisor or other
+is that most attacks have a critical step that is non-bypassable.
+VMs so sandboxing does not work for them. The gate keeper
+Table I, II, and III categorize vulnerabilities by the position of
+guards interactions between the hypervisor and VMs. Part of
+this key step, attacker’s behavior in this step, and the result of
+attacks that takes effect in a guest VM can be prevented.
+the attack. If we can assure (1) this key step happens in the
+However, verifying data corrupted by an Iago attack requires
+sandbox of Xen slice and (2) any further destructive results
+recomputing, which the gate keeper is incapable of.
+will be stopped or limited within the Xen slice, the attack
+will be successfully prevented. In the design section, we have Thefollowingincludesanalysisandexperimentsabouthow
+10Nexenpreventseachtypeofattacks.Casestudiescanbefound original allocator was used, the attacker’s VM was killed,
+in Table IX. For those attacks Nexen can not prevent, reasons because Xen slice does not have the permission to touch any
+are analyzed in Table X. data in the allocator and a page fault was triggered.
+Host DoS – False BUG_ON, Page Fault, General Fault Info Leak – Memory Out-of-boundary Access Attacks
+The methods used by these attack types to cause a Host DoS of this type could try to read sensitive data from any part
+are almost the same. They directly trigger an exception (a of the system through memory, e.g., XSA-66/XSA-100/XSA-
+BUG,e.g.,XSA-37/XSA-102/XSA-111/XSA-145/XSA-168,a 101/XSA-108/XSA-132. They either begin with a memory
+page fault, e.g., XSA-26/XSA-84/XSA-92/XSA-96/XSA-173, corruption, e.g., reading out of boundary, or begin with an
+or other kinds of fatal fault, e.g., XSA-12/XSA-44, respec- uninitialized memory mapped or copied to attacker’s VM or
+tively),thehandlerofwhichcausesthehypervisortopanic.In Xen slice. In the unmodified Xen, a memory corruption could
+an unmodified Xen, this will directly crash the hypervisor and expose the memory of the whole system to the attacker. Also,
+lead to host DoS. In Nexen, the handlers for such exceptions memory pages can be passed freely inside the hypervisor,
+are modified: whenthe attackhappens inthe contextofa Xen leaving a chance for sensitive data to flow to the attacker. In
+slice, the attacker’s VM and Xen slice, instead of the whole Nexen,Xen slices are strictly isolated from eachother andthe
+hypervisor, are killed. shared service. Sensitive data from other parts of the system
+arenotvisible(notmapped)inaXenslice.Inadditiontothat,
+We tested Nexen’s effectiveness against this type of attack
+pagesrecycledandpassedtoanewXenslicearemonitoredby
+bycallingacustomizedhypercallthatdirectlytriggeredafatal
+the security monitor, who will make sure they are completely
+exception. Our system successfully survived the attack with
+clearedduringthistransition.Thus,allpathsfromtheattacker
+only the attacker’s guest VM killed.
+to victims’ sensitive data through memory are blocked.
+Host DoS – Infinite Loop, Dead Lock, Live Lock
+The methods used by these attack types to cause a Host We tested Nexen’s effectiveness against this type of attack
+DoS are almost the same. They trap a CPU in a task that by calling a customized hypercall that directly read another
+is non-preemptible for a long time (an extremely long or VM’s state data , to be specific, the domain data structure, in
+infinite loop, e.g., XSA-24/XSA-31/XSA-60/XSA-150/XSA- the context of hypervisor. The attacker’s guest VM was killed
+158, a dead lock, e.g., XSA-30/XSA-74/XSA-127, or repet- instantly without any return address from the hypercall.
+itive long operations, e.g., XSA-11/XSA-45/XSA-89/XSA-
+Info Leak – Misuse Hardware Feature Attacks of this
+118/XSA-146,respectively).OneCPUortheentirehypervisor
+type try to get sensitive data directly through registers in
+will lose response in this condition. If the watchdog is in use,
+the hardware instead of memory, e.g., XSA-52, XSA-62,
+an NMI will be sent to the CPU after timeout, the handler of
+XSA-172. They mostly start with the hypervisor’s failure to
+which will kill the hypervisor. Either way will cause a DoS in
+completely clear up a register’s value. In unmodified Xen,
+theunmodifiedXen.InNexen,thewatchdogisinusetodetect
+when a register starts to serve another VM, value left in it
+the trap of the CPU. The NMI will be received normally, but
+will be accessible to the new VM, potentially leaking the
+its handler is modified in a similar way as fatal exceptions,
+previous user’s information. In Nexen, important registers’
+that is,only the attacker’s Xenslice andVM are killed. If this
+values are checked and initialized when necessary before
+attack occurs in the context of a Xen slice, no critical data
+enteringintotheguest.Althoughsomefieldsaretooexpensive
+in the hypervisor will be corrupted due to aborting the slice,
+or semantically too complex to check, information leaked
+becauseaXenslicedoesnothavethepermissiontoread/write
+throughthosecontainingmostvaluableinformation, e.g.stack
+data in other parts of the hypervisor.
+pointer, PC, EFLAGS, can be avoided.
+We tested Nexen’s effectiveness against this type of attack
+WetestedNexen’seffectivenessagainstthistypeofattacks
+by calling a customized hypercall that directly traps a CPU
+by repeatedly calling a customized hypercall that hang for a
+in a task that is non-preemptible, e.g., an infinite loop in the
+whileandreturnswithoutrestoringstackpointer.Thehypercall
+context of hypervisor. Nexen successfully survived under the
+returns normally with the stack pointer restored every time.
+attack while only the attacker’s guest VM was killed.
+HostDoS–RunOutofResourceAttacksofthistypetry Guest DoS (self) Although guest VM is not the primary
+tocauseahostDoSbyrunningoutspecificresources:memory protection target, Nexen does provide some protection against
+(XSA-149),disk(XSA-130),orslotsofadatastructure(XSA- direct attacks aiming at a guest VM. Typically, a bug in
+34). Eventually, an unmodified Xen could hang, panic for the VM’s Xen slice, mostly related to CPU virtualization, is
+violatinganASSERTION,orcrashforamemorycorruption.In exploited by the VM’s user program to configure the guest’s
+Nexen,eachXensliceandtheVMareassignedwiththeirown running state in a malicious way. For example, in XSA-40,
+share of memory and data structure pools. Attacks attempting an incorrect stack pointer is set for the guest in an operation
+toexhaustresourceswillonlyrunoutitsownshares,resulting thatcanbe triggered bya user program. After returning tothe
+in an error in Xen slice. As described in previous cases, this guest, the malicious running state will crash the VM’s kernel.
+error, no matter which type, will kill the attacker’s own VM Other examples of this type include XSA-10, XSA-42, XSA-
+and Xen slice. 103,andXSA-106.InNexen,theimportantrunningstateswill
+be checked by the gate keeper before context switching to
+We tested Nexen’s effectiveness against this type of attack
+guest. Incorrect and malicious configurations are fixed, which
+by calling a customized hypercall that keeps allocating mem-
+will eliminate a considerable number of attacks.
+ory in the context of the hypervisor. When Nexen’s secure
+allocator was used, nothing happened, because a running Xen We tested Nexen’s effectiveness against this type of attack
+slice allocating extra memory is not allowed. When Xen’s by calling a customized hypercall that sets the guest VM’s
+11program counter (PC) to 0 before returning. The hypercall 550
+returns normally with PC properly restored.
+500
+Guest DoS (other) This attack type is very similar to
+Guest DoS (self). The difference is that the bug in Xen slice 450
+is triggered by another VM instead of the victim VM’s user
+400
+program.Forexample,inXSA-91,Xenfailstocontextswitch
+the‘CNTKCTL_EL1‘register,whichallowsamaliciousguest 350
+tochangethetimerconfigurationofanyotherguestVM.Other
+examples include XSA-33, XSA-36, and XSA-49. In Nexen, 300
+theapproachisalsosimilar,namely,bycheckingtheimportant
+250
+running states before context switching to guest and fixing
+incorrect and malicious configurations. 200
+by
+cW ale lit ne gste ad cN use tx oe mn’ is zee dffe hc yt piv ee rcn ae ls ls ta hg aa tin hs at ngthi fs orty ape wo hf ila ett aa nck
+d
+kernel_comp pe ilrlbenchbzip2 gcc mcf gobmkhmmersjeng libquantumh264refomnetppastar
+setguestVM’sPCto0beforereturning.Thehypercallreturns
+normally with PC properly restored.
+Limitation Nexen has mainly three aspects of limitations,
+which will be fixed in our future work. First, Nexen cannot
+handle vulnerabilities in the shared service. In our design,
+shared service is a unique component and is shared by all
+Xen slices. If a logic error residing in this part is exploited,
+the hypervisor may be compromised. Second, Nexen does not
+prevent abuse of I/O devices well. For example, disks are not
+managed by Nexen, which may be exhausted to cause a DoS.
+This problem can be addressed by extending Nexen’s features
+to cover these I/O device resources. Third, since Nexen is
+unable to capture all iret instructions used to return to a PV
+guest currently, a PV guest’s Xen slice compromised by other
+VMs can bypass the gate keeper’s sanity check and arbitrarily
+modify the guest’s running state. Fortunately, this can only
+result from a malicious administrator.
+VI. PERFORMANCE EVALUATION
+We evaluated Nexen’s performance overhead by running
+standard benchmarks in a guest VM. We use SPEC CPU2006
+and Linux kernel compilation to evaluate CPU and memory
+overhead and IOzone (a filesystem performance benchmark)
+andiperf3(anetworkperformancebenchmark)toevaluatethe
+I/Ooverhead.Theconfigurationofthetestingmachineislisted
+in the Table XI. The configuration of benchmarks are listed in
+Table XII. “Round” means the times we ran the benchmark.
+We show the averageresults along with standarddeviations in
+bar graphs.
+The results of CPU and memory related benchmarks are
+presented in Figure 6. The Y-axis shows the running time
+of benchmarks. For purely CPU-intensive applications, e.g.,
+perlbench, h264ref, and astar, there is nearly no overhead.
+This is reasonable because Nexen mostly lies in the critical
+path of memory operations. CPU execution can rarely be
+interceptedbyNexen.Evenfortherelativelymemory-intensive
+kernel compilation benchmark, the overhead, less than 1%, is
+negligible. One reason is that the good control flow pattern
+of Nexen avoids excessive interleaving among different Xen
+slices and the shared service. Xen hypervisor’s proper usage
+of EPT related hardware feature reduces a lot of VMExits for
+EPT violation, which further reduces the frequency of calling
+Nexen’ssanitycheckingfunctionTherearebenchmarkswhere
+Nexen slightly out-performs the unmodified Xen, e.g., gcc,
+mcf and libquantum. Considering they show relatively high
+)s(
+tsoc
+emit
+Nexen
+Xen
+Fig.6. PerformancedataofCPUandmemorybenchmarks.
+9e+06
+8e+06
+7e+06
+6e+06
+5e+06
+4e+06
+3e+06
+2e+06
+1e+06
+0
+ReadWriteRe-readRe-writeReverseRS et ari ddeReaR dandomRR ea an ddom WM ri ix teed WoP rkr le oa ad dPwriteFreadFwriteiperf3
+)s/BK(
+tuphguorhT
+Nexen
+Xen
+Fig.7. PerformancedataofI/Obenchmarks.
+standard deviations, this could be attributed to measurement
+variation.
+TheresultsforI/OrelatedbenchmarksarepresentedinFig-
+ure7.Iperf3isasimpletoolmeasuringthenetworkthroughput
+of a system. In our test, the PV drivers, now supported by the
+native Linux kernel, were used for I/O. Since the data mostly
+flows through the shared memory between the guest VM and
+Dom0,thehypervisorisoutofthecriticalpathofnetworkI/O.
+This explains the extremelylow overheadin this test (0.02%).
+IOzone tests various aspects of a filesystem, which indirectly
+reflectthediskI/Othroughput.4KBblocksize,20MBfilesize
+and 4 threads were used in this test. The standard deviations
+forthisbenchmarksetisextremelylarge.Weran50roundsof
+thetesttostabilizetheresultasmuchaspossible.Benchmarks
+where Nexen out-performs the unmodified Xen are probably
+result of measurement variation. However, we can not rule
+out the possibility that Nexen changes the pattern of caching
+and buffering in a way that favors these specific operations.
+Generally speaking, reading operations are less affected by
+Nexen compared to writing operations. The average overhead
+in the I/O part is about 2.4%.
+Overall, the average overhead of Nexen is about 1.2%.
+Nexen mainly adds to the latency of VMExits and MMU
+updates. With PV drivers and latest hypervisor version used
+12TABLEIX. CASESTUDYONDIFFERENTRESULTSANDTYPESOFATTACKS.
+Result AttackType Number CaseStudies
+False 6 XSA-111(CVE-2014-8866).A pieceofhypercallparametertranslationcode assumesthatonlythe lower 32bits ofa
+BUG_ON 64-bitregistervariableareused,violationofwhichwilltriggeraBUG_ONthatkillsthehypervisor.Thisconditioncanbe
+deliberatelyviolatedbyanHVMguestbytemporarilychangingto64-bitmodeandpassaninvalid64-bitparameter.In
+HostDoS Nexen,thevulnerablecoderunsinthecontextofaXenslicebecauseitcanonlybeinvokedbyamemorymanagement
+hypercall.ThemodifiedBUG_ONlogicwillonlykillcurrentXensliceVMwhenitistriggered.
+GeneralFault 9 XSA-44(CVE-2014-1917).ThelogicprocessingSYSENTERinstructionfailstoclearNTflaginEFLAGSregister,which
+willleadtoanestedGPfaultinsomesituations.ThisisconsideredbytheoriginalXenafatalfault,andwillcausethe
+hypervisortocrash.InNexen,thevulnerablecoderunsinthecontextofaXenslicebecauseit,ispartofcodeemulation
+subsystem.ThemodifiedGPfaulthandlerwillkillonlythecurrentXensliceandVMinthissituation.
+PageFault 26 CVE-2014-3967(oneoftwoCVEsinXSA-96).TheimplementationofaHVMcontroloperation(HVMOP_inject_msi)
+failstodosufficientcheckforpossibleconditionsofanIRQ.ThisallowsaNULLpointertobede-referenced,whichwill
+leadtoapagefaultthatcrashesthehypervisor.InNexen,thispieceofcoderunsinthecontextofaXenslicebecauseit
+ispartofcodeemulationsubsystem.ThemodifiedpagefaulthandlerwillkillonlythecurrentXensliceandVMafter
+thefault.
+LiveLock 9 XSA-5(CVE-2011-3131).A VMdirectlycontrolling aPCI(E)devicecouldissue DMA requesttoaninvalidaddress.
+Althoughthisrequestwillbeproperlyrejected,theerrorhandlinglogicisnotpreemptableandtakesquitesometime.
+RepeatingthisinvalidoperationwilllivelocktheCPU.InunmodifiedXen,thehypervisor willprobablybehungand
+resultinaDoS.InNexen,thispieceofcodebelongstotheI/Osubsystem,whichrunsinXenslicecontext.TheCPU
+underattackwillbedetectedbythewatchdogduetolosingresponseforalongtime.TheNMIsentbythewatchdogwill
+interruptthetaskanditshandlerwillkilltheattacker’sXensliceandVM.
+DeadLock 4 XSA-74(CVE-2013-4553).Thetwolocks’page_alloc_lock’and’mm_rwlock’arenotalwaystakeninthesameorder.
+Amaliciousguestcouldpossiblytriggeradeadlockduetothisflaw,leadingtoahostDoSintheunmodifiedXen.In
+Nexen,thispieceofcode,althoughdeprecatednow,shouldbelongtodomaincontrolsubsysteminXenslicecontext.The
+deadlockwillcauseoneormoreCPUstoloseresponseandtriggerwatchdog’sNMI.Itshandlerwillkilltheattacker’s
+XensliceandVM.
+InfiniteLoop 8 XSA-150 (CVE-2015-7970). Under certain circumstance, the hypervisor will search an HVM domain in Populate-on-
+Demand mode for memory to reclaim. This operation runs without preemption. The guest VM could manipulate its
+memoryinawaythatthesearchbecomesalinerscanning,whichwillhangthehypervisorforalongtime.Inunmodified
+Xen,thismeansahostDoS.InNexen,thislogic,belongingtomemorymanagementsubsystem,worksinthecontextof
+Xenslice.Similartopreviousexamples,thetaskwillbeinterruptedbywatchdog’sNMIandtheattacker’sXensliceand
+VMwillgetkilledinthehandler.
+Run Out of 4 XSA-149(CVE-2015-7969).TheVCPUpointerarrayinadomaindatastructureisnotfreedondomainteardown.This
+Resource memory leak,whenaccumulatedover time, couldexhaustthe host’smemory. Inanunmodified Xen,this will leadto
+hostDoS.InNexen,thisleakwillnotaccumulateovertime.TheVCPUdatastructure,oneofper-domaindatastructures,
+isallocatedbyNexen’ssecureallocatorandassignedtothe domain’sXenslice.Itsmemoryregionisrecordedinthe
+allocator’smemorypoolalongwiththedomain’sID.Ondomainteardown,thememorypoolistraversedtosearchforall
+memoryregionsboundtoit.Leakedmemorywillbedetectedandrecycledduringthisprocess.
+Memory Out- 11 XSA-108.Xen’scodeemulationforAPICerroneouslyemulatesreadandwritepermissionsfor1024MSRswherethere
+InfoLeak
+of-boundary areactually256MSRs.Althoughwritingoutofboundaryisreplacedbyno-opwhichwilldonothing,thereadoperation
+Access cangobeyondthepagesetupforAPICemulationandpotentiallygetsensitivedatafromthehypervisororotherVMs.In
+Nexen,thispieceofcoderunsinthecontextofXenslicebecauseitispartofcodeemulationsubsystem.Sincesensitive
+dataofotherVMsandthehypervisorareallhidden(unmapped)fromtheXenslice,theattackerwilleitherreadherown
+dataorreadanunmappedpage,whichleadstoapagefaultthatkillsherownVMandXenslice.
+Misuse Hard- 3 XSA-52. This vulnerability appears on AMD CPU, which is different from Nexen’s platform. Given an equivalent
+wareFeature implementationonthatplatform,thisattackcanbestopped.XSAVE/XSTORE,commonlyusedtosaveandrestoreuser
+runningstate,ismisusedsothatinformationotherthanFOP,FIPandFDPx87registersareignoredwhilesavingand
+restoringstateswithapendingexception.ThisleakstherunningstateofpreviousVMtotheattacker.InNexen,thegate
+keeperhasaninternalsaveforimportantrunningstates.Whenreturningtoguest,registersnotrestoredwillbedetected
+andfixed,whichwipestheinformationleftbytheprevioususer.
+Guest Various 10 InXSA-40,anincorrectstackpointer issetfortheguestin anoperationthatcanbetriggeredbyauser program.In
+DoS(self) unmodifiedXen,amalicioususercouldcrashtheguestVMbytriggeringthisbug.InNexen,theincorrectvalueofstack
+pointer will be detectedand fixedby the gate keeper beforereturning to the guest. The guest VM will keepworking
+normally.
+Guest Various 1 InXSA-91,Xenfailstocontextswitchthe’CNTKCTL_EL1’register,whichallowsamaliciousguesttochangethetimer
+DoS configurationofanyotherguestVM.ThisvulnerabilityappearsonARMplatform.GivenasystemequivalenttoNexen
+(other) implementedonARM,themaliciousvalueoftimerregisterwillbedetectedandfixedbythegatekeeperbeforereturning
+tothevictimguestVM.TheguestVMwillkeepworkingnormally.
+TABLEX. ANALYSISOFATTACKSNEXENCANNOTPREVENT
+Target Reason Number Analysis
+LogicError 15 This type of vulnerabilities results from the inherent error of codes in the shared part of the system, e.g., domain
+building(XSA-83). Since the shared part is critical in our system and has relatively higher privilege, exploiting a bug
+SharedPart
+inthispartwillallowtheattackertodoalmostanythingdestructivetowardsthewholesystem.DuetothedesignofNexen,
+thesedestructiveresultscannotbeprevented.
+Not 7 Xenincludessomefeaturesthatarenotessentialforvirtualization,e.g.,PMU(XSA-163).Nexencurrentlydoesnotconsider
+Supported vulnerabilitiesintheseparts.Asaresult,theyaresharedbythewholesystembydefaultandvulnerabilitiesinthemcan
+Feature leadtothecompromisingofthewholesystem.However,thisproblemcanbesolvedbyextendingNexenandcovering
+thesefeatures.
+Not 2 NexenonlylimitmemoryusageofXenslicesandguestVMs.Otherhardwareresourcesareleftuncontrolledandshared
+Supported bythewholesystem,e.g.,disk(XSA-130).Ifanattackerwantstoexhaustoneoftheseresources,thehostcouldcrash.
+Resource Theycanbesolvedbyextendingourarchitecturetocoverthesenon-memoryresourcesandprotectandisolatethemina
+similarwayasmemory.
+Hardware 3 Theyarecausedbybugsinhardware.Forexample,inXSA-9,afterexecutingacertainsequenceofsafeoperations,the
+Bug CPUcouldunexpectedlylockitselfup.Thesevulnerabilitiescannotbeavoidedunlessthemanufacturerofthehardware
+fixesthebugorthesystemrefusestobootwhendetectingtheseproblematichardware.
+Guest IagoAttack 10 ThegatekeepermonitorseverytransitionbetweenthehypervisorandguestVMs.Typically,ifanattackerwantstoattack
+theguestVMkernelorleaksomeinformationtotheguest,therunningstateoftheVMwillbecompromisedtocarry
+maliciousorsensitivedata.Ifthecompromiseddataissimpleenoughsothatapreviousstateandtheoperationnumber
+aresufficienttocheckthevalidityofanewdata,Nexencanstopthisattack.However,iftheattackiswelldesignedlike
+anIagoattack,whichattackswithoutbreakingtheisolation,andverifyingwhichrequiresarecomputing,Nexencannot
+preventitcurrently.
+13TABLEXI. H/WS/WENVIRONMENT
+Hardware-assisted Hypervisor Security. NoHype [19],
+[29] replaces the software hypervisor by hardware virtual-
+Hostsystem Xen4.5
+ization extensions of processor and I/O devices. However
+HostCPU IntelCorei7-4470@3.4GHz*8
+it loses the flexibility of resource management brought by
+Hostmemory 16GB
+virtualization. HyperSentry [5] leveragesSystem Management
+Guestsystem Ubuntu16.04-1(HVM) Mode (SMM) to protect the hypervisor’s control flow. H-
+GuestVCPUnumber 4 SVM[17]andHyperWall[27]decouplememorymanagement
+and security protection. The hypervisor can manage all the
+Guestmemory 4GB
+memory resource but cannot access the memory arbitrarily,
+e.g.,oncesomememorypagesareassignedtoaguestVM,the
+TABLEXII. BENCHMARKCONFIGURATION
+hardware ensures that it cannot be accessed by the hypervisor
+benchmark round config withoutexplicitly sharing.Such designcaneffectivelyprevent
+attacks from the hypervisor to guest VMs, but requires non-
+IOzone 50 4KBblocksize,20MBfilesize,4threads
+SPECCPU2006 9 realworldworkload trivial hardware modifications.
+KernelCompiling 20 linux4.7,defaultconfig
+iperf3 20 TCPpackage There are also many work on designing new hardware to
+protect guest VMs from untrusted hypervisor [17], [28], [36].
+Some of the design has already been deployed in commodity
+where the frequency of both events dramatically drops, the hardware, e.g., Intel SGX [3], [15], [21]. Haven [8] success-
+overhead of Nexen can be further reduced. fully runs unmodified application inside enclave protected by
+hardwarefromsystemsoftwareincludingoperatingsystemand
+hypervisor.However,thesesystemsusuallyconsidertheattack
+VII. RELATED WORK
+from the malicious hypervisor, but does not consider some
+Hypervisor Re-organization for Security. Besides the types of attack against the hypervisor, e.g., the DoS attack
+systems mentioned in II-B, Nova [25] reorganized the hy- that crashes the entire host machine.
+pervisor to several per-VM hypervisors running in user mode
+MMU Virtualization. HyperSafe [32] proposes a tech-
+and one small privileged micro-hypervisor running in kernel
+nique named non-bypassable memory lockdown that gathers
+mode. The attacks from one VM can be limited in one per-
+all the MMU operations to a specific module and deprivileges
+VM hypervisor. Min-V [23] uses reduce the TCB of the
+other modules to do similar operations. HyperSafe focuses on
+hypervisorbyremovingalltheunusedcodebasedynamically,
+protection of hypervisor’s control flow integrity (CFI), while
+which is called delusional boot. Min-V first boots a guest
+oursystemconsiders onXendecompositionanddeprivileging
+VM on a full-fledged hypervisor, then takes a snapshot of
+besides CFI. Nested Kernel [14] further provides MMU vir-
+the VM and migrates it to the production platform with a
+tualization as a primitive of operating system to enhance the
+different hypervisor that disables all the virtual devices that
+security of all kinds of kernel modules. On ARM platform,
+are not critical to running VMs, and restores the VM on
+TZ-RKP [4] puts the MMU controller into a “secure world”
+the new platform. SSC [10] proposes a solution to enable
+protectedbyARMTrustZone[2].SKEE[6]alsodeprivingthe
+multiple Dom0s, which is called “UDom0” that runs as user-
+OSkernelfromcontrollingMMU,butnotusingTrustZonefor
+level service domains, and enforce the isolation between the
+better performance.
+UDom0s. These works aimed to protect the hypervisor from
+guest VMs by reducing the trusted computing base (TCB).
+VIII. CONCLUSION
+However, they only provide limited protection against attacks
+from a malicious hypervisor. In this paper, we have conducted a systematic research on
+allthe191(effective)vulnerabilitiespublishedinXenSecurity
+Hypervisor Fault Tolerance. There are also many re-
+Advisories (XSA), of which 144 (75.39%) are directly related
+searches that target hypervisor’s fault isolation and tolerance.
+to the hypervisor itself. We then analyzed the distribution of
+ReHype [20] tolerates hardware faults and hypervisor bugs by
+bugsamongdifferentcomponentsandconsequences.Basedon
+microrebooting. It can preserve the state of all running VMs
+the above analysis, we proposed a new architecture for Xen
+so the recovery is transparent to the guest VMs. FTXen [18]
+hypervisor, named Nexen, that provides a way to deconstruct
+focuses on tolerating in-field hardware errors of virtualization
+Xen so that a malicious hypervisor cannot directly access the
+software stack on relaxed hardware. It isolates the faults of
+data within a guest VM, and a malicious guest VM cannot
+a relaxed core within the boundary of the guest VM running
+affect other VM or the host system. Nexen decomposes the
+on that core without affecting other VMs or the hypervisor.
+Xen hypervisor into different internal domains: multiple per-
+Another way to isolate the fault is nested virtualization,
+VM slices and one shared service. Each internal domain has
+e.g., the Turtles project [9] and CloudVisor [37]. Intel keeps
+least privilege and are isolated, so that even if one gets com-
+improving the hardware support for nested virtualization for
+promised,itwillnotaffectotherones.Wehaveimplementeda
+better performance, and recently Xen also adds support for
+prototype of our designwhichcancorrectlyhandle 107out of
+nested virtualization in its mainstream [16]. TinyChecker [30]
+144 vulnerabilities (74%). The performance evaluation results
+achieves similar goal with nested virtualization by adding
+also indicate that the overhead is negligible.
+a small software layer for hypervisor failure detection and
+recovery.Thesesystemsconsiderhardwarefaultsandsoftware
+ACKNOWLEDGMENT
+bugs instead of security vulnerabilities, thus they do not take
+attacks like privilege escalation or bypassing the mechanism We thank the anonymous reviewers for their insight-
+of fault tolerance into consideration. ful comments. This work is supported in part by National
+14Key Research and Development Program of China (No. [18] XinxinJin,SoyeonPark,TianweiSheng,RishanChen,ZhiyongShan,
+2016YFB1000104), China National Natural Science Founda- and Yuanyuan Zhou. Ftxen: Making hypervisor resilient to hardware
+tion (No. 61303011, 61572314 and 61525204), a research faults on relaxed cores. In 2015 IEEE 21st International Symposium
+onHighPerformanceComputerArchitecture(HPCA),pages451–462.
+grant from Huawei Technologies, Inc., National Top-notch
+IEEE,2015.
+Youth Talents Program of China, Zhangjiang Hi-Tech pro-
+[19] E. Keller, J. Szefer, J. Rexford, and R.B. Lee. NoHype: virtualized
+gram(No.201501-YP-B108-012),afoundationfortheAuthor cloudinfrastructurewithoutthevirtualization. InProc.ISCA,2010.
+of National Excellent Doctoral Dissertation of PR China
+[20] Michael Le and Yuval Tamir. Rehype: enabling vm survival across
+(TS0220103006), Singapore NRF (CREATE E2S2), NSF via hypervisorfailures. InACMSIGPLANNotices,volume46,pages63–
+grant number CNS 1513687, and ONR via grant PHD. 74.ACM,2011.
+[21] Frank McKeen, Ilya Alexandrovich, Alex Berenzon, Carlos V Rozas,
+HishamShafi, Vedvyas Shanbhogue, and Uday R Savagaonkar. Inno-
+REFERENCES
+vativeinstructionsandsoftwaremodelforisolatedexecution.InHASP,
+[1] http://ipads.se.sjtu.edu.cn/xsa/. page10,2013.
+[2] Tiago Alves and Don Felton. Trustzone: Integrated hardware and [22] Derek Gordon Murray, Grzegorz Milos, and Steven Hand. Improving
+softwaresecurity. ARMwhitepaper,3(4):18–24,2004. xen security through disaggregation. In Proceedings of the fourth
+ACMSIGPLAN/SIGOPSinternationalconferenceonVirtualexecution
+[3] Ittai Anati, Shay Gueron, Simon Johnson, and Vincent Scarlata. In-
+environments,pages151–160.ACM,2008.
+novative technology for cpu based attestation and sealing. In HASP,
+volume13,2013. [23] Anh Nguyen, Himanshu Raj, Shravan Rayanchu, Stefan Saroiu, and
+AlecWolman. Delusional boot: securing hypervisors without massive
+[4] AhmedMAzab,PengNing,JiteshShah,QuanChen,RohanBhutkar,
+re-engineering. In Proceedings of the 7th ACM european conference
+Guruprasad Ganesh, Jia Ma, and Wenbo Shen. Hypervision across
+onComputerSystems,pages141–154.ACM,2012.
+worlds: Real-time kernel protection from the arm trustzone secure
+world. In Proceedings of the 2014 ACM SIGSAC Conference on [24] Jerome H Saltzer and Michael D Schroeder. The protection of
+ComputerandCommunicationsSecurity,pages90–102.ACM,2014. informationincomputersystems.ProceedingsoftheIEEE,63(9):1278–
+1308,1975.
+[5] AhmedMAzab,PengNing,ZhiWang,XuxianJiang,XiaolanZhang,
+and Nathan C Skalsky. Hypersentry: enabling stealthy in-context [25] U. Steinberg and B. Kauer. NOVA: A microhypervisor-based secure
+measurementofhypervisorintegrity. InProceedingsofthe17thACM virtualization architecture. In Proc. Eurosys, pages 209–222. ACM,
+conference on Computer and communications security, pages 38–49. 2010.
+ACM,2010. [26] Michael M.Swift,BrianN.Bershad, andHenry M.Levy. Improving
+[6] Ahmed M Azab, Kirk Swidowski, Jia Ma Bhutkar, Wenbo Shen, theReliabilityofCommodityOperatingSystems.ACMTrans.Comput.
+Ruowen Wang, and Peng Ning. Skee: A lightweight secure kernel- Syst.,23(1):77–110, February2005.
+levelexecutionenvironmentforarm. 2016. [27] J. Szefer and R.B. Lee. Architectural support for hypervisor-secure
+[7] P.Barham,B.Dragovic,K.Fraser,S.Hand,T.Harris,A.Ho,R.Neuge- virtualization. InProc.ASPLOS,2012.
+bauer, I. Pratt, and A. Warfield. Xen and the art of virtualization. In [28] J. Szefer and R.B. Lee. Architectural support for hypervisor-secure
+Proc.SOSP.ACM,2003. virtualization. InProceedingsofASPLOS,2012.
+[8] Andrew Baumann, Marcus Peinado, and Galen Hunt. Shielding ap- [29] JakubSzefer,EricKeller,RubyBLee,andJenniferRexford. Eliminat-
+plications from an untrusted cloud with haven. ACM Transactions on ingthehypervisorattacksurfaceforamoresecurecloud. InProceed-
+ComputerSystems(TOCS),33(3):8,2015. ings of the 18th ACM conference on Computer and communications
+[9] Muli Ben-Yehuda, Michael D Day, Zvi Dubitzky, Michael Factor, security,pages401–412.ACM,2011.
+Nadav Har’El, Abel Gordon, Anthony Liguori, Orit Wasserman, and [30] Cheng Tan, Yubin Xia, Haibo Chen, and Binyu Zang. Tinychecker:
+Ben-Ami Yassour. The turtles project: Design and implementation of Transparent protection of vms against hypervisor failures with nested
+nestedvirtualization. InOSDI,volume10,pages423–436,2010. virtualization. In IEEE/IFIP International Conference on Dependable
+[10] ShakeelButt,HAndrésLagar-Cavilla,AbhinavSrivastava,andVinod SystemsandNetworksWorkshops(DSN2012),pages1–6.IEEE,2012.
+Ganapathy. Self-servicecloudcomputing. InProceedingsofthe2012 [31] Andrew S. Tanenbaum, Jorrit N. Herder, and Herbert Bos. Can We
+ACM conference on Computer and communications security, pages Make Operating Systems Reliable and Secure? Computer, 39(5):44–
+253–264.ACM,2012. 51,May2006.
+[11] IntelCo.http://www.intel.com/content/www/us/en/processors/architectures- [32] Zhi Wang and Xuxian Jiang. Hypersafe: A lightweight approach
+software-developer-manuals.html. to provide lifetime hypervisor control-flow integrity. In 2010 IEEE
+[12] PatrickColp,MihirNanavati,JunZhu,WilliamAiello,GeorgeCoker, SymposiumonSecurityandPrivacy,pages380–395.IEEE,2010.
+Tim Deegan, Peter Loscocco, and Andrew Warfield. Breaking up [33] Zhi Wang, Chiachih Wu, Michael Grace, and Xuxian Jiang. Isolating
+is hard to do: security and functionality in a commodity hypervisor. commodity hosted hypervisors with hyperlock. In Proceedings of the
+In Proceedings of the Twenty-Third ACM Symposium on Operating 7th ACM european conference on Computer Systems, pages 127–140.
+SystemsPrinciples,pages189–202.ACM,2011. ACM,2012.
+[13] CVE. Cve-2012-0217. http://www.cve.mitre.org/cgi- [34] ChiachihWu,ZhiWang,andXuxianJiang.Taminghostedhypervisors
+bin/cvename.cgi?name=cve-2012-0217, 2012. with(mostly)deprivilegedexecution. InNDSS.Citeseer,2013.
+[14] NathanDautenhahn,TheodorosKasampalis,WillDietz,JohnCriswell, [35] Xen. https://xenbits.xen.org/xsa/,2016.
+andVikramAdve. Nestedkernel:Anoperatingsystemarchitecturefor [36] Yubin Xia, Yutao Liu, and Haibo Chen. Architecture support for
+intra-kernel privilege separation. ACM SIGPLAN Notices, 50(4):191– guest-transparentvmprotectionfromuntrustedhypervisorandphysical
+206,2015. attacks. InHPCA,pages246–257,2013.
+[15] Matthew Hoekstra, Reshma Lal, Pradeep Pappachan, Vinay Phegade, [37] FengzheZhang,JinChen,HaiboChen,andBinyuZang. CloudVisor:
+andJuanDelCuvillo. Usinginnovativeinstructionstocreatetrustwor- RetrofittingProtectionofVirtualMachinesinMulti-tenantCloudwith
+thysoftwaresolutions. InHASP,page11,2013. NestedVirtualization. InProc.SOSP,pages203–216,2011.
+[16] Nested Virtualization Support in Xen. [38] Feng Zhou, Jeremy Condit, Zachary Anderson, Ilya Bagrak, Rob
+http://wiki.xenproject.org/wiki/Nested_Virtualization_in_Xen. Ennals,MatthewHarren,GeorgeNecula,andEricBrewer. SafeDrive:
+[17] Seongwook Jin, Jeongseob Ahn, Sanghoon Cha, and Jaehyuk Huh. SafeandRecoverableExtensionsUsingLanguage-basedTechniques.In
+Architectural Support for Secure Virtualization under a Vulnerable Proceedings of the 7th Symposium on Operating Systems Design and
+Hypervisor. InMICRO,2011. Implementation, OSDI ’06, pages 45–60, Berkeley, CA, USA, 2006.
+USENIXAssociation.
+15

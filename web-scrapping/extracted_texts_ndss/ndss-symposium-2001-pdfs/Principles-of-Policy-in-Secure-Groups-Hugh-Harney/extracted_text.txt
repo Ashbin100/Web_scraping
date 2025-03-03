@@ -1,0 +1,929 @@
+Principles of Policy in Secure Groups
+HughHarney AndreaColgrove
+SPARTA, Inc.
+Columbia, MD
+hh (cid:0) acc
+(cid:1)
+Patrick McDaniel
+@sparta.com
+(cid:2)
+EECSDept.
+UniversityofMichigan, AnnArbor
+pdmcdan@eecs.umich.edu
+Abstract
+Securitypolicyisincreasinglybeingusedasavehiclefor
+specifyingcomplexentityrelationships. Whenusedtode-
+finegroupsecurity,policymustbeextendedtostatetheen-
+tiretyofthesecuritycontext.Forthisreason,thepolicyre-
+quirementsofsecuregroupsaremorecomplexthanfound
+intraditionalpeercommunication;grouppoliciesconvey
+informationaboutassociationsgreaterandmoreabstract
+than their pair-wise counterparts. This paper identifies
+andillustratesuniversalrequirementsofsecuregrouppol-
+icy and reasons about the adherenceof the Group Secu-
+rityAssociationKeyManagementProtocol(GSAKMP)to
+theseprinciples.
+1. Introduction
+The use of widely distributed resources on the Inter-
+net has strained existing network infrastructures. Until
+recently, applications and services were targeted to envi-
+ronments spanning few administrative domains support-
+ing a relatively static user community. However, the ex-
+plosion of new forms of communication has invalidated
+manyofthebasicassumptionsuponwhichthesesystems
+werebuilt. Thus,thedesignofthesesystems,andoftheir
+security in particular, has recently come under consider-
+ablescrutiny.
+An approach addressing the requirements of these
+(cid:3)
+emerging applications and services is the use of policy.
+Through policy, a system may address the (sometimes
+conflicting) needs of all communication participants in
+real time. Each session occurs within the context of a
+shared policy defining the acceptable behavior and re-
+quirements of its participants. Thus, rather than relying
+solelyonthesystemdesignersornetworkadministration
+to define service behavior,the interests ofall paritiesare
+considered at the point at which communication occurs.
+This paper considers a number of principles for the con-
+structionofonekindofpolicy,securegroupcommunica-
+tionpolicy.
+We define a group security policy as a statement of
+the entirety of security relevant parameters and facilities
+usedtoimplementthegroup. Thisbestfitstheviewpoint
+of policy as defining how security directs group behav-
+ior,whoaretheentitiesallowedtoparticipate,andwhich
+mechanismswillbeusedtoachievemissioncriticalgoals.
+Note that this definition isnot restricted to electronically
+distributedstatements,policyisoftentheresultofsystem
+designandconfiguration.
+Thispaperconsidersthedefinitionandrequirementsof
+security policies in groups. A number of principles for
+thedesignofpolicyservicesingroupcommunicationare
+identified. These principles are the result of a system-
+atic analysis of the policy requirements unique to secure
+groupsandthosecommontobothpeerandgroupcommu-
+nication. Wereasonaboutthesecurityofarbitrarypolicy
+through the application of known principles and the re-
+ductionofgroupbehaviortopair-wiseoperations.
+Weexplicitlydonotattempttoproposeanapproachfor
+Thiswork is supported in part underthe National Science Foun-
+the formal analysis of group systems. We do, however,
+dationGrant#ATM-9873025andbytheDefenseAdvanced Research
+Projects Agency (DARPA) and Air Force Research Laboratory, Air seektoidentifyuniversalrequirementsofpolicymanage-
+ForceMaterielCommand,USAF,underagreementnumberF30602-00- mentinsecuregroups. Indevelopingtheserequirements,
+2-0508. TheU.S.Governmentisauthorizedtoreproduceanddistribute we investigate where known and accepted principles of
+reprintsforGovernmentalpurposesnotwithstandinganycopyrightan-
+(peer oriented) secure system construction and analysis
+notationthereon.Theviewsandconclusionscontainedhereinarethose
+oftheauthorsandshouldnotbeinterpretedasnecessarilyrepresenting areapplicabletogroups.
+theofficialpoliciesorendorsements,eitherexpressedorimplied,ofthe Secure groups protect content through the application
+DefenseAdvancedResearchProjectsAgency(DARPA),theAirForce of cryptographic methods on shared secrets. There are
+ResearchLaboratory,ortheU.S.Government.
+two predominant approachesused toestablish and main-tain (cid:4) these secrets; collaborative group management [28]
+andauthorizeddownloadofgroupdata[17,15,22,21].
+Collaborativegroupsbuildtrustthroughtheinclusionof
+all group members in security relevant actions. Because
+eachactionrequirestheparticipationofthemembership,
+managementcostsgrowwithgroupsize. Hence,collabo-
+rativegroupsareappropriateforsmallgroupswithmoder-
+atetohighcommunicationandcomputationalresources. Subgroup(cid:13)
+Conversely,authorizeddownloadgroupsrelegatesecu-
+rity relevant functions to trusted group entities. Trusted
+entities enforce the group policy and distribute session
+keys. However, authorized download groups are limited
+by trust; each member must trust the stated authorities
+(b)(cid:13)
+ordefer participation. Because oftheirrelativelowcost,
+these groups are appropriate for larger or more dynamic
+groups.
+Much of the work relevant to security policy in group
+communicationsystemsfallsintotwocategories. Intrust
+managementsystems[3,4,7],policyisspecifiedandeval-
+uated within a well-defined and provably correct frame-
+work. However,enforcement ofpolicyislargely outside
+the scope of these systems. Conversely, policy directed
+securegroupcommunicationsystems [17,16,10,21]are
+chiefly designed to allow the definition and implementa-
+tionofpoliciesforsecuritymechanisms(e.g.,parameters
+andalgorithmsforsessionkeying).Whiletheselattersys-
+temsprovidecorrectenforcementofspecificpolicies,itis
+not immediately clear that the distribution and composi-
+tionofthesepoliciesalwaysresultsinasecuregroup.
+We attempt to reconcile existing policy approaches
+throughthestudyoftherequirementsofgroups;systems
+require the correct specification, distribution, evaluation,
+andenforcementofpolicytobesecure. Incompletespec-
+ification or incorrect implementation of any one of these
+processescanleadtoaninsecuresolution.
+The principals described in the followingsection were
+used to guide the design of the Group Security Associ-
+ationKeyManagementProtocol(GSAKMP)architecture
+[15,14].Summarizedinthelattersections,theanalysisof
+GSAKMP seeks toshowthat GSAKMP groups notonly
+enforceagivenpolicy,butdosoconsistentlyandsecurely.
+GSAKMP definesanarchitecture andprotocol usedto
+implement secure multicast groups. Growing out of the
+GKMP[17,16]protocol,GSAKMPfocusesontheimple-
+mentationofsecuregroupsthroughthedefinition,evalua-
+tion,andenforcementofgrouppolicy.Thephysicalman-
+ifestationofagrouppolicyinGSAKMPisapolicytoken.
+AGSAKMPpolicytokenisahighlyflexibledatastruc-
+ture used to define the behavior of a group. The token
+defines an exhaustive list of policies (there are over 150
+different fields supporting a wide range of policies and
+mechanisms). With small exception, the group is free to
+define policies containing as many (or as few) of these
+(cid:5)
+Controllers(cid:13) (cid:6)
+Group(cid:13) (cid:7)
+...(cid:13)
+Subgroup(cid:13)
+...(cid:13)
+(cid:5)
+Group(cid:13) (cid:7)
+Controller(cid:13) (cid:6)
+Group(cid:13)
+Members(cid:13)
+(a)(cid:13)
+(cid:7)
+Group(cid:13)
+...(cid:13)
+(cid:7)
+Controller(cid:13) (cid:6)
+Members(cid:13)
+Figure 1. Secure group - A group is a collec-
+tion of cooperating entities operating under a
+shared security policy. Groups may be orga-
+nizedinto aflatstructure(a), or asacollection
+ofdistinctsubgroups(b).
+fields asis desirable. Thus, groups withvaryingabilities
+andrequirementscanbedefinedthroughthepolicytoken.
+The remainder of this paper is organized as follows.
+Section 2 developsa definition and set of universalprin-
+ciples for the specification and subsequent use of pol-
+icy in secure groups. Section 3 reasons about the com-
+pliance of the GSAKMP with these policy principles.
+Section4reviewsseveralworksrelevanttothedefinition
+and implementation group security policy. We conclude
+inSection5.
+2. GroupSecurity Policy
+Thissectionconsiderstherequirementsofpolicyman-
+agementinsecuregroupcommunicationsystems.Asetof
+principles derived from these requirements is developed
+andillustrated. Webegininthenextsubsectionbystating
+adefinitionofsecuregroupsandtheirpolicies.
+2.1.SecureGroupsandPolicy
+DescribedinFigure 1,we defineasecuregroupasthe
+collectionofcooperatingentitiesoperatingunderashared
+security policy. Each group contains a group controller
+from which keying material logically emanates. Groups
+canbeorganizedintologicalsubgroups,withdistincten-
+titiesservingassubgroup-controllers(forexample,asde-
+fined in Iolus [22]). Group members may join, leave, or
+become compromised at any time during the session. In
+particular,wedefinetheparticipantsofagroupasfollows:
+(cid:8)
+Group Owner (GO): Also known as the policy
+issuer, the GO specifies the group security policy.Action Description
+policycreation create/assertagrouppolicy
+policymodification modify the group policy, policy modification occurs after it is detected
+thatacurrentpolicyininappropriateorunimplementable
+grantrights grantrightstomembers/entitiesexternaltothepolicy
+keycreation createasessionkey,ortogeneraterekeyingmaterial
+groupdestruction disbandthegroup
+keydissemination distributesessionkeysandsupportingkeyingmaterial
+rekeyactioninitiation initiate the group rekey process. This is often used to eject failed or
+compromisedmembers.
+authorizemember authorize/stateauthenticityofgroupmember
+admitmember admitamembertothegroup
+ejectmember removeamemberfromthegroup
+auditgroup monitoraccesscontrolmessagesormembershipinformation
+keyaccess gainaccesstothesessionkey
+Table1.Securityrelevantgroupactions-groupismaintainedthroughtheapplicationofsecurityrelevant
+actions. Anaccesscontrolpolicywillmaptheseactionstoauthorizedparties.
+The policy is specified in accordance with the ex-
+pectedcontentvalueandoperatingenvironment.The
+issuing authority is trusted by all potential group
+memberstostateanappropriatepolicy.
+(cid:8)
+GroupController(GC): TheGCacts asa keydis-
+seminationandaccesscontrolauthority.TheGCen-
+forces group access control policy by creating and
+distributing group keying material to authorized en-
+tities,andinitiatingrekeyingandmemberejectionas
+eventsdictate.
+(cid:8) Subordinate GroupController(SGC): A subordi-
+nate controller performs all group controller func-
+tions,withtheexceptionofsessionkeycreation.
+(cid:8)
+groups. However,manyoftheprinciplesidentifiedinthe
+followingsectionareapplicabletothesegroups.
+Eachpolicyisinitiallystatedassetsofconditionalstate-
+ments defining the possible authorizations and mecha-
+nisms usedto implementa group. Theconditional state-
+ments indicate environment-specific constraints and re-
+quirements of potential sessions. The group owner cre-
+ates the initial policy. An instantiation of the policy1 re-
+sults from the leader evaluationof theconditional policy
+statements. Theinstantiationdefinesthesecurityrelevant
+properties of the group. However, some aspects of the
+group policy are implicitly defined; decisions about how
+thegroupsecurityisimplementedcanbetheresultofsys-
+tem design and configuration. Whether explicitly or im-
+Member (M): The group member is the consumer plicitlydefined,weassertthatanygroupmustspecifythe
+of the group keying material. The member verifies following:
+the policyas correct, and enforcesthe authorization
+policiesasdefinedbythepolicyspecification(i.e.,by
+only accepting appropriately authorized group mes-
+sages).
+Throughout, we assume that members and controllers
+are mutually trusted, i.e., entities receiving a policy ac-
+ceptandenforce(theauthenticated)policyasdirectedby
+its specification. However, members who become com-
+promised may diverge from the specification arbitrarily.
+Weassertentitiesexternaltothegroupandcompromised
+members may intercept messages, modify messages, or
+preventmessagesfrombeingdelivered.
+We note many other, more complicated, models of
+groupexist.Forexample,groupscanconvergeonasingle
+policy through negotiation [10] or assume members are
+untrusted [24]. For brevity, we defer discussion of these
+(cid:8)
+Identification-Eachparticipantand groupmustbe
+unambiguously identified. Failuretocorrectlyiden-
+tify the group policies, messages, and participants
+canleadtoincorrectandinsecureoperation.
+(cid:8)
+Authorization-Agrouppolicymustidentifytheen-
+tities allowed to perform protected actions. Group
+authorizationpartiallydeterminesthetrustembodied
+bythegroup.
+(cid:8) Access Control - Allowable access to group action
+must be stated by policy. An access control policy
+definesamappingbetweentheauthorizedpartiesand
+secure actions in the group, and indirectly, the per-
+1Throughout,whereunambiguous,wewillrefertoaninstantiation
+ofapolicyasthegrouppolicy.missions for group information. We present the set
+ofgroupsecurityrelevantactionsinTable1.
+(cid:8)
+Mechanism - Each policymust statehow the secu-
+rity requirements of the group are to be addressed.
+This includes the identification of the approaches
+used to achieve security guarantees and the param-
+eters of their operation. Thus, a mechanism policy
+definestheprovisioningofgroupsoftwareandoften
+theoperationofitscomponentprotocols.
+(cid:8)
+Verification-Each policymustpresent evidenceof
+itsvalidity.Themeansbywhichtheorigin,integrity,
+andfreshnessofthepolicyisasserted(forexample,
+via digital signature) must be knownby each group
+memberpriortoitsacquisition.
+2.2.PrinciplesofGroupPolicy
+The direct application of policy approaches used in
+peer-communication is unlikely to meet the needs of
+groups. This is due in large part to fundamental differ-
+encesbetweenpeerandgrouppolicies;grouppolicycon-
+veys information about an association greater and more
+abstract than its pair-wise counterpart. The following
+textidentifiesandillustratesuniversalprinciplesresulting
+fromouranalysisofgroupandpeercommunicationpoli-
+cies.
+Principle1: Enforcementofgrouppolicymustbecon-
+sistentacrossagroup
+While it may evolve over the course of a session, the
+grouprequiresasingularpolicydefinition. Thisimpliesa
+shared view of the participants and the security of appli-
+cationcontent. Failuretooperateunderthesamesecurity
+contextcanleadtovulnerableorincompatiblesolutions.
+Similarly, policy implicitly requires trust among the
+membership. Each member trusts that all participants
+have been admitted and enforce the policy specification
+correctly. If a consistent view of policycannot be estab-
+lished, memberswill havenoway to infer this trust. We
+have identified two facets of policy consistency: mecha-
+nismequivalenceandsynchronization.
+Two mechanisms are equivalent if
+(cid:9)(cid:11) (cid:10)
+they implement
+the same service (e.g., data confidentiality), and
+(cid:12)(cid:13) (cid:10)
+the
+security of the mechanisms is not qualitatively different.
+Forexample, Figure 2 describes a group implementing a
+confidentiality policy. Subgroup
+(cid:9)
+(in the figure) imple-
+ments confidentiality using a strong data encryption al-
+gorithm. Furthermore, a cryptographic gateway
+(cid:14)(cid:16) (cid:15)
+co-
+existsinbothSubgroup
+(cid:9)
+andasecondSubgroup
+(cid:12)
+. Sub-
+group
+(cid:12)
+contains mobile devices with limited computing
+resources. The
+(cid:14)(cid:17) (cid:15)
+translatesallcommunicationbetween
+thestrongalgorithmimplementedby
+(cid:9)
+Group(cid:13)
+Controller(cid:13)
+Group(cid:13)
+...(cid:13)
+gw(cid:13)
+Subgroup a(cid:13)
+(cid:13)...
+Subgroup b(cid:13)
+Figure2.Mechanismequivalence-Policiesim-
+plementedbymembersofSubgroupamustbe
+equivalent to those implemented by Subgroup
+b. Failuretoimplementequivalentpoliciesmay
+resultinundetectedvulnerabilities.
+rithmimplementedbythemobiledevicesin
+toaweakeralgo-
+(cid:12)
+.
+Clearly,anadversaryattemptingtouncovergroupcon-
+tent will mount an attack against data transmitted under
+theweakeralgorithm. Thus,forthisgroup,theconfiden-
+tiality is only as strong as provided by the weaker algo-
+rithm. Becausethealgorithmsarenotequivalent,these-
+curity of the group as a whole is weakened. Worse yet,
+membersofSubgroup
+(cid:9)
+maybeunawareoftheuseofthe
+weakalgorithm.
+Session rekeying in peer communication is well de-
+fined. The peer end-points actively participate in an ex-
+change resulting in acceptance of the new key. Because
+bothparticipantsassertacceptance,subsequentuseofthe
+key can be unambiguous. The issues, design, and vul-
+nerabilities of peer key exchanges have been thoroughly
+researchedandarewellunderstood.
+Sessionrekeyingingroupcommunicationisinherently
+more difficult. As defined by the group threat model,
+rekeyingis triggered bysecurity relevantevents. Rekey-
+ingisofteninitiated,forexample,whenasessionkeylife-
+timeisreached,followingmemberjoinsandleaves,andto
+completerecoveryfromthecompromiseofagroupmem-
+ber [19]. However,knowledgeoftheseeventsisnotoften
+universallyavailable.
+Rekeying of the group is required to be synchronized.
+Anarbitrarynumberofend-pointsmustreachagreement
+not only on the new secret key, but synchronize its sub-
+sequent use. For example, consider a group which has
+recentlydistributedanewsessionkey. Amemberreceiv-
+ingamessageencryptedunderanoldsessionkeyisfaced
+withadilemma; intheabsenceofsynchronizeddelivery,
+the message may represent
+(cid:9)(cid:11) (cid:10)
+delayed delivery of a cor-rect
+(cid:18)
+messageencryptedundertheoldsessionkey,or
+(cid:12)(cid:13) (cid:10)
+a Conversely, because of the many roles which members
+messagegeneratedbyanadversarywhohasgainedaccess mayperform,groupcommunicationrequiresamorecom-
+tothepreviouskey. plexauthorizationmodel.
+Rekeying, and the synchronization of policy in gen- Groupscommonlydesignateoneormoreentitiestoact
+eral, are instances of distributed consensus. Agreement as authorities within the group. For example, an entity
+on the new session key or policy is reached through via wishing to join the group will communicate with an en-
+groupprotocols. However,inthegeneralcase,distributed tity authorized to admit members. Once the admittance
+consensus algorithms are both complex and expensive authority verifies that the potential group member pos-
+[12, 23]. Many existing group systems attempt to avoid sesses the appropriate credentials, it allows the member
+thesecostsbyrelaxingsynchronizationrequirements. into group. However, unless otherwise specified by pol-
+Onewaytorelaxkeysynchronizationrequirementsisto icy,theadmittedmembershouldnothavetheauthorityto
+allowseveralsessionkeystobesimultaneouslyvalid.For admit other members. Thenew group resulting fromthe
+example,suspendingtransmissionofdataduringrekeying admittanceofthememberrepresentsanewsecuritycon-
+inavideo-conferenceishighlyundesirable. Thus,agroup text; thereisanewgroupmembertrustedwiththegroup
+maywishtocontinuetouse(acceptpacketsencryptedun- key.
+der an old session key) previouskeys until consensus on AsidentifiedinTable1,therearemanyactionsthataf-
+the new key has been reached. A policy supporting this fectthegroupsecuritycontext. Becauseeachoftheseac-
+environmentshoulddictatetheamountoftimeanoldses- tions can affect the security of all group members, they
+sionkeymaybeused(andbydirectcorollarytheminimal mustbeassociatedwiththesetofentitiesthatareautho-
+freshnessofreceivedmessages). Thisapproachandother rizedtoperformthem. Agroupallowinganadversaryto
+relaxationstothegeneralcaseofthiskeytransitionprob- performsecurityrelevantactionswouldbe,amongothers,
+lemareconsideredin[21]. vulnerablein:
+Policyisalsorequiredtobesynchronized. Atanypoint
+during the session, the policy a group member enforces
+mustbeidenticaltotheoneintendedbythecontroller. If
+theenforcedpolicyisnotbothfreshandcorrect,thenthe
+membermay divergefrom thesession specification arbi-
+trarily. Obviously, the divergent member may introduce
+anynumberofvulnerabilities.
+Synchronization directly requires all received policies
+befresh,authentic,andunmodified. Themeansbywhich
+policyfreshnessisassessedmustconformtosomeapri-
+oripolicy. Forexample,groupmemberscouldverifythat
+a policy revision number increases monotonically. The
+group member would never accept a policy update with
+anunexpectedrevisionnumber.
+Thegroupmembersmustbeabletoverifythatthepol-
+icy has not been modified during dissemination (e.g., in-
+tegrityofreceivedpoliciesispreserved). Thisreducesto
+arequirementstatingeachmembermustbeabletoverify
+thatapolicyoriginatedfromthegroupcontroller.
+Of course, any policy must contain some evidence of
+its authenticity (i.e., policy verification). For example, a
+keyedmessageauthenticationcode(HMAC)[18]ordigi-
+talsignature[9]canbeusedtoasserttheauthenticityofa
+policy.
+Principle2: Onlyauthorizedentitiescanaffectthese-
+curitypostureofthegroup
+Authorizationinpeer communicationcan easilybein-
+ferredfromknowledgeofthesessionkey. Becausethere
+are only two entities participating in the communication,
+the correctness of any action can be directly assessed.
+(cid:8)
+Policycreation: Theunauthorizedentitycanmodify
+policy in arbitrary ways. Thus, the group may be
+manipulatedintooperatinginaninsecureway.
+(cid:8)
+Key dissemination: An unauthorized group con-
+trollercancreateafalsegroup.
+(cid:8)
+Initiaterekey:Anunauthorizedentityperformsade-
+nialofserviceattackinwhichthegroupwouldcon-
+tinuallyrekey.Thegroupwouldexpendconsiderable
+resourcesperformingkeymanagementfunctions.
+(cid:8)
+Groupdestruction:Ifanunauthorizedgroupdestruc-
+tion command is accepted, the group will disband
+prematurely. Clearly,thisrepresentsaseriousdenial
+ofserviceattack.
+Principle 3: Group content must be protected
+Generally,datasecurity mechanismsprovidea meansby
+which content confidentiality, authenticity, and integrity
+can be protected. These mechanisms implement protec-
+tion through the application of cryptographic algorithms
+onsessionkeys. Thus,thesecurityofthegroupispredi-
+catedonthesecurityoftheprocessesrestrictingaccessto
+sessionkeys.
+As stated indirectly by principle
+(cid:19)
+, access to session
+keysmustberestrictedtoentitieswithauthoritytoreceive
+them. Theaccesscontrolpolicymustbedefinedaspartof
+thelargergrouppolicy.Similarly,themeansbywhichthe
+potentialmembermeetsthecriteriamustbespecified.
+Consider an examplegroup policystating that a mem-
+ber must provepossession of company
+(cid:20)
+credentials (inthe (cid:4) form of a certificate) before being admitted to the
+group. Thus, an example access control policy states
+(cid:21)(cid:22) (cid:10)
+theentitymustpossesstheprivatekeyofacertificate,
+(cid:19)(cid:23) (cid:10)
+the certificate must state that the organization of the en-
+tityisthedesiredcompany,and
+(cid:24)(cid:17) (cid:10)
+3. Policy Specification and Enforcement in
+GSAKMP
+This section describes the Group Secure Association
+thecertificatemustbe Key Management Protocol and presents argumentsillus-
+issuedfromthecompany’scertificateauthority. tratingitscompliancewiththeprinciplespresentedinthe
+An admittance authority enforces the access control precedingsection.
+policy(onasignedjoinrequestcontainingthecertificate)
+byverifyingthecertificateorganizationand issuerfields,
+3.1.Description
+validating the signature, and checking the certificate has
+notbeen revoked(e.g., throughan appropriatecertificate
+The Group Secure Association Key Management Pro-
+revocationlist). Ifthisprocessissuccessful,themember
+tocol (GSAKMP) dictates and manages the security of a
+receivesandsubsequentlyusesthesessionkeytocommu-
+communications group. GSAKMP manages group secu-
+nicatewiththegroup.
+rity throughout the life-cycle of the group: group initi-
+Becausethegrouppolicyisenforcedcorrectly,andthe
+ation, maintenance, compromise recovery, and deletion.
+underlying cryptographic algorithms are secure2, group
+Policyisdefinedinthepolicytokendatastructure,which
+content protection is ensured. However, if any of these
+is distributed and enforced over specified protocol ex-
+authorization, access control, or data security policies is
+changes. Group content is protected by appropriate se-
+incorrectly enforced, then the security of the group as a
+curity mechanisms and their associated session keys that
+wholemaybelost. Thisdemonstratesthefragilityofse-
+areknownonlythecurrentmembership.
+curity; incorrectimplementation ofany one function can
+In GSAKMP, group responsibilities are decomposed
+invalidateguaranteesprovidedbyothers.
+intoauthorizedroles.RolesaredefinedforGroupOwner,
+GroupController,SubgroupController,andMember.The
+Principle4: Groupsmustbecapableofrecoveryfrom
+rights attributed to these roles are presented in Table 2.
+securityrelevantfailurestoasecurestate
+Theauthorizationcriteria,aswellasthemechanismsused
+Itisnecessaryforgroupstorecovertoasecureoperat-
+toverifyauthorizations,aredefinedinthepolicytoken.In
+ing statewhen a subset of its membership is found to be
+oneinstantiationofGSAKMP,securityrelevantmessages
+untrustworthy.Thus,apolicymuststatethewayinwhich
+mustbesignedbytheauthorizedentity.
+compromiseistobedetectedand,ifavailable,themech-
+Signed bytheGroupOwner,thepolicytokencontains
+anismsusedforrecovery.
+authorization,keymanagement,anddataprotectionrules
+There are a myriad of ways groups may recover from for thegroup, and defines the mechanisms usedfor veri-
+member compromise. Early systems, in an effort to
+fication. Using the defined mechanisms, potential group
+restrict insecure access to content, disbanded immedi-
+members receiving a token verify the token is authentic,
+ately following compromise [17, 16]. More recently, fresh,andunmodified. Onceverified,thetokenisusedto
+groupsystemsemploysophisticatedrekeyingapproaches
+directthebehaviorofthemember.
+[31,32,21]torecoverfrommembercompromise.Inthese
+Groupsareformedbymultipleindividual(peer)admit-
+lattersystems,compromisedmembersareejectedbytheir
+tances. In the GSAKMP join exchange, the Group Con-
+exclusionfromthesubsequentrekeyprocess.
+trollerpresentsthegroup’stokenandverifiesthepotential
+A group may also require recovery from non- member’s credentials. If the member credentials are ac-
+compromise failures. The effect of network partitions
+cepted, the current group keys are securely downloaded
+[11],processcrashes[20],andotherfailuresonthegroup
+to thenewlyacceptedmember. Themember,inturn, in-
+securitycontextisanopenareaofresearch. Wenotethat spectsthetokentodetermineifthegrouppolicyisappro-
+the mechanisms used for failure detection and recovery
+priatefortheinformationthattheywishtoshare.
+willhaveuniquesecurityrequirements. Forexample,the
+CompromiserecoverymethodssuchastheLogicalKey
+heartbeat-based failure detection mechanism in [20] re-
+Hierarchy (LKH) [31, 32] allow GSAKMP to securely
+quiresheartbeatsbeauthentic. Intheabsenceofauthentic
+andrapidlyejectcompromisedmembers. Becauseofthe
+failure detection, an adversary may be able to mask the propertiesofthesekeyingtechniques,anykeyspossessed
+failureofgroupmembersthroughforgedheartbeats.
+bycompromisedmemberswillnotbevalidafterejection.
+TheGSAKMPspecificationsarequicklyreaching ma-
+turity. TwoIETFdraftshavebeensubmitted[15,14]and
+2There is significant debate on the correct design of secure group alicensefreereferencearchitectureandassociateddocu-
+datatransforms. Forthepurposesofthisdiscussion,weassumethatall
+mentationareavailableat:
+mechanismsarefundamentallysecure;thecryptographicalgorithmsand
+datatransformsaresound. ftp://ftp.sparta.com/pub/columbia/gsakmpAction Rights accomplishedusingasinglerekeymessage. Similarly,if
+policycreation GO thepolicychangessuchthatacurrentmemberisnolonger
+policymodification GO allowedtoparticipate,thegroupmustberekeyed. Inthis
+grantrights GO case,rekeyingmustbehandledinthesamewayasincom-
+keycreation GC promiserecovery.
+groupdestruction GC Similarly, any member joining the group receives the
+mostcurrentpolicytoken. Subordinategroupcontrollers
+keydissemination GC,SGC
+not providingthe correct (fresh) policytoken are ejected
+rekeyactioninitiation GC,SGC
+from the group forcing a rekey. The ejected subordinate
+authorizemember GC,SGC
+group controller would be incapableof providinga valid
+admitmember GC,SGC
+keytothenewmember.Hence,freshnessoftheinitialto-
+ejectmember GC,SGC
+kenmaybeverifiedbytheabilitytoaccessthegroupby
+auditgroup GC,SGC
+the new member. The GSAKMP Policy Token contains
+keyaccess GC,SCG,M
+freshness dates and sequence numbers. Any subsequent
+token will only be accepted if it contains later freshness
+Table 2. GSAKMP rights assignment - assign-
+indicators. Thus, stale policies are detectable. As rea-
+ment of rights to group owners (GO), group
+sonedbefore,asthegroupconsistsofindividualmember
+controllers (GC), subgroup-controllers (SGC),
+joins, the group only will accept the most current token.
+and members (M) within a GSAKMP group. A
+Thus,thegrouppolicyissynchronized.
+definitionoftheserightsispresentedinTable1.
+c) From1and2,enforcementofgrouppolicyisconsis-
+tentacrossthegroup.
+3.2.Analysis
+TheGSAKMPpolicytokenisissuedandsignedbyan
+Inthissection,weinformallyarguethattheframework entityresponsibleforthegroupsecuritypolicy. Itfurther
+providedbyGSAKMPadherestothegrouppolicyprinci- defineswhomayperformsecurityrelevantactions. Both
+plesdiscussedintheprevioussection. therulesfordeterminingpermissionsandthemechanism
+GSAKMPspecifiesagroupsecuritypolicythroughthe usedtoverifytherulesthemselvesaredefinedinthepol-
+policytoken. Thetokenispassedtoeachgroupmember icytoken.
+aspartofthejoinexchange. Eachgroupmemberverifies Upon receipt of a security relevant message, group
+thepolicytokenandenforcesthestatedpolicy. Asevents members review the current policy token. The message
+dictate,thegrouppolicytokencanbeupdatedoverthelife is initially verified using a mechanism defined in the to-
+ofthegroup. Eachreceivedupdateisverifiedinthesame ken. Usingtherolesandauthorizationsdefinedintheto-
+wayastheinitialtoken. ken, the member checks the permissions of the sending
+Toensurethecurrentpolicytokeniscorrectlydissemi- party. If the verification succeeds and the sender can as-
+natedacrossthegroup,GSAKMPsendsthecurrenttoken sumearoleallowedtoperformtheactionimpliedbythe
+along with each security relevant action. Each member message,thenthemessageisaccepted.
+checksthetoken’sfreshnessindicatorsandverifiesitsori-
+ginandintegrity. Principle2: Onlyauthorizedentitiescanaffectthese-
+curitypostureofthegroup
+Principle1: Enforcementofgrouppolicymustbecon-
+sistentacrossagroup
+a) Thepolicytokenisverifiedascomingfromatrusted
+sourceandasbeingauthentic. (1-1)
+a) GSAKMPenforcestheuseofequivalentmechanisms
+Allowable cryptographic and key management tech- Thesignaturepayloadcontainstheidentityofthesigner
+niquesarespecifiedinthepolicytoken. ofthetoken.Thissignatureisverifiedaccordingtothepa-
+rametersforverificationofthetokenandthestatediden-
+b) GSAKMP provides methods for key and policy syn-
+tity.
+chronization.
+Basedontheauthorizationsdefinedinthepolicytoken, b) Authorizedentitiesareidentifiedinthepolicytoken.
+each joining member is given the keys needed to fulfill (GSAKMPspecification)
+theirassignedroles. Becausethegroupisformedbymul-
+tipleindividualjoins,eachmemberwillinitiallyhavethe c) Messagesaffectingthesecuritypostureofthegroup
+keysneededfor authorized participation. Via LKH,key- must be issued by an authorized entity. (GSAKMP
+ingduetostalesessionkeysorcompromiserecoveryare specification)d) Each member can verify that the message affecting c) Keyscanbeobtainedonlythroughlegitimatedistri-
+the security posture was issued by a trusted source butionorfromcompromise.
+indicatedbytheverifiedpolicytoken. Initial key distribution is secure, which is reasoned as
+The verification mechanism and parameters are indi- follows. Keys are distributed in a pairwise manner. The
+catedinthepolicy, pairwisejoinprotocolissecure:1)itsmessagesaresigned
+by authorized entities and subsequently verified; 2) the
+e) Eachmembercanverifythatthemessagewasfreshly
+senderandintendedrecipientofthemessagesareexplicit;
+signed.
+3) the messages freshness are indicated by nonces; and
+GSAKMPjoinexchangemessagescontainnonces.The 4) the download of the keys are protected by a group-
+rekey message contains a timestamp. The group delete appropriateconfidentialitymechanismasindicatedbythe
+messageisonlygeneratedonce,sonoreplaypotentialex- GSAKMP policy token. The design of the initial ex-
+ists. changeisbasedonwellknownprinciplesofpeerauthen-
+ticationandkeydistributionprotocols[6,1,2].
+f) Eachmembercanverifythattheyareintendedrecip-
+Keysaredistributedtoauthorizedindividualsonly.The
+ientsofthemessage.
+authorization rules are listed in the policy token. These
+GSAKMP message header’s contain group identifiers.
+rules are trusted (1-1). Because the pairwise distribution
+Security relevant messages to individuals (e.g., Key
+to each individual member is done securely and because
+Download)containindividualidentifiers.
+groups are comprised of individual members, the initial
+g) Therefore, each member will only act on fresh mes- keydistributiontothegroupissecure.
+sagesintendedforthemfromanauthorizedsource. ThefirstrekeyunderLKHissentencryptedinkeysob-
+tained through initial distribution, which is secure. Only
+h) Groupsarecomprisedofindividualmembers. authorized members received these keys through initial
+distribution. Subsequent rekeys are sent encrypted ei-
+i) The group will only act on fresh messages intended
+therininitialkeysorinkeysdistributedthroughprevious
+forthemfromanauthorizedsource.
+rekeys.
+j) Only authorized entities can affectthe security pos-
+d) If keys are obtained through compromise and that
+tureofthegroup.
+compromiseisdiscovered,thegroupisrekeyedsuch
+GSAKMP protects the group by controlling access to
+thatanycompromisedkeyisnolongervalid.
+group keys. The access control rules and compliance
+GSAKMPprovidesaframeworkforadvancedrecovery
+mechanismsaredefinedinthepolicytoken.
+mechanisms; LKH is implemented in the reference soft-
+Initially, the policy issuance authority (Group Owner)
+ware. GSAKMPdistributesLKHkeyarraysduringgroup
+passes the token to the group controller (GC). The GC
+establishmentandusesthekeytreetorekeyfollowingthe
+uses the token’s access control rules to restrict access to
+detectionofmembercompromise. Overthecourseofthe
+the group key. In all instances, there will be a member
+session,eachmemberreceivesanarrayofkeysthatcorre-
+of the group who is authorized to disseminate keys and
+spondtoauniquepathinthekeytree.
+performaccesscontrol.
+GSAKMP defines compromise recovery as a security
+Thegroupmemberpresentsrequiredcredentialstothe
+relevantaction. Thus,policydefinestherulesandmecha-
+GC.Usingthesecredentialsasproof,theGCensuresthat
+nismsneededtoissuearecoverymessage.However,com-
+the access control criteria is met prior to release of the
+promisedetectionandreportingisoutsideofthescopeof
+groupkey.
+theGSAKMPprotocol.
+Equallyimportant,thepotentialgroupmemberverifies
+Upon receipt of a compromise report, the GC creates
+theauthorityofGCorSGCstomakeaccesscontroldeci-
+an LKH recoverymessage identifying the current policy
+sions. In verifying the authenticity of messages received
+token. The GC instigates recoveryby signing and trans-
+from controllers, a group member is protected from ac-
+mittingtherecoverymessage.
+ceptingfalsekeysandinadvertentlyrevealingconfidential
+Allgroupmembersverifytheauthenticityoftherecov-
+groupinformation.
+erymessage.OncetheLKHmessagesaturatesthegroup3,
+the compromise memberisexcluded from thenew secu-
+Principle3: Groupinformationmustbeprotected
+rityassociation. Thus,asecurestateofoperationisrecov-
+ered.
+a) Cryptographic mechanisms specified in the
+A member not receiving the recoverymessage will no
+GSAKMPtokenprotectgroupdata.
+longer have access to the group. In this case, the mem-
+b) Access to the group is granted by issuing the group 3Forbrevity,theseargumentsdonotdiscussfaults,accidentalorin-
+cryptographickey(s). duced,relatedtounreliablenatureofgroupcommunication.ber (cid:25) willbeforcedtorejointhroughtheauthenticatedjoin largegroups (100,000+ members). A principle contribu-
+exchange. tionofDCCMisitsuseofpolicyasentirelydefiningthe
+contextinwhichagroupoperates. Policymaybenegoti-
+Principle4: Groupsmustbecapableofrecoveryfrom atedorstatedbyaninitiatingmember,andflexiblemech-
+securityfailurestoasecurestate anismsforpolicyrepresentationandinterpretationarede-
+fined.
+a) A security failure can occur when an adversary at- The Antigone framework [21] provides flexible inter-
+temptstomasqueradeasanauthorizedindividual. faces for the definition and implementation of a wide
+range of secure group policies. A central element of
+b) Anyfailurein verificationof thejoinexchange(sig-
+the Antigone architecture is a set of mechanisms provid-
+nature,nonce,identificationfield,orinadequatecre-
+ing thebasic servicesneededfor securegroups. Policies
+dentials)aredetectablebybothparties. Inthiscase,
+areimplementedbythecompositionandconfigurationof
+thejoinexchangeisaborted.
+these mechanisms. Thus, Antigone does not dictate the
+availablesecurity policiestoanapplication, butprovides
+c) Counterfeit rekey messages are detected. Bad rekey
+high-levelmechanismsforimplementingthem.
+messagewillfailcontainincorrectsignatures,times-
+Manyrecentadvancesintheuseofpolicyindistributed
+tamps,orfailtobeauthorized.
+systems have occurred in the realm of authorization and
+d) Counterfeitgroupdeletemessagesarealsodetected. access control. Introduced in [3] by Blaze et. al., trust
+Badgroupdeletemessagewillcontainincorrectsig- management provides a unified approach for the specifi-
+naturesorfailtobeauthorized. cationandevaluationofsecuritypolicies. Trustmanage-
+ment focuses centrally on developmentof access control
+e) Group access via key compromise is remedied via policythroughthespecificationofevaluationoftrustrela-
+LKH as discussed previously; therefore, the group tionships. Atthecoreofanytrustmanagementsystemis
+willrapidlyberekeyedcausingallcompromisedkeys adomainindependentlanguageusedtospecifythecapa-
+to be invalid. This will result in denial of access to bilities,policies,andrelationshipsbetweenentities. Each
+anyentitypossessingonlythecompromisedkeys. applicationsubscribingtoatrustmanagementservicepro-
+vides policy specifications to a central component called
+4. RelatedWork thetrustmanagementengine. Anapplicationconsultsthe
+engine for access control decisions at run-time. The en-
+The Internet Engineering Task Force (IETF), Policy
+gineevaluatestheaccesscontrolrequestusingthepolicy
+Framework working group is chartered with the devel-
+specificationandenvironmentaldata. Therefore,applica-
+opmentofan architecturesupporting themanagementof
+tionsneednotevaluateaccesscontrolpoliciesdirectly,but
+network devices through abstract policies. In the policy
+deferanalysistothetrustmanagementengine.
+architecture [29], the desired behavior of each device is
+Through rigorous analysis, the PolicyMaker [3] trust
+stated through sets of policy rules. A policy rule is a
+managementenginehasbeenproventobecorrect. Thus,
+conditional statement identifying a set of (possibly ab-
+with respect to the policy specification, any application
+stract) actions that are to be executed in environments
+using PolicyMaker is guaranteed to evaluate each pol-
+when/wheretheconditionsaresatisfied. However,these-
+icy decision correctly. However, policy enforcement is
+curity of the distribution and enforcement of these rules
+left to the application. Recent systems (e.g KeyNote [4]
+hasyettobeaddressed.
+and REFEREE [7]) have extended the trust management
+TheSecurityPolicySystem[26]isanarchitecturesup-
+approachbysimplifying applicationinterfacesandintro-
+portingflexibledefinitionanddistributionofsecuritypoli-
+ducing a limited set of enforcement facilities. Other ap-
+cies for IPSec security associations (SA)s. The central
+proaches addressing access control policy in distributed
+specificationdocumentsinclude;anarchitectureoverview
+environments(e.g.,Akenti[30],GAAAPI[25])approach
+[26],apolicyspecificationlanguage[8],andapolicydis-
+the management of trust in similar ways, but with some-
+tribution protocol definition [27]. To simplify, clients of
+whatdifferentgoals,requirements,andarchitectures.
+thepolicysystemquerythepolicydatabaseforconnection
+The Internet Engineering Research Force (IRTF), Se-
+policies. Connections are accepted only if theymeet the
+cure Multicast Research Group (SMuG) is researching
+requirements ofpoliciesobtained from a policydatabase
+a suite of standards and associated reference architec-
+in the server domain. The mechanisms used to secure
+ture [13] upon which secure multicast applications can
+communicationaredefinedintheconnectionpolicies.
+bebuilt. Inadditiontothespecificationofcryptographic
+Developed by Branstad et. al., the Dynamic Crypto-
+transforms[5](i.e.,contentsecurity)andkeymanagement
+graphic Context Management (DCCM) system [10] is
+protocols[14],thisworkwilldefineapolicymanagement
+used to define and enforce security policies within veryinfrastructure (cid:26) appropriateforsecuremulticast.Thepolicy References
+teamhasrecentlypublishedataxonomyofgrouppolicies
+[1] M.AbadiandR.Needham. PrudentEngineeringPractice
+[19]andarequirementsstatementisforthcoming.
+forCryptographicProtocols. IEEETransactionsonSoft-
+wareEngineering,22(1):6–15,January1996.
+5. Conclusions
+[2] R.AndersonandR.Needham. RobustnessPrinciplesfor
+This paper considers the requirements of policy in se- PublicKeyProtocols. InLectureNotesinComputerSci-
+ence, Don Coppersmith (Ed.), Advances in Cryptology
+cure group communication. We have identified a set of
+– CRYPTO ’95, volume 963, pages 236–247. Springer-
+universalprincipalsthatcanbeusedtoguidethedesignof
+Verlag,1995.
+security policy in secure group communication systems.
+[3] M.Blaze,J.Feigenbaum,andJ.Lacy.DecentralizedTrust
+These principles not only address the pragmatic require-
+Management. In Proceedings of the 1996 IEEE Sympo-
+mentsforthecorrectandsecureoperationofstandardser-
+siumonSecurityandPrivacy,pages164–173,November
+vices,butidentifyrequirementsforthesecuredistribution 1996. LosAlamitos.
+andsynchronizationofpolicyspecifications. [4] M.Blaze, J. Feignbaum, J.Ioannidis, andA.Keromytis.
+In our investigation, we found that it is necessary, but TheKeyNoteTrustManagementSystem-Version2. In-
+not sufficient, to correctly specify policy. Once a pol- ternet Engineering Task Force, September 1999. RFC
+icy is specified, it must be securely distributed, authen- 2704.
+ticated,andenforced.Thisillustratesthefragilityofsecu- [5] R. Canetti, P. Rohatgi, and P.-C. Cheng. Multicast
+rityingeneral;incorrectimplementationofanyonesecu- Data Security Transformations: Requirements, Consid-
+erations, and Proposed Design. Internet Engineering
+rityfunctioncaninvalidateguaranteesprovidedbyothers.
+Task Force, June 2000. draft-irtf-smug-data-
+Over the lifetime of the group, consensus surrounding
+transforms-00.txt.
+the definition and interpretation of policy must be main-
+[6] U. Carlsen. Cryptographic Protocol Flaws: Know Your
+tainedbyallparticipants.Failuretocorrectlysynchronize
+Enemy. In Proceedings of 7th IEEE Computer Security
+a policydefinition can leadto undetected vulnerabilities.
+FoundationsWorkshop,pages192–200.IEEE,1994.
+Ifapolicyisnotuniformlyinterpretedbygroupmembers,
+[7] Y. Chu, J. Feigenbaum, B. LaMacchia, P. Resnick, and
+thesecurityofthegroupasawholecanbecompromised. M.Strauss. REFEREE:TrustManagementforWebAp-
+The attribution of authority in groups is of paramount plications.InProceedingsofFinancialCryptography’98,
+importance. Failure to correctly identify and authorize volume1465, pages254–274, Anguilla, BritishWestIn-
+secure action can lead to any number of vulnerabilities. dies,February1998.Springer-Verlag.
+Thus, the protection of the group content is largely de- [8] M.Condell,C.Lynn,andJ.Zao. SecurityPolicySystem
+finedbytheverificationandenforcementofrulesdefining Language(Draft). InternetEngineeringTaskForce, July
+authorizationandaccesscontrol. 1999. draft-ietf-ipsec-spsl-01.txt.
+Finally, we note that member compromise is an in- [9] W. Diffie and M. Hellman. New Directions in Cryptog-
+raphy. IEEE Transactions on Information Theory, IT-
+evitability for manyapplications. Thus, a resilient group
+22(6):644–654,November1976.
+mustbeabletorecoverfromcompromisetoasecurestate.
+[10] P. Dinsmore, D. Balenson, M. Heyman, P. Kruus,
+Thisoftenrequirestheejectionofcompromisedmembers
+C. Scace, and A. Sherman. Policy-Based SecurityMan-
+inawaythatdoessignificantlyaffecttheperformanceor
+agementforLargeDynamicGroups: A Overview ofthe
+securityofthegroupasawhole.
+DCCM Project. In Proceedings of DARPA Information
+WehaveevaluatedtheGroupSecurityAssociationKey Survivability Conference and Exposition (DISCEX ’00),
+ManagementProtocolundertheidentifiedprinciples. We pages64–73.DARPA,January2000. HiltonHead,S.C.
+have investigated where known and accepted principles [11] D. Dolev and D. Malki. The Transis Approach to High
+of(peeroriented)securesystemconstructionandanalysis AvailibilityClusterCommunication. Communicationsof
+are applicable to groups. Furthermore, we have demon- theACM,39(4),April1996.
+stratedGSAKMPcompliancewiththeseprinciples. [12] M.Fischer,N.Lynch,andM.Paterson. Impossibilityof
+Intheend,policysupportedcommunicationisonlygo- DistributedConsensuswithOneFaultyProcess. Journal
+oftheACM,32(2):374–382,1985.
+ingtobeassuccessfulastheabilitiesofentitiesspecify-
+[13] T. Hardjono, R. Canetti, M. Baugher, and m P. Dins-
+ingpolicypermit. We, asresearchers and engineers, can
+more. SecureMulticast: ProblemAreas,Framework,and
+developrigorousframeworksinwhichpolicycanbespec-
+BuildingBlocks(Draft).InternetEngineeringTaskForce,
+ified, distributed, and enforced. However,preventingthe
+October 1999. draft-irtf-smug-framework-
+specification of bad policies is a much harder problem.
+00.txt.
+Environmentalissues are likelyto determinethe correct-
+[14] H. Harney, M.Baugher, and T. Hardjono. GKMBukld-
+ness ofa givenpolicy. Thus, education of the user com- ingBlock: GroupSecurityAssociation(GSA)Definition
+munitywillplayalargeroleinthecorrectoperationofthe (Draft). InternetEngineeringTaskForce,February2000.
+supportedapplications. draft-irtf-smug-gkmbbb-gsadef-00.txt.[15] H.Harney,A.Colegrove,E.Harder,U.Meth,andR.Fleis- [25] T.RyutovandC.Neuman. RepresentationandEvaluation
+cher. GroupSecureAssociationKeyManagementProto- of Security Policies for Distributed System Services. In
+col(Draft). InternetEngineeringTaskForce,April2000. ProceedingsofDARPAInformationSurvuvabilityConfer-
+draft-harney-sparta-gsakmp-sec-01.txt. enceandExposition,pages172–183,HiltonHead,South
+[16] H.HarneyandC.Muckenhirn. GroupKeyManagement Carolina,January2000.DARPA.
+Protocol(GKMP)Architecture.InternetEngineeringTask [26] L. Sanchez and M. Condell. Security Policy System
+Force,July1997. RFC2094. (Draft).InternetEngineeringTaskForce,November1998.
+[17] H. Harney and C. Muckenhirn. Group Key Manage- draft-ietf-ipsec-sps.txt.
+mentProtocol(GKMP)Specification. InternetEngineer- [27] L. Sanchez and M. Condell. Security Policy Protocol
+ingTaskForce,July1997. RFC2093. (Draft). Internet Engineering Task Force, July 1999.
+[18] H.Krawczyk,M.Bellare,andR.Canetti.HMAC:Keyed- draft-ietf-ipsec-spp-00.txt.
+HashingforMessageAuthentication. InternetEngineer- [28] M.Steiner,G.Tsudik,andM.Waidner.CLIQUES:ANew
+ingTaskForce,April1997. RFC2104. ApproachtoGroupKeyAgreement.InInternationalCon-
+[19] P. McDaniel, H. Harney, P. Dinsmore, and A. Prakash. ference on Distributed Computing Systems (ICDCS’98).
+MulticastSecurityPolicy(Draft). InternetResearchTask IEEE,May1998.
+Force, Secure Mutlicast Research Group (SMuG), June [29] M.Stevens,W.Weiss,H.Mahon,B.Moore,J.Strassner,
+2000. G.Waters,A.Westerinen,andJ.Wheeler. PolicyFrame-
+draft-irtf-smug-mcast-policy-00.txt. work (Draft). Internet Engineering TaskForce, Septem-
+[20] P. McDaniel and A. Prakash. Lightweight Failure De- ber 1999. (draft-ietf-policy-framework-
+tection in Secure Group Communication. Technical Re- 00.txt).
+port CSE-TR-428-00, Electrical Engineering and Com- [30] M. Thompson, W. Johnson, S. Mudumbai, G. Hoo,
+puterScience,UniversityofMichigan,June2000. K.Jackson,andA.Essiari. Certificate-basedAccessCon-
+[21] P. McDaniel, A. Prakash, and P. Honeyman. Antigone: trolforWidelyDistributedResources. InProceedingsof
+AFlexibleFrameworkforSecureGroupCommunication. 8th USENIXUNIX Security Symposium, pages 215–227.
+In Proceedings of the 8th USENIX Security Symposium, USENIXAssociation,August1999. WashingtonD.C.
+pages99–114,August1999. [31] D.M.Wallner,E.J.Harder,andR.C.Agee.KeyManage-
+[22] S.Mittra. Iolus: AFrameworkforScalableSecureMul-
+mentforMulticast: IssuesandArchitectures(Draft). In-
+ticasting. InProceedingsofACMSIGCOMM’97, pages
+ternetEngineeringTaskForce,September1998.draft-
+277–278.ACM,September1997.
+wallner-key-arch-01.txt.
+[23] S.Mullender. DistributedSystems. Addison-Wesley,First
+[32] C. K. Wong, M. Gouda, and S. S. Lam. Secure Group
+edition,1993.
+Communication Using Key Graphs. In Proceedings of
+[24] M. Reiter. Secure Agreement Protocols: Reliable and
+ACM SIGCOMM ’98, pages 68–79. ACM, September
+Atomic Group Multicast in Rampart. In Proceedings of
+1998.
+2ndACMConferenceonComputerandCommunications
+Security,pages68–80.ACM,November1994.

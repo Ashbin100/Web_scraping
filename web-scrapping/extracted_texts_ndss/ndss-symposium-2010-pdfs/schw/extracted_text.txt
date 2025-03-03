@@ -1,0 +1,1161 @@
+A Contractual Anonymity System
+EdwardJ.Schwartz DavidBrumley JonathanM.McCune
+CarnegieMellonUniversity
+{edmcman,dbrumley,jonmccune}@cmu.edu
+Abstract provide adequate anonymity guarantees to the user in
+manyscenariosbecausetheprovidercanarbitrarilyde-
+We propose, develop, and implement techniques for cide to blacklist (deny future use of the service to) the
+achieving contractual anonymity. In contractual anon- userforanyreasonandthuscandiscriminate,e.g.,treat
+ymity,auserandserviceproviderenterintoananonym- eachuserdifferentlybasedonherpastactions.
+itycontract.Theuserisguaranteedanonymityandmes- In this paper, we propose contractual anonymity,
+sage unlinkability from the contractual anonymity sys- which offers a wider range of options for resolving the
+temunlessshebreaksthecontract. Theserviceprovider accountabilityvs.anonymitytension. Incontractualan-
+is guaranteed that it can identify users who break the onymity, the user and service provider (SP) enter into
+contract. The significant advantages of our system are a binding anonymity contract. The user is guaranteed
+that1)theserviceproviderisnotabletotakeanyaction toremainanonymousandnotblacklistedaslongasshe
+towardaparticularuser(suchasrevealingheridentity follows the contract policy, while the service provider
+orblacklistingherfutureauthentications)unlessshevi- isguaranteedtobeabletoidentify(andblacklist,ifde-
+olateshercontract,2)oursystemcanenforceavariety sired)usersthatbreaktheircontract.
+ofpolicies,and3)oursystemisefficient. In a contractual anonymity scheme, the contract
+policy can be an arbitrary boolean function f :
+{msg 1,...,msg n} → {ALLOWED,VIOLATION}. If
+1 Introduction thefunctionreturnsVIOLATIONonamessage(ormes-
+sages),themessageisdeemedmaliciousandtheuseris
+de-anonymized. Examplepolicyscenariosinclude:
+Internetservicessuchaschatroomsforvictimsofvi-
+olence, abuseinformationandsupportmessageboards, Matching-based Apolicymaystatethatanymessage
+and whistle-blowing services are more compelling to matchingapre-definedpatternisconsideredmali-
+users if they provide anonymity. Despite users’ desire cious. Suchpoliciescouldde-anonymizemessages
+for anonymity, service providers must grapple with the that match an intrusion detection rule or malware
+need to identify misbehaving users in order to protect signature, disallow messages containing a prede-
+theirservice. Forexample,aprovidermayneedtoiden- finedsetofprofanewords,andsoon.
+tify and stop undesired behavior such as using the an-
+onymity service to launch denial of service attacks or Consensus-based A policy may require that a thresh-
+threatenotherusers. oldofuserssignapetitiontode-anonymizeauser.
+Thus,ananonymityservicemuststrikeabalancebe- Inparticular,ifnuniqueusersanonymouslyflaga
+tweenaccountabilityandanonymity. Usersofsuchser- message,itisconsideredmaliciousandthesender
+viceswantasmuchanonymityaspossible, andideally, is de-anonymized. Note that in our protocol the
+shouldnothavetotrusttheserviceprovider.Theservice messagewillnotcausede-anonymizationifn−1
+provider, however, must retain some ability to identify userssignthemessage,orifthesameusersignsa
+misbehavinguserstoprotectthevalueoftheservice. messagentimes.
+Previous anonymity protocols [10,31,32] resolved
+Subjective-based Apolicymaystatethatanymessage
+this tension decidedly in favor of the service provider
+selected by a special privileged entity is consid-
+by allowing the service provider to subjectively judge
+ered malicious. For example, any user that sends
+whetherausermisbehaved. Subjectivejudgingdoesnot
+a message which is later designated (e.g., signed)by an appropriate law-enforcement agency’s key anonymizing users at will. To achieve contractual an-
+wouldbeconsideredmalicious. Thesepoliciescan onymity, this entity must be constrained to only de-
+also enable subjective judging (if it is desired) in anonymizeusersthatviolatetheircontract. Weaddress
+a manner similar to related systems [10,31,32], thisinRECAPbyleveragingtrustedcomputing[30]to
+e.g., by allowing a SP to de-anonymize messages implement a verifiable third party, called the account-
+of its choice. However, in contractual anonymity, ability server (AS), that acts as group manager and
+theusermustexplicitlyagreetoacontractthatal- knows the mapping between users’ real identities and
+lowssubjectivejudging. anonymous credentials. Specifically, the AS is a soft-
+waremodulethatwillonlyrevealauser’srealidentityif
+Previous Systems Some of these policies can be en- theSPprovidesmessage(s)thatprovetheuserhasvio-
+forcedusingprevioussystems. Forinstance,consensus- latedthecontract.
+basedpoliciescanconceivablybeenforcedusingthresh- Note that the AS is not arbitrarily trusted by either
+old cryptography [17], and subjective-based policies theuserorSP.WeconstructtheASwithasmalltrusted
+have been considered by past works [10, 31, 32]. computingbase(TCB)thatdoesnotincludetheoperat-
+Subjective-basedsystemscanenforceavarietyofpolicy ingsystemorBIOS,andallowtheuserandSPtoverify
+functions. However,insuchasystem,theSPcandecide theexactcodetheASruns(Section6).Wetermthisver-
+to change the policy function at any time; the user is ifiable trust since all parties can verify that the trusted
+not guaranteed access to the service if she behaves. In partyisrunningcorrectlyandinthepre-agreedmanner.
+contractualanonymity,theuserisguaranteedanonymity
+andaccesstotheserviceifshedoesnotbreakthecon- Contributions We introduce the concept of contrac-
+tract,andneithertheusernorSPcanchangethecontract tualanonymity,inwhichusersareguaranteedanonym-
+withouttheapprovaloftheotherparty. ityaslongastheydonotviolatethepolicyoftheirpre-
+Previoussubjectivejudgingprotocolsalsorequireall negotiated contract with the SP. The SP is guaranteed
+messages to be rate-limited [10,31,32]. These restric- that it can learn a user’s real identity and identify that
+tionspreventtheprotocolsfrombeingusedinavariety user’spastandfuturemessagesiftheuserbreachesthe
+ofsettings,includingthosewhereusersdonottrustthe contract. Wedesignthe RECAP protocol,whichisthe
+serviceprovidertomakefairsubjectivejudgements,and first protocol that provides contractual anonymity. We
+forservicesthatsendmessagesatahighrate. alsoimplementRECAPwithaverysmalltrustedcom-
+putingbase. Throughourimplementation,weshowthat
+AProtocolforContractualAnonymity Wedevelop RECAP is more efficient and offers a wider spectrum
+andimplementacontractualanonymityprotocolcalled ofsolutionstotheaccountabilityvs.anonymitytension
+RECAP. We show through our implementation of thancompetingapproaches[9,10,31,32].
+RECAP that it is feasible to build a secure contractual
+anonymityimplementationwithasmalltrustedcomput- Organization Theremainderofthepaperisorganized
+ing base while simultaneously achieving better perfor- asfollows.InSection2,wepresentrelevantbackground
+mancethanpriorapproaches(Section7). ongroupsignaturesandtrustedcomputing. Wediscuss
+In RECAP, each user is given an anonymous cre- howoursystemoperatesatahighlevelinSection3,and
+dential that allows the user to send messages anony- then in more detail in Section 4. We describe several
+mously. RECAP implements anonymous credentials advantagesofandextensionstooursysteminSection5.
+usinggroupsignatures(Section2.1). Atahighlevel, a Ourimplementationandevaluationresultsaredescribed
+groupsignatureschemeallowsanymemberofthegroup in Sections 6 and 7, respectively. The discussion is in
+to sign on behalf of the group. Individual signatures Section8.WeexplorerelatedworkinSection9.Finally,
+fromunrevokedmembers(i.e.,userswhohavenotbro- weconcludeinSection10.
+ken the contract) are indistinguishable from any other
+unrevoked member’s signatures. Group signatures al- 2 Primitives
+lowtheSPtoefficientlyauthenticatemessageswithout
+needing to know each sender’s identity (and still reject
+2.1 AnonymityandGroupSignatures
+messagesfromrevokedusers).
+However, group signature schemes are not suffi-
+RECAPusesgroupsignatures[2,5–8,13–15]toim-
+cient to achieve contractual anonymity. Group signa-
+plement anonymous credentials. In a group signature
+tures require a group manager who is capable of de-scheme, each group member has a unique private sign- managercandistributerevocationtokenstoaveri-
+ing key that allows them to sign messages on behalf fier,allowingthemtodetectmessagessignedbys
+of the entire group. There is a single group public usingtheGS VERIFYalgorithm.
+key which can be used to verify any member’s sig-
+The properties of modern group signature schemes
+nature. Group signature schemes provide anonymity
+are often based on a framework introduced by Bellare
+amongmembersofthegroup,sinceaverifiercannotdis-
+et al [5]. The group signature scheme we use in our
+tinguish which group member signed a particular mes-
+implementation, the Boneh-Shacham group signature
+sage.Thegroupmanagerisprovidedwithaspecialtrap-
+scheme [8], bases its formal definitions in this frame-
+doorthatcanundothesignatureanonymity.InRECAP,
+work. A group signature scheme suitable for RECAP
+the AS, acting as a verifiable third party, acts as the
+must have the following properties (as described in the
+groupmanager.
+originalBoneh-Shachamwork[8]):
+AgroupsignatureschemesuitableforRECAPmust
+support verifier-local revocation [8]. Verifier-local re- Correctness For any KGPK, K G− S1 K[1...n], and
+vocation allows the signature verifier to determine if a RT[1...n] returned by the GS KEYGEN algo-
+messagewassignedbyarevokeduserwithoutcommu- rithm, any signature produced by the GS SIGN
+nicating with the group manager. The group manager algorithm must return VALID when verified us-
+canrevokeauserbypubliclydisclosingaspecialtoken ing the GS VERIFY algorithm, unless the user
+whichverifiersaddtotheirlocalblacklist. In RECAP, has been revoked. Specifically, ∀i ∈ {1...n},
+verifier-localrevocationallowstheSPtoefficientlyde- GS VERIFY(KGPK,M,GS SIGN(KGPK,
+tectanddisregardmessagesfromblacklistedusers. K G− S1 K[i],M),BL)= VALID⇔RT[i]∈/ BL.
+Such a scheme has four procedures: GS KEYGEN,
+Traceability Traceabilityisdefinedintermsofagame
+GS SIGN, GS VERIFY, and GS OPEN. We describe
+these algorithms below at a high level. We refer the
+thattakesplacebetweenachallengerC andanad-
+reader to previous work [8] that provides the the full
+versary A. The traceability property holds if no
+specificationincludingsecurityproofs. adversary A can win the traceability game with
+more than negligible probability. In the traceabil-
+GS KEYGEN(n) The GS KEYGEN algorithm takes ity game, A wins if it can forge a signature that
+in the number of group members n. The al- cannotbetracedtoanyuserinacoalitionofusers
+gorithm outputs a group public key KGPK, the that A controls. The traceability game consists of
+group manager secret key K−1 , an n-element threestages:
+GMSK
+vector K−1 [1...n] of user secret keys, and
+GSK Setup C runs the GS KEYGEN algorithm, and
+an n-element vector of user revocation tokens
+RT[1...n].
+providesKGPK andRT[1...n]toA. U,the
+setofusersinA’scoalition,isinitiallysetto
+GS SIGN(KGPK,K G− S1 K[i],M) GS SIGN takes a ∅. S, the set of message-signature tuples A
+message M ∈ {0,1}∗, group member i’s private obtainedfromoracles,isalsosetto∅.
+key K G− S1 K[i], and the group public key KGPK, Queries A is allowed to query the GS SIGN
+andreturnsagroupsignatureσ. and GS CORRUPT oracles. The GS SIGN
+oracle takes as input a message M, a
+GS VERIFY(KGPK,M,σ,BL) GS VERIFYtakesas
+user i ∈ {1...n}, and outputs σ ←
+i an np au lt let gh ee dg sr io gu np atp uu rebl σic ,ak ne dy aK bG laP cK kl, isa tBm Les ts ha ag te coM n-, GS SIGN(KGPK,K G− S1 K[i],M).C setsS ←
+S ∪ {(M,σ)} for each message-signature
+sistsofzeroormorerevocationtokens,andreturns
+pair returned by the GS SIGN oracle. The
+oneof{VALID,INVALID}.Anoutputof INVALID
+GS CORRUPT oracle allows A to corrupt a
+meansthateitherthesignatureσ isinvalid,orthat
+userintojoiningthecoalition. GS CORRUPT
+thesignerisontheblacklistBL.Inthelattercase,
+takes a user i ∈ {1...n} as input, and out-
+thesigner’sidentityisalsoreturned.
+puts K−1 [i], the user’s private key. The
+GSK
+GS OPEN(K G− M1 SK,M,σ) GS OPEN takes as input challenger sets U ← U ∪{i} for each user
+thegroupmanagersecretkeyK−1 , amessage icorruptedbytheGS CORRUPToracle.
+GMSK
+M andacorrespondingsignatureσ.If(M,σ)isa Response AoutputsamessageM′,asetofrevo-
+valid message-signature pair, GS OPEN outputs a cationtokensthatformsablacklistBL′,and
+revocationtokenRT[s]forthesigners. Thegroup asignatureσ′.AnadversaryAwinsthegameifallofthefollow- Verification with an empty blacklist (BL) requires ap-
+ingconditionshold: proximatelysixmodularexponentiationsandthreecom-
+putations of a bilinear map. There are two ways of
+• GS VERIFY(KGPK,M′,σ′,BL′)= VALID
+adding local revocation to the verification algorithm.
+• GS OPEN(K G− M1 SK,M′,σ′)=i∈/ U The first, which provides the above properties of cor-
+• (M′,σ′)∈/ S rectness, traceability, and selfless-anonymity, can be
+achieved using a O(|BL|) algorithm, which performs
+Selfless-anonymity Selfless-anonymity,liketraceabil- twoadditionalbilinearmapcomputationsforeachentry
+ity, is defined in terms of a game between an ad- intheverifier’sblacklist.
+versary A and a challenger C. In the selfless- However, thesecondtypeofrevocationcanbedone
+anonymity game, A tries to determine which of in O(1) time by using a precomputed revocation table
+two keys was used to generate a signature σ. The attheexpenseofallowingasmallnumberofmessages
+selfless-anonymity property holds if no adversary to be linked. In the O(|BL|) scheme, each signature
+Acanwintheselfless-anonymitygamewithmore contains a random identifier r that ranges over a large
+than negligible advantage over random guessing. group. Theidentifierrisusedwhenperformingrevoca-
+Thegamehasfivestages: tionchecks. TheO(1)schemeconstrainsthisidentifier
+to range from 1...k, which allows the revocation ta-
+Setup CrunstheGS KEYGENalgorithmandob- ble to be computed in advance. The downside is that a
+tains KGPK, K G− S1 K[1...n], RT[1...n]. C verifiercandeterminethattwosignatureswiththesame
+givesKGPK toA. C setsU, thesetofusers valueofr thataresignedbythesameuserwereinfact
+thatAhascompromisedorrevoked,to∅. signed by the same user – this is called partial unlink-
+Queries The adversary can query the GS SIGN, ability, Unfortunately, there is no formal definition of
+GS CORRUPT and GS REVOKE oracles. C partial unlinkability [8]. Informally, partial unlinkabil-
+runstheGS SIGNoraclebycomputingσ ← ity ensures that a verifier can only link (e.g., determine
+GS SIGN(KGPK,K G− S1 K[i],M) where user thatsigner(m 1)=signer(m 2))oneoutofeveryksig-
+i and message M are inputs, and returns σ natures signed by the same user for the same site (e.g.,
+to A. A can obtain the private key of user a SP in our scheme), where k is a security parameter.
+i ∈ {1...n} using the GS CORRUPT ora- Forinstance,ifk = 100,1%ofthesignaturesarelink-
+cle. C runsthisoraclebyreturning K−1 [i] able. Webelievethatinmanycasesthebenefitsofcon-
+GSK
+andsettingU ← U ∪{i}.The GS REVOKE stanttimerevocationsoutweighthedownsideofhaving
+oracle allows the adversary to obtain the re- asmallnumberoflinkablemessages,andsoweconsider
+vocationtokenforuseri ∈ {1...n}.C sim- theO(1)schemeinourimplementation. Wediscussthe
+ulatesthisoraclebyreturningRT[i]andset- repercussionsofthisfurtherinSection8.4.
+tingU ←U ∪{i}.
+2.2 TrustedComputingandContractEnforce
+Challenge A chooses a message M and user in-
+ment
+dices i and i where i ∈/ U and i ∈/ U. C
+0 1 0 1
+R
+choosesarandombitb ← {0,1}andreturns
+RECAP usesaverifiablethirdparty(theAS)tose-
+σ′ ← GS SIGN(KGPK,K G− S1 K[i b],M)toA.
+curely bind user identities to contract policies and con-
+RestrictedQueries Aisallowedtomakequeries vince remote parties that it has done so. These proper-
+as in the Queries stage. However, in this ties can be achieved using platform security technolo-
+stagetheGS CORRUPTandGS REVOKEor- giesbuiltontheTrustedPlatformModule(TPM)which
+aclescannotbequeriedforusersi 0andi 1. isavailableinmanyrecentcommodityplatforms[1,20,
+Output Aoutputsabitb′. Ifb=b′,Awins. 30]. Alternatively, secure coprocessors like the IBM
+4758[27]providesimilarpropertiesandstrongerresis-
+TheBoneh-Shacham[8]schemeisanefficientgroup tance to physical attacks, but are more expensive and
+signatureschemethatprovidestheseproperties. Specif- not as readily available (the pros and cons of each are
+ically,signingamessagetakesabout1eightmodularex- discussedfurtherinSection8.2). Specifically, RECAP
+ponentiations and two computations of a bilinear map. willworkonanytrustworthycomputingmechanismthat
+providesthefollowingproperties:
+1Thisassumesthatcomputingagroupisomorphismtakesroughly
+thesameamountoftimeascomputingamodularexponentiation.
+Isolation Isolation allows execution of software com-ponentstotakeplaceinanisolated,verifiableenvi- inSection8.2),butusethemorereadilyavailableTPM-
+ronment such that any OS, Virtual Machine Mon- basedplatformfortheuser.
+itor (VMM) or BIOS code that is running cannot
+affectorobservetheexecutionintheisolatedenvi- 3 DesignOverview
+ronment. Software running in isolation can have
+a small, self-contained Trusted Computing Base
+3.1 ContractualAnonymityRequirements
+(TCB) that does not include the OS, BIOS, or de-
+vice firmware. This is useful because the TCB of
+A contractual anonymity protocol should have the
+softwarerunningoncommodityoperatingsystems
+followingproperties:
+isgenerallyverylarge,usuallyincludingtheoper-
+atingsystem,BIOS,etc.
+Unlinkability We consider a user u to be unlink-
+SealedStorage Sensitivedataisprotectedusingsealed able in an unlinkability set S L if, given any two
+storage, whereby data can be encrypted such that messages m 1 and m 2 such that signer(m 1) =
+subsequent decryption is only possible if the plat- signer(m 2) = u,anadversarycandeterminethat
+form is executing specific software. For instance, signer(m 1) ∈ S L and signer(m 2) ∈ S L, but
+thiscanbeusedwithisolationtoensurethatsensi- the probability that the adversary can determine
+tiveinformationcanonlybedecryptedbyaspecific signer(m 1) = signer(m 2)is≤ ǫ,asecuritypa-
+softwarecomponentrunninginisolation. rameterinoursystem. ǫ = 0.01meansthat1%of
+messagesfromthesameusercanbelinked. Auser
+Attestation One system can prove to another that it isunlinkableunlessshebreakshercontract.
+has loaded certain code for execution within an
+Note that unlinkability implies the weaker notion
+isolated environment using attestation. An attes-
+of anonymity, e.g., that an adversary cannot learn
+tationdemonstratestoaremoteverifierthattheat-
+theidentityoftheuserthatsentamessage.
+testingplatforminstantiatedanexecutionenviron-
+ment with a particular code module, along with Contract-based The user and SP enter in a con-
+its input and output values. We denote the pro- tract, and both parties are bound by the con-
+cessofcreatinganattestationofthecurrentlyrun- tract. A contract unambiguously specifies
+ningcodemodulewithinputiasGEN ATTEST(i). the agreed-upon terms of service with a pol-
+A third party can compute the value an attestation icy function f : {msg ,...,msg } →
+1 n
+should have for a code module running with input {ALLOWED,VIOLATION}. If the user signs some
+i as EXP ATTEST(codemodule,i). Only an attes- messages m such that f(m) returns VIOLATION,
+tation from a platform executing the code module thesesignedmessagescanprovemisbehaviortothe
+on input i should be equal to the verifier’s, i.e., AS, who will de-anonymize the user that signed
+GEN ATTEST(i)=EXP ATTEST(codemodule,i). m. Once a user is de-anonymized, unlinkability
+nolongerholdsforthatuser. Neithertheusernor
+UniqueIdentifiers Each user has a real identity that
+theSPcanmodifyanacceptedcontract;theymust
+is revealed if she violates the contract. For con-
+explicitly agree to a new contract if they wish to
+creteness,weassumeRECAPusestheunique,un-
+changethepolicyfunctionf.
+spoofableidentifierfoundaspartofvarioustrusted
+computing platforms, called the endorsement cer- Revocability The SP is able to obtain a user’s iden-
+tificate. We also refer to the endorsement certifi- tityiftheSPhasproofthattheuserbrokehercon-
+cate as the trusted computing identifier. Section 5 tract. Specifically,theproofisasetofmessagesm
+discusses the importance of practical unique iden- signedbytheusersuchthatf(m)returns VIOLA-
+tifiersinthecontextofSybilattacks. TION, where f is the user’s contract policy func-
+tion. TheSPcanthentakeappropriateaction,e.g.,
+Since the user and AS both have different roles in blacklisttheuser.
+RECAP, it may be desirable to use different trusted
+computingimplementationsforeachparty.Forinstance, Efficiency Theprotocolshouldbeasefficientaspossi-
+since the AS stores sensitive information, it may be ble.Thisincludes,butisnotlimitedto,scalingwell
+worthwhiletouseasecurecoprocessorthatisdesigned withrespecttothenumberofblacklistedusersand
+towithstandphysicalattacksfortheAS(discussedmore notrequiringstringentratelimiting.At a high level, previous approaches fail to meet Accountability Server The accountability server
+theserequirementssincetheydonotbindanonymityto (AS)isaverifiablethirdpartythatmanagesusers’anon-
+a pre-negotiated contract. For example, many existing ymouscredentialsandde-anonymizesusersthatviolate
+anonymity systems require an unverifiable trusted third their contracts. Specifically, the user and SP can ver-
+party (TTP) that is capable of de-anonymizing users at ifythattheASde-anonymizes users ifand only ifthey
+will [8,12,13]. More recent systems [10,32] allow breaktheircontract.
+for subjective judgement and anonymous blacklisting, An overview of the different stages and participants
+whichallowaSPtoblacklistauserforanyreasonand of RECAP is shown in Figure 1. We provide an
+atanytimewithoutcompletelyde-anonymizingher. In overview of the stages below, and then discuss them in
+thesesystems,theuserisneverguaranteedunlinkability, greaterdetailinSection4.
+evenifshefollowstheSP’spostedpolicies.
+3.2.1 ProtocolStages
+3.2 RECAPOverview
+Setup During setup, the parties must generate two
+typesofkeys. Theuser,AS,andSPmustgeneratepub-
+We propose RECAP, a protocol for achieving the
+lic/privatekeypairsthatcanbeusedfordigitalsignatures
+desired contractual anonymity properties. RECAP in-
+and asymmetric encryption (e.g., RSA keypairs). The
+volvesthreeparties.
+user only uses these asymmetric keys when registering
+withtheAS.TheASgeneratesgroupsignaturekeysfor
+eachgrouprequired. TheuserandASgenerateandseal
+theirkeypairs(andrelatedsensitiveinformation)sothat
+only the trusted RECAP code can decrypt it. The SP
+User Service Provider Accountability
+obtainsacertificatethatbindsitsidentifyingnametoits
+Server
+Registration publickey(likeaSSLcertificate).
+Request−Contract
+Attestation
+Registration Phase In the initial registration phase a
+Public Key
+SPanduseragreeonaspecificcontractpolicy.Thecon-
+Attestation, Contract, Anonymous credentials
+tract policy stipulates the rules that users are expected
+Contract
+to follow. We discuss policies further in Sections 3.3
+Anonymous Communication and8.3.
+Signed message
+In RECAP, the user receives a contract policy pro-
+Breach posed by the SP. If she agrees to the policy, then she
+Malicious msg Malicious msg
+requests a contract containing that policy from the AS.
+User’s identity
+TheASreturnsananonymouscredentialandacontract
+fortheuserthatcanbeusedwiththeSP.
+The contract can be thought of as proof that the AS
+Figure 1. The three stages of RECAP are
+has bound together the user’s real identity, anonymous
+registration, anonymous communication,
+credential,andthecontractpolicy. Itprovidesassurance
+andbreach.
+totheSPthattheASknowsthetrueidentityoftheuser
+assignedtheanonymouscredential,andwillrevealthat
+identityifgivenproofthattheuserhasbrokenthepolicy
+User Theuserwantstoaccesstheservicethatispro- inhercontract.
+vided by the service provider. However, she may not At the completion of the registration phase, the SP
+trusttheSPortheotherusers,andthuswantstobeanon- and user have a contract that guarantees the user’s real
+ymousandunlinkablewhenusingtheservice. identity will only be revealed by the AS if the SP can
+submitasetofmessagessignedbytheuserthatviolate
+thecontract.
+Service Provider The service provider (SP) wants to
+provideanonymousandunlinkableaccesstoitsservice.
+However,theSPalsowantstheabilitytoblacklistusers Anonymous Communication Phase In the anony-
+whothreatentheutilityoftheservice. mous communication phase the user uses her anony-
+mouscredentialtointeractwiththeSP.Inparticular,theusercommunicateswiththeservicebydigitallysigning cies that do fit our model, several of which were de-
+amessagewithhergroupprivatekey. TheSPthenver- scribedinSection1. WediscusspoliciesfurtherinSec-
+ifiesthatthemessagewascreatedbyauserwithavalid tion8.3.
+contractbyverifyingthesignedmessagewiththegroup
+publickeyspecifiedinthecontract. 4 Architecture
+Sinceeach messagemustproveitcamefromanau-
+thorizeduser,wealsorefertocommunicatingmessages
+4.1 EstablishingaSecureChannel
+to the SP as performing an authentication. An anony-
+mous communication operation is analogous to the au-
+Why is a New Protocol Needed? Many parts of
+thentication operation of an anonymous authentication
+RECAP rely on the ability to create a secure channel
+protocol[31,32].
+between the protocol participants. A RECAP secure
+channel must be able to provide 1) confidentiality and
+ContractBreach Abreachofcontracthappenswhen integrityofanymessagessentinsidethechannel,and2)
+theusersendsmessage(s)prohibitedbythecontractpol- assurancethattheremoteparty’sprivatekeyissealedso
+icy to the SP. The SP can identify which user violated thatonlythetrustedRECAPsoftwarecanaccessit.
+the contract by presenting the prohibited message(s) to Although confidentiality and integrity of messages
+the AS. Upon confirming that the message(s) violate insidethechannelcanbeachievedusingstandardtech-
+theagreed-uponcontract,theASrevealstheuser’sreal niques (i.e., SSL/TLS), RECAP has several require-
+identityandgroupsignaturerevocationtokentotheSP. mentswhichmotivateanewsecurechannelprotocol:
+ThisallowstheSPtoidentifyanysubsequentandprior
+• The user’s endorsement certificate is used as the
+communicationusingtheanonymouscredential.
+user’s unique identifier and as a required compo-
+At the end of the breach phase, the SP has the ca-
+nent for verifying user attestations. Thus, the se-
+pability to identify the user who breached her contract,
+cure channel protocol must not require the user to
+and thus can take appropriate action. To be concrete,
+reveal her endorsement certificate, which is confi-
+we assume the SP will blacklist the user. The blacklist
+dential, until it has been established that only the
+(BL)isalistofuserswhohaveviolatedthecontractand
+trustedRECAPcodecanaccessit.
+are no longer allowed to use the service. The SP can
+blacklist the user by adding the user’s anonymous cre-
+• The untrusted part of the RECAP software (e.g.,
+dential to her group signature blacklist. To prevent the
+the part not running in trusted computing-enabled
+userfromobtaininganewanonymouscredential,weal-
+isolation)mustdemonstratethatitrunsthetrusted
+lowtheSPtocontroltheAS’sblacklist,whichisalistof
+RECAP software in response to the secure chan-
+real identities that are not allowed to obtain new anon-
+nelestablishment. Inaddition,thetrustedRECAP
+ymous credentials. RECAP can easily be extended to
+softwaremustproveithasaccesstoitstrustedlong
+supportotheractionsaswell,suchasanonymousblack-
+term RSA key. Thus, two sets of challenges are
+listing, in which SPs are given the ability to blacklist
+needed.
+userswithoutneedingtoknowtheirrealidentities.
+• AnyagentrunningthesecureRECAPsoftwarein
+3.3 ContractPolicies anisolated,verifiableenvironmentisconsideredto
+betrusted. Becauseofthis,itisnotonlyimportant
+An anonymity contract is a binding agreement that toestablishconfidentialityandintegrityamongthe
+states that a user’s real identity may be exposed if she possessors of the keys used to setup the channel,
+violatesthecontractterms. Wecallthosetermsthecon-
+butalsoestablishthatthesekeysareonlyaccessible
+tractpolicy.
+bythetrustedRECAPsoftware.
+A contract policy is a boolean predicate f : {msg ,
+1 RECAPachievestheserequirementsusingtheprotocol
+msg 2,...,msg n} → {ALLOWED,VIOLATION}. The
+described below. RECAP’s secure channel protocol is
+status VIOLATION indicates that the messages violate
+similartoexistingsecurechannelprotocols,modulothe
+thecontractterms,andthustheuserisinbreachofcon-
+changesneededtoaddtheabovefeatures.
+tract. ALLOWEDindicatesthatthemessagesdonotvio-
+latethepolicy. Wedonotmakeanyattempttomodela
+ProtocolDetails Lines3–16ofFigure2showhowwe
+“moralityfunction”;suchpoliciesareoutsidethescope
+establishasecurechannelintheregistrationprotocolbe-
+ofoursystem. However,therearemanyclassesofpoli-
+tweentheuserandAS.AsecurechannelisestablishedU-SPregistrationprotocol
+1.U→SP: {message,σ=⊥,contract=⊥}
+2.SP→U: {Get-Contract,AS,SP,AddrSP,CP} K−1
+SP
+U-ASregistrationprotocol
+3.U: NU ←R {0,1}α,RU ←R {0,1}α
+4.U→AS: {KU,NU}
+5.AS: NAS ←R {0,1}α,RAS ←R {0,1}α
+6.AS: a←GEN ATTEST(KU|NU|KAS|NAS)
+7.U←AS: {KAS,NAS,a,CEndorse−AS}
+8.U: a′←EXP ATTEST(TrustedRECAPCode,KU|NU|KAS|NAS)
+9.U: abortifa6=a′ UserknowsASrunningtrustedcode.
+10.U→AS: {{RU} K−1}KAS
+U
+11.U←AS: {{RU +1,RAS} K−1}KU UserknowsKASboundtotrustedAScode.
+AS
+12.U: a←GEN ATTEST(KU|NU|KAS|NAS)
+13.U→AS: {{RAS+1,a,CEndorse−U} K−1}KAS
+14.AS: a′←EXP ATTEST(TrustedRECU APCode,KU|NU|KAS|NAS)
+15.AS: abortifa6=a′ ASknowsuserrunningtrustedusercodeand
+KU boundtotrustedusersoftware.
+16. SetupsymmetricencryptionandMAC Securechannelestablished.
+17.U→AS: {Get-Contract,AS,SP,AddrSP,CP} K−1
+SP
+18.AS: abortifCEndorse−U onSP’sblacklist
+19.AS: executekeybindingprotocol
+−1
+20.U←AS: {{CP,KGPK,KSP} K−1,K GSK[i]}
+AS
+U-SPanonymouscommunicationprotocol
+−1
+21.U→SP:
+{message,σ=GS SIGN(KGPK,K GSK[i],message),contract=
+{CP,KGPK,KSP} K−1}
+AS
+22.SP: ifGS VERIFY(KGPK,message,σ,BL)=VALID,acceptmessage.
+Figure2.Theregistrationandanonymous communication protocols. Theuserobtainsacon
+tract using the registration protocol. The anonymous communication protocol is then used
+to send anonymous messages to the service provider (SP). All messages after Line 16 are
+implicitlyencryptedandMACedusingsymmetriccryptography.
+in the breach protocol as well, but the process is very Aftercreatingtheattestation,theASsendstheattes-
+similar. OnLines3–4ofFigure2, theusergeneratesa tation, nonce, its public key and its trusted computing
+nonce N and sends the nonce and its public key K device endorsement certificate (Line 7). The endorse-
+U U
+totheAS.TheASgeneratesitsownnonceN andan ment certificate is issued by a trusted computing de-
+AS
+attestationtoprovethatisrunningtheRECAPsoftware vice’smanufacturerandusuallyindicatesthattheprivate
+inresponsetotheuser’srequest(Lines5–6). component of a keypair is known only to that device.
+A verified attestation proves several important facts Thisletsaverifierconfirmthatanattestationcamefrom
+to the verifier (in this case, the user). First, by includ- a legitimate trusted computing device. The user’s en-
+ingN andN intheattestation,theASprovesthatit dorsementcertificatealsodoublesasheruniqueidentity,
+U AS
+isrespondingtotheuser’srequest,whichensuresfresh- whichisdiscussedfurtherinSection5.Atthispoint,the
+ness, i.e., the isolated execution environment ran in re- userverifiesthattheattestationiscorrect;ifitisnot,she
+sponsetotheuser’srequest. Second,theASprovesthat abortstheprotocol(Lines8–9).Otherwise,sheencrypts
+messagesencryptedtoK ordigitallysignedbyK−1 and signs her random number, and expects the AS to
+AS AS
+canonlybereadorcreatedbytheAS.Thisisbecausea incrementitinresponsetoprovethatitcandecryptand
+correctASkeepssecurity-sensitivedatalikeK−1sealed signusingK−1(Line10).Itisworthnotingthattheran-
+AS AS
+sothatonlythetrusted RECAP softwarecanaccessit. domnumberisgeneratedandhandledinplaintextform
+Theusercanverifythis,becausetheycanverifytheex- onlybythetrustedRECAPcode. Incontrast,thenonce
+act code the AS is running. Last, the AS also conveys usedearlierwasnotasecret. Inresponse,theASsends
+thatithasreceivedtheuser’skey,K . R +1 and its own random number (Line 11). When
+U Utheuserreceivesitsincrementedrandomnumber,itbe- AS-SPkeybindingprotocol
+lieves that K
+AS
+is bound to the trusted RECAP code, 1.AS: NAS ←R {0,1}α
+and is willing to send its endorsement certificate en-
+2.AS→SP: {KAS,NAS}
+cryptedunderthatkeyaspartofanattestation,because 3.SP: NSP ←R {0,1}α
+the RECAP codewillonlydisclosetheuser’sendorse- 4.AS←SP: {{NSP,NAS} K S− P1,KSP,CSP}
+mentcertificate(whichisalsoheruniqueidentity)ifshe
+5.AS: a←GEN ATTEST(KSP|NSP|KAS|NAS)
+6.AS→SP: {a,CEndorse−AS}
+breaks her contract. The user generates an attestation a′←EXP ATTEST(TrustedRECAPCode,
+7.SP:
+which provides similar properties to the AS, and sends KSP|NSP|KAS|NAS)
+itwithitsownendorsementcertificate,andtheAS’sin- 8.SP: abortifa6=a′
+crementedrandomnumber(Lines12–13). Uponreceiv-
+Figure3.Thekeybindingprotocol.
+ingtheincrementedrandomnumber,theASverifiesthe
+user’s attestation (Lines 14–15), and both parties then
+switch to more efficient symmetric cryptography (Line
+16). Thiscanbedonewithstandardtechniques[24]. nects directly to the SP and executes the key binding
+protocol shown in Figure 3. The key binding proto-
+4.2 ProtocolPhases col allows the SP to ensure that the AS is running the
+RECAP software, and to verify that K−1 is bound to
+AS
+The RECAP protocol is split into three phases: that software. This verification is proof to the SP that
+theregistration,anonymouscommunication,andbreach a user’s identity willbe revealed if that user breaks her
+phases. Theregistrationphaseisrequiredbeforeauser contract. This protocol only needs to be executed once
+interacts with the SP. The anonymous communication per (AS,SP) pair, since the result can be cached. Note
+phaseservestomarkmessagesasoriginatingfromauser that the key-binding protocol is similar to establishing
+that has a valid contract. The breach phase takes place a secure channel as described in Section 4.1. The cen-
+whentheSPwantstoknowwhocreatedmessagesthat tral difference is there is no need to switch to symmet-
+areinviolationofthecontract. riccryptographysincenomessagesaretransmittedafter
+the AS’s key is shown to be bound to the trusted AS
+software.
+Registration Phase RECAP begins with the user
+After the key binding, the AS proceeds to create a
+connectingtotheSP(Line1inFigure2). Theuserwill
+contract. Thecontractconsistsofthecontractpolicythe
+not have a contract since it is her first time connecting,
+useragreesto,thepublickeyoftheuser’sgroupsigna-
+andindicatesthisinherinitialmessage. TheSPreplies
+ture group, and the SP’s public key. The AS sends the
+with a message indicating that a contract is required to
+contract and a group private key to the user (Figure 2,
+usetheservice(Line2). Specifically,theusermustob-
+Line20). Finally,theusersendsthecontracttotheSP,
+tain a contract from the SP-specified AS and the con-
+andsheisreadytostartendorsingmessages(Line21).
+tract must have the SP-specified contract policy (CP),
+which is the policy that the user must agree to. If the
+user agrees to abide by the CP, she connects to the AS Anonymous Communication Phase To endorse a
+and begins to create a contract. Otherwise, she aborts. message,theusersimplysignsthemessagemusingher
+We allow the SP to choose the policy, since that maps group private key K G− S1 K[i], and sends the signed mes-
+mostcloselytoexistingservices. However,analternate sagetotheSP(Line21). WhentheSPreceivesasigned
+versionofRECAPmightbemoreflexible,i.e.,allowa message, it ensures that it has received a valid contract
+user to choose one of several policies, negotiate policy with the corresponding group public key. The SP also
+terms,etc. verifiesthatthemessagehasavalidsignaturebyexecut-
+Toobtainacontract,theclientconnectstotheASand ingthegroupsignatureverificationoperation(Line22).
+beginstheU-ASprotocol(Line3). Aswasdescribedin
+Section4.1, theuserandASestablishasecurechannel BreachPhase Whenausergeneratesmessage(s)that
+(Lines3–16). Oncethechannelisestablished,theclient violate the SP’s policies, the SP delivers the offending
+sendsthecontractpolicythattheSPrequires(Line17). message(s) to the AS. This protocol is shown in Fig-
+The AS maintains a list of users that have been black- ure4. Afterestablishingasecurechannel(Lines1–11),
+listed by the SP, and aborts if one of those users is at- the AS verifies that the received messages are signed
+temptingtore-register(Line18). by a group that the AS manages (Lines 12–13). Then,
+At this point in the protocol (Line 19), the AS con- the AS verifies that the messages violate the contractBreachprotocol Contract-basedandRevocability These properties
+1.AS: NAS ←R {0,1}α,RAS ←R {0,1}α rely on the trusted computing properties of attes-
+2.AS→SP: {KAS,NAS} tation, isolation, and sealed storage. The contract
+3.SP: NSP ←R {0,1}α,RSP ←R {0,1}α policies can be fairly enforced by running the
+4.AS←SP: {KSP,NSP}
+trusted RECAP software in isolation and keeping
+5.AS: a←GEN ATTEST(KSP|NSP|KAS|NAS)
+6.AS→SP: {a,CEndorse−AS,{{RAS} K−1}KSP} sensitive information in sealed storage, and then
+a′←EXP ATTEST(TrustedREA CS APCode, proving this using attestation. This allows the
+7.SP:
+KSP|NSP|KAS|NAS) user and SP to ensure that the AS is running a
+8.SP: abortifa6=a′ known-good implementation in hardware-assisted
+9.AS←SP: {{RAS+1,RSP} K−1}KAS
+isolation, e.g., that the AS behaves as described
+SP
+10.AS→SP: {{RSP +1} K−1}KSP
+in this paper and is not a malicious or incorrect
+AS
+11. SetupsymmetricencryptionandMAC implementation.
+12.AS←SP: {m={message1,σ1,...,messagen,σn}}
+∀mi∈m,abortif
+13.AS: GS VERIFY(KGPK,mi,σi,BL)=INVALID 4.3.2 GroupSignatures
+14.AS: abortifCP(m)6=VIOLATION
+15.AS: gid←GS OPEN(K G− M1 SK,msg1,σ1) RECAPalsoinheritspropertiesfromgroupsignatures:
+16.AS→SP: {gid,RT[gid],GidToEKcert[gid]}
+Unlinkability Unlinkability comes directly from
+group signature properties. For instance, if
+Figure4.Thebreachprotocol. Theservice
+the O(1) revocation scheme is being used,
+provider (SP) submits any messages sus
+unlinkability with ǫ = 1 comes from partial
+pectedtobeinviolationofthecontractto k
+unlinkability. IftheO(|BL|)revocationschemeis
+theaccountabilityserver(AS).TheASveri
+used, unlinkability with negligible ǫ comes from
+fiesthemessages,andreturnstheidentity
+selfless-anonymity. We discuss this choice further
+oftheusersthatviolatedtheircontracts,if
+inSection8.4.
+any. AllmessagesafterLine11areimplic
+itly encrypted and MACed using symmet Contract-based Users must obtain anonymous cre-
+riccryptography. dentials from the AS, who can hold each user ac-
+countabletothecontractpolicy. Thisfollowsfrom
+traceability, which ensures a user cannot forge a
+signaturewithouthavinganonymouscredentials.
+(Line 14). The AS obtains the group private key2 that
+Revocability Again from traceability, any signature
+violatedthecontract, byusingthe GS OPEN operation
+producedcanbetracedbacktothekeyusedtopro-
+(Line 15). It then reveals 1) the user’s group signature
+duceit.Thus,anymessagesubmittedbyauserthat
+revocation token, and 2) the user’s real identity to the
+violateshercontractcanbetracedbacktothatuser.
+SP (Line 16). With that information, the SP can add
+Thatusercanthenberevokedfromtheservice.
+the user’s current group key to the group signature re-
+vocation list so that messages signed with her anony-
+Protocol Correctness Although a formal security
+mouscredentialwillnolongerbeaccepted. TheSPcan
+proof of the RECAP protocol is outside the scope of
+alsoaddtheuser’srealidentitytoablacklistontheAS
+thepaper,wenotetheprotocolissimilartowell-known
+thatpreventstheuserfromobtaininganewcontractand
+secureprotocols. Thehigh-levelsemanticsoftheproto-
+anonymouscredential.
+col(e.g.,actionsthattakeplaceafterthesecurechannel
+isestablished)arestraight-forwardandcanbemanually
+4.3 SecurityOverview
+verified. The setup of the secure channel can be more
+easilyunderstoodifoneconsidersthebasicstepsofeach
+4.3.1 TrustedComputing
+party. Specifically, each party performs the following
+RECAP builds some of the properties required for a steps:
+contractual anonymity system from the properties of
+1. Atteststothecodesheisrunninginanisolateden-
+trustedcomputing:
+vironment(Figure2,Lines6,8,12,and14)
+2Weassumeforsimplicityherethatallmessagesinviolationofthe
+2. Sendsherpublickeyandcertificate(Lines4,7,and
+contractpolicyaresignedwiththesameprivatekey,i.e.,thatthereis
+onlyasinglemalicioususer. 13)3. Issues and responds to a challenge (Lines 10, 11, Current blacklists, however, typically do not provide
+and13) much information as to why a particular identity is on
+the list. RECAP can easily be extended to implement
+4. Setsupsymmetriccryptography(Line16).
+verifiable blacklists. We say a blacklist is verifiable if
+Inotherwords,oursecurechannelprotocolissimilarto eachidentityontheblacklistisaccompaniedbyaproof
+standardsecurechannelprotocols(suchasSSL3.0),but ofthemaliciousactivitythatledtoitsbeingblacklisted.
+doesnotnegotiatewhichciphersareused3,andincludes During registration, a user and SP agree to the con-
+attestations. For instance, a model checking approach tractpolicy. Theuserwillregisterhertrustedcomputing
+to verifying SSL has shown that the high level seman- deviceendorsementcertificateCEndorse−U withtheAS
+ticsofSSLcanbereducedtosimilarsimplesteps[25]. and receive her anonymous credential K G− S1 K[i]. Dur-
+We leave the augmentation of existing similar security ing contract breach, the AS is provided with a set of
+proofswithouradditionalattestationandTPMstepsas signed messages that violate the contract. When pro-
+futurework. vided with evidence of a breach, the AS responds with
+both K−1 [i] (so that subsequent messages from the
+GSK
+5 Features user can be identified) and CEndorse−U (so that the
+blacklistedusercannotobtainanewanonymouscreden-
+tial).
+Anti-discrimination RECAP prevents a SP and its
+In RECAP, the AS can publish those mes-
+ASfromdiscriminatingagainstanonymoususersbased
+sages as proof that a breach has occurred to en-
+on their past messages. Previous systems with TTPs
+able verifiable blacklists. More specifically, the
+have not appropriately limited the power of the TTP to
+blacklist [8,12,13], and so the TTP could potentially
+ASpublishesthetuple({CP,KGPK,K SP} K−1,M,σ,
+AS
+blacklist well-behaved users. For example, someone K G− S1 K[i],GEN ATTEST(K G− S1 K[i] → CEndorse−U)),
+couldcompromisetheTTPandblacklistusers,orbribe suchthat{CP,KGPK,K SP} K−1 istheuser’scontract,
+AS
+the TTP itself to misbehave. Thus, such systems can M andσaretheoffendingmessage(s)andsignature(s),
+discriminate. andtheASatteststothefactthattheanonymouscreden-
+Previous TTP-free systems allowed subjective judg- tial (group signature private key) was issued to the ref-
+ing[31,32],i.e.,userscanbeblacklistedforanyreason. erenced real identity. No trusted maintainer is required
+The ability to subjectively judge means that a SP can becausetheblacklistentriescontainproofthatthecon-
+blockallfutureauthenticationsfromauserbasedonher tractwasviolated.
+pastactions. Forexample, ausercouldpostamessage
+the SP dislikes, and the SP would be free to block all Practical Unique Identifiers Inthe Sybilattack [18]
+future authentication. Thus, the SP could discriminate a user can subvert security by forging new identities.
+againstauserwithoutknowingherrealidentityinsuch Inour system, userscannot create new identitiesthem-
+systems. selves without breaking the traceability property of
+In RECAP, anyonecanverifythattheASwillonly groupsignatures. Thus,inoursettingaSybilattackcor-
+de-anonymizeauserifhercontractisviolated. Further, respondstoausersuccessfullyobtainingaccesstoanew
+the AS seals each user’s real identity, which results in realidentity,sinceanewidentityallowshertoobtaina
+an encrypted blob that can only be decrypted when the newcontractevenifheroldidentityisontheblacklist.
+trusted RECAP code is running in a verifiable execu- Our architecture mitigates the Sybil problem by
+tionenvironment. Thus,eveniftheuntrustedpartofthe leveraging the unique identifier found in each user’s
+RECAPsoftware,theoperatingsystem,ortheBIOSis trusted computing device as the user’s real identity. A
+compromised, a collusion between the AS and SP can- user cannot practically obtain a new identifier for her
+notrevealabehavinguser’srealidentity. RECAP also computer without replacing the trusted computing de-
+providesunlinkabilityofmultipleauthentications.Thus, vice (since it is a physical device and there is no pro-
+aSPcannotdiscriminateagainstuserswhohavenotbro- grammaticwaytoreplaceit).
+ken their contract. The SP would have to deny service We believe that our solution is more practical than
+toallbehavingusersinordertodenyservicetoone. solutionsinothersystems.Forinstance,inPEREA[32],
+asuggestedmethodisfortheusertoregisterwiththeSP
+VerifiableBlacklists Blacklistsarecommonlyusedin bypresentingherdriver’slicenseinperson4. However,
+network services to block known malicious identities. wearguethatthisisimpracticalformostservices.
+3RECAPalwaysusesthesameciphersforsimplicity. 4Thisstillpreservesanonymitybecausetheregistrationisnotlink-Wedonotethatoursolutionisnotperfect,sinceone The registration and breach phases of RECAP in-
+computercanbesharedbymultipleusers,andoneuser volve processing inside the Flicker isolation environ-
+canownmultiplecomputers. Inparticular,well-funded ment, because the protocol requires access to informa-
+attackers may be able to purchase such a large number tionthatmustbekeptsecretusingsealedstorage. How-
+ofcomputersthatblacklistingallofthemwouldbedif- ever,Flickerdoesnotsupportdirectaccesstoanetwork
+ficult. Services concerned about this type of adversary stack. Therefore, software that directly interfaces with
+can use a more precise identifier as a unique identity, thenetworkstackmustrunontheuntrustedhostoperat-
+suchasadriver’slicenseorpassport. ingsystem. TheuntrustedportionofRECAPisrespon-
+sibleforlaunchingtheFlickersessionsontheuser’sand
+6 Implementation AS’s platforms. We note that the untrusted code could
+choosenottolaunchtheFlickersession. Thisisequiv-
+alent to the availability attack described in Section 8.2,
+We implemented RECAP using two cryptographic
+butmoreimportantly, theuntrustedcodecannotimper-
+libraries: thePBC SIGgroupsignaturelibrary[22]that
+sonatetrustedcode.
+is a framework for implementing pairing based group
+The trusted RECAP components that run in the
+signature schemes, and the XySSL library [34] for im-
+Flickerenvironmentareresponsibleforprotectingtheir
+plementations of RSA, AES, SHA-1, and HMAC. We
+stateusingTPM SEALandTPM UNSEAL. Manypro-
+use256-bitAESkeys,HMACkeys,noncesandrandom
+tocolmessagesintheregistrationandbreachphasesare
+values. RSA keys are 1024-bit. We use the Boneh-
+passed as input to the Flicker environment, along with
+Shacham group signature scheme [8] with a Type-A
+the sealed copy of any sensitive data that may be re-
+pairing. We do not currently implement any local re-
+quired. The trusted code will then unseal the informa-
+vocation checking for the group signature scheme [8],
+tion it needs and create its reply message. It will then
+althoughweintendtoimplementthisinfuturework.In-
+output the reply message to be sent over the network,
+stead, we consider the effects of using the O(1)-time
+and seal and output any updated sensitive state before
+revocationschemethataddsatable-lookupperverifica-
+returningtothehostoperatingsystem.
+tion, which is unlikely to significantly change our per-
+Sealed state on the user’s platform includes R ,
+formance measurements. We assume that this table- U
+R ,K−1,K ,andK .SealedstateontheAS’s
+lookup will have a negligible effect on our measure- AS U AS U−AS
+platform includes, for each registered user U : R ,
+ments. Options for implementing such revocation are i AS
+R ,K−1,K ,K ,andtheregisteredusers’en-
+discussedinSection8.4. Ui AS Ui AS−Ui
+Portions of the code that execute on the user’s and
+dorsementkeycertificates(realidentities)CEndorse−Ui.
+It further includes the entire set of private group signa-
+AS’s platforms constitute the security-sensitive, trusted
+ture keys K−1 [1...n] (i.e., keys for each registered
+components of RECAP. Our implementation uses the GSK
+member,andunusedkeysthatmaybeassignedtofuture
+Flicker system [23] to provide the attestation, sealed
+members),andthegroupmanagersecretkeyK−1 .
+storage,andisolationpropertiesspecifiedinSection2.2 GMSK
+by using a TPM [30] and hardware-supported dynamic
+root of trust [19]. Datta et al. have proven that dy- 7 Evaluation
+namic root of trust systems like Flicker allow a veri-
+fiertomakestrongconclusionsaboutthesoftwarestate Ourtestmachineisanoff-the-shelfLenovoThinkpad
+of an attesting platform. The Trusted Computing Base T400 with a 2.53 GHz Intel Core 2 Duo processor and
+(TCB)forsecurity-sensitiveRECAPcodeincludesonly 2 GB of RAM. It runs Ubuntu 8.10 with Linux ker-
+theFlickerstubcode,andexcludesthelegacyoperating nel2.6.24.Ourcurrentimplementationonlyutilizesone
+system, BIOS, and all DMA-capable devices. We ex- core,butamoresophisticatedimplementationcoulduse
+pectthetrusted RECAP codetobethesameacrossall multipleCPUstoimproveperformance. Weperformall
+uses of RECAP, i.e., the code will be publicly known of our experiments on this one machine, i.e., we exe-
+andevaluatedtobe“known-good”bymanualorformal cute the SP, AS, and user code on the same machine.
+securityanalysis. Ourimplementationbaseseachuser’s This configuration gives a conservative estimate of the
+uniqueidentityontheEndorsementCredentialfoundin protocol’send-to-endrunningtimeinarealsystem(ex-
+eachTPM(whichisdiscussedfurtherinSection5).One cludingnetworklatency),sinceonlyoneFlickersession
+benefit of using the Flicker system is that RECAP can canberunninginisolationatatime.
+runoncommoditysystemsthatarewidelyavailable.
+abletofutureauthentications.7.1 Performance
+50000
+40000
+30000
+20000
+10000
+0
+0 100 200 300 400 500 600 700 800
+)ruoh/shtua(
+tuphguorhT
+RECAP
+PEREA, K=15
+BLAC
+Blacklist size
+(a) Anonymouscommunicationthroughputattheuser.
+50000
+40000
+30000
+20000
+10000
+0
+0 100 200 300 400 500 600 700 800
+)ruoh/shtua(
+tuphguorhT
+dorsement takes 86 ms ± 0.4 ms on the user’s plat-
+form, and message verification takes 87 ms ± 0.2 ms
+on the SP’s platform. Note that our implementation is
+not actually checking for revoked users. Thus, these
+measurements are very close to what the O(1) revoca-
+tionschemewouldyield. Inthisscheme, asmallnum-
+ber of messages are linkable (see Section 8.4). Fig-
+ures 5(a) and 5(b) show that the endorsement through-
+putofRECAPscaleswellwiththesizeoftheblacklist
+|BL| for both the user and SP. Table 1 compares the
+asymptotic and empirical performance measurements.
+Weusethenumbersreportedinpriorworks[31,32].
+NotethatPEREAandBLACbothrequireadditional
+ratelimitingnotshowninFigures5(a)and5(b), which
+limitsthethroughputbetweenaparticularuserandSP.
+For instance, in PEREA, users must be rate-limited to
+k authenticationsperdetectiontime. Fork = 30anda
+RECAP detectiontimeofonehour,thisyieldsonly30authenti-
+PEREA, K=30
+BLAC cationsperhour. RECAPdoesnotrequireratelimiting,
+and a particular user and SP can authenticate approxi-
+mately40,000timesperhour.
+Clearly, there is a performance-unlinkability trade-
+off between our implementation of RECAP and exist-
+ingsystemssuchasPEREAandBLAC.RECAPscales
+extremely well, however it does so in part by utilizing
+a O(1) revocation scheme which favors performance
+over perfect unlinkability. Thus, existing systems may
+be preferable when performance is not an issue, and
+when perfect unlinkability is required. RECAP is bet-
+Blacklist size
+(b) Anonymouscommunicationthroughputattheserviceprovider. ter suited for services with high rates, and in which a
+smallnumberoflinkedmessagesdoesnotharmtheuser.
+Figure5.Comparisonofanonymouscom However, subjective-based systems like PEREA and
+munication throughput at the user (5(a)) BLAC suffer from several factors unrelated to perfor-
+and service provider (5(b)) for RECAP, mance(whichhavebeenalreadydiscussedinSection5),
+PEREA[32],andBLAC[31]. Notethatdata includingthelackofguaranteesforwell-behavedusers
+points for BLAC were extrapolated from andthedifficultyoffindingpracticalidentifiers.
+figures in the original publication. We do
+not consider the effects of rate limiting in Registration We have measured the end-to-end time
+PEREAandBLAC. ittakesforausertonegotiateacontractusingtheregis-
+trationprotocol. Althoughthecontractnegotiationpro-
+tocol takes O(|BL|) time between the AS and SP to
+Anonymous Communication Once a contract is es-
+determine if the user is on the blacklist, the total time
+tablished, no Flicker sessions are needed to anony-
+is largely dominated by the time it takes to execute the
+mously endorse messages by the user. We do not pro-
+TPM SEALandTPM UNSEALcommands. Theblack-
+tect the user’s private group signing key within Flicker
+list would have to be impractically large for the linear
+because it is not required for the security of the sys-
+time component of the runtime to have any impact on
+tem(althoughitistheuser’sresponsibilitytosafeguard
+thetotalruntime. Inourimplementation,contractnego-
+their keys)5. Consequently, the common-case opera-
+tiationtakes7.99±0.04s. Althoughthismayseemlike
+tion of RECAP is efficient. On average, message en-
+alongtime,thisprotocolonlyexecuteswhenauserreg-
+5It is straightforward to put the user’s private group key inside isterstouseanewservice,ortheuserandSPnegotiate
+FlickeratthecostofinvokingaFlickersessionforeverygroupsig- anewcontract.
+natureoperation.System Auth.(U) Auth.(SP) Auth.(U) Auth.(SP) Parameters
+RECAP 86ms 87ms O(1) O(1)
+PEREA[32] 5900ms 160ms O(k|BL|)† O(k) kSP =30,kU =10
+BLAC[31] 1450ms 870ms O(|BL|) O(|BL|)
+Table1.ComparisonofauthenticationtimebetweenRECAPandothersystemsforreasonable
+parameter choices (|BL| = 800). Measurements for PEREA and BLAC are taken from the
+relevant works, as we were unable to obtain the source code for these schemes [31,32]. †:
+The amount of computation needed for PEREA is O(k∆ ), but the actual time required to
+|BL|
+authenticate is O(k|BL|) because of the risk of timing attacks. k is a window parameter used
+onlyinPEREA.
+The majority of the time spent during registration is ofmagnitudelessthantheTCBforcoderunningontop
+spentexecutingtheTPM UNSEALcommand. Thus,by ofacommodityoperatingsystem.
+batching multiple requests together in a single Flicker
+session, the cost of unsealing data can be amortized to Component Lang. SLoC
+achieve improved throughput. It may also be possible Flicker: User .c/.S 953
+toreplacetheuseoftheTPM’s(relativelyslow)sealed Flicker: User .h 1590
+storagewithits(relativelyfast)non-volatileRAMfacil- Flicker: AS .c/.S 1173
+ities [23], though our current implementation does not Flicker: AS .h 1549
+supportTPMNVRAM.Weleavethisforfuturework. Flicker: Shared
+Crypto/TPM .c 4134
+Breach Last,wealsoexaminetheend-to-endtimefor Crypto/TPM .h 202
+a SP to determine the identity of a misbehaving user. Crypto .c 2698
+Ourimplementationofthebreachprotocoltakes0.32± Crypto .h 1791
+0.09 s on average from the time the SP detects a mali- PBC .c/.S 11527
+ciousmessagetothetimeitreceivestheuser’sidentity PBC .h 1160
+fromtheAS,excludingthetimeneededtoestablishthe GMP .c/.S 4859
+securechannelasdescribedinSection4. GMP .h 5802
+7.2 TrustedComputingBase(TCB) Table 2. Lines of code in the trusted com
+puting base (TCB) of our implementation
+RECAP has a relatively small trusted computing as measured by sloccount [33]. PBC =
+base that needs to run in the Flicker isolated execution pairingbasedcryptographylibrary. GMP=
+environment[23]. Table2showsthenumberoflinesof GNUmultipleprecisionarithmeticlibrary.
+code in the TCB for the user and the AS. The majority
+of the code is the PBC cryptographic libraries for im-
+plementinggroupsignatures,whichalsodependonpor-
+tionsoftheGNUMultiplePrecisionArithmeticLibrary.
+8 Discussion
+RSAandthesymmetriccryptographicfunctions,aswell
+astheTPMdriverandsupportingcodefor TPM SEAL
+and TPM UNSEAL also make significant contributions 8.1 RECAPasaPrimitive
+tocodesize. Theactuallogicfor RECAP comprisesa
+relatively small overall portion of the TCB, suggesting RECAP provides a mechanism for users to anony-
+thatformalverificationormanualauditarerealisticop- mously use a service, and thus it is a component in a
+tions. Wealsonotethatwehavemadenoefforttostrip larger, overall protocol stack. For example, RECAP
+unused content from the cryptographic and mathemat- may be run on top of TCP/IP, and as part of a larger
+ical libraries. Significant additional reductions in code chatprotocol.
+sizearereadilyattainable.Evenso,ourentireTCBmea- We only make guarantees about the RECAP com-
+suresinafewtensofthousandsoflines. Thisisorders ponent. For example, a user who types in their per-sonal information to a chat service could circumvent PhysicalAttacksonTPM TPMsprovidestrongguar-
+anysecurityotherwiseofferedfromRECAP. Similarly, antees about programmatic or software-based attacks.
+the chat protocol could run RECAP on top of TCP/IP, However, TPMs are not designed to withstand a con-
+which may allow chat servers to log IP addresses. Al- tinued physical attack from a determined adversary. If
+though RECAP does not solve the complete protocol a TPM is physically compromised, its security proper-
+stack problem, RECAP can be used at each layer of tiesarelost. SinceRECAPreliesonthosepropertiesif
+the stack. For example, Tor is a widely-used network- TPMsareusedtoprovidethedesiredtrustedcomputing
+levelservicethatisintendedtohelpcreatenetwork-level properties, it is important to consider how to mitigate
+privacy for higher-level services by preventing a net- physicalattacks. Thereareseveraloptions. Thefirstop-
+work server from learning the IP address of a network tion is to do nothing; users would have to trust that the
+client.TorcoulduseRECAPtoenforcepoliciesregard- AStheyusewillnotbephysicallycompromised. There
+ing proper use. A chat application could run on top of maybeapopularAS(orseveral)thatisbelievedtonot
+Tor,anduse RECAP toprovidecontractualanonymity bephysicallycompromised. Notethattheonlyrequire-
+forchatsessions. mentforthisASisthatitshouldnotbephysicallycom-
+promised;theoperatingsystem,BIOS,humanoperator,
+8.2 Attacks etc. can all be compromised. Second, RECAP can be
+extended to use threshold cryptography [17] such that
+Availability Thereareseveralpotentialattacksagainst acoalitionof ASes areneeded toreveal amisbehaving
+RECAP. ThefirstpotentialattackisthattheAScould user’s identity. If a user only uses ASes that are con-
+be powered off or otherwise made unavailable. An AS trolled by distinct entities, it would be difficult for an
+that is unavailable cannot reveal the identity of users attackertophysicallycompromisealloftheASes. Last,
+who misbehave. There are several possible ways to the AS could use a secure coprocessor (like the IBM
+counterthisproblem. AnSPcaninsistuponanASthat 4758 cryptographic processor [27]) that is designed to
+hasbeendesignedwithhighavailabilityinmind,e.g.,an withstandphysicalattacks,insteadoftheTPM.
+AS with redundant network links, power, etc. Attacks
+on availability are present in most protocols, and can 8.3 PoliciesandUnlinkability
+bealsoaddressedbystandardmethodsinfault-tolerant
+computingandcryptography. In our explanation of RECAP, we have abstracted
+awaysomeofthedetailsofpolicies.Therearetwoprac-
+Small Groups In RECAP, user authentications are ticalissuesthatariseinpractice. Thefirstproblemisthe
+unlinkableamongallotherregisteredusersinthegroup, unlinkabilityproblem,orhowtoimplementpoliciesthat
+e.g., the unlinkability set S (from Section 3.1) is the relyonlinkability. Thesecondproblemishowmessage
+L
+set of registered users with the same SP and policy. If matchingshouldbeimplemented.
+the group is small, and the SP knows this, then the SP
+knows that any two requests are likely to be from the Unlinkability Problem In our description of
+same user. This concern is not unique to RECAP; the RECAP, we have not specified how the SP knows
+problem of small group sizes also occurs in closely re- when a policy is violated. If the policy only deals
+lated works [9,10,31,32]. Because RECAP relies on with one message, then it is simple: the SP can run
+trusted computing, it can mitigate the weakness of un- the policy function locally on each message. For
+linkabilityforsmallgroups: theAScanrevealthenum- instance, a matching policy that forbids the string
+berofactiveusersuponrequest. Eachusercanthencre- “badword” can be implemented using a function
+ate her own threshold for |S L| (e.g., the user may wish f(msg 1) : ifHASWORD(msg 1, “badword”)then
+tobeunlinkableamongatleast20users). Ifthenumber VIOLATIONelseALLOWED. Since the policy only
+ofactiveusersisbelowtheuser’sthreshold,thentheser- needs to match one message, the SP can simply run
+viceshouldnotbeused. Tothebestofourknowledge, HASWORDitselfoneachmessage.
+similar systems [31,32] do not consider this weakness However, consider a policy that forbids a user from
+intheirdesign. NotethatinRECAP,abehavinguser’s including “badword” in one message, and “terrible-
+realidentity(e.g.,trustedcomputingidentifier)isknown word” in another message; it is okay to send one
+onlytotheAS,andthusissecretregardlessofthenum- message, but not both. Such a policy might look like:
+berofactiveusers. g(msg 1,msg 2) : ifHASWORD(msg 1, “badword”)
+andHASWORD(msg 2, “terribleword”)thenVIOLATIONelseALLOWED. Consider what hap- that, when implemented, policy functions take a set of
+pensiftheSPreceivestwomessages: “...badword...” messages as input, and should not assume that only
+and“...terribleword...”. TheSPcaneasilyverifythat the correct messages are included. For instance, the
+thetwomessageswouldviolatethepolicyifsentbythe matching policy described above could actually be im-
+sameuser,butcannotdetermineiftheyweresentbythe plementedasinFigure6.
+sameuserbecauseoftheunlinkabilityproperty. Wecall
+thistheunlinkabilityproblem. foundone←false
+Theobviousimplementationofpolicieswiththeun- foundtwo←false
+linkabilityproblemisnotalwaysthemostefficient. As forallmessagesmdo
+one example, threshold policies are commonly used to ifHASWORD(m,“badword”)then
+preventspamming,e.g.,usersshouldnotsendmorethan foundone←true
+k messages per day. Unlinkability prevents the linking endif
+needed for the SP to easily count how many messages ifHASWORD(m,“terribleword”)then
+each user sent. The obvious RECAP implementation, foundtwo←true
+inwhichtheSPsendsalargesetofmessagessuspected6 endif
+tobecreatedbythesameusertotheAS,isclearlyvery endfor
+inefficient. Amoreefficientimplementationistoincor- iffoundone∧foundtwothen
+porate k-times anonymous authentication [28], a cryp- return VIOLATION
+tographicprotocolwhichprovidesefficientenforcement else
+of threshold policies. This allows the SP to efficiently return ALLOWED
+detectwhenauserexceedsherthresholdwithoutexces- endif
+sivecommunicationwiththeAS.TheRECAPanonym-
+ityguaranteesstillholdsincek-TAAprovidesunlinka- Figure6.AnExampleImplementationofa
+bility for users who have not exceeded their thresholds MatchingPolicy
+(e.g.,brokentheircontract).
+Unfortunately, we are not aware of a more general
+solutiontotheunlinkabilityproblem. Forinstance,one
+8.4 Verifier localRevocation
+useful type of policy that we currently can not imple-
+ment efficiently is finite state machine-based policies.
+We leave solutions for finite state machine-based poli- In the group signature scheme we use there is
+ciesandthemoregeneralunlinkabilityproblemforfu- a trade-off between unlinkability and the runtime of
+ture work. One potential research direction would be GS VERIFY in the size of the blacklist [8]. Verifying
+to allow the SP to run an efficient trusted computing thatamessagesignerisnotontheblacklistcanbeper-
+supportedhypervisorwhichcouldperformthenecessary formedinO(1)timebytheSPiftheschemeallowsfora
+linkinginasecure,isolatedenvironment[21]. smallproportionǫofmessagessignedbythesameuser
+to be linkable (ǫ ≈ memory), and in O(|BL|) time for
+#users
+perfectunlinkability(ǫisnegligible).
+PolicyMessageMatching Ashasalreadybeenstated,
+In the O(1) scheme, ǫ is controlled by the security
+a contract policy can be thought of as a function
+parameter k : ǫ = 1. However, the SP must maintain
+f : {msg 1,...,msg n} → {ALLOWED,VIOLATION}. aprecomputedlookuk
+ptablewhosesizeisO(k∗|BL|),
+However, if the SP submits 50 messages to the AS for
+andthereforethereisalinkability-memorytradeoff.
+a policy that takes only four messages, it is not clear
+As an example, if |BL| = 1024, k = 1024, each
+how the correct messages are assigned to the inputs of
+table entry in a precomputed lookup table is about 128
+the policy function. Even for this example, there are
+byteslong,andtheSPdevotes128MBtocreatealookup
+(cid:0)n (cid:1) = 230300 possible assignments of messages, as-
+50 table, then less than 0.1% of the messages sent by the
+sumingorderdoesnotmatter;clearly,itisnotpractical
+sameusercanbelinkedbytheSP.In RECAP,theSP,
+tosimplytryallcombinations.
+AS,anduserswillallknowwhichschemeisused, and
+Instead, when the AS receives signed messages, it
+thuswillknowwhetherthereisachancemessageswill
+should partition them into sets based on the user that
+be linkable. Security-conscious users can always insist
+signed them (using GS OPEN). Then, the policy func-
+onusingservicesthatrelyontheO(|BL|)algorithm.
+tion is executed on each set of messages. This means
+6Forinstance,allthemessagessentduringahigh-trafficperiod.9 Relatedwork RECAP depends on a very small trusted computing
+base that excludes the operating system, BIOS, and
+Group signature schemes are often motivated by DMA-capabledevices,therebyenablingRECAPtouse
+the need for anonymous authentication [2,5–8,13–15]. a verifiable third party to enforce contracts. Our ex-
+Groupsignatureschemestypicallyassumeagroupman- perimentsdemonstratethat RECAP scaleswell, andis
+ager. Thegroupmanageristrustednottorevealthese- fully capable of supporting services with realistic mes-
+cretkeysofgroupmembers. Oursystemprovidesaway sagerates.
+of intelligently placing such trust. In RECAP, the AS
+becomes the group manager, but all parties can verify Acknowledgements
+thatthemanagerwillactappropriately.
+Severalresearchershaveproposedschemesforanon-
+This research was supported by CyLab at Carnegie
+ymous authentication that do not involve a trusted
+MellonundergrantDAAD19-02-1-0389fromtheArmy
+third party (TTP). The most basic of these are e-cash
+ResearchOffice,andbygiftsfromAMDandIntel. The
+schemes[3,4,11,26,28,29],andk-timesanonymousau-
+views and conclusions contained here are those of the
+thentication schemes [28]. Such schemes do not allow
+authorsandshouldnotbeinterpretedasnecessarilyrep-
+for richer contract policies, and are not appropriate for
+resentingtheofficialpoliciesorendorsements,eitherex-
+manytypesofInternet-basedanonymousauthentication.
+press or implied, of ARO, CMU, or the U.S. Govern-
+Further, existing TTP-free schemes are less scalable
+mentoranyofitsagencies.
+than RECAP [9,10,31,32]. Experimental results for
+We would like to thank our anonymous reviewers
+BLAC[31]showedthattheSPrequired0.46sofcom-
+and our shepherd, Scott Coull, for their valuable feed-
+putation when the blacklist only contained 400 entries.
+back and suggestions. We also thank Bryan Parno and
+Because an authentication must occur for each unlink-
+ThanassisAvgerinosfortheircommentsandfruitfuldis-
+able message, these systems would not be practical for
+cussions.
+many applications. These schemes also do not achieve
+thepropertythatanonymityisboundtoacontract.
+References
+WeusetrustedcomputingsothattheAScanbever-
+ifiedcorrectinsteadofsimplytrusted. Inparticular,we
+baseourworkonFlicker[23]. Dattaetal.haveproven [1] Advanced Micro Devices. AMD64 architecture pro-
+grammer’s manual: Volume 2: System programming.
+that dynamic root of trust systems like Flicker allow
+AMDPublicationno.24593rev.3.14,Sept.2007.
+verifierstomakestrongconclusionsaboutthesoftware
+[2] G.Ateniese,J.Camenisch,M.Joye,andG.Tsudik. A
+stateonamachineperforminganattestation[16]. Oth-
+practical and provably secure coalition-resistant group
+ershaveproposedusingTPMstohelpbuildanonymous
+signaturescheme. InCRYPTO,2000.
+authentication. Forexample, DirectAnonymousAttes- [3] M.H.Au,S.S.M.Chow,andW.Susilo. Shorte-cash.
+tation [9] can be used to anonymously attest to a soft- InINDOCRYPT,2005.
+warestack. However,thesesystemshaveslowerperfor- [4] M.H.Au,W.Susilo,andY.Mu.Constant-sizedynamic
+mance,e.g.,DAAandEPIDrequireabout2secondsof k-TAA. In Security and Cryptography for Networks,
+computation on the SP per authentication on a modern 2006.
+[5] M.Bellare,D.Micciancio,andB.Warinschi. Founda-
+laptop[9,10]. Further,thesesystemsdonotachieveall
+tionsofgroupsignatures:Formaldefinitions,simplified
+thecontractualanonymityproperties.
+requirements, and a construction based on general as-
+sumptions. InEUROCRYPT,2003.
+10 Conclusion [6] D.BonehandX.Boyen. Shortsignatureswithoutran-
+domoracles. InEUROCRYPT,2004.
+[7] D.Boneh,X.Boyen,andH.Shacham. Shortgroupsig-
+We introduced the notion of contractual anonymity,
+natures. InCRYPTO,2004.
+which provides strong guarantees for the user and ser-
+[8] D. Boneh and H. Shacham. Group signatures with
+vice provider. Unlike other schemes, contractual an-
+verifier-localrevocation. InCCS,2004.
+onymity requires a user and service provider to agree [9] E.F.Brickell,J.Camenisch,andL.Chen. Directanon-
+on a binding, immutable contract before the service is ymousattestation. InCCS,2004.
+used. We designed the RECAP protocol to achieve [10] E.F.BrickellandJ.Li. EnhancedprivacyID:adirect
+thecontractual anonymity properties, and implemented anonymousattestationschemewithenhancedrevocation
+and evaluated RECAP to demonstrate that it is scal- capabilities. InWorkshoponPrivacyintheElectronic
+able and practical. Our end-to-end implementation of Society,2007.[11] J. Camenisch, S. Hohenberger, and A. Lysyanskaya. [30] Trusted Computing Group. Trusted platform module
+Balancing accountability and privacy using e-cash (ex- main specification, Part 1: Design principles, Part 2:
+tendedabstract). InSecurityandCryptographyforNet- TPM structures, Part 3: Commands. Version 1.2, Re-
+works,2006. vision103.,2007.
+[12] J.CamenischandA.Lysyanskaya. Dynamicaccumula- [31] P. P. Tsang, M. H. Au, A. Kapadia, and S. W. Smith.
+torsandapplicationtoefficientrevocationofanonymous Blacklistable anonymous credentials: blocking misbe-
+credentials. InCRYPTO,2002. havinguserswithoutTTPs. InCCS,2007.
+[13] J.Camenischand A.Lysyanskaya. Signature schemes [32] P. P. Tsang, M. H. Au, A. Kapadia, and S. W. Smith.
+and anonymous credentials from bilinear maps. In PEREA:towardspracticalTTP-freerevocationinanon-
+CRYPTO,2004. ymousauthentication. InCCS,2008.
+[14] J. Camenisch and M. Stadler. Efficient group signa- [33] D.A.Wheeler. Linuxkernel2.6:It’sworthmore! [On-
+ture schemes for large groups (extended abstract). In line]. Available: http://www.dwheeler.com/
+CRYPTO,1997. essays/linux-kernel-cost.html.[Accessed:
+[15] D.ChaumandE.vanHeyst. Groupsignatures. InEU- May1,2009].
+ROCRYPT,1991. [34] XySSLDevelopers. XySSLcryptographiclibrary. [On-
+[16] A.Datta,J.Franklin,D.Garg,andD.Kaynar.Alogicof line].Available:http://polarssl.org.
+securesystemsanditsapplicationstotrustedcomputing.
+InIEEESymposiumonSecurityandPrivacy,2009.
+[17] Y. Desmedt and Y. Frankel. Threshold cryptosystems.
+InCRYPTO,1989.
+[18] J.R.Douceur. Thesybilattack. InInternationalWork-
+shoponPeer-To-PeerSystems,2002.
+[19] D.Grawrock.DynamicsofaTrustedPlatform:ABuild-
+ingBlockApproach. IntelPress,2008.
+[20] IntelCorporation.TrustedeXecutionTechnology–mea-
+sured launched environment developer’s guide. Docu-
+mentnumber315168005,2008.
+[21] G. Klein, K. Elphinstone, G. Heiser, J. Andronick,
+D. Cock, P. Derrin, D. Elkaduwe, K. Engelhardt,
+M.Norrish,R.Kolanski,T.Sewell,H.Tuch,andS.Win-
+wood. seL4: Formal verification of an OS kernel. In
+ProceedingsofACMSOSP,2009.
+[22] B. Lynn, H. Shacham, and J. Cooley. PBC sig
+group signature library. [Online]. Available: http:
+//crypto.stanford.edu/pbc/sig. [Accessed:
+May1,2009].
+[23] J. M. McCune, B. Parno, A. Perrig, M. K. Reiter, and
+H.Isozaki.Flicker:AnexecutioninfrastructureforTCB
+minimization. InEuroSys,2008.
+[24] A.J.Menezes,P.C.vanOorschot,andS.A.Vanstone.
+HandbookofAppliedCryptography. 1997.
+[25] J.C.Mitchell,V.Shmatikov,andU.Stern. Finite-state
+analysis of SSL 3.0. In USENIX Security Symposium,
+1998.
+[26] L.NguyenandR.Safavi-Naini. Dynamick-timesanon-
+ymous authentication. In Applied Cryptography and
+NetworkSecurity,2005.
+[27] S. W. Smith and S. Weingart. Building a high-
+performance, programmable secure coprocessor. In
+ComputerNetworks,1998.
+[28] I. Teranishi, J. Furukawa, and K. Sako. k-times anon-
+ymous authentication (extended abstract). In ASI-
+ACRYPT,2004.
+[29] I.TeranishiandK.Sako. k-timesanonymousauthenti-
+cationwithaconstantprovingcost.InPublicKeyCryp-
+tography,2006.

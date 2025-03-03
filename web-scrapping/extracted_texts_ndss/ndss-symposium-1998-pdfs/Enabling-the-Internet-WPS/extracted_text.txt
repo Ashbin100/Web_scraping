@@ -1,0 +1,252 @@
+Enabling the Internet WPS
+The Directory Guardian
+D W Chadwick
+A J Young
+University of Salford
+3/18/98 © University of Salford 1997 1Contents
+n Rationale for Development
+n Overview of Guardian Functionality
+n Description of Configuration Files
+n Example in Use
+n Performance Data
+3/18/98 © University of Salford 1997 2X.500/LDAP
+Global Directory Service
+n Holds information about employees,
+organizational units and applications
+n Telephone and Fax numbers, Email
+Postal and Application addresses etc.
+n Already ~2 million entries from 30
+countries in NameFLOW-Paradise
+service - but MAJORITY ARE
+ACADEMIC
+3/18/98 © University of Salford 1997 3Some Statistics for NameFLOW-
+Paradise
+n 147 organisations under C=GB, 126
+Academic/Public, 19 commercial IT
+organisations and 2 non-IT commercial
+n 258 organisations under C=US, 126
+universities&public, 82 commercial IT
+organisations and 50 non-IT commercial
+organisations
+n Compare this with the Web, which is
+predominantly commercial
+3/18/98 © University of Salford 1997 4Why the reluctance?
+Organization’s
+Network
+?
+The Internet
+(trusted)
+(untrusted)
+3/18/98 © University of Salford 1997 5Directory Proxy for the Firewall
+The Directory
+Guardian
+The Internet
+Organization’s
+(untrusted)
+Network
+(trusted)
+3/18/98 © University of Salford 1997 6The Directory Guardian -
+Overall Requirements
+n Incoming filter
+• Prevent access to sensitive information
+• Prevent overwriting of important
+information
+n Outgoing filter
+• Prevent accidental release of confidential
+information
+3/18/98 © University of Salford 1997 7Requirements in Detail
+n Incoming requests
+• Check credentials and refuse or replace
+untrustworthy ones
+• Block suspicious Interrogation operations
+• Block all Modification operations
+n Outgoing responses
+• Remove confidential attributes, names,
+referrals, cross references, signatures
+3/18/98 © University of Salford 1997 8Requirements in Detail (cont)
+n Outgoing requests
+• Block unauthorized ones
+• Remove trace information, confidential
+names and signatures
+n Incoming responses
+• Check credentials and replace
+untrustworthy ones
+• Act on referrals, remove cross references
+3/18/98 © University of Salford 1997 9Implementation
+n Used Source Code Of Directory Server
+from Isode Ltd
+n Runs on Sun Sparc, written in C
+n Supports LDAP, DAP, DSP, DISP
+n Supports password and digital signature
+based authentication
+3/18/98 © University of Salford 1997 10Configuring the Guardian
+n KISS (Keep it Simple, Stupid)
+n Two configuration files - one specifies
+incoming filter and other outgoing filter
+n Default is DENY everything
+n So filters only contain what is allowed to
+pass through them i.e. non-confidential
+information, therefore they are not a
+large security risk
+3/18/98 © University of Salford 1997 11The Filters
+n Series of filters which act in sequence to
+progressively refine the information flow
+n Can have branching so that subsequent
+filters act on instances of previous filter
+e.g. different entries are visible to
+different operations
+Attribute
+Attribute
+Protocol User Operation Entry
+Value
+Type
+Filter Filter Filter Filter
+Filter
+FilterProtocols Filter
+n Lists the protocols that can pass
+through with the minimum Bind
+authentication required (default being
+digital signature)
+[Protocols]
+ONLY DAP, LDAP(no authentication),
+DSP(protected password)
+3/18/98 © University of Salford 1997 13Users Filter
+n Lists the users who are allowed to Bind
+for each of the protocols, with their
+minimum authentication (defaults to that
+of the protocol), and an optional alias
+name that is to be used in the other
+domain
+n User names are specified as LDAPv3
+DNs, with wildcarding
+3/18/98 © University of Salford 1997 14Users Filter example
+[Users]
+FOR Protocol=DAP, LDAP
+ONLY <cn=A J Young,ou=Information
+Technology Institute,o=University of
+Salford,c=GB> (simple) KNOWN AS <cn=A J
+Young,o=University of Salford via
+guardian,c=gb>,
+FOR Protocol=DSP
+ONLY <cn=DSA Manager,cn=DSA,o=University
+of Salford,c=gb> (strong)
+3/18/98 © University of Salford 1997 15Local User Names
+n Allows groups of users to be given a
+local name, for ease of reference e.g.
+[Local Naming]
+NAME <cn=A J Young, ou=Information
+Technology Institute, o=University of
+Salford, c=GB> , <cn=D W Chadwick,
+ou=Information Technology Institute,
+o=University of Salford, c=GB>
+KNOWN AS <guardian developers>
+3/18/98 © University of Salford 1997 16Operations Filter
+n Specifies which operations can pass with
+parameter indicating if each is to be
+signed or not, plus for List and Search the
+max entries that can be returned
+[Operations]
+FOR User=<cn=DSA
+Manager,o=University of Salford,c=gb>
+ONLY READ(unsigned),LIST(unsigned
+20, signed 100),COMPARE
+3/18/98 © University of Salford 1997 17Entry Filter
+n Specifies which entries are visible,
+optionally with an alias name
+[Entries]
+ONLY <cn=A J Young,ou=Information
+Technology Institute,o=University of
+Salford,c=GB> KNOWN AS <cn=A J
+Young,o=University of Salford via
+guardian,c=GB>
+3/18/98 © University of Salford 1997 18Attribute Types Filter
+n Specifies which attribute types can pass
+through, with optional mapping of types
+[Attribute Types]
+FOR Entry=<cn=*,ou=Information
+Technology Institute,o=University of
+Salford,c=GB>
+ONLY objectClass, commonName,
+surname, title, postalAddress, postalCode,
+telephoneNumber, rfc822Mailbox
+3/18/98 © University of Salford 1997 19Attribute Values Filter
+n Specifies which attribute values (including
+wild cards) can pass, with optional mapping
+of values
+[Attribute Values]
+FOR Attribute Type=telephone number
+ONLY "+44 161 745 *", "0161 745 *"
+KNOWN AS "+44 161 745 *"
+"5????" KNOWN AS "+44 161 745 ????"
+3/18/98 © University of Salford 1997 20Knowing the Calling Domain
+n Servers - Guardian is configured with
+list of trusted directory servers from
+trusted domain
+n Users who directly Bind to Guardian
+are assumed to be coming from
+opposite domain to where their request
+is directed, therefore no security risk
+n Guardian will not (knowingly) relay
+within the same domain
+3/18/98 © University of Salford 1997 21The Demonstration
+n Salford directory directly visible
+n Salford directory visible via Guardian
+n publicly available at
+http://fw4.iti.salford.ac.uk/ice-tel/guardian/demo/
+3/18/98 © University of Salford 1997 22The Demo Configuration
+Requestor
+University of
+Salford via
+Guardian
+University of
+Salford
+Directory ServerThe Salford DIT (directly visible)
+C=GB
+O=University of Salford
+. . . .
+OU=department name
+. . .
+. . .
+CN= person’s nameSalford Directory Tree (visible
+via the Guardian)
+C=GB
+O=University of Salford via Guardian
+CN= person’s nameExample Entry
+n Salford entry n Salford via Guardian
+n Common name = n Common name =
+D W Chadwick David Chadwick
+n Telephone number n Telephone number
+= 0161 295 5351 = +44 161 295 5351
+n Fax number = 0161
+745 8169
+3/18/98 © University of Salford 1997 26Performance
+n 800 Read and List measurements taken over
+several nights (8pm to 8am)
+n Measured
+• direct connection to Salford DSA
+• connection via Guardian with filtering off
+• connection via Guardian with filtering on
+n Network performance was biggest factor, with
+times varying from 0.4s to 361s
+n Statistician advised us to discount List results
+over 5 secs, and Read results over 2 secs
+3/18/98 © University of Salford 1997 27Read Operation
+n Read an entry directly or via the
+Guardian
+n Effect of extra Guardian node (with no
+filtering) was degradation of 13% (0.78
+¨
+0.88s)
+n Effect of Guardian with filtering was
+degradation of extra 5% (0.04s)
+3/18/98 © University of Salford 1997 28List Operation
+n List a node with 1000 subordinates,
+filter but let them all pass
+n Effect of extra Guardian node (with no
+filtering) was degradation of 13%
+¨
+(1.76s 1.98s)
+n Effect of Guardian with filtering was
+degradation of extra 24% (0.6ms per
+entry)
+3/18/98 © University of Salford 1997 29

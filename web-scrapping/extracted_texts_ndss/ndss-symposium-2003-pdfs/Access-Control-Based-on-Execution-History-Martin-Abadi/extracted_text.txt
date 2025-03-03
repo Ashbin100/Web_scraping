@@ -1,0 +1,1010 @@
+Access Control based on Execution History
+Mart´ınAbadi Ce´dricFournet
+UniversityofCaliforniaatSantaCruz MicrosoftResearch
+Abstract Runtime environments such as Java Virtual Machines
+(JVMs) [13, 9] and the Common Language Runtime
+(CLR)[5,2,12]providerichsupportforassociatingrights
+Securityisamajor,frequentconcerninextensiblesoft- with code, under configurable security policies. These
+waresystemssuchasJavaVirtualMachinesandtheCom- environments aim to enable simple mobile code (classic
+mon Language Runtime. These systems aim to enable applets) and also, for example, distributed applications,
+simple, classicappletsandalso, forexample, distributed Web services, and programmable networks, with appro-
+applications,Webservices,andprogrammablenetworks, priate security expectations. They feature elaborate con-
+withappropriatesecurityexpectations. Accordingly,they structs and mechanisms for managing rights, including a
+feature elaborate constructs and mechanisms for associ- technique for determining the run-time rights of a piece
+atingrightswithcode,includingatechniquefordetermin- of code as a function of the state of the execution stack,
+ingtherun-timerightsofapieceofcodeasafunctionof andanassociatedrequirementthatprogrammerscodecer-
+the state of the execution stack. These mechanisms pre- tainsecuritychecks. Theserun-timemechanismsprevent
+vent many security holes, but they are inherently partial many security holes, but they are inherently partial, and
+andtheyhaveproveddifficulttousereliably. remain blind to any interaction not recorded on the cur-
+We motivate and describe a new model for assigning rentexecutionstack. Thesemechanismsalsohaveperfor-
+rights to code: in short, the run-time rights of a piece mance and usability costs: for most programmers, their
+of code are determined by examining the attributes of effectsaredifficulttopredict(andeventointerpret).
+anypiecesofcodethathaverun(includingtheirorigins) Inthispaper,wemotivateanddescribeanewmodeland
+andanyexplicitrequeststoaugmentrights. Thishistory- practical techniques for assigning rights to code at run-
+based model addresses security concerns while avoiding time. In short, the run-time rights of a piece of code are
+pitfalls. Weanalyzethemodelindetail;inparticular,we determined by examining the attributes of any pieces of
+discuss its relation to the stack-based model and to the code that have run (including their origins) and any ex-
+policiesandmechanismsofunderlyingoperatingsystems, plicitrequeststomodifyrights. Ourmodeladdressesse-
+and we consider implementation techniques. In support curity concerns while simplifying the tasks of program-
+ofthemodel,wealsointroduceandimplementhigh-level mers and thereby avoiding security pitfalls. Although
+constructs for security, which should be incorporated in widelyapplicable,itisparticularlymotivatedbythechar-
+librariesor(evenbetter)inprogramminglanguages. acteristicsandneedsofJVMsandoftheCLR:itislargely
+compatiblewiththeexistingstack-basedmodel,butitpro-
+tectssensitiveoperationsmoresystematically,anditalso
+enables a smoother integration with the security mecha-
+1 Introduction
+nisms of an underlying operating system (such as secu-
+In the access control model of security, an access con- rity tokens in NT and its descendants). Our model can
+trolmatrixassociatesrightsforoperationsonobjectswith be implemented efficiently using a small amount of aux-
+subjects. The objects may for example be files and de- iliarystate. Inaddition,weintroduceconstructsforhigh-
+vices; the subjects may for example be users; the oper- levellanguages(suchasJavaorC])thatfacilitatesecurity-
+ations may be reading and writing. In systems that rely awareprogrammingwithinthemodel.
+on access control for security (and most do), a frequent, The rest of this paper is organized as follows. In Sec-
+delicate issue is the association of rights with code. For tion2,wereviewsomeaspectsofassociatingrightswith
+example, a piece of code may be given the rights of the code,andinparticularstack-basedaccesscontrol. InSec-
+subjectwhoexecutesthecode, thoseoftheauthorofthe tion 3, we present our history-based access control ap-
+code,orsomecombinationofthetwo. Theserightsdeter- proach. InSections4and5,wegivesomeexamplesand
+mine whether the code can perform sensitive operations we sketch a high-level language extension in the context
+(e.g.,readingandwritingfiles). ofC]. InSections6and7,wefurtherrelateourapproachto stack-based techniques and system security. We close One approach to addressing this problem is the tech-
+withadiscussionofrelatedworkandsomebriefconclu- nique called stack inspection, which is presently embod-
+sions. Anappendixprovidessomeadditionalcode. ied in JVMs and in the CLR. Following this technique,
+Throughout, when we rely on the precise context of a anupperboundonitspermissionsisassociatedstatically
+system,wefocusmainlyontheCLR.(Wedonotassume (that is, before execution) with each piece of code, typi-
+adetailedknowledgeoftheexistingCLRsecuritymodel cally by considering the origin of the piece of code. For
+and of the corresponding mechanisms.) In this concrete example,wheneverapieceofcodeisloadedfromanun-
+context,weemphasizedesign,butalsoinvestigateimple- trustedInternetsite,itmaybedecidedthatthispiecewill
+mentation techniques. In particular, we have pieces of have at most the right to access temporary files, but will
+code that embody parts of our model, and we have stud- have no other rights during execution. At run-time, the
+iedmattersofperformanceandofcompatibilitywithex- permissions of a piece of code are the intersection of all
+isting libraries. However, we have yet to attempt a full the static permissions of the pieces of code on the stack.
+development and integration into the CLR (or Rotor, a Thus, the run-time permissions associated with a request
+shared-source implementation [20]). This integration is made by a trusted piece of code when it is called by an
+likelytobeasubstantialtask.Inparticular,thisintegration untrustedpieceofcodeincludeonlypermissionsgranted
+couldincludeenablingoptimizationscurrentlyillegalbe- staticallytobothpiecesofcode. Anexceptiontothispol-
+cause of the stack-based model; removing data-structure icyismadeforsituationsinwhichatrustedpieceofcode
+customizations for that model; and compiler support for explicitlyamplifiestherun-timepermissions.Suchampli-
+the new history-based model. We suspect that it is not ficationsaredangerous,sotheyshouldbedoneonlyafter
+toomeaningfultoconductdetailedperformancemeasure- adequatechecking.1
+mentswithoutthisintegrationwork. Although the stack inspection technique has been
+widely deployed, it has a number of shortcomings. One
+2 AssociatingRightswithCodeand ofthemainonesisthatitattemptstoprotectcalleesfrom
+StackInspection their callers, but it ignores the fact that, symmetrically,
+callers may be endangered by their callees. (Similar is-
+In an extensible software system where subjects and
+sues arise in connection with exception handling, multi-
+pieces of code are trusted to varying degrees, it is both
+plethreads,sharedmutabledatastructures,callbacks,and
+important and challenging to manage the permissions of
+higher-orderprogramming.) IfAcallsB,Breturns(per-
+runningprogramsinordertoavoidsecurityholes.
+haps with an unexpected result or leaving the system in
+Type safety provides a base line of protection and en-
+anunexpectedstate),andthenAcallsC,thecalltoCde-
+ablesfine-grainedaccesscontrol. Althoughtypesafetyis
+pendsontheearliercalltoB,andsecuritymaydependon
+crucial for security in JVMs, the CLR, and related sys-
+trackingthisdependency,whichstackinspectionignores.
+tems (such as SPIN [1]), it is not by itself sufficient. In
+(SeeSection4forprogrammingexamples.)Intheory,one
+thissection,assumingtypesafety,wediscusssomesecu-
+couldarguethatAshouldberesponsibleforcheckingthat
+rityproblemsthattypesafetydoesnotsolve,aswellasa
+B is “good” or that it does not do anything “bad”. How-
+popular,stack-basedtechniqueforaddressingtheseprob-
+ever,thischeckingisdifficultandimpractical,foravari-
+lems. We point out some shortcomings of this technique
+etyofreasons. Inparticular,Amaybealibraryfunction,
+(of which some, but not all, are well known), thus moti-
+whichwascodedwithoutthesesecurityconcernsinmind,
+vatinghistory-basedrightscomputation.
+andwhichwemaynotliketorecode—indeed,oneofthe
+Oneparticulardifficultythathasattractedconsiderable
+appeals of stack inspection is that it avoids some secu-
+attentionistheso-called“confuseddeputy”problem[10],
+rity problems without the need to recode such functions.
+which goes as follows. Suppose that a piece of un-
+Moreover, the call to B may be a virtual call (that is, a
+trusted code calls a piece of trusted code, such as a li-
+dynamically dispatched call), whose target (B) is hard to
+brary function, perhaps passing some unexpected values
+determineuntilrun-time.
+as arguments to the call, or in an unexpected execution
+This shortcoming of stack inspection is a source of er-
+state. Later, the trusted code may invoke some sensitive,
+rorswithserioussecurityramifications. Fromamorefun-
+security-criticaloperations,forexampleoperationsonan
+damentalperspective,stackinspectionisapartialprotec-
+underlying file system. It is crucial that these operations
+tion mechanism, which addresses only one aspect of the
+be invoked with the “correct” level of privilege, taking
+into account that the call is the result of actions of un- 1Thedetailsofstackinspectionandoftheoperationsthatdealwith
+trustedcode. Moreover,thissecurityguaranteeshouldbe permissionsvaryacrosssystems. Inparticular,theoperationthatper-
+achievedundertheconstraintthatwewouldnotexpectev- forms amplifications is coarser-grained in the JDK 1.2 than in earlier
+JVMsandthanintheCLR.IntheCLR,onwhichwefocus,thisopera-
+erylibraryfunctiontoberewritten;onlyafractionofthe
+tioncangiveindividualpermissions,andanotheroperationcanremove
+codemayeverbesecurity-aware. individualpermissions.“confuseddeputy”problem. Othertechniquesareneeded Weproposeanotheralternativetostackinspection: we
+in order to achieve a more complete solution, with satis- relyontheexecutionhistory(ratherthanthestack,which
+factorypracticalandtheoreticalproperties. is an imperfect record of the history) for security, as ex-
+Stack inspection is also a source of performance con- plainedbelow.
+cerns, and these concerns can in turn contribute to er-
+rors. Inanaiveimplementationofstackinspection,each 3 History-BasedRightsComputation
+security decision requires “walking” the execution stack
+Next,wedetailourdesignandmechanismsforassign-
+and testing permissions. These operations can be expen-
+ingrightstocodeatrun-time.
+sive.2 Therefore, programmers that think more about ef-
+In short, the run-time rights of a piece of code are de-
+ficiencythanaboutsecurityoftenreplacestackinspection
+terminedsystematicallybyexaminingtheattributesofthe
+with riskier but faster operations, such as LinkDemand
+pieces of code that have run before and any explicit re-
+in the CLR [12, page 73]. At least in principle, these
+queststoaugmentrights. Thepiecesofcodethathaverun
+performance concerns could partly be addressed through
+include those on the stack but also those that have been
+“security-passingstyle”implementationtechniques[21].
+called and returned. In our basic example—A calls B,
+Stack inspection presents other difficulties because of
+B returns, then A calls C—the run-time rights in effect
+itssomewhatexotic,adhoccharacter.Itisauniquemech-
+within C will in general depend on the fact that A, B,
+anism,largelymotivatedbyanimplementationidea,sep-
+and C have executed. The attributes in question include
+arateanddistinctfromothersecuritymechanismssuchas
+in particular the origins of the pieces of code (whether
+maybeprovidedbyanunderlyingoperatingsystem,orby
+theycomefromthelocaldisk,digitallysignedbyatrusted
+adistributedenvironment. Asaresult,itishardtotrans-
+party,fromanuntrustedInternetsite,...); theymayalso
+latethesecuritystateofaruntimethatusesstackinspec-
+include properties that can be determined by automated
+tionintoacorrespondingstatethatwouldbemeaningfulat
+code analysis. Thus, the general idea of our approach is
+theoperatingsystemlevel. Suchatranslationisoftende-
+torememberthehistoryofthecomputation(orsomeab-
+sirablewhenathreadintheruntimemakesanexternalcall
+stractionofthishistory)incomputingrun-timerights.
+(a local system call, or even a call across a network). In
+Animportantwaytocomputerun-timerightsisasthe
+anotherdirection,itishardtorelatestackinspectiontoex-
+intersection of rights associated with each of the pieces
+ecutionmodelsforcertainhigh-levellanguagesthattarget
+of code that have run. Specifically, our approach is as
+these runtimes. For example, programmers in functional
+follows:
+languagessuchasHaskellarenotencouragedtothinkin
+termsofstacks,sotheruntimestacksarenotanappropri- 1. Static rights: We associate some rights with each
+ateabstractionfortheirunderstandingofsecurity.Finally, piece of code, statically (at compile time or load
+stack inspection is directly related to a particular stack- time). Werefertotheserightsasstaticrights.
+basedexecutionstrategy. Althoughthisstrategymightbe
+2. Current rights: At run-time, we associate current
+reasonableinthecontextofaninterpreter,itisnotalways
+rightswitheachexecutionunitateachpointintime.
+satisfactory in the context of a compiler. Stack inspec-
+tion complicates and hinders compiler optimizations that 3. Checking: These current rights are the ones consid-
+would affect the stack, such as tail-call elimination and ered by default when security decisions need to be
+methodinlining. takenorwhensecurityinformationneedstobecom-
+In light of these difficulties and shortcomings, we municatedtoothersystemcomponents.
+should look for alternatives to stack inspection. An in-
+4. Storage:Thesecurrentrightsarestoredinsuchaway
+teresting idea is to rely on information-flow control, of
+that programs can read them and update them (sub-
+the kind studied in the security literature, particularly in
+ject to the conditions given next). In particular, an
+the context of multilevel security [4]. Unfortunately, de-
+ordinaryvariablecanrepresentthesecurrentrights.
+spiterecentprogress(e.g.,[14]),information-flowcontrol
+isoftentoorestrictiveandimpracticalforgeneral-purpose 5. Automatic updates: Whenever a piece of code exe-
+runtimes. Nevertheless,itprovidesaninterestingpointof cutes,thecurrentrightsareupdated: thenewcurrent
+comparisonandtheoreticalbackground;theworkofFour- rights are the intersection of the old current rights
+netandGordonexplorestheapplicationoftechniquesdi- withthestaticrightsofthiscode.
+rectlybasedoninformation-flowcontrol[8].
+6. Explicit modifications: At its discretion, a piece of
+2Debuggersandgarbagecollectorsalsoperformstackwalks,forcon- code may invoke a special operation to modify the
+structingtracesandforfindingpointersintotheheap,respectively.How- currentrights. Thisoperationwillatmostrestorethe
+ever,theiralgorithmsarequitedifferentfromthoseforstack-basedse-
+static rights of this code, and it may be further con-
+curity,atleastintheCLR,andtheyaresubjecttodifferentperformance
+constraints. strained.7. Syntax: Thecontrolledmodificationofrightsresults Asforpoint4(Storage), storingthecurrentrightsina
+insomeusefulprogrammingpatterns.Thesepatterns variablehasseveraladvantages:
+can be supported with special syntax for “granting”
+• Security-awareprogrammersgetflexibilityandcon-
+rightsand“accepting”resultsafterrunninguntrusted
+trol, without the need for any additional run-time
+code.
+support. For instance, it is possible to code con-
+We expand on each of these points in what follows. structorsthatstoreprivatecopiesofthecurrentrights
+First, however, we illustrate some of them with a triv- and methods that use them later to perform security
+ialexample, thefollowingtinyprogramfragmentfroma checksormodifythecurrentrights.
+trustedlibrary:
+• A variety of standard optimizations can be applied.
+m(); File.Delete(s); The problem of optimizing programs with mutable
+variablesisawell-understoodone—andweneednot
+At run-time, the call m() may affect the value of the pa-
+be concerned about interactions between optimiza-
+rameter s (for example, if s is an instance variable and
+tions and stack-based security. For instance, tail-
+misanoverriddenmethodthatsets s). Independentlyof
+callelimination,whichchangesthestackbutnotthe
+m’s behavior, if the static rights of m do not include the
+inter-methodcontrolflow,issafeinourmodel. Fur-
+righttodeletefiles,thenthesetofcurrentrightsafterm()
+thermore, many optimizations that change the inter-
+will not include that right either, so File.Delete(s) will
+method control flow (hence the stack) can be per-
+beprevented.
+formed,withsomecare. Forinstance,wecaninline
+a method if we also inline the corresponding code
+3.1 StaticRightsandCurrentRights
+thatperformstheautomaticrightsupdatebeforethe
+Concerningpoint1(Staticrights),thestaticrightsofa method. (In contrast, method inlining is limited in
+pieceofcodetypicallydependontheoriginandtheprop- theCLRbecauseofpotentialinteractionswithstack
+ertiesofthecode,asexplainedabove. Theyrepresentthe inspection.) In all these respects, the current rights
+maximalrightsforthatcode.Theydonotchangeoncethe arejustlikeotherordinaryvariables.
+codeisloaded. Eachpieceofcodecanreaditsassociated
+• From the point of view of a programmer in a high-
+staticrights(butnotupdatethem).
+level language, a global variable is easy to under-
+This point is fairly standard, and is also a prerequisite
+stand. EveninfunctionallanguagessuchasHaskell,
+for stack inspection mechanisms. In fact, the details can
+there is the possibility of modeling mutable vari-
+beworkedoutsoastokeepcompatibilitywiththeexisting
+ables such as the one in question. (It is less stan-
+mechanisms. Inparticular,wecanrepresentrightsbycol-
+dardandmundanetomodelastack,althoughthecur-
+lections of objects that implement a standard Permission
+rentrightsobtainedbystackinspectionmightstillbe
+interface(whichwemayinformallycallpermissions),and
+explained to the programmer as a dynamic variable
+we can rely on existing methods for expressing the se-
+with implicit bindings, or even as a local variable
+curity policies that associate pieces of code with permis-
+passed as an extra parameter for every call, as sug-
+sions.
+gested by security-passing style implementations of
+Concerning point 2 (Current rights), there are imple-
+stackinspection[21].)
+mentationandusabilityissuesinchoosingthesizeofexe-
+cutionunits. Theexecutionunitwilltypicallybeathread.
+Thevariablemaybeper-threadorper-process,depend-
+In that case, whenever a thread is forked, it should start
+ingonthechosenlevelofexecutionunit. Wenotethatthe
+withthecurrentrightsofitsparent,bydefault. Whentwo
+CLRalreadyincludessimilarmechanisms,withdifferent
+threadsjoin,theircurrentrightsshouldbeintersected. As
+informationandfordifferentpurposes,sothisimplemen-
+usual,sharedmutablememoryshouldbetreatedwithcau-
+tation strategy appears viable and generally in tune with
+tion. Alternatively, withappropriatesynchronization, the
+existinginfrastructure.
+executionunitmaybeacollectionofthreads, suchasan
+Thesetofrightsmaybeexplicitlyrepresentedbyalist.
+applicationdomainintheCLR,possiblyacompletepro-
+However,alternativerepresentationsarepossible,suchas
+cesscontainingmanyrelatedthreads.
+thefollowing:
+Accordingtopoint3(Checking),thecurrentrightsare
+theonesusedbydefaultinsecuritydecisions,incallson • Asymbolicexpressionwhosevalueisasetofrights.
+services of an underlying operating system, and in calls The symbolic expression can be constructed using
+toexecutionenvironmentsonremotemachines(seeSec- standard set union, intersection, and difference op-
+tion7). Inanycase,thereisnoneedtowalkanexecution erations. Itmaybesimplifiedlazily(astherightsare
+stackinordertomakesecuritydecisions. used)oreagerly(astheexpressionisconstructed).• A symbolic expression whose value is a set of code • Inthissetting,aneffectivecallingconventionisthat,
+origins(suchasusersornetworkzones). Again,the whenever a call completes (either normally or with
+symbolic expression can be constructed using stan- anexception),thecurrentrightsafterthecallarein-
+dard operations, and the expression may be simpli- cludedinthecurrentrightsbeforethecall. Withthis
+fiedlazilyoreagerly.Moreover,theassociatedrights convention,theautomaticupdatescanbeenforcedby
+canbecomputedasafunctionofthesecodeorigins, calculatinganintersectionofrightsatmostoncefor
+lazily, whenever they are needed. In this case, we everycall(beforetransferringcontroltothecallee).
+usethedisjunctionofcodeoriginsasthedualtothe
+We expect most updates to be (conservatively) elimi-
+intersectionofrights.Inotherwords,wemay,forex-
+nated,fortworeasons: manyupdates(includinginpartic-
+ample,keeptrackofthefactthatallthecodecomes
+ularmanyupdatesindirectcalls)willnotactuallychange
+fromPorQ,ratherthantheintersectionoftherights
+the current rights, and many updates are irrelevant (e.g.,
+associatedwithPandQ.
+because the resulting current rights are never used). We
+• Amixtureofthetwo,wheresomeofthecomponents mayimplementtheremainingupdatesasfollows:
+refertocodeoriginsandotherstoabstractrepresen-
+• For every method (or for every remaining call), we
+tations of permissions. For instance, if the security
+may use a source-language transformation that in-
+policy associates rights with a few “code groups”,
+sertsacodeprefixthatexplicitlyperformstheupdate.
+onemayrepresentintersectionsofstaticrightsassets
+Thistransformationcanbeimplementedontopofa
+ofgroups,andstillrepresentexplicitmodificationsof
+platformwithnospecificsupportforsecurity.
+rightsbysetsofpermissions.
+• Wemayproceedsimilarlyatalowerlevelinajust-
+• At the other extreme, a simple bit pattern (a mask)
+in-time (JIT) compiler, using a native-code prefix.
+thatrepresentswhichrightsarepresentandwhichare
+Inaddition,wemayprovideseveralentrypointsfor
+not. This representation is particularly efficient, but
+thesamemethods,beforeandaftertheautomaticup-
+is applicable only in the case where there is a fairly
+date, so that the compiler can skip the update when
+limitedandfixedsetofrights.
+compilingdirectcallsfromcodewiththesamestatic
+rights(orlowerstaticrights).
+3.2 UpdatingCurrentRights
+• Inthecaseinwhichthereisnoamplification,orfew
+Point5(Automaticupdates)saysthat,wheneverapiece
+amplifications, wemayactuallyperformallupdates
+of code executes, the current rights are intersected with
+intheJITcompiler,aseachpieceofcodeiscompiled
+thestaticrightsofthiscode. Thisupdateoccursautomat-
+before execution. (Later amplifications may force
+ically, independently of the code itself, so that security-
+somerecompilation.)
+unawarecodeisprotectedbydefaultfromuntrustedcode
+(seeexamplesinSection4). Thus,whenAcallsB,Bre- • Wemaymaintainacacheforcommonintersections.
+turns,thenAcallsC,therun-timerightsineffectwithinC We expect the same intersections to be computed
+willingeneraldependonthefactthatAandBhaveexe- againandagain.
+cuted. IfCneedsrightslostinAorB,thenCmaychoose
+Concerningpoint6(Explicitmodifications), themodi-
+to restore them explicitly, as explained below, but those
+ficationofrightsisasensitiveoperation,whichshouldbe
+rightsarenotpresentbydefault.
+doneonlywithcareandafteradequatechecking.Whereas
+Automaticupdatescanbeefficientlyimplementedtak-
+certain reductions of rights happen automatically as de-
+ingadvantageofthefollowingobservations:
+scribed in point 5 (Automatic updates), other modifica-
+• Anupdatecanbeskippedwhenthecurrentrightsare tionsofrights—amplificationsornot—requireanexplicit
+alreadyincludedinthestaticrightsofthecode. This step,whichcanbetakenonlybysecurity-awarecode.The
+inclusion can be determined by static analysis, and explicit step gives us a specific point on which to focus
+takenintoaccountincallingconventions. auditing efforts, and also to place blame when things go
+wrong. Code that is not security-aware need not be con-
+• If the ways of going from one piece of code to an- cernedwithsuchexplicitmanagementofrights.
+otheraremethodcallsandreturns(assumingthatour Thespecialoperationthatmodifiesrightsmayfail. Of
+“pieces of code” are at least as large as methods), course,codemayacquireatmostitsstaticrightsviamod-
+thentheupdatestothecurrentrightsneedtohappen ifications; any request to acquire more will fail. In gen-
+only when there are method calls and returns. This eral,configurablesecuritypoliciescandefinetheallowed
+can directly be extended to exception throwing and modifications,muchliketheydefinestaticrights.Apolicy
+exceptionhandling. maysay, inparticular, thatcertainpermissionscanneverbeacquiredviamodifications. Apolicymayalsosaythat Here,p.Demand()checksthatthepermissiontodeletes
+untrustedcodeshouldnotperformanymodificationatall, isavailable. Ourhistory-basedmechanismkeepstrackof
+inordertosimplifythewritingofcodethatinteractswith the execution of BadApplet and then prevents the dele-
+it. tion of arbitrary files: since the invocation of the delete
+Fromanimplementationperspective,theexplicitmod- operationoccursaftertheexecutionofuntrustedcode,the
+ification of rights is straightforward; it may benefit from checkfailsandraisesasecurityexception.Thus,thenaive
+staticanalysismuchliketheautomaticupdatesdiscussed libraryisprotectedbydefaultfromuntrustedcallers.
+above. From a language perspective (point 7, Syntax), it Thesequenceofoperationsonthecurrentrightsgoesas
+canbenefitfromhigh-levelsyntacticsupport,asdiscussed follow:
+inSection5.
+• AscontrolistransferredtoBadApplet.Main,thecur-
+rent permissions are intersected with the static per-
+4 Examples
+missions of BadApplet, thereby removing any File-
+Inthissectionweillustratehistory-basedrightscompu- IOPermissionfromthecurrentpermissions.
+tation through several examples, written in C]. The ex-
+• As CleanUp, Delete, and Demand are invoked, the
+amplesdonotshowexplicitrightsmodifications. Theap-
+currentpermissionsareintersectedwiththeirrespec-
+pendixcontainsexampleswiththatfeature.
+tivestaticpermissions. Sincethesefunctionshaveat
+4.1 BasicExamples leastthestaticpermissionsofBadApplet,theseinter-
+sections do not actually change the current permis-
+Intheseexamples,untrustedcodeattemptstousesome sions(andmayactuallybeskipped).
+trusted-but-naive code for deleting a file. The examples
+rely on FileIOPermission objects for representing access • Finally,p.Demand()checkswhetherthecurrentper-
+rightsforfiles. missions specifically contain FileIOPermission p
+Inthefirstexample,someuntrustedcode(suchasanap- and, since this is not the case, raises a security ex-
+plet)callssometrustedcode(suchasalibrary)thatinturn ception. Thus, p.Demand() prevents the deletion of
+performsasensitiveoperation(suchasdeletingafile).For thefile”..\\password”.
+thisexample,thesituationismuchlikewithstackinspec-
+In the second example, conversely, some trusted code
+tion. We mention our assumptions on static permissions
+(suchasalocalapplication)callsuntrustedcode(suchas
+in comments. (These assumptions would be enforced by
+aplug-in),thenproceedswiththeresultofthecall.Unlike
+theruntimesecuritypolicy.)
+stackinspection,ourmechanismstillpreventsthedeletion
+// Mostly untrusted : static permissions don’t ofthefile.
+// contain any FileIOPermission.
+// Trusted: static permissions contain all permissions.
+class BadApplet{
+class NaiveProgram{
+public static void Main(){
+public static void Main(){
+NaiveLibrary.CleanUp(”..\\password”);
+string s = BadPlugIn.TempFile();
+}
+File.Delete(s);
+}
+}
+// Trusted: static permissions contain all permissions.
+}
+public class NaiveLibrary{
+// Mostly untrusted : static permissions don’t
+public static void CleanUp(string s){
+// contain any FileIOPermission.
+File.Delete(s);
+public class BadPlugIn{
+}
+public static string TempFile(){
+}
+return ”..\\password”;
+The sensitive operation can be protected in the File li- }
+brary class by requiring a permission—in our example, }
+some FileIOPermission:
+Operationally, the situation here is much as in the first
+// Trusted: static permissions contain all permissions. example:
+public class File {...
+public static void Delete(string s){ • Initially,thecurrentpermissionscontainallthestatic
+FileIOPermission p = newFileIOPermission(s ...)); permissionsofNaiveProgram.
+p.Demand();
+Win32.Delete(s); • When BadPlugIn.TempFile is invoked, the current
+} permissions are intersected with the static permis-
+} sionsofBadPlugIn.• When BadPlugIn returns, and later in the computa- responsibility for preventing the file deletion seems un-
+tion,furtherintersectionsmaybeperformed,butthe clear. There is no way to perform an adequate test in
+currentpermissionsalwaysremainincludedinthose Program.Main: the object that Untrusted.applet returns
+ofBadPlugIn,hencetheynevercontainany FileIO- is opaque. Program.Main may not be aware that this
+Permission. object encapsulates a file name and that Task.Start can
+deleteafile. Perhaps,conservatively,theTask(string s)
+• Finally, p.Demand raises a security exception, as
+constructorcouldimmediatelycheckthepermissionsthat
+above.
+may later be requested by File.Delete. However, the
+details on these permissions (e.g., how to normalize file
+4.2 FurtherExamples
+names, which FileIOPermissionsaredemandedtodelete
+The two following examples are complete (synthetic) a file, and their relation to s) belong to class File, not to
+C] programs. They illustrate two limitations of stack- classTask.
+based security that are addressed by history-based secu- Thesecondexampleismoreinvolved. Itcombinesin-
+rity. They resemble problematic programs that occur in heritance and exception handling. Inheritance makes it
+practice,althoughthosearetypicallymuchlonger. easierforanattackertocausealibrarytoinvokeuntrusted
+The examples rely on features of the CLR that may codebyavirtualcalltoamethodofawell-knowntrusted
+not be familiar for all readers. In particular, they rely class.
+ondeclarativeattributes(ratherthanassumptionsonstatic Abstractly,throwingandhandlinganexceptionismuch
+permissions) in order to specify the security policy for likecallingandhandlingamethod. However,bythetime
+selected methods and classes—for instance, in order to the exception handler proceeds, the stack that contained
+lower the rights of selected applet methods. We provide anyevidenceoftheoriginoftheexceptionhasbeendis-
+these details so that the examples, when executed, actu- carded. Therefore, with stack-based access control, one
+ally behave as we describe in the text, but the details are shouldimplementanyexceptionhandlerundertheconser-
+otherwiseunimportant. vativeassumptionthattheexceptionitselfanditsparame-
+Inthefirstexample,untrustedcodecreatesanobjectof tersarenottrustworthy.Thisconservativeassumptioncan
+alibraryclass(Task),returnsit,thentrustedcodetriggers complicatehandlingtheexception.
+a call to a dangerous operation (File.Delete(s)). Such With history-based access control, on the other hand,
+patterns—and, in general, higher-order programming— exceptions are like ordinary method calls. When a piece
+are especially common with event- or delegate-based li- of code throws an exception, the exception handler will
+braries, for instance those that provide graphical user in- startrunningwithatmostthestaticrightsofthecode. If
+terfaces. thatcodeisuntrusted,thenthoserightswillbelimited,so
+securitychecksintheexceptionhandlermayfail.
+public sealed class Task{
+private string s; public class Naive{
+public Task(string s){ this.s = s;} protected string tempFile = ”C:\\temp\\myFile”;
+public void Start (){ File.Delete(s);} virtual protected void proceed (){...}
+}
+public class Untrusted { public void m(){
+// The following declarative attribute removes try {
+// all FileIOPermissions for this method. proceed();
+[ FileIOPermissionAttribute }
+(SecurityAction.Deny, Unrestricted=true )] catch (SystemException e){
+public static Task applet(){ File.Delete(tempFile);
+return newTask(”..\\password”); Console.WriteLine(”Deleted {0}.”,tempFile);
+} }
+} }
+class Program{ }
+static void Main(){
+Untrusted.applet(). Start (); public class PlugIn : Naive{
+} [ FileIOPermissionAttribute
+} (SecurityAction.Deny, Unrestricted=true )]
+override protected void proceed(){
+The situation is similar to the one in the previous ba-
+try {
+sic example, but less direct. The program erases the tempFile = ”..\\password”;
+file with stack inspection but triggers a security excep- File.Delete(tempFile);
+tion with our mechanism. With stack inspection, the }catch (SecurityException e){ // Static rights of type CompartmentAccesscontain
+Console.WriteLine(”The first attempt failed .”); // at mostCompartmentAccess(”A”);demandedrights
+thrownewSystemException(”Out of memory.”); // for all code include CompartmentAccess(”A”);
+} // in CLRparlance:
+} [assembly:CompartmentAccessAttribute
+} (SecurityAction.RequestOptional, id=”A”)]
+class Top{ [assembly:CompartmentAccessAttribute
+static void Main(){ newPlugIn().m();} (SecurityAction.Demand,id=”A”)]
+}
+// CodefromcompanyA,unchanged.
+Here, the untrusted class PlugIn is a subclass of the
+class libraryA {...}
+trusted but naive class Naive, and overrides one of its public class A : Contractor {...}
+methods, proceed. The call PlugIn().m() triggers a call
+ThecodereceivedfromcompanyBishandledsimilarly.
+to proceed, which will in turn first cause a security ex-
+Now, automatically, aprogramthatinitiallyhasaccess
+ceptionwithanattempttodeleteafile, thenwillthrowa
+to code from the two companies can actually use code
+systemexception. TheexceptionhandlerinNaivefinally
+from at most one of them. In other words, our Chinese
+attempts to delete a file—but not a temporary file as was Wall policy is enforced by the underlying history-based
+presumablyintendedinNaive. Withhistory-basedaccess machinery,withoutanyextrastateandextrabookkeeping
+control,thefactthatthenewcodeforproceedisuntrusted atcompartmentboundaries. Forexample, onemaywrite
+isautomaticallyconsideredindecidingwhethertodelete aprogramthatselectsanoffer:
+thefile.
+public class CompliantCustomer{
+int examine(){
+4.3 AHistory-BasedPolicy ...
+if (should consider A){
+Inthesecurityliterature,somepoliciesuseahistoryof
+Contractor a = newA(query);
+pastsensitiveoperationsasaninputtolateraccess-control // NoBcode will ever run past this point.
+decisions. For example, with Chinese Wall policies, ac- return A.offer ();
+cesstodataisnotconstrainedbyattributesofthedatain }
+questionbutbywhatdatathesubjecthasalreadychosen }
+toaccess[3]. SeeSection8forfurtherreferencesanddis- public void main(){
+cussion. int offer = examine();
+Contractor b = newB();
+Whileourmodeldoesnotembodythosepolicies,itcan
+// Raises a security exception if any Acode
+sometimes help in supporting them. As an example, we
+// has run.
+showhowitcanhelpinbuildingasimpleChineseWall.
+...
+In the example, a program initially has access to code
+}
+fromtwocompanies,AandB,butitcanactuallyusecode
+}
+fromatmostoneofthecompanies.Thecodemayinclude
+The security policy may further specify that the per-
+proprietarydataandproceduresfromthetwocompanies,
+missions to access the two compartments should not be
+andmightsendinformationbacktoAandB,respectively.
+restorable via explicit modifications. Thus, the program
+First, we create a specific class of permission with a
+constant string parameter whose presence indicates that wouldraiseasecurityexceptionevenifittriestorestore
+codefromagivenoriginisstillallowedtorun. therighttouseB’scodeaftercallingA’scode.
+GoingbeyondtheseparationbetweenAandB,onemay
+// Specific permission for compartments. enforcepoliciesthatconstrainaccesstocodeinthecom-
+// Mostmethodimplementations are omitted. partments,thatis,tocontractorcode. Forinstance,access
+public class CompartmentAccess:Permissions { tothatcodemaybeallowedonlyuptoacertainprogram
+// permission to access a specific compartment stage,andcertainsensitiveoperationsmightevenrequire
+string id; thatcontractorcodehasneverrun:
+public CompartmentAccess(stringid){ this.id = id;}
+public void PrivateStuff (){
+// permission to access all compartments
+// First exclude further contractor code:
+public CompartmentAccess (){...}
+newCompartmentAccess().Deny();...
+}
+}
+ThecodereceivedfromcompanyAneednotbemodi- public void SensitiveStuff (){
+fied,oreveninspectedbeyondanormaltype-safetyveri- // First check that no contractor code has ever run:
+fication. However,asecuritypolicyshouldbeattachedto newCompartmentAccess().Demand();...
+thatcode,forinstanceusingattributes: }5 High-LevelProgrammingConstructs These patterns would greatly benefit from direct syn-
+(inC]) tactic support in programming languages (as is already
+thecasewithstack-basedrightscomputations). Next,we
+Eveniftheyarenotstrictlypartofthesecuritymodel,
+describecorrespondinghigh-levelprogramming-language
+high-levellanguageconstructscanhelpprogrammersun- constructs, in the context of C], and sketch their imple-
+derstand and live in harmony with rights management.
+mentation in terms of lower-level operations on current
+Consider, as an analogy, the related situation in excep- rights. AmoredetailedimplementationinC] andexam-
+tion handling. In principle, it would be possible to pro-
+plesaregivenintheappendix.
+vide access to exception handling using a special library
+We extend the grammar of statements with two con-
+for registering callbacks to be triggered when an excep-
+structs, Grant(P){B} and Accept(P){B}, where P is a
+tion occurs. Nonetheless, using scoped constructs such
+subsetofthestaticpermissionstobeamplifiedand{B}is
+astry {} catch(){} finally {}helps. Webelievethat,
+ablockofcodecontainingtheoperationstobeperformed
+similarly, languageconstructsarehelpfulindealingwith
+(andwhicharethescopeoftheconstructs). Optionally,P
+security.
+may be omitted, its default value being all static permis-
+Weidentifytwocommonprogrammingpatternsforthe
+sions. Thesestatementsareexecutedasfollows:
+controlled modification of rights in security-aware code.
+These patterns, named “Grant” and “Accept”, consist of Grant(P){B}: Before running B, the initial value of the
+thefollowingoperations: currentpermissionsissavedandtheselectedpermis-
+sionsPareaddedtothecurrentpermissions. When
+Grant: Whenrunningafterlesstrustedcode(e.g.,when
+Bcompletes(possiblywithanexception),thecurrent
+calledbythatcode):
+permissionsareassignedtheintersectionoftheirini-
+• checkthattheexecutionstateisok, tialandfinalvalues. NotethatGrant doesnotleave
+extrarightsaftercompletionoftheblockB,andpre-
+• amplifyrights(toaspecificsubsetofthecode’s
+servesthelossofanyrightwhilerunningB.
+staticrights),
+• performsensitiveoperations,and Accept(P){B}: BeforerunningB,theinitialvalueofthe
+current permissions is saved. If B completes nor-
+• reducerights(atleasttotheirinitialstate).
+mally, then the intersection of this initial value and
+This pattern is analogous to certain explicit am- P is added to the current permissions. (If B termi-
+plifications mechanisms used with stack inspection nates with an uncaught exception, then the current
+(DoPrivilegedinJava, AssertintheCLR)withsim- permissionsarenotmodified.)
+ilareffectsbutdifferentimplementations.
+The code that executes Accept takes responsibility
+for the effect of the operations performed by B on
+Accept: Whenrunninglesstrustedcode(e.g.,whencall-
+therestoftheprogram,andshouldthereforeperform
+inglesstrustedmethods):
+sufficientcheckswithinBbeforeitsnormalcomple-
+• savepartsoftheexecutionstate, tion. Note that Accept does not provide any extra
+• performuntrustedoperations, rightbeforethecompletionofB.
+• checkthattheexecutionstateisok,and
+6 FurtherComparisonwith
+• amplifyrights(atmosttotheirinitialstate).
+StackInspection
+This pattern does not explicitly reduce rights before
+AsSections3and4explain,history-basedaccesscon-
+theuntrustedoperations: sincetheseoperationshave
+trol has safety and simplicity benefits, and it is also at-
+limited static rights, this reduction occurs automati-
+tractivefromaperformanceperspective(inparticular,be-
+cally. (In Section 6, we show that, with some care,
+causeitenablescompileroptimizations). Wenowrevisit
+Acceptscanbeusedtoimplementthesamebehavior
+therelationbetweenhistory-basedandstack-basedaccess
+asstackinspection.)
+control,furtherrelatingtheireffects.
+Bothpatternscomplywiththeefficientcallingconvention Technically, the key difference between history-based
+outlined in Section 3.2: their final current rights are al- andstack-basedaccesscontroloccurswhenamethodter-
+waysincludedintheirinitialcurrentrights. Inbothcases, minates (normally or with an exception). In our model,
+the operation that checks whether the execution state is withthecallingconventiongiveninSection3.2, thecur-
+ok depends on the security policy, and typically involves rent rights when a method terminates are lower than or
+validating some of the values passed as parameters and equal to their value before the method call. In contrast,
+checkingthepresenceofsomecurrentrights. with stack inspection, the current rights are restored totheir value before the method call, possibly augmenting public class Plain {
+them. Therefore,giventhesamestaticrightsandassum- public static void Foo(StringCode badCode)
+ingourcallingconvention,history-basedcurrentrightsare {
+alwaysincludedinstack-basedcurrentrights. Thisprop- string s = badCode();
+// Whencheckingpermissions,
+ertycanbequitehelpfulintransitioningfromstack-based
+// badCodeis not on the stack anymore.
+tohistory-basedaccesscontrol:legacycodemaygenerate
+File.Delete(s);
+additionalsecurityexceptions, butshouldremainatleast
+}
+assecure.
+}
+History-based and stack-based access control can also
+With stack-inspection, this dangerous method enables
+be compared by studying encodings of each in terms of
+anyuntrustedcodebadCodepassedasaparametertopick
+theother.
+the file to be deleted. To implement the more secure be-
+haviorofhistory-basedpermissions,ontopofstack-based
+• To recover a stack-inspection semantics on top of
+permissions,forthismethodonly,onemayuseinstead:
+history-based mechanisms, we can add an “Accept”
+around every call that may lower the current rights // Define two auxiliary delegate classes:
+(typically,aroundeverycalltopotentiallylesstrusted public delegate void StringCont(string s);
+code). Forexample,wemaywrite: public delegate void StringApplet(StringCont c);
+Accept(current ){ applet.run ();}; SQL.run(); public class Encoded{
+// Samefunction, with a different API
+If the call to applet.run() entails the loss of some public static void Foo(StringApplet badCode)
+{
+permissions because applet.run() is untrusted code
+// Usea built−in constructor of class StringCont
+with few static rights, then the “Accept” may re-
+// to create a delegate to methodCallback:
+store those permissions. Those permissions may be
+StringCont sc = newStringCont(Callback);
+neededforexecutingSQL.run().
+We believe that there are relatively few such calls // Pass this delegate to badCode:
+in existing libraries and, more importantly, that the badCode(sc);
+presenceofan“Accept”ornotforsuchcallsshould }
+notmakeanydifferenceinmostlegacyapplications:
+private static void Callback(string s)
+at this stage, there are not many partially trusted li-
+{
+braries,andeventhelibrariesdesignedtobecallable
+// Whencheckingpermissions,
+from partially trusted code do not often rely (or
+// badCodeis still on the stack.
+shouldnotrely)onpartiallytrustedcodefortheirim-
+File.Delete(s);
+plementation. }
+}
+• Conversely,toimplementhistory-basedrightsontop
+of stack inspection mechanisms, for any given call,
+7 History-BasedRightsand
+we can (in theory) apply a “continuation-passing-
+style”transformthatpassesanextrafunctionparam- SystemSecurity
+eter to be called with the result, upon completion
+Whenapieceofcodeisverifiedandmanagedbyalan-
+of the callee. Hence, the callee still appears on the
+guage runtime, its sensitive operations (hence its rights)
+stackwhileitsresultisusedbythecaller’scontinua-
+stillaffectabroader,layeredsecurityinfrastructurewhich
+tion. However,thisencodingisnotpractical,except
+may include, for instance, a local-host operating system
+maybeforafewsensitiveinterfaces.
+and some distributed components. Each layer provides
+Asanexampleofthelatterencoding,considerthefollow- itsownsecuritymodelsandmechanisms,withsometimes
+ingmethod,whichtakesadelegateparameter:3 unfortunateoverlapsanddiscrepancies.
+For instance, rights management in the CLR is gener-
+// Define the class StringCode of “code pointers ” to
+allyfinerandmoreexpressivethaninNT,sincetheCLR
+// methods that take no argumentand return a string.
+canrelyontypesafetyratherthanmemoryisolation, but
+public delegate string StringCode();
+thereisalsoadeepmismatchbetweenpermissionsinthe
+3InC],aninstanceofadelegateclassencapsulatesanobjectanda CLR and access control in NT. Even when they manipu-
+methodonthatobjectwithaparticularsignature.Soadelegateismore latethesameabstractrights,suchasfileaccessrights,the
+thanaC-stylefunctionpointer,butslightlylessthanaclosure.Whenit
+twolayersusedistinctmodelsandinterfaces,withnoob-
+encountersadelegatedeclaration,thecompilerprovidesanimplementa-
+tionfortheclassofdelegateswiththegivenmethodsignature. viousmappingbetweenthetwo. Pragmatically,theCLRexpects to run as a highly-trusted application and, after 8 RelatedWork
+performingitsownsecuritychecks,callsthesystemwith
+The security literature contains much related work.
+allitsprivileges(seealso[21,page7]). Hence,erroneous
+Some of it is mentioned above, for example the use of
+amplifications of rights within the CLR can typically be
+information-flowcontrol(e.g.,[4,14]).
+exploiteddespiteNTsecurity.
+History-basedaccesscontrolmaybeviewedasaprag-
+Our model has a more direct counterpart in terms of
+matic approximation to information-flow control that
+system security. In the context of NT [19, page 506],
+keepstrackofcodeexecutionbutnotdatadependencies.
+the “restricted token” mechanism enables us to construct
+Goingfurtherback,thereisrelatedworkintheclassiclit-
+a disjunction of a user id with some set of special secu-
+erature on operating systems, expressed in terms of pro-
+rity identifiers (SIDs) to represent limitations of rights;
+tection rings [18, 16]. These rings might be seen as a
+thisdisjunctioncorrespondstotheintersectionofcurrent
+very simple, fixed hierarchy of sets of static rights, with
+rights described in point 5 of Section 3 (Automatic up-
+an automatic update mechanism for current rights, and
+dates). Specifically, we can interpret restricted tokens as
+withhardwaresupport.Intheremainderofthissectionwe
+theresultofacoarse-grainedhistory-basedcomputation:
+focus on recent related work, particularly on work about
+• Thesystemrepresentsrightssymbolically,usingsets stackinspection.
+of SIDs. From these SIDs, an access-control policy Stack-based mechanisms for access control are widely
+computestheaccessrightsforspecificobjects,onde- documented for JVMs [9] and the CLR [5, 12]. In the
+mand. For every process, the system represents the researchliterature,manyworkstreattheanalysisandop-
+current rights as a security token, consisting of one timizationofpermissions(seeforinstance[11,15]). Oth-
+ormoresuchsetsofSIDs. Theprocessisgranteda ers deal with interesting, non-trivial implementations of
+rightwheneachsetofSIDsindependentlygrantsthe stackinspection,forinstancewithinlinedreferencemoni-
+right. Atanypoint,onecanupdatethecurrentrights tors[7]orinsecurity-passingstyle[21].Theseimplemen-
+by adding another set of SIDs to the security token, tationssuggestthataneagercomputationofcurrentrights
+whichfurtherrestrictstheprocess. canbemadeasefficientasalazycomputationbystackin-
+spection. (Theoperationsperformedbytheseimplemen-
+• Thereisnocounterpartfortheexplicitamplification
+tationstosimulateastack-basedsemanticsaresimilarbut
+of rights. Restricted tokens correspond to permis-
+generally more complex than the operations for comput-
+sions that cannot be acquired via explicit modifica-
+inghistory-basedrightsdescribedinSection3.2.)
+tions (see Section 3.2). Thus, restricted tokens pro-
+Atamoresemanticlevel,Wallachetal.explicatestack
+vide strong guarantees (a process will never obtain
+inspection in terms of a logic of access control (ABLP
+a right once the right is denied) at the cost of ex-
+logic) [21]. They model security contexts and decisions
+pressiveness(sensitiveoperationsmustinsteadbere-
+in terms of logical statements. The powerful idea of re-
+questedusinginter-processcommunication).
+latingstackinspectiontologicshouldalsoapply,mutatis
+Beyond the reuse of well-known security concepts, a mutandi, toourhistory-basedtechnique. Wediscussthis
+mapping from current rights to security tokens has con- pointonlyinordertohighlightdifferenceswithstackin-
+crete advantages. Crucially, system calls can be per- spection, so we avoid formal details. Basically, Wallach
+formed with the appropriate privileges. Also, SIDs can et al. associate a set of logical statements E with each
+F
+be shared across machines within the same domain. In stackframeF.Theymapoperationstologicalstatements:
+contrast,atpresent,code-basedsecuritypoliciesandper- Ok(T)meansthatitisoktoperformoperationT.Theac-
+missionsintheCLRarerelativetothelocalhostmachine cesscontrolproblemconsistsindecidingwhetheraframe
+(forexample,dealingwithpermissionsforallfilesonthe can perform an operation T, and is reduced to deciding
+localdriveC:\). whether E logically implies Ok(T). When a frame F
+F
+When handling calls on services of an underlying op- calls a frame G, for each of F’s statements s, one adds
+eratingsystem(orcallstoexecutionenvironmentsonre- F saysstoG’sstatements. Significantly,thereisnocor-
+motemachines),itisparticularlyattractivetoavoidcom- respondingmodificationwhenGreturns.Incontrast,with
+plicatedtranslationsofrights,asthosetranslationscanbe history-basedrights,thecurrentrightsareaffectedwhen-
+expensive and inaccurate. Such translations are easy to everthereisanytransferofcontrol—whetherthetransfer
+avoidifthecurrentrightsareexactlythoseofoneparticu- correspondstoamethodcallorreturn,andalsoforexam-
+laruseroftheunderlyingoperatingsystem.Inthatspecial pleifitresultsfromexceptionhandling.
+case,theuseridcanbeemployedastherepresentationfor FournetandGordonalsoconsideranabstractmodelof
+thoserights. Wecangeneralizefromthisspecialcaseby stackinspectionmechanisms[8],basedonthatofPottier
+keepingtrackofrightspartlyintermsofcodeorigins,as et al. [15]. In a simple functional setting (a lambda cal-
+discussedinSection3. culus),theydiscusslimitationsofstackinspection. Usingformaloperationalsemantics,theyalsoexploreseveralal- [5] ECMA. Standard ECMA-335: Common Language In-
+ternatives to stack inspection with stronger properties by frastructure,Dec.2001. Availablefromhttp://msdn.
+refining the reduction rule that discards a security frame microsoft.com/net/ecma/.
+after an evaluation. The present paper can roughly be [6] G.Edjlali,A.Acharya,andV.Chaudhary. History-based
+seenasanelaborationofoneofthesealternatives,focused access control for mobile code. In ACM Conference on
+Computer and Communications Security, pages 38–48,
+oncontroltransfers(ratherthanmoregeneralflowsofin-
+1998.
+formation), and targeted at a full-fledged runtime system
+[7] U´.ErlingssonandF.Schneider. IRMenforcementofJava
+(quitedifferentfromthelambdacalculus).
+stackinspection.InProceedingsofthe2000IEEESympo-
+ExecutionhistoryalsoplaysaroleinSchneider’ssecu-
+siumonSecurityandPrivacy,pages246–255.IEEECom-
+rity automata [17] and in the Deeds system of Edjlali et
+puterSocietyPress,2000.
+al.[6]. However,thoseworksfocusoncollectingaselec-
+[8] C. Fournet and A. D. Gordon. Stack inspection: The-
+tivehistoryofsensitiveaccessrequestsandusethisinfor-
+oryandvariants. In29thACMSymposiumonPrinciples
+mation to constrain further access requests: for instance, of Programming Languages (POPL’02), pages 307–318,
+networkaccessmaybeexplicitlyforbiddenafterreading Jan.2002.
+certain files. In contrast, our approach considers the his- [9] L. Gong. Inside JavaTM 2 Platform Security. Addison
+toryofcontroltransfers,ratherthanahistoryofsensitive Wesley,1999.
+requests. [10] N.Hardy. Theconfuseddeputy. ACMOperatingSystems
+Review,22(4):36–38,Oct.1988. Availablefrom
+9 Conclusions http://www.cis.upenn.edu/˜KeyKOS/
+ConfusedDeputy.html.
+From a functional perspective, history-based rights [11] T. Jensen, D. L. Metayer, and T. Thorn. Verification of
+computation is largely compatible with existing security controlflowbasedsecurityproperties. InProceedingsof
+machineryandlibraries,althoughitrequiresruntimemod- the1999IEEESymposiumonSecurityandPrivacy,pages
+89–103.IEEEComputerSocietyPress,1999.
+ificationsandsuggestsoptimizationsandlanguageexten-
+[12] S. Lange, B. LaMacchia, M. Lyons, R. Martin, B. Pratt,
+sions. From a security perspective, we believe that the
+and G. Singleton. .NET Framework Security. Addison
+benefits of access control based on execution history are
+Wesley,2002.
+substantial. It provides a simpler alternative to stack in-
+[13] T.LindholmandF.Yellin. TheJavaTM VirtualMachine
+spection,andsupportsasafer,wiserposturewithrespect
+Specification. AddisonWesley,1997.
+tosecuritychecks.
+[14] A. C. Myers. JFlow: Practical, mostly-static informa-
+tionflowcontrol. In26thACMSymposiumonPrinciples
+Acknowledgments We are grateful to Praerit Garg, of Programming Languages (POPL’99), pages 228–241,
+Andy Gordon, Tony Hoare, Brian LaMacchia, Butler 1999.
+Lampson, Paul Leach, and Erik Meijer for discussions [15] F.Pottier,C.Skalka,andS.Smith.Asystematicapproach
+on the subject of this paper, to Mike Burrows for help to access control. In Programming Languages and Sys-
+with the title, and to Dan Wallach and anonymous re- tems(ESOP2001),volume2028ofLNCS,pages30–45.
+Springer,2001.
+viewers for help with the presentation. Most of Mart´ın
+[16] J. H. Saltzer. Protection and the control of information
+Abadi’s work was done at Microsoft Research, Silicon
+sharing in multics. Communications of the ACM, 17(7),
+Valley, with Microsoft’s support. Mart´ın Abadi’s work
+July1974.
+was also partly supported by the National Science Foun-
+[17] F. B. Schneider. Enforceable security policies. ACM
+dationunderGrantsCCR-0204162andCCR-0208800.
+Transactions on Information and System Security, 3(1):
+30–50,Feb.2000.
+References
+[18] M.D.SchroederandJ.H.Saltzer.Ahardwarearchitecture
+forimplementingprotectionrings.Communicationsofthe
+[1] B.N.Bershad, S.Savage, P.Pardyak, E.G.Sirer, M.E.
+ACM,15(3):157–170,1972.
+Fiuczynski,D.Becker,C.Chambers,andS.J.Eggers.Ex-
+[19] D.A.SolomonandM.E.Russinovich. InsideMicrosoft
+tensibility,safetyandperformanceintheSPINoperating
+Windows2000. MicrosoftPress,thirdedition,2000.
+system. InProceedings ofthe 15thACM Symposium on
+[20] D.Stutz. TheMicrosoftsharedsourceCLIimplementa-
+OperatingSystemPrinciples,pages267–284,1995.
+tion. Mar.2002. Availablefrom
+[2] D.Box.Essential.NETVolumeI:TheCommonLanguage
+http://msdn.microsoft.com/library/en-
+Runtime. AddisonWesley,2002. Toappear.
+[3] D.F.C.BrewerandM.J.Nash.Thechinesewallsecurity
+us/Dndotnet/html/mssharsourcecli.asp.
+policy. In Proceedings of the 1989 IEEE Symposium on [21] D.S.Wallach,A.W.Appel,andE.W.Felten. SAFKASI:
+SecurityandPrivacy,pages206–214,1989. Asecuritymechanismforlanguage-basedsystems. ACM
+[4] D.Denning. CryptographyandDataSecurity. Addison TransactionsonSoftwareEngineeringandMethodology,
+Wesley,1982. 9(4):341–378,2000.public class Permissions
+{
+// Static permissions attributed to the immediate caller:
+public static Permissions Static;
+// Dynamicpermissions at this stage
+private static Permissions now;
+// Automatically updated wheneversomecoderuns,
+// with an implicit : now=now.Intersect(Static ).
+// Dynamicpermissionscan be read and updated:
+public static Permissions Current {
+get { return now;}
+set {
+if (value.IsSubsetOf(Static )) now=value;
+else thrownewSecurityException(”Amplification not permitted.”);
+}
+}
+// Imperative actions on permissions (same interface as in the CLR):
+public void Demand(){
+if (this.IsSubsetOf(Current)) return;
+else thrownewSecurityException(”Operation not permitted.”);
+}
+public void Assert() {Current = now.Union(this);}
+public void Deny() {now=now.SetDifference (this);}
+public void PermitOnly(){ now=now.Intersect(this);}
+// Data methods(samemethodsas in the CLR):
+public Permissions Union(Permissions p){}
+public Permissions SetDifference(Permissions p){}
+public Permissions Intersect (Permissions p){}
+public bool IsSubsetOf(Permissions p){}
+}
+}
+Figure1.Theclass Permissions.
+Appendix: weusethesamemethodnamesasintheexisting(stack-
+APartialImplementationinC] based)systemclassCodeAccessSecurityPermissioninthe
+CLR.
+Inthisappendix,weprovideamodifiedinterfacetoper-
+Next,weillustrateinsomedetailourtwoamplification
+missionsanditspartialimplementation,inthecontextof
+patterns, “Grant” and “Accept” (Figures 2 and 3). For
+C] and the CLR. Two essential aspects of an implemen-
+each pattern, we first rely on the high-level syntax de-
+tationareomittedhere: theautomaticupdatemechanism
+fined in Section 5, then we implement the same behav-
+for the current rights (represented as the public property
+iorintermsoflower-leveloperationsonthecurrentrights
+Permissions.Current), and an access mechanism to the
+(definedintheclass PermissionsinFigure1).
+staticrightsassociatedwithagivenpieceofcode(repre-
+sentedaslocalvariables Permissions. Static).
+First, in Figure 1, we define a class Permissions, used
+below, that provides the base interface to history-based
+permissions—specificpermissionclasseswouldberepre-
+sentedassubclassesof Permissions. Wheneverpossible,public class GrantExample
+{
+// Static permissions attributed to this class by the security policy:
+static Permissions Static;
+// Handpicked sets of permissions ( application−specific):
+static Permissions prior; // rights of a minimally−trusted valid caller .
+static Permissions extra; // extra rights of a privileged callee.
+// GRANTisacontrolled form of privilege elevation
+// that temporarily gives extra permissions to a specific block.
+public void LibraryGate(){
+// usually checks preconditions
+// such as the presence of somepermissions:
+prior.Demand();
+// elevates permissions for this block of code:
+Grant (extra){
+/∗ run sensitive code requesting elevated privileges ∗/
+}
+/∗ continue with ordinary code ∗/
+}
+// idem, using lower−level operations on Permissions.Current.
+public void ImplementLibraryGate (){
+prior.Demand();
+Permissions before = Permissions.Current;
+try {
+extra.Assert (); // privilege elevation
+/∗ run sensitive code requesting elevated privileges ∗/
+}
+finally {
+before.PermitOnly(); // cancels privilege elevation
+}
+/∗ continue with ordinary code ∗/
+}
+}
+Figure2.“Grant”.delegate int IntCode(); // somebasic interface to untrusted code
+public class AcceptExample
+{
+// Static permissions attributed to this class by the security policy
+static Permissions Static;
+// Handpicked sets of permissions ( application−specific):
+static Permissions saved; // rights restored after untrusted calls
+// ACCEPTisa controlled form of privilege elevation
+// that restores someor all permissions possibly lost in
+// a specific block (for the benefit of any following code).
+private static int LibraryProxy(IntCode badCode){
+int i;
+Accept (saved) {
+// Runscode that may interact with less trusted code;
+i = badCode();
+// usually checks post−conditions;
+// by design, unhandled exceptions won’t restore permissions.
+if (i<0)thrownew InvalidOperationException(”bad integer”);
+}
+return i;
+// Fromthe caller’s viewpoint, the resulting permissions are
+// the sameas if this methodhadproduced i itself .
+}
+// idem, using lower−level operations on Permissions.Current:
+private static int ImplementLibraryProxy(IntCode badCode){
+int i;
+Permissions before = Permissions.Current;
+i = badCode();
+if (i<0)thrownewInvalidOperationException(”bad integer”);
+before. Intersect (saved).Assert();
+return i;
+}
+}
+Figure3.“Accept”.

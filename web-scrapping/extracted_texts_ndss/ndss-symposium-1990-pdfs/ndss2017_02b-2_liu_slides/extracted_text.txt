@@ -1,0 +1,520 @@
+Enabling Reconstruc1on of A4acks on Users
+via Efficient Browsing Snapshots
+Phani Vadrevu*, Jienan Liu*, Bo Li*, Babak Rahbarinia+,
+Kyu Hung Lee* and Roberto Perdisci*
+* University of Georgia, Athens, USA
++ Auburn University in Montgomery, Alabama, USA
+1Case Study
+Internet
+2Case Study
+Internet
+Fri
+13
+Social Engineering Attack!
+3Case Study
+Internet
+Sun
+Dark Web
+15
+4Case Study
+Internet
+SThuun
+Dark Web
+1159
+Forensic Analyst
+5We need …
+Fri
+13
+?
+Helps in user training to improve awareness
+6Requirements
+A tool that can record and reconstruct user-browser
+interac1ons and browser state.
+1. Forensic Rigor
+– Browser state should be fully captured synchronously i.e.
+before input is processed by the browser
+2. Efficiency (always-on)
+– HCI research states that a lag < 150 ms is prac1cally
+unno1ceable to end users[1]
+3. Transparency
+– Should not be easily detected by adversaries
+4. Portabli1ty
+– Should work on all plaUorms (mobile)
+[1]: Tolia et al. “Quantifying Interactive User Experience on Thin Clients”
+7
+http://isr.cmu.edu/doc/tolia06-ieee.pdfRelated Work
+• Network:
+– WebWitness (USENIX SEC 2014): DPI to reconstruct
+path to a4ack pages; visual reconstruc5on not
+possible
+• Browser based record-and-replay:
+– WebCapsule (CCS 2015): Instrument Blink to record
+and replay all browser ac1ons; not fully determinis5c
+and is complex
+• Whole system record-and-replay:
+– ReVirt (OSDI 2002): Record and guest OS’s execu1on
+at an instruc1on level; heavy-weight and difficult to
+deploy on mobile devices
+8ChromePic
+• An always-on, lightweight, efficient and
+portable forensic engine embedded inside the
+Chromium browser
+• It synchronously records user-browser
+interac1ons and the browser state into rich
+forensic logs called webshots
+9Webshot
+User Input, Timestamp Screenshot
+Package Package
+DOM Snapshots (for all frames)
+10Trigger Events
+11Trigger Events
+Mouse: left click, right click
+Touch device: tap
+Return key
+Keyboard: return, space, tab, esc, back space, arrows
+Space, Arrow, Tab, Back Space, Esc
+12ChromePic in Ac1on
+13Building ChromePic
+Extensions not viable
+Browser Instrumenta1on
+14Chromium Architecture
+facebook.com
+Renderer Renderer
+Main Thread Render Thread
+Browser process
+google.com
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+yahoo.com
+Browser Renderer Renderer
+File Thread Main Thread Render Thread
+Renderers
+15Chromium Architecture
+facebook.com
+Renderer Renderer
+Main Thread Render Thread
+Browser process
+google.com
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+input Send(input)
+IPCSend(input)
+Notify(input)
+User Input
+Processing
+yahoo.com
+Browser Renderer Renderer
+File Thread Main Thread Render Thread
+Renderers
+16Browser Instrumenta1on
+Use as much underlying code as possible:
+– CaptureVisibleTab(): asynchronous
+screenshots
+– SaveAsMHTML(): asynchronous DOM
+snapshots
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+input
+Send(input)
+IPCSend(input)
+SaveAsMHTML()
+Notify(input)
+For DOM Snapshots
+User CaptureVisibleTab()
+For Screenshots
+17Browser Instrumenta1on
+Use as much underlying code as possible:
+– CaptureVisibleTab(): asynchronous
+screenshots
+– SaveAsMHTML(): asynchronous DOM
+snapshots
+both are asynchronous
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+need synchronous and efficient
+input
+Send(input)
+IPCSend(input)
+SaveAsMHTML()
+Notify(input)
+versions For DOM Snapshots
+User CaptureVisibleTab()
+For Screenshots
+18Normal Input Processing
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+input Send(input)
+ChromeIPPCSenid(cinpu t)Design
+Notify(input)
+User
+regular input
+processing
+ChromePic Trigger Input Processing
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+input Send(input, fd)
+IPCSend(input, fd)
+Notify(input, fd)
+TakeScreenshot()
+take DOM
+User
+take tab snapshot
+screenshot Send(screen_taken) webshot
+save to file (fd)
+overhead
+IPCSend(screen_taken) wait for
+Save(screen) Browser Notify(screen_taken) screenshot...
+File Thread
+regular input
+processing
+19Normal Input Processing
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+input Send(input)
+ChromeIPPCSenid(cinpu t)Design
+Notify(input)
+User
+regular input
+processing
+ChromePic Trigger Input Processing
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+input Send(input, fd)
+IPCSend(input, fd)
+Notify(input, fd)
+TakeScreenshot()
+take DOM
+User
+take tab snapshot
+screenshot Send(screen_taken) webshot
+save to file (fd)
+overhead
+IPCSend(screen_taken) wait for
+Save(screen) Browser Notify(screen_taken) screenshot...
+File Thread
+regular input
+processing
+Synchronous by design
+20ChromePic Design
+• Next efficiency needs to be ensured for both:
+– Screenshots
+– DOM Snapshots
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+input Send(input, fd)
+IPCSend(input, fd)
+Notify(input, fd)
+TakeScreenshot()
+take DOM
+User
+take tab snapshot
+screenshot Send(screen_taken) webshot
+save to file (fd)
+overhead
+IPCSend(screen_taken) wait for
+Save(screen) Browser Notify(screen_taken) screenshot...
+File Thread
+regular input
+processing
+21Taking screenshots
+Browser Browser
+UI Thread IO Thread
+TakeScreenshot()
+input
+User
+Browser
+File Thread
+Send(screen_taken) IPC message
+Save
+to Renderer
+22Taking screenshots
+Browser Browser
+UI Thread IO Thread
+TakeScreenshot()
+input
+User
+• Not very efficient
+• Worst case of ~1s on Android
+Browser
+File Thread
+Send(screen_taken) IPC message
+Save
+to Renderer
+23Taking screenshots
+Browser Browser
+GL / GPU
+UI Thread IO Thread
+TakeScreenshot()
+input
+CopyFromCompositingSurface()
+User
+RequestCopyOfOuput()
+setNeedsCommmit
+DrawFrame()
+GetFrameBufferPixels()
+Result
+PrepareTextureCopyOutputResult()
+Browser
+File Thread CropScaleReadBack
+Save CopyFromCompositingSurfaceFinished IPC message
+to Renderer
+Send(screen_taken)
+24Taking screenshots
+Browser Browser
+GL / GPU
+UI Thread IO Thread
+TakeScreenshot()
+input
+CopyFromCompositingSurface()
+User
+RequestCopyOfOuput()
+setNeedsCommmit
+DrawFrame()
+GetFrameBufferPixels()
+Result
+PrepareTextureCopyOutputResult()
+Browser
+File Thread CropScaleReadBack
+Save CopyFromCompositingSurfaceFinished IPC message
+to Renderer
+Send(screen_taken)
+25Efficient screenshots
+Browser Browser
+GL / GPU
+UI Thread IO Thread
+TakeScreenshot()
+input
+CopyFromCompositingSurface()
+User
+RequestCopyOfOuput()
+setNeedsCommmit
+DrawFrame()
+GetFrameBufferPixels()
+Send(screen_taken) IPC message
+Result
+to Renderer
+PrepareTextureCopyOutputResult()
+Browser
+File Thread CropScaleReadBack
+Save CopyFromCompositingSurfaceFinished
+26Efficient screenshots
+Browser Browser
+GL / GPU
+UI Thread IO Thread
+TakeScreenshot()
+input • Target draw rate is about ~16ms!
+CopyFromCompositingSurface()
+User
+• 16 ms << 1 s
+RequestCopyOfOuput()
+setNeedsCommmit
+DrawFrame()
+GetFrameBufferPixels()
+Send(screen_taken) IPC message
+Result
+to Renderer
+PrepareTextureCopyOutputResult()
+Browser
+File Thread CropScaleReadBack
+Save CopyFromCompositingSurfaceFinished
+27Chromium MHTML Code
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+SaveMHTML
+Send(frame_id, fd) IPCSend(frame_id, fd)
+Notify(frame_id, fd)
+Notify(frame_id) MHTML frame1
+IPCSend(frame_id) Send(frame_id)
+User MHTML frame2
+Send(frame_id)
+MHTML frame3
+Send(frame_id)
+Send(frame_id, fd)
+Page JS
+MHTML frame4
+Send(frame_id)
+IPCSend(frame_id)
+Notify(frame_id)
+Frame by frame
+28Chromium MHTML Code
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+SaveMHTML
+Send(frame_id, fd) IPCSend(frame_id, fd)
+Notify(frame_id, fd)
+Notify(frame_id) MHTML frame1
+IPCSend(frame_id) Send(frame_id)
+User MHTML frame2
+Send(frame_id)
+MHTML frame3
+Send(frame_id)
+Send(frame_id, fd)
+Page JS
+MHTML frame4
+Send(frame_id)
+IPCSend(frame_id)
+Notify(frame_id)
+Frame by frame
+“the render thread is a scary place”
+“on ARM, stalls can be seconds long “
+- Chromium Docs
+29Efficient DOM Snapshots
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+Trigger Input
+Send(input, fd) IPCSend(input, fd)
+Notify(input, fd)
+MHTML frame
+1, 2, 3, 4
+User
+Input
+processing
+Page JS
+• Process all frame in a single task.
+• Piggyback on input processing task.
+30DOM Snapshots: Comparison
+Original MHTML Code
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+SaveMHTML
+Send(frame_id, fd) IPCSend(frame_id, fd)
+Notify(frame_id, fd)
+Notify(frame_id) MHTML frame1
+IPCSend(frame_id) Send(frame_id)
+User MHTML frame2
+Send(frame_id)
+MHTML frame3
+seconds
+Send(frame_id)
+Send(frame_id, fd)
+Page JS
+MHTML frame4
+Send(frame_id)
+IPCSend(frame_id)
+Notify(frame_id)
+ChromePic DOM Snapshots
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+Trigger Input
+Send(input, fd) IPCSend(input, fd)
+Notify(input, fd)
+MHTML frame
+1, 2, 3, 4
+User
+< 150 ms Input
+processing
+Page JS
+31Evalua1on
+• Reconstruc1ng a4acks on users
+• Used ChromePic on various UI a4ack pages
+1. An in-the-wild social engineering a4ack
+2. Real-world phishing pages
+3. Clickjacking a4acks from WOOT ’14 [2]
+[2]: Akhawe et al. “Clickjacking Revisited: A Perceptual View of UI Security”
+32
+https://www.usenix.org/system/files/conference/woot14/woot14-akhawe.pdfSocial engineering a4ack
+Alert Box (from DOM Snapshot)
+WARNING ! This Google Pixel C is
+infected with viruses and your
+browser is seriously damaged.
+You need to remove viruses and
+make corrections immediately. It
+is necessary to remove and fix
+now. Don’t close this window. ** If
+you leave , you will be at risk**
+33User Study
+• Measure performance on real user behavior
+• 15 minutes limit for each user/device
+Total
+# Users 11 15 16 22 (unique)
+Browsing Time 286 346 363 995
+(minutes)
+# Domains 65 80 92 204 (unique)
+# Webshots 1376 2145 2428 5949
+34Screenshot Overhead
+Original Screenshot Code ChromePic - Op5mized
+Browser Browser Browser Browser
+GL / GPU GL / GPU
+UI Thread IO Thread UI Thread IO Thread
+input TakeScreenshot() input TakeScreenshot()
+User CopyFromCompositingSurface() User CopyFromCompositingSurface()
+RequestCopyOfOuput() RequestCopyOfOuput()
+setNeedsCommmit setNeedsCommmit
+DrawFrame() DrawFrame()
+GetFrameBufferPixels() GetFrameBufferPixels()
+Send(screen_taken) IPC message
+Result Result
+to Renderer
+PrepareTextureCopyOutputResult() PrepareTextureCopyOutputResult()
+Browser Browser
+File Thread CropScaleReadBack File Thread CropScaleReadBack
+Save CopyFromCompositingSurfaceFinished IPC message Save CopyFromCompositingSurfaceFinished
+to Renderer
+Send(screen_taken)
+Median(ms) 98% (ms) Median(ms) 98% (ms)
+Tablet 65.7 110 Tablet 13 25.9
+Laptop 36.2 71 Laptop 5.38 27.7
+Desktop 39 118 Desktop 2.7 23.8
+35Total Webshot Overhead
+Screenshot Overhead DOM Snapshot Overhead
+Median(ms) 98% (ms) Median(ms) 98% (ms)
+Tablet 13 25.9 Tablet 59.5 203
+Laptop 5.38 27.7 Laptop 33.3 109.6
+Desktop 2.7 23.8
+Desktop 19 76.1
+Browser Browser Renderer Renderer
+UI Thread IO Thread Main Thread Render Thread
+input Send(input, fd)
+IPCSend(input, fd)
+Notify(input, fd)
+TakeScreenshot()
+take DOM
+User
+take tab snapshot
+screenshot Send(screen_taken) webshot
+save to file (fd)
+overhead
+IPCSend(screen_taken) wait for
+Save(screen) Browser Notify(screen_taken) screenshot...
+File Thread
+regular input
+processing
+36Total Webshot Overhead
+Screenshot Overhead DOM Snapshot Overhead
+Median(ms) 98% (ms) Median(ms) 98% (ms)
+Tablet 13 25.9 Tablet 59.5 203
+Laptop 5.38 27.7 Laptop 33.3 109.6
+Desktop 2.7 23.8
+Desktop 19 76.1
+37Performance Overhead
+38Storage
+Storage requirements in MB/Minute
+• Maximum requirement of about 1.03 MB/minute of
+ac1ve browsing
+• At this rate, a 1000 employee corporate network
+would generate 72 TB of log data per year
+39Discussion on Privacy
+• Disable on HTTPS connec1ons using valid SSL
+cer1ficates
+• Whitelist sensi5ve websites
+• Site-based encryp1on scheme based on a key-
+escrow agent.
+– Each site’s data is encrypted with a separate key
+– When an incident happens, the inves1gator gets only
+keys to the relevant sites.
+– Forward secure encryp5on schemes can be used to
+extend this for devices that are not always connected
+to the key escrow agent
+40Conclusion
+• ChromePic is a lightweight and portable forensic
+engine.
+• It can accurately log important user inputs and the
+associated browser states.
+• ChromePic can help reconstruct real world UI aXacks.
+• ChromePic has impercep5ble latency and requires
+only moderate disk space for logs.
+41Thank You!
+Source code to be released soon!
+Binaries already available!!
+hXps://github.com/chromepic/chromepic-browser
+42

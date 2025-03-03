@@ -1,0 +1,1095 @@
+Authentication and Integrity in Outsourced Databases
+EinarMykletun, MaithiliNarasimha, GeneTsudik
+ComputerScience Department
+SchoolofInformationandComputerScience
+UniversityofCalifornia,Irvine
+(cid:0)
+mykletun,mnarasim,gts (cid:1) @ics.uci.edu
+Abstract is a critical asset) at an external, potentially untrusted,
+Database Service Provider site. It is essential to provide
+In the Outsourced Database (ODB) model, organiza- adequatesecuritymeasuresto protectthestoreddatafrom
+tions outsource their data management needs to an exter- both malicious outsider attacks and the Database Service
+nal service provider. The service provider hosts clients’ Provideritself. Securityin most part, implies maintaining
+databasesandoffersseamlessmechanismstocreate,store, data integrity and guarding data privacy. Although some
+updateandaccess(query)theirdatabases. Thismodelin- work[3]hasbeendonetoprotectdatacon(cid:2)dentialitywhile
+troduces several research issues related to data security. guaranteeingits continuedavailability to authorizedusers,
+Oneofthecoresecurityrequirementsisprovidingef(cid:2)cient theproblemofprovidingef(cid:2)cientintegrityinthismodelhas
+mechanismstoensuredataintegrityandauthenticitywhile notreceivedmuchattention.
+incurring minimal computation and bandwidth overhead.
+Inthispaper,wefocusonprovidingsecureandeffective
+Inthiswork,weinvestigatetheproblemofensuringdatain-
+means of ensuringdata authenticationand integrity, while
+tegrityandsuggestsecureandpracticalschemesthathelp
+incurringminimalcomputationalandbandwidthoverhead.
+facilitateauthenticationofqueryreplies.Weexploretheap-
+In particular, we investigate techniques to help the ODB
+plicability of popular digital signature schemes (RSA and
+clientauthenticatetheoriginandverifytheintegrityofdata
+DSA)aswellasarecentlyproposedschemeduetoBoneh
+returned by the service provider in response to a posed
+etal.[1]andpresenttheirperformancemeasurements.
+query.
+1 Introduction
+Scope: In this paper, we consider only queries testing
+equalityandotherlogicalcomparisonpredicateclauses. In
+Continued growth of the Internet and advances in net-
+otherwords,weconsiderthestandardSQLqueriesinvolv-
+workingtechnologyhavefueledatrendtowardoutsourcing
+ing SELECT clauses which typically result in selection of
+datamanagementandinformationtechnologyneedstoex-
+a set of records (or attributes) matching a given predicate
+ternal Application Service Providers. By outsourcing, or-
+orasetthereof. Wespeci(cid:2)callydonotaddressqueriesthat
+ganizationscanconcentrateontheircoretasksandoperate
+involveanykindofdataaggregation(suchasSUMorAV-
+otherbusinessapplicationsviatheInternet,ratherthanin-
+ERAGE).
+curringsubstantialhardware,softwareandpersonnelcosts
+involved in maintaining applications in house. Database This paper focuses on providing mechanisms for ef(cid:2)-
+outsourcing[2] is a recent and important manifestationof cient integrity and origin authenticity of query replies re-
+thistrend. Inthismodel,theproviderisresponsibleforof- turnedbytheserviceproviderintheODBmodel.Arelated,
+feringadequatesoftware, hardwareandnetworkresources and equally important, issue is the completeness of query
+tohosttheclients’databasesaswellasmechanismsforthe replies. Thetermcompletenessreferstothecorrectexecu-
+clienttoef(cid:2)cientlycreate,updateandaccesstheoutsourced tionofthequeryovertheentiretargetdomain,i.e.,whether
+data. ornotallrecordssatisfyingaqueryarereturned. Although
+Thedatabaseoutsourcingparadigmposesnumerousre- weconsideritdebatablewhethercompletenessisasecurity
+searchchallengeswhichin(cid:3)uencetheoverallperformance, concern, we acknowledge that it poses a challenge which
+usabilityandscalability. Oneoftheforemostchallengesis needs to be addressedin the ODB model. However, it re-
+the security of stored data. A client stores its data (which mainsbeyondthescopeofthispaper.Organization: The rest of the paperis organizedas fol- queriers. The former is the actual data owner who adds,
+lows: In section 2, we describe the details of our model deletesandupdatesdatabaserecords.Whereas,aquerieris
+and identify design requirements for the integrity mecha- aclientonlyallowedreadaccess(i.e.,query)tothedatabase
+nisms. Section3describesthemotivationforstudyingag- orportionsthereof. This distinctionis bothnecessaryand
+gregatesignatureschemes. We lookat ourdesignchoices natural as it re(cid:3)ects many real-world database scenarios.
+andourassumptionsinsection4whilesection5coversthe Forexample,anairlinemayallowitscustomerstoqueryits
+overheadfactorsanddesignfeaturesthatgoalongwithag- databasetocheck(cid:3)ighttimingsandavailabilityorviewspe-
+gregatesignatureschemes. Insection6,wediscussaggre- ci(cid:2)c information about itineraries and reservations. How-
+gation of RSA signatures, then describe an aggregate sig- ever,customersare,ofcourse,notauthorizedtomodifyany
+nature scheme proposed by Boneh et al. [1] and (cid:2)nally (cid:3)ight-relateddata.
+discusswhyaggregationofDLPbasedsignaturesschemes Inthethird,mostgeneral,ODBmodel,asingledatabase
+is dif(cid:2)cult. In section 7, we brie(cid:3)y discuss anotherviable canhavemultipleowners. ThisisreferredtoastheMulti-
+solution for ensuring integrity in ODB model which uses Owner Model (see Figure 3). The distinction betweenthe
+MerkleHashTrees. Insection8,wecompareandcontrast Multi-QuerierandMulti-Ownermodelsmightseemsubtle.
+therelativeperformanceofthethreesignatureschemesde- In the former, a single security principal creates and ma-
+scribedinsection6. Section 9looksatrelevantpriorwork nipulatesdatabaserecords, whereas, in thelatter, different
+in the (cid:2)elds of database security, batch cryptographyand recordscanbecreatedbydistinctsecurityprincipals.How-
+aggregatedsignatures.We(cid:2)nallyconcludeinsection10by ever, in both models, there can be multiple queriers. The
+givinganoutlineforourfuturework. motivation for the Multi-Owner model is rather straight-
+forward. Consider an example of an outsourced cus-
+tomer/salesdatabase.Eachrecordinthisdatabaseiscreated
+2 SystemModel
+andmaintainedbythesalespersonresponsibleforapartic-
+ularcustomer. Asalespersonthen(cid:147)owns(cid:148)therecordsthat
+Theoutsourceddatabase(ODB)modelisanexampleof
+s/hecreates.
+the well-known Client-Server model. In the ODB model,
+the Database Service Provider (also referred to as the
+3 Motivation
+Server) has the infrastructure required to host outsourced
+databases andprovidesef(cid:2)cient mechanisms forclients to
+create, store, update and query the database. Before pro- Asmentionedabove,theODBmodeltriggerssomeim-
+ceedingfurther,weneedtoclarifythemeaningoftheterm portant security concerns. The more obvious concern is
+(cid:147)client(cid:148).Aclient,inthiscontext,isnotnecessarilyasingle the privacy of outsourced data with respect to the server.
+entity,suchasauser.Instead,alogicalclientcanbethought The main challenge is how to reconcile the requirement
+ofas anadministrativeentity, suchas anorganizationora forprivacywiththeneedto outsourcedata. Somenotable
+setofauthorizeduserswithinanorganization. previous work [2, 3] addressed this challenge by devising
+In practice, an actual client may be a computationally methodsforessentiallyrunningencryptedqueriesoveren-
+weak and storage-challenged device, such as a cellphone crypteddatabases. (Albeit,muchworkremainstobedone
+or a wireless PDA. Moreover, the bandwidth available to tosupportaggregation-stylequeries.)
+aclientmaybeseverelylimitedduetothecommunication Thefocusofthispaperisondataauthenticationandin-
+mediumcharacteristicsand/orthebatterypowerconsumed tegrityintheODBmodel.Itiseasytoseethatdataprivacy
+byreceivinglargeamountsofdata. intheODBmodelisorthogonaltodataauthenticationand
+An ODB client is assumed to trust the server to faith- integrity. We consider it unlikely that there are many re-
+fullymaintainitsdata.Speci(cid:2)cally,theserverisreliedupon alistic ODB settings where privacyis desired but integrity
+for the replication, backup and availability of outsourced is not. On the other hand, one can easily envision ODB
+databasesitstores.However,theservermightnotbetrusted scenarios where privacy is not a concern but data authen-
+with the actual database contents and/or the integrity of ticationandintegrityarerequired. Forexample,agovern-
+these contents. This lack of trust is crucial as it opens up mentagency,e.g.,theNationalScienceFoundation(NSF),
+new security issues and serves as the chief motivation for might outsource its awards database and allow anyone to
+ourwork. runqueriesoverit. AsimilarsituationmightariseiftheUS
+We distinguishamongthree(cid:3)avorsoftheODB model: PatentsandTrademarksOf(cid:2)ce(USPTO)weretooutsource
+The most basic setting is where each outsourced database itsissuedpatentsandpatentapplicationsdatabases.Insuch
+is used by a single entity, the client who creates, manip- cases, privacy is not an issue since the database contents
+ulates and queries the data. We refer to it as the Uni(cid:2)ed (records)arepublic,yettheirintegrityandauthenticityare
+ClientModel(Figure1).Inamoreadvanced,Multi-Querier veryimportant.
+Model(Figure2),therearetwotypesofclients:ownersand From a more technical perspective, the motivation forFigure1.ODB(cid:150)Uni(cid:2)edClientModelOverview
+Figure2.ODB(cid:150)Multi-QuerierModelOverview
+Figure3.ODB(cid:150)Multi-OwnerModelOverview
+ourworkisfairlyintuitive.WhenanODBclientqueriesits
+outsourceddata,itexpectsinreturnasetofrecords(query
+reply)satisfyingthequery’spredicates. Thesizeofthere-
+ply can vary, in principle, between zero and
+(cid:2)
+, where
+(cid:2)
+is the total number of records in the database. In other
+words,aqueryreplycanbeanyoneofthe
+(cid:3)(cid:5) (cid:4)
+since, inourmodel,theserveris NOTtrusted withthein-
+tegrityofthedata. Moreconcretely,theproblemathandis
+that a malicious server may attempt to insert fake records
+intothedatabaseormodifyexistingrecords.Consequently,
+ourgoalistoassureODBclientsthatdatatheyreceivefrom
+recordsub- theserverhasnotbeentamperedwithbyeitheranexternal
+sets. Therefore, the main problem we face is: how to fa- adversaryorbytheserveritself.
+cilitate secure and ef(cid:2)cient authentication of all possible
+queryreplies?
+4 DesignChoicesandAssumptions
+If we were concerned only with outside threats, i.e.,
+adversaries tampering with the communication between
+queriersandservers,thenstandardtoolsforestablishingse-
+cure channels (e.g., SSL or IPSec) might be appropriate. Inthissectionwediscussseveralassumptionsanddesign
+However, this is insuf(cid:2)cient to authenticate query replies choices.NatureofData: asmentionedearlier,thispaperdoesnot However, recall that in the more general Multi-Querier
+address the issue of data privacy. Consequently, to keep and Multi-Owner models, we assume potentially many
+ourdiscussiongeneral,wedonotdifferentiatebetweenthe queriers for each client. In these settings, MAC-s are not
+cases of the stored data being completely encrypted, par- usefulsincetheywouldrequiretheMACkeytobeshared
+tiallyencryptedorcompletelyunencrypted. Wesimplyas- amongallowner(s)andalllegitimatequeriers. Obviously,
+sume that the data owner, depending upon the nature of non-repudiationforthequerierscannotbeachieved.There-
+data, has stored it in some suitable form and has a mech- fore, the only choice is use public key digital signatures.
+anism for formulating queries (involving selection predi- However, digital signatures introduce signi(cid:2)cant overhead
+cates)thatcanbeexecutedremotelyoverthestoreddata. intermsofstorage,bandwidthandcomputation.2
+5 Overhead Factorsand DesiredFeatures
+Granularity of Integrity: data integrity/authentication
+can be providedat differentlevels of granularity. In prin-
+ciple, integrity checks can be at the level of a table (en- A typical digital signature is between 320 (e.g., DSA)
+tirerelation),acolumn(anattributeoftherelation),arow and1024(e.g.,RSA)bits. Asdiscussedabove,weareus-
+(a record or a tuple of the table), or (cid:2)nally, an individual ingrecord-levelsignatures. Now,consideringthata query
+attribute value. Providingintegrity checks at the table (or reply can, potentially, contain many thousands of records,
+column)levelimpliesthattheentiredatapertainingtothat receivingandverifyingindividualrecordsignaturescanbe
+table (orcolumn)shouldbe returnedin the queryreply in prohibitivelyexpensiveforaquerier. Also,evenifthestor-
+order for the client to verify the integrity of the query re- ageontheserverisnotaresourceconstraint,thequeriercan
+sponse.Thisisclearlyimpracticalasitrequirestransferring beaweakdevicewithlimitedstorageandcomputationalre-
+largeamountsofdatatotheclient. Hence,wedonotcon- sources. Therefore,it is essential to reducethebandwidth
+siderthistobeaviableapproach. Ontheotherhand,com- aswellascomputationaloverheadintroducedbythesecu-
+puting integrity checks at the level of individual attribute rityservices. Tobemorespeci(cid:2)cinourgoals,weconsider
+values yields a very large number of signatures which is (cid:2)veoverheadfactorsthatwewouldliketominimize(listed
+veryexpensiveforthesigner(owner)intermsofcomputa- inthedecreasingorderofperceivedimportance):
+tionaswellasforthetheserverintermsofstorage.
+1. Querier computation: verifying integrity/authenticity
+Webelievethattheoptimalchoiceistoprovideintegrity
+ofasetofrecordsinaqueryreply.
+attherecordlevel.Thisenablestheservertoreturn(cid:150)inre-
+sponsetoaquery(cid:150)anysetofmatchingrecordsalongwith
+2. Querier bandwidth: sending/receiving integrity data
+theirrespectiveintegritychecks. Ofcourse,computingin-
+(in addition to the overhead incurred for send-
+tegritychecksovertheentirerecord,asopposedtoindivid-
+ing/receivingactualrecordsinareply).
+ualattributes,impliesthatthesmallestunitofdatareturned
+asaqueryreplyisanentirerecord,evenwhenthequerying 3. Servercomputation: server-sidemanipulation(ifany)
+clientisonlyinterestedinasingle(cid:2)eld.1 ofintegrityinformationinthequeryreply.
+4. Ownercomputation: computingintegrityinformation
+SignaturesorMAC-s? Onenaturalandintuitivesolution tobestoredintheoutsourceddatabase.
+for record-level integrity is to use message authentication
+codes (MAC-s) as they tend to be small and ef(cid:2)cient to 5. Serverstorage: spacerequiredtostoreintegrityinfor-
+computeandverify. A simpleMAC-basedschemecan be mationinanoutsourceddatabase.
+constructedwherebytheclientaskstheservertostoreeach
+Weclaimthatthe(cid:2)rstthreearethemostimportantoverhead
+outsourcedrecordalongwithaMAC(orkeyedhash)ofthat
+factorsstemmingfromtheintegrityofoutsourceddata.The
+recordcomputedwith some key known onlyto the client.
+last twoare markedlyless important. Serverstorage over-
+Then, for any query reply, the server encloses a single in-
+head is not much of a concern since servers are assumed
+tegritycheckcomputedasahashofallrecord-levelMAC-s
+to be interestedin selling or rentingmorestorage. Owner
+inthequeryreply.Thebandwidthoverheadisminimaland
+computation overhead is also comparatively less pressing
+the computationoverheadat the client is low. This works
+since we assume that ODB records are manipulated (cre-
+wellforthetheUni(cid:2)edClient Modelwheretheclientand
+ated, deleted, modi(cid:2)ed) much less frequently than client
+thequerierareoneandthesame.
+2Weobservethat,evenintheUni(cid:2)edClientmodel,theremaybeben-
+1It ispossible to compute integrity checks over hashes ofrecord at- e(cid:2)tstousingsignaturesasopposedtoMAC-s. Themainincentive isto
+tributesratherthanoveractual attributevalues. Eveninthiscase, ifthe protecttheserverfromamalicious(orlitigious)clientwhomightfraud-
+query requests only some attributes, hashes of other (un-requested) at- ulently claimthattheservermangledorfakedrecordsintheoutsourced
+tributesmustbereturned. database.Record-levelsignatureswouldobviatethisproblem.queries are executed. This observation favors digital sig- indeed,properlysignedbythepurportedsigner. RSA sig-
+natureschemesthatareparticularlyef(cid:2)cientinveri(cid:2)cation. natures can be condensed(cid:147)incrementally(cid:148)by any party in
+Ef(cid:2)ciencyingenerating(computing)signaturesis,incom- possessionofindividualmessagesignatures.
+parison,lessimportant.
+Based on the above, we can outline an idealized solu- StandardRSA: Wenowbrie(cid:3)ysummarizethestandard
+tion. It would involve minimal querier computationover- RSAscheme. Anentityhasapublickey
+head and constant (only in terms of integrity information)
+querierbandwidthoverhead.Itiseasytoseethatachieving
+constantqueriercomputationoverheadisimpossible,since,
+for all records in a query reply, the querier must at least
+recomputea hash or a similar function. Fortunately,there
+aredigitalsignatureschemesthatcan beusedtoconstruct
+idealizedor near-idealizedsolutions. Such schemes allow
+combining (or aggregation) of multiple individual signa-
+turesintooneuni(cid:2)edsignaturesuchthatveri(cid:2)cationofthe
+uni(cid:2)edsignatureisequivalenttoverifyingindividualcom-
+ponent signatures. Some schemes only allow aggregation
+ofasinglesigner’ssignatures,whereas,othersallowsigna-
+tures produced by multiple signers to be aggregated. For
+our purposes, the former can be used to support the Uni-
+(cid:2)ed Client and Multi-Querier models, while the latter can
+additionallysupporttheMulti-Ownermodel.
+Intheremainderofthispaperwefocusontwoconcrete
+techniquesthatsupportaggregationofmultiplesignatures.
+The(cid:2)rstisbasedonasimpleextensionofthewell-known
+(cid:147)Batchveri(cid:2)cationofRSA(cid:148)method,andthesecondisthe
+recentschemebyBoneh,etal.[1].
+6 Suitable Signature Schemes
+As notedinsection5, signatureschemesthatallowag-
+gregationseem to be ideally suited for ODB integrity. In
+thissection,weexaminesomeviablesolutionsandidentify
+theirlimitations.Westartbypresentingasimpleschemefor
+aggregating RSA signatures generated by a single signer.
+We then introduce an aggregatedsignature scheme due to
+Boneh et al. (hereafter referred to as the BGLS scheme),
+and conclude with the discussion of the applicability of
+DLP-based signature schemes in the ODB model. An al-
+ternativeapproachbasedonso-calledMerkleHashTreesis
+discussedinSection7.
+6.1 Condensed›RSA
+TheCondensed-RSAschemediscussedinthissectionis
+a simple extension of the standard RSA [4] scheme. One
+ofthewell-knownfeaturesofRSAisitsmultiplicativeho-
+momorphicproperty. ThisfeaturemakesRSA suitablefor
+combiningsignaturesgeneratedbyasinglesignerintoasin-
+gle (cid:147)condensed(cid:148)signature. Having successfully veri(cid:2)eda
+condensedsignature,averi(cid:2)ercanbeassuredthateachin-
+dividualmessagecoveredbythecondensedsignaturewas,
+(cid:6)(cid:8) (cid:7)(cid:10) (cid:9)(cid:12) (cid:11)(cid:14) (cid:13)(cid:16) (cid:15)(cid:18) (cid:17)(cid:20) (cid:19)
+anda
+secretkey
+(cid:21)(cid:22) (cid:7)(cid:23) (cid:9)(cid:24) (cid:11)(cid:26) (cid:25)(cid:27) (cid:19)
+,where
+(cid:13)
+isa
+(cid:7)
+-bitmoduluscomputed
+astheproductoftworandom
+(cid:7)(cid:29) (cid:28)(cid:30) (cid:3)
+-bitprimes
+(cid:6)
+and
+(cid:31)
+. The
+respective public and secret exponents (cid:17)(cid:27) (cid:15) (cid:25)(cid:12) !# "% &$ satisfy
+(cid:17)’ (cid:25)) (+ *(cid:12) ,. -0 /(cid:23) 12 (cid:11)(cid:14) (cid:13)3 (cid:19)
+, where
+12 (cid:11)4 (cid:13)3 (cid:19)5 (cid:9)6 (cid:11)7(cid:6)9 8(cid:12) *(cid:22) (cid:19): (cid:11)(cid:26) (cid:31); 8< *’ (cid:19)
+. In
+today’scryptographicliterature,
+(cid:7)
+isassumedtobeatleast
+*> =(cid:27) (cid:3)(cid:20) ?
+bits. ThesecurityoftheRSAcryptosystemiswidely
+believedtobebasedontheconjecturedintractabilityofthe
+integerfactorizationproblem.
+Inpractice,anRSAsignatureiscomputedoverthehash
+of the input message. Let
+@3 (cid:11)A (cid:19)
+denote a suitable crypto-
+graphichashfunction(suchasMD5orSHA-1)which,upon
+a variable-length input
+(cid:2)
+, produces a (cid:2)xed-length output
+@3 (cid:11)(cid:14) (cid:2)(cid:23) (cid:19)
+. A standard RSA signature on message
+(cid:2)
+is com-
+putedas:
+BC (cid:9)D @3 (cid:11)(cid:14) (cid:2)(cid:23) (cid:19)(cid:18) EF (cid:11)(cid:14) ,G -0 /H (cid:13)3 (cid:19)
+.RSAsignatureveri(cid:2)cation
+involvescheckingthat
+B3 IJ (K @L (cid:11)4 (cid:2)C (cid:19)M ,G -0 /H (cid:13)
+.Bothsignature
+generationandveri(cid:2)cationinvolvecomputingoneexponen-
+tiation.
+Condensed-RSA: Given N inputmessages O(cid:22) (cid:2)Q P’ (cid:15)> RSRTRS(cid:15)(cid:18) (cid:2)(cid:10) U V
+and their correspondingsignatures
+O’ BW P(cid:20) (cid:15)> RSRTRT(cid:15)(cid:18) BX U V
+(generated
+by the same signer), a Condensed-RSA signature is given
+bytheproductofindividualsignatures:
+B PZ YU (cid:9)
+U
+[
+\S]
+P
+B
+\
+(cid:11)(cid:14) ,. -^ /(cid:23) (cid:13)3 (cid:19)
+(1)
+Theresultingsignature
+B_ PZ YU
+hasthesamesizeasastandard
+RSAsignature. Whenverifyingacondensedsignature,the
+veri(cid:2)erneedsto multiplythe hashes ofall inputmessages
+andcheckthat:
+(cid:11)(cid:14) B_ P‘ YUa (cid:19) I (
+U
+[
+\S]
+P
+@L (cid:11)4 (cid:2) \ (cid:19)b (cid:11)(cid:14) ,G -0 /(cid:23) (cid:13)3 (cid:19) (2)
+Batchveri(cid:2)cationofRSAsignatures: Condensed-RSA
+veri(cid:2)cation is very similar to Batch veri(cid:2)cation of RSA.
+Batching,ingeneral,helpsreducecomputationalcomplex-
+ityinsettingswheremanysignatureveri(cid:2)cations(orother
+computationallyintensivetasks)mustbeperformedsimul-
+taneously.Batchveri(cid:2)cationofRSA[5,6,7]aimsatspeed-
+inguptheveri(cid:2)cationprocessbyreducingthetotalnumber
+of exponentiations. Given a batch instance of signatures
+O(cid:22) B P (cid:15)c RTRTRS(cid:15) B U V
+and distinct messages
+O> (cid:2) P (cid:15)c RTRTRS(cid:15)(cid:18) (cid:2) U V
+, an RSA
+batch veri(cid:2)cation (also called fast screening [6]) consists
+ofcheckingthat:
+(cid:11)
+U
+[
+\T]
+P
+B \ (cid:19) I (
+U
+[
+\S]
+P
+@3 (cid:11)(cid:14) (cid:2) \ (cid:19)b (cid:11)4 ,. -0 /H (cid:13)3 (cid:19) (3)Bellare et al. in [6] give the exact bounds for the proba-
+bility that an adversarycan successfully create a batchin-
+stancewhichsatis(cid:2)es theaboveequationwithoutpossess-
+ingindividualsignaturesoneachofthemessagesinthein-
+stance. ThemaindifferencebetweenCondensed-RSAand
+Batch veri(cid:2)cation of RSA is that, in the latter, the prod-
+uctofindividualsignaturesiscomputedbytheveri(cid:2)erwho
+has access to individual signatures. This allows for post-
+veri(cid:2)cationauditingifbatchveri(cid:2)cationfails,i.e.,itispos-
+sibletoscreenindividualsignaturestodeterminethefaulty
+one(s).Incontrast,Condensed-RSAhasasingleaggregated
+signaturewhich makes auditingimpossible. Therefore, in
+the event of veri(cid:2)cation failure, further steps (perhaps in-
+volvingoff-linemechanisms)becomenecessary.
+Security of Condensed-RSA: We claim that
+Condensed-RSA is unforgeable against adaptive cho-
+sen message attacks. We support this claim by showing
+that, if an adversary
+d
+can break Condensed-RSA, then,
+using this adversary, we can construct a forger
+e
+to
+successfully create a batch instance that passes the batch
+veri(cid:2)cation test without the possession of valid individual
+signaturesoneachinputmessageintheinstance.
+We begin by de(cid:2)ning what it means for an adver-
+sary
+d
+to break Condensed-RSA.
+d
+succeeds in breaking
+Condensed-RSAifitproducesavalidaggregatedsignature
+formessages
+O(cid:22) (cid:2) P
+,...,
+(cid:2) U V
+whichsatis(cid:2)esequation2with-
+outpossessingvalidindividualsignaturesforeachofthe
+N
+inputmessages. WearguethesecurityofCondensed-RSA
+by demonstratingthat it is at least as secure as Batch ver-
+i(cid:2)cation of RSA, which, in turn, was shown in [6] to be
+secureundertheassumptionthatRSAisacollectionofone-
+wayfunctions.Notethatweareassumingtheuseofafull-
+domainhashfunction(FDH),asdescribedin[8]. FDHisa
+hashfunction f. g3 hj il k0 O’ =X (cid:15)c *m V(cid:20) $o np "q &$
+Outline: d accepts as input ( (cid:2) P , ..., (cid:2) U ) and r = O(cid:22) B P ,
+..., B(cid:29) st V where B \ (cid:9)u f gv hj i (cid:11)4 (cid:2) \ (cid:19)(cid:18) E(cid:12) ,. -0 /H (cid:13) ,and w# xy N . In
+otherwords,adversary d acceptsasinput N messagesanda
+set r whichhasvalidsignaturesfor w ofthese N messages
+( wz x< N ). d , byourde(cid:2)nition,breaksCondensed-RSAby
+outputtingavalidCondensed-RSAsignature BW PZ YU . Wenow
+constructaforger
+e
+thatbreaksBatchveri(cid:2)cationofRSA.
+Details: Forger e , on input ( (cid:2) P (cid:15)> RSRTRT(cid:15)a (cid:2) U ) and r , out-
+puts (cid:11)(cid:26) (cid:21) P (cid:15)c RTRSRT(cid:15) (cid:21) U (cid:19) suchthat
+(cid:11)4 ,. -0 /(cid:10) (cid:13)3 (cid:19)
+(cid:11)| { U \S] P (cid:21) \ (cid:19) I ((cid:24) { U \T] P f gv ht i (cid:11)(cid:14) (cid:2) \ (cid:19)
+.
+e
+proceedsinthefollowingmanner:
+1. Creates random numbers (cid:21) \ !v }(cid:24) "q &$ where
+(cid:11)4 N2 8(cid:129) *’ (cid:19)
+*F ~# (cid:127)(cid:128) ~
+.
+2. Transfersmessages(
+(cid:2)Q P’ (cid:15)> RSRTRT(cid:15)a (cid:2)H U
+)and
+r
+to
+d
+3. Let theforgedCondensed-RSAsignaturereturnedby
+d
+be
+(cid:130)
+4. Computes (cid:21)> Uj (cid:9)l (cid:11)| { U| (cid:131)v \T] P P (cid:21) \ (cid:19) (cid:131)W P(cid:16) (cid:132) (cid:130)b (cid:11)4 ,. -0 /H (cid:13)3 (cid:19)
+5. Outputsabatchinstance
+(cid:11)(cid:26) (cid:21)(cid:30) P(cid:20) (cid:15)c RTRSRT(cid:15) (cid:21)> Ua (cid:19)
+formessages(
+(cid:2)(cid:133) P
+,
+...,
+(cid:2)H U
+).
+Claim 1: Forger e producesa set of signatures that sat-
+isfytheBatchveri(cid:2)cationtest.
+Notethat {
+U
+\S] P (cid:21) \ ( {
+U
+\T] P B \ (cid:11)4 ,. -0 /(cid:10) (cid:13)3 (cid:19) . Therefore,equa-
+tion3issatis(cid:2)edandtheBatchveri(cid:2)cationtestsucceeds.
+Claim 2: If RSA is one-way, then Condensed-RSA is a
+securesignaturescheme.
+Batch veri(cid:2)cation of RSA was shown secure under the
+assumption that RSA is one-way. Therefore, since
+Condensed-RSAisatleastassecureasBatchveri(cid:2)cationof
+RSA,weconcludethatCondensed-RSAissecureassuming
+RSAisacollectionofone-wayfunctions.
+Overhead Costs: We now compare the costs of
+Condensed-RSAintheODBmodelwiththoseofstandard
+RSAandBatchveri(cid:2)cationofRSA(alsoinODB).Thecost
+ofhashingisignoredasitisnegligibleincomparisonwith
+thatofmodulararithmetic.
+WithstandardRSAsignatures,thequerierwouldneedto
+receiveandprocess
+N
+signatures,oneforeachrecordinthe
+queryreply. Toverifythesignatures,itwouldhavetoper-
+form
+N
+RSAveri(cid:2)cations,i.e.,
+N
+exponentiations.Theband-
+width overheadwould amount to
+N
+(cid:132). (cid:134)
+(cid:13)
+(cid:134) bits. With Batch
+veri(cid:2)cationofRSA,theveri(cid:2)cationprocesswouldinvolve
+computingtheproductofallmessagehashesandtheprod-
+uct of message signatures, resulting in
+(cid:3)X (cid:11)4 N(cid:135) 8l *(cid:22) (cid:19)
+multipli-
+cations, followed by one exponentiation. The bandwidth
+overheadisthesameasinstandardRSA.
+Incontrast,thebandwidthoverheadofCondensed-RSA
+isasinglesignature( (cid:134) (cid:13) (cid:134) bits),andveri(cid:2)cationcostswould
+amountto (cid:11)(cid:14) N(cid:136) 8D *(cid:22) (cid:19) multiplications,to computethe product
+ofallmessagehashes,followedbyoneexponentiation. To
+summarize,Condensed-RSAsaves (cid:11)4 Nm 8(cid:10) *(cid:22) (cid:19) (cid:132)2 (cid:134) (cid:13) (cid:134) bitsofband-
+widthand (cid:11)(cid:14) N3 8(cid:137) *’ (cid:19) multiplicationsoverBatchveri(cid:2)cationof
+RSA.
+Condensed-RSA in ODB Setting: Condensed-RSA is
+clearlyapplicabletobothUni(cid:2)ed-ClientandMulti-Querier
+models since each assumes a single data owner (signer).
+The server executinga client queryis requiredto perform
+thefollowing:selectrecordsthatmatchthequerypredicate;
+fetchthesignaturescorrespondingtotheserecords; aggre-
+gate them (bymultiplyingthem, as mentionedabove)and
+send back the single aggregated signature along with the
+recordsintheresultset.Notethat,clearly,Condensed-RSAhelpssavebothqueriercomputationandquerierbandwidth
+(Section5). IncaseofMulti-Ownermodel,itisnolonger
+possibletoincuraconstantbandwidthoverhead.Theserver
+canaggregatesignaturesgeneratedbyeachsignerandsend
+them separately which results in querier bandwidth over-
+headbeinglinearinthenumberofsigners. Theclientcan
+verifythesepartiallyaggregatedsignaturesbycarryingout
+oneveri(cid:2)cationpersigner.
+6.2 BGLS
+Boneh, et al. in [1] describe an aggregated signature
+scheme that aggregates signatures generated by distinct
+signersondifferentmessagesintooneshortsignaturebased
+onellipticcurvesandbilinearmappings. Theirschemeop-
+erates ina GapDif(cid:2)e-Hellmangroup(GDH) which is de-
+(cid:2)nedasagroupwheretheDecisionalDif(cid:2)e-Hellmanprob-
+lem(DDH)iseasywhiletheComputationalDif(cid:2)e-Hellman
+problem(CDH)ishard. The(cid:2)rstsuchGDHgroupwasde-
+scribedin[9].Priortodescribingtheirsignatureschemewe
+giveabriefintroductiontotheparametersinvolved[1].
+1.
+(cid:138) P
+and
+(cid:138)% (cid:139)
+are two(multiplicative)cyclicgroupsof
+primeorder (cid:6) ;
+2.
+(cid:140) P
+isageneratorof
+(cid:138) P
+and
+(cid:140)m (cid:139)
+isageneratorof
+(cid:138)(cid:141) (cid:139)
+;
+3.
+(cid:142)
+isacomputableisomorphismfrom
+(cid:138)(cid:143) (cid:139)
+to
+(cid:138) P
+,with
+(cid:142)(cid:144) (cid:11)(cid:145)(cid:140)m (cid:139)(cid:22) (cid:19)j (cid:9)(cid:146) (cid:140) P
+;and
+4. (cid:17) isacomputablebilinearmap (cid:17)% km (cid:138) PJ (cid:147) (cid:138)% (cid:139)(cid:135) n(cid:148) (cid:138)% (cid:149) as
+describedbelow
+A bilinear mapping
+(cid:17)(cid:129) k(cid:136) (cid:138)(cid:150) P (cid:147) (cid:138) (cid:139) n(cid:151) (cid:138) (cid:149)
+, where
+(cid:134)
+(cid:138) (cid:139)
+(cid:134)
+(cid:9)
+(cid:134)
+(cid:138) (cid:149)
+(cid:134)
+(cid:134)
+(cid:138)(cid:143) P
+(cid:134)
+(cid:9)
+,satis(cid:2)esthefollowingproperties.
+1. Bilinearity:
+(cid:152)(cid:27) (cid:6)(cid:153) !p (cid:138) P
+,
+(cid:31)(cid:154) !p (cid:138)% (cid:139)
+and
+(cid:155)(cid:8) (cid:15) (cid:156)(cid:157) !p (cid:158)
+,
+(cid:17)(cid:27) (cid:11)7(cid:6)(cid:8) (cid:159)(cid:5) (cid:15)(cid:18) (cid:31)(cid:30) (cid:160)‘ (cid:19)j (cid:9)M (cid:17)^ (cid:11)¡(cid:6)3 (cid:15) (cid:31)(cid:30) (cid:19)a (cid:159): (cid:160)
+2.Non-degenerate:
+(cid:17)(cid:27) (cid:11)4 (cid:140)^ P’ (cid:15)a (cid:140) (cid:139) (cid:19)(cid:144) ¢(cid:9)y *
+Thesetwopropertiesimplythat:
+(cid:17)(cid:27) (cid:11)7(cid:6)_
+(cid:152)^
+P(cid:20)
+(cid:6)_
+(cid:15)(cid:18)
+P(cid:22)
+(cid:31)(cid:30)
+(cid:15)(cid:26)
+(cid:19)2
+(cid:6) (cid:139)
+£> (cid:17)^
+!C
+(cid:11)7(cid:6)
+(cid:138)(cid:143)
+(cid:139) (cid:15)
+P’
+(cid:31)(cid:30)
+(cid:15)
+(cid:19)
+(cid:31)(cid:143) !C (cid:138) (cid:139) (cid:15)(cid:18) (cid:17)^ (cid:11)¡(cid:6)W P| (cid:6) (cid:139) (cid:15)(cid:18) (cid:31)(cid:30) (cid:19)j (cid:9)
+and
+(cid:152)^ (cid:6)3 (cid:15)(cid:18) (cid:31)(cid:141) !H (cid:138) (cid:139) (cid:15)(cid:18) (cid:17)^ (cid:11)(cid:14) (cid:142)(cid:144) (cid:11)¡(cid:6)_ (cid:19)Z (cid:15) (cid:31)(cid:30) (cid:19)j (cid:9)K (cid:17)^ (cid:11)4 (cid:142)q (cid:11)(cid:14) (cid:31)(cid:30) (cid:19): (cid:15)(cid:14) (cid:6)(cid:8) (cid:19)
+BGLSScheme: BGLS usesafull-domainhashfunction
+@3 (cid:11)A (cid:19)(cid:133) kq O(cid:22) =⁄ (cid:15)c *m V(cid:20) $Q n¥ (cid:138)(cid:143) P
+. Key generation involves picking a
+random
+ƒ§ !§ (cid:158)' ¤
+,andcomputing
+“(cid:10) (cid:9)) (cid:140)X «(cid:139)
+. Thepublickeyis
+“(cid:137) !‹ (cid:138) (cid:139)
+andthesecret keyis
+ƒK !(cid:146) (cid:158)› ¤
+. Signinga message
+(cid:2)
+involvescomputing
+@Q (cid:9)(cid:12) @3 (cid:11)(cid:14) (cid:2)(cid:23) (cid:19)
+,where
+@§ !9 (cid:138) P
+and
+@⁄ «
+B(cid:137) (cid:9)
+(the actual signature is
+B
+). To verify a signature one
+computes
+@; (cid:9)M @L (cid:11)4 (cid:2)C (cid:19)
+andchecksthat
+(cid:17)^ (cid:11)(cid:26) B_ (cid:15)fi (cid:140)X (cid:3)m (cid:19)j (cid:9)‹ (cid:17)^ (cid:11)A @v (cid:15)(cid:18) “^ (cid:19)
+.
+BGLS Aggregation: To aggregate N BGLS signatures,
+one computes the product of individual signatures as fol-
+lows: B(cid:8) PZ YUq (cid:9) {
+U
+\T] P B \ , where B \ correspondstothesigna-
+ture on message
+(cid:2)
+\ . The aggregated signature
+B_ PZ YU
+is of
+thesamesizeasanindividualBGLSsignature,i.e., (cid:134)
+(cid:6)
+(cid:134)
+SimilartoCondensed-RSA,aggregationcanbeperformed
+incrementallyandbyanyone.
+Veri(cid:2)cation of an aggregated BGLS signature
+bits.
+B PZ YU
+involves computing the product of all message hashes
+and verifying the following equality:
+{ U \T] P (cid:17)(cid:27) (cid:11)A @ \ (cid:15)a “ \ (cid:19)
+(cid:17)^ (cid:11)(cid:14) B P‘ YU (cid:15)a (cid:140)m (cid:139)c (cid:19)fl (cid:9)
+. Due to the properties of the bilinearmap-
+ping, we can expand the left hand side of the equation as
+follows:
+(cid:17)^
+{
+(cid:11)(cid:14) B(cid:8) PZ
+U
+\T]
+YU‘
+P
+(cid:15)fi
+(cid:17)(cid:27)
+(cid:140)
+(cid:11)A
+(cid:139)
+@
+(cid:19)z
+\ (cid:15)fi (cid:140)
+(cid:9)
+«(cid:139) (cid:176) (cid:19)j
+(cid:17)^
+(cid:9)
+(cid:11)A {
+{
+U \T] P
+U
+\S]
+@
+P
+\«> (cid:176) (cid:15)a
+(cid:17)^ (cid:11)(cid:26) @
+(cid:140)
+\
+(cid:139) (cid:19)–
+\ (cid:15)a “ (cid:19)
+(cid:9) { U \T] P (cid:17)^ (cid:11)A @ \ (cid:15)fi (cid:140) (cid:139) (cid:19)a « (cid:176) (cid:9)
+BGLSPerformance WhenanalyzingthecostofBGLS
+signatureveri(cid:2)cation,wedistinguishbetweenthetwooper-
+ations: multiplicationandcomputationofthebilinearmap.
+For a single-signerBGLS signatureand N input messages,
+veri(cid:2)cationcostsamounttocomputingtheproductofmes-
+sagehashes( N(cid:16) 8‹ * multiplications),followedbytwobilin-
+earmappings. Foramultiple-signerBGLSsignature(with
+(cid:7) signers and N signatures per signer), veri(cid:2)cation costs
+amountto (cid:11)(cid:26) (cid:7) (cid:132) Nm 8(cid:128) *’ (cid:19) multiplicationsaswellas (cid:7)L †(cid:23) * bilinear
+mappings.
+BGLSinODBSetting: BGLSisapplicabletoallthree
+ODB models. The server executing a client’s query by
+selecting records (along with their signatures) that match
+the query predicate; aggregatesthem (as describedabove)
+andsendsbackasingleaggregatedsignaturealongwithall
+recordsintheresultset.BGLSsavesbothqueriercomputa-
+tionandquerierbandwidthincaseofUni(cid:2)ed-Clientaswell
+asMulti-Queriermodels. However,althoughintheMulti-
+Ownermodel,BGLSprovidesbandwidthef(cid:2)ciency,itdoes
+notoffermuchsavingsintermsofqueriercomputation.As
+mentioned above, veri(cid:2)cation of a BGLS signature which
+includesmessagesby
+(cid:7)
+distinctsignersinvolvescomputing
+(cid:7)L †C *
+bilinearmappings,whichisquitecostly(seeSection8
+below).
+6.3 WhitherDLP›basedSignatures?
+Batch veri(cid:2)cation of DSA signatures was introduced
+by Naccache et al. [10]. Online generation of DSA or
+ElGamal-typesignaturescanbemadeef(cid:2)cientduetosome
+pre-computationtechniques. Whereas, veri(cid:2)cation is usu-
+ally far less ef(cid:2)cient; a typical signature veri(cid:2)cation re-
+quires 2 exponentiations. Therefore, batching of multiple
+signature veri(cid:2)cations, which is much more ef(cid:2)cient than
+sequentialveri(cid:2)cationofmultiplesignatures,becomespar-
+ticularlyattractiveinthiscase.Somenotableworkonbatch
+veri(cid:2)cationofDLP-basedsignaturesisduetoNaccacheet
+al.[10], Harn [11, 12], Yen and Laih [7] and Bellare et al.
+[6]. TheprincipleofDLP-basedbatchveri(cid:2)cationis,asin
+RSA,basedonthemultiplicativehomomorphicpropertyof
+thesesignatures.Aggregation of DSA signature aggregation would be
+very useful in the ODB setting, especially, in the Multi-
+Owner Model3. Unfortunately, there seems to be no se-
+curewaytoaggregateDLP-basedsignatures.Thebatching
+schemeswhichcanbeaggregated(forexample,[12])have
+been shown insecure by Boyd and Pavlovski in [13] who
+have demonstrated that an adversary can easily introduce
+falsesignatures that wouldpass the batchveri(cid:2)cationtest.
+CurrentBatch-DSAmethodsinvolvetechniquesknownas:
+smallexponenttest [10,6]orbuckettest [6]whichrequire
+theveri(cid:2)ertoperformoperationsonindividualsignatures.
+(Forexample,thesmallexponenttest,asthenamesuggests,
+calls for the veri(cid:2)er to perform an exponentiation with a
+small exponent on each individualsignaturebefore batch-
+ing). Therefore, it seems impossible to compose a single
+aggregatedsignature. In other words, using a DLP-based
+signatureschemealongwithabatchveri(cid:2)cationtechnique
+inODBmodelwouldonlyhelpinreducingqueriercompu-
+tationcosts. andwouldnotreducequerierbandwidthover-
+head.(See[13]fordetailsonBatch-DSA).
+7 Merkle HashTrees
+Analternativesolutionforprovidingrecordauthentica-
+tionandintegrityintheODBsettingistouseMerkleHash
+Trees(MHT-s)[14]. Itiseasy toconstructanintegrityar-
+chitecture for an outsourced database using MHT-s: each
+leafinatreecorrespondstoahashofadatabaserecord. In
+allotherrespects,theuseofMHT-sisstandard.
+MHTisanappealingconstructforourpurposes:itisef-
+(cid:2)cient, as most computation involves simple hashes, and
+provides authenticity, since the root of a tree is signed.
+However,uponacloserlook,weareunsurewhetherMHT-
+swouldcomparefavorablywithpuresignature-basedtech-
+niquesintroducedearlierinthispaper.Inthefollowing,we
+brie(cid:3)ysketchoutpotentialapplicationsofMerkleTrees.
+The owner generates a hash tree with the leaves corre-
+spondingtohashesofindividualdatarecordsandsignsthe
+rootoftreeusingastandardsignaturetechnique.Anymod-
+i(cid:2)cation to the database (add, delete, update) requires the
+ownertoconductamulti-roundprotocolwiththeserverto
+make structural changes to the MHT (which includes re-
+signingtheroot). Thisresultsinincreasedownercomputa-
+tionoverhead.
+Although querier computation overhead may be lower
+than in signature-based schemes, querier bandwidth over-
+headisconsiderablyhigherthanineitherCondensed-RSA
+or BGLS. In order to verify integrity of a single record, a
+setofintermediatetreenodes(correspondingtotheco-path
+fromthespeci(cid:2)cleafuptotheroot)needstobesenttothe
+3Notethat,inDSA,itiscustomaryformultipleuserstosharethesame
+systemparameters-primes ‡ and · andgenerator (cid:181)
+veri(cid:2)er. Thistranslatesinto
+-whichwouldhave
+enabledaggregatingsignaturesgeneratedbydistinctusers
+(cid:11)(cid:14) ¶S-(cid:5) •t (cid:13)3 (cid:19)
+extrahashes. However,
+for a query reply containing multiple records, bandwidth
+overheadcanbesigni(cid:2)cantlyreducedbyeliminatingcom-
+monancestorsofreturnedrecords.
+Despitetheaboveshortcomings,MHT-sareausefultool
+for ODB integrity. In a related paper [15], we explore
+their applications further. In particular, we investigateex-
+actboundsonquerierbandwidthoverhead,discussdatabase
+modi(cid:2)cationissuesandtechniquesforprovidingcomplete-
+nessofqueryrepliesef(cid:2)ciently.
+8 Discussion
+In this section, we compare the signature schemes de-
+scribed in section 6 with respect to the overhead factors
+presented in section 5. We begin by assessing the cost in
+terms of basic cryptographic operations (e.g., multiplica-
+tions, inverses, and exponentiations) in Condensed-RSA,
+Batch-DSAandBGLSschemes. Then,byplugginginthe
+timings for each such operation,we show the actual over-
+headincurredbyeachscheme.
+For the testing platform we used a P3-977Mhz Linux
+machinewiththeOpenSSLlibrary[16] forcomputingthe
+individualoperations.Weused1024-bitmoduliinRSAand
+DSA:1024-bit
+(cid:13)
+inRSAand1024-bit
+(cid:6)
+(alongwith160-bit
+(cid:31)
+)inDSA.ForBGLS,weuseda(cid:2)eld
+‚3 ¤
+where (cid:134)
+(cid:6)
+(cid:134)
+(cid:9)D „0 *(cid:22) (cid:3)
+.
+CostComparison: We usethenotationin Table1. We
+assumethatthequeryresultcontains
+(cid:7)
+(cid:132)
+N
+recordswhere
+(cid:7)
+denotesthenumberofsigners(dataowners)and
+N
+denotes
+the numberof signatures(datarecords)generatedby each
+signer.
+QC QuerierComputation
+QB QuerierBandwidth
+SC ServerComputation
+OC OwnerComputation
+SS ServerStorage
+”H »m …¡‰4 (cid:190)a ¿T(cid:192)(cid:20) ` ‰
+modularmultiplicationswithmodulusofsize
+ˆ(cid:16) ˜
+‡
+(cid:190)¯| ¿T(cid:192)(cid:20) ` ‰
+(cid:192)
+´ ´
+modularexponentiationswithmodulusofsize
+(cid:192)
+´ ´
+andexponentofsize
+˘Z ˙(cid:27) ¨ (cid:190) ¿T(cid:192)(cid:20) ` ‰
+… ´ ´
+modularinverseswithmodulusofsize
+(cid:201)j ”5 ¿T‰(cid:14) ` ‰
+(cid:192)
+´ ´
+bilinearmappings
+Table1.Notation
+Table 2 illustrates the overhead(computation, storage and
+bandwidth) associated with each scheme in terms of the
+numberof cryptographicoperations. The table providesa
+breakdownofthetotalcostwithrespecttooverheadfactors
+describedinsection5.Thesefactorsarearrangedinthede-
+creasingorderofperceivedimportance. (Ourmaingoalis
+tominimizethecostofQCandQB.)
+Notethatthenumberofsigners
+(cid:7)˚ (cid:9)y *
+forUni(cid:2)edClient
+and Multi-Querier models. In both models, Condensed-RSA andBGLS haveconstantbandwidthrequirement,in-
+dependent of the number of component signatures. The
+querier computation (QC) overhead is linear in the num-
+ber of signatures since both models involve
+N
+multiplica-
+tions.Moreover,verifyinganaggregatedsignatureinvolves
+a single exponentiationin Condensed-RSA and two bilin-
+earmappinginBGLS,makingCondensed-RSAmoreef(cid:2)-
+cient.Incontrast,bothQCandQBarelinearinthenumber
+of signatures for Batch-DSA. This is because of the small
+exponenttest. However,inBatch-DSA,sincetherenoag-
+gregationisperformed,theserverisnotrequiredtodoany
+extrawork.
+Thequeriercomputation(QC) overheadis linearin the
+number of signatures. In the Multi-Owner model, BGLS
+has constant QB overhead, whereas, in Condensed-RSA,
+QB overhead is linear in the number of signers (
+(cid:7)
+). In
+Batch-DSA, as before, QB is linear in the number of sig-
+natures.
+Condensed-RSA performs better than BGLS since a
+modular exponentiation is much more ef(cid:2)cient than a bi-
+linearmappingandamodularmultiplicationin "% &$ (where
+(cid:134)
+(cid:13)
+(cid:134)
+(cid:9) *> =(cid:27) (cid:3)(cid:20) ?
+) is cheaper than scalar addition in elliptic
+curves.
+Table3showstheactualtimesrequiredtogenerateand
+verify a single signature, multiple signatures by a single
+signer,andmultiplesignaturesbymultiplesignersineach
+ofthethreeschemes. Wesetthepublicexponent
+(cid:17). (cid:9)(cid:12) ¸
+anexternalserversuchthatnopartialinformationaboutthe
+queryisleakedtotheserver.PIRtechniquessupportsearch-
+ingbasedoneitherthephysicallocation[17]ofthedataor
+keywords [19]. However, as most current PIR techniques
+aim for verystrongsecurity propertiestheyare unsuitable
+formorepracticalpurposes.Speci(cid:2)cally,PIRschemestyp-
+icallyrequireeithermultiplenon-colludingserversormul-
+tipleroundsofcommunication. Songetal. [20]proposea
+practicalschemetosearchencrypteddata;itrequiresasin-
+gle server and has low computationalcomplexity. In gen-
+eral, searchingencrypteddataisbecominganincreasingly
+popularresearchtopic. (See,forexample,[20,21].) How-
+ever,allcurrentschemesonlysupportexactmatchqueries
+wherebytheserverreturnsdatamatchingeithera physical
+address or a keyword. Hacigu¤mu¤s‚, et al. in [3] explore
+howSQLqueriescanbeexecutedoverencrypteddataand
+providedetails ofqueryprocessingandoptimizationtech-
+niques. Speci(cid:2)cally,theysupportrangesearchesandjoins
+inadditiontoexactmatchqueries.
+Anotherrecentwork[22]studiestheproblemofdatain-
+tegrity in the ODB model. This work is most closely re-
+latedto this paper. It uses dataencryptionin tandemwith
+manipulationdetectioncodestoprovideintegrity;assuch,
+it is applicable onlyto the Uni(cid:2)ed Client ODB model. In
+contrast, our solutions use digital signatures for providing
+integrity and aggregationtechniques to achieve ef(cid:2)ciency.
+in Public key signatures allows us to provide integrity with-
+RSAandusetheChineseRemainderTheoremtospeedup out requiring data encryption. Furthermore, they provide
+signing. Notethatnooptimizationtechniqueswereusedin authenticationandnon-repudiationwhichareimportantre-
+anyoftheveri(cid:2)cationoperations. quirementsinMulti-QuerierandMulti-Ownermodels.
+Condensed-RSA Batch-DSA BGLS
+10 Future Workand Conclusion
+Sign 1signature 6.82 3.82 3.54
+1signature 0.16 8.52 62
+Verify t=1000,k=1 44.12 1623.59 184.88
+In conclusion, we investigated providing ef(cid:2)cient data
+t=100,k=10 45.16 1655.86 463.88
+integrity mechanisms in the outsourced database (ODB)
+t=1000,k=10 441.1 16203.5 1570.8
+model. We presented a secure and practical Condensed-
+Table3.Costcomparison(inmsecs):veri(cid:2)cationandsigning.No- RSA scheme which performs well in Uni(cid:2)ed Client and
+tation:t(cid:150)#signatures,k(cid:150)#signers
+Multi-Queriermodels.However,sinceitdoesnotaggregate
+signaturesbydifferentsigners, it is notwell-suitedforthe
+9 RelatedWork Multi-Owner model. On the other hand, while the BGLS
+signature scheme aggregates signatures by distinct users
+In this section, we brie(cid:3)yoverviewrelevantpriorwork into one short signature, the computational complexity is
+indatabasesecurity. unfortunatelyquitehigh. Therefore,aspartoffuturework,
+Traditional database security has been studied exten- weplantofocuson(cid:2)ndingef(cid:2)cientandpracticalsignature
+sively in the database as well as in cryptography and se- schemesfortheMulti-Ownermodel.
+curitycommunities.DatabasesecurityintheODBmodelis
+amorerecentresearchtopic. Hacigu¤mu¤s‚, etal. examined Acknowledgments
+variouschallengesassociatedwithprovidingdatabaseasa
+servicein[2].Inourwork,weuseasimilarsystemmodel. We thank NDSS’04 anonymous reviewers for their in-
+One seemingly related (cid:2)eld is Private Information Re- sightful reviews. Special thanks to YongdaeKim for sug-
+trieval(PIR)[17,18]whichhasbeenexploredextensively gestingMerkleHashTreesas acandidatesolutionandfor
+in the cryptographicliterature. ThePIR workis primarily providingthesoftwareforexperimentingwithBGLSsigna-
+concerned with privately retrieving parts of data stored at tures.WealsothankDanBonehforhishelpfulcomments.Condensed-RSA Batch-DSA BGLS
+QC
+”H »m …7‰(cid:14) (cid:204)‘ ˝‘ ˛¡(cid:190)(cid:14) ˇ(cid:8) —(cid:26) (cid:209)fi ¿S˙0 `(cid:5) (cid:210)˚ ˆj ˜
+‡
+(cid:204)
+(cid:211)
+¿S˙0 ` ”H »m …¡‰4 (cid:212)a ˝a (cid:204)‘ ˝fi (cid:190)(cid:26) ˇ(cid:29)
+(cid:210)(cid:217)
+—‘
+ˆj
+¿ `^ (cid:210)˚
+·
+˜ (cid:204)Z ˝(cid:218)¯(cid:219)
+‡
+(cid:190)
+”H
+¿
+‡
+»m
+`(cid:5)
+…7‰(cid:14)
+(cid:210);
+(cid:204)‘ ˝fi (cid:190)fi
+˘Z ˙(cid:5)
+¿
+‡
+¨(cid:22) (cid:204)‘
+`(cid:27)
+˝fi
+(cid:210)˚
+(cid:190)fi
+ˆ(cid:16)
+¿ `
+·
+˜
+‡
+(cid:204)‘
+(cid:214)
+(cid:213)_ — ¿
+‡
+` ”H »m …¡‰(cid:14) (cid:204)Z ˝fi (cid:190)(cid:14) ˇ(cid:8) —Z ¿
+‡
+`(cid:5) (cid:210)˚ (cid:201)j ”5 ¿(cid:215)(cid:192)j (cid:210)H (cid:216)(cid:18) `
+QB
+(cid:192)j (cid:220)W ˙ (cid:192)(cid:16) (cid:220)_ ‰(cid:5) (cid:220)2 ¿
+‡
+(cid:210)
+·
+`
+‡
+SC
+”H »m …7‰(cid:14) (cid:204)Z ˝ ˛¡(cid:190)(cid:26) ˇ(cid:29) —(cid:26) (cid:209)fi ¿S˙0 ` (cid:221) ”H »m …7‰(cid:14) (cid:204)Z ˝(cid:218) (cid:190)(cid:26) ˇ(cid:29) —‘ ¿
+‡
+`
+OC
+ˆ(cid:16) ˜
+‡
+—
+(cid:222)
+¿T˙^ ` ˆ(cid:16) ˜
+‡
+—
+(cid:214)
+¿
+‡
+`(cid:5) (cid:210). ˘: ˙(cid:5) ¨ — ¿
+‡
+`(cid:27) (cid:210); ”H »m …¡‰(cid:14) (cid:223)> ¿
+‡
+` ˆ(cid:16) ˜
+‡
+—
+(cid:214)
+¿
+‡
+`
+SS
+(cid:192)(cid:16) (cid:220)_ ‰^ (cid:220)_ ˙ (cid:192)(cid:16) (cid:220)_ ‰(cid:5) (cid:220)2 ¿
+‡
+(cid:210)
+·
+` (cid:192)(cid:16) (cid:220)_ ‰(cid:27) (cid:220)
+‡
+Table2.CostcomparisonintheODBmodel
+References [13] C. Boyd and C. Pavlovski, (cid:147)Attacking and repairing batch
+veri(cid:2)cationschemes,(cid:148)inAsiacrypt2000,pp.58(cid:150)71,2000.
+[1] D.Boneh,C.Gentry,B.Lynn,andH.Shacham,(cid:147)Aggregate [14] R. Merkle, (cid:147)Protocols for public key cryptosystems,(cid:148) in
+andVeri(cid:2)ablyEncryptedSignaturesfromBilinearMaps,(cid:148)in IEEESymposiumonResearchinSecurityandPrivacy,1980.
+Advances in Cryptology (cid:150) EUROCRYPT’2003 (E.Biham,
+[15] E. Mykletun, M. Narasimha, and G. Tsudik, (cid:147)Provid-
+ed.),LectureNotesinComputerScience,InternationalAs-
+ing Authentication and Integrity in Outsourced Databases
+sociationforCryptologicResearch,Springer-Verlag,Berlin
+using Merkle Hash Trees.(cid:148) UCI-SCONCE Technical Re-
+Germany,2003.
+port, 2003. http://sconce.ics.uci.edu/das/
+[2] H. Hacigu¤mu¤s‚, B. Iyer, and S. Mehrotra, (cid:147)Providing MerkleODB.pdf.
+DatabaseasaService,(cid:148)inInternationalConferenceonData
+[16] OpenSSL Project, available from, http://www.
+Engineering,March2002.
+openssl.org.
+[3] H.Hacigu¤mu¤s‚,B.Iyer,C.Li,andS.Mehrotra,(cid:147)Executing
+[17] B. Chor, O. Goldreich, E. Kushilevitz, and M. Sudan,
+SQLoverEncryptedDataintheDatabase-Service-Provider
+(cid:147)Private Information Retrieval,(cid:148) Journal of ACM, vol. 45,
+Model,(cid:148) in ACM SIGMOD Conference on Management of
+pp.965(cid:150)981,Nov.1998.
+Data,pp.216(cid:150)227,ACMPress,June2002.
+[18] Y.Gertner,Y.Ishai,E.Kushilevitz,andT.Malkin,(cid:147)Protect-
+[4] R.L.Rivest,A.Shamir,andL.M.Adleman,(cid:147)Amethodfor
+ingDataPrivacyinPrivateInformationRetrievalSchemes,(cid:148)
+obtaining digital signatures and public-key cryptosystems,(cid:148)
+in30thAnnualSymposiumonTheoryofComputing(STOC),
+Communications of the ACM, vol. 21, pp. 120(cid:150)126, Feb.
+(Dallas,TX,USA),ACMPress,1998.
+1978.
+[19] B.Chor,N.Gilboa,andM.Naor,(cid:147)PrivateInformationRe-
+[5] L.Harn,(cid:147)Batchverifyingrsasignatures,(cid:148)ElectronicLetters,
+trievalby Keywords,(cid:148) Tech.Rep.TRCS0917, Department
+vol.34,pp.1219(cid:150)1220,Apr1998.
+ofComputerScience,Technion,1997.
+[6] M.Bellare,J.Garay, andT.Rabin,(cid:147)Fastbatchveri(cid:2)cation
+[20] D. Song, D. Wagner, and A. Perrig, (cid:147)Practical Techniques
+formodularexponentiationanddigitalsignatures,(cid:148)inEuro-
+forSearchesonEncryptedData,(cid:148)in2000IEEESymposium
+crypt1998,vol.1403,pp.191(cid:150)204,1998.
+onSecurityandPrivacy,May2000.
+[7] S. Yen and C. Laih, (cid:147)Improved Digital Signature Suitable
+[21] E.-J. Goh, (cid:147)Secure Indexes for Ef(cid:2)cient Searching on En-
+for Batch Veri(cid:2)cation,(cid:148) IEEE Transactions on Computers,
+cryptedCompressedData.(cid:148)CryptologyePrintArchive, Re-
+vol.44,pp.957(cid:150)959,July1995.
+port 2003/216, 2003. http://eprint.iacr.org/
+[8] M.BellareandP.Rogaway,(cid:147)Randomoraclesarepractical: 2003/216/.
+aparadigmfordesigningef(cid:2)cientprotocols,(cid:148)inACMPress,
+[22] H. Hacigu¤mu¤s‚, B. Iyer, and S. Mehrotra, (cid:147)Encrypted
+pp.62(cid:150)73,1993.
+DatabaseIntegrityinDatabaseServiceProviderModel,(cid:148)in
+[9] A. Joux and K. Nguyen, (cid:147)Separating Decision Dif(cid:2)e- International Workshop on Certi(cid:2)cationand Security inE-
+Hellman from Dif(cid:2)e-Hellman in cryptographic groups,(cid:148) in Services(CSES’02IFIPWCC),2002.
+CryptologyePringArchive,no.Report2001/003,2001.
+[10] D. Naccache, D. M’Ra¤(cid:17)hi, D. Raphaeli, and S. Vaude-
+nay, (cid:147)Can DSA be improved: complexity trade-offs with
+the Digital Signature Standard,(cid:148) in Advances in Cryptol-
+ogy (cid:150) EUROCRYPT ’94, Lecture Notes in Computer Sci-
+ence, pp. 85(cid:150)94, International Association for Cryptologic
+Research,Springer-Verlag,BerlinGermany,1994.
+[11] L. Harn, (cid:147)DSA-type Secure Interactive Batch Veri(cid:2)cation
+Protocols,(cid:148) Electronic Letters, vol. 31, pp. 257(cid:150)258, Feb.
+1995.
+[12] L.Harn,(cid:147)BatchVerifyingMultipleDSA-typeDigitalSigna-
+tures,(cid:148)ElectronicLetters,vol.34,pp.870(cid:150)871,Apr.1998.

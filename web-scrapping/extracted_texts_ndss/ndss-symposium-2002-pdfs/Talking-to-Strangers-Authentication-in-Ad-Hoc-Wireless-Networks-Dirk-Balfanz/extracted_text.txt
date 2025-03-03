@@ -1,0 +1,1490 @@
+Talking To Strangers: Authentication in Ad-Hoc Wireless Networks
+DirkBalfanz, D. K.Smetters, PaulStewartand H. ChiWong
+Xerox Palo AltoResearchCenter
+3333Coyote HillRoad
+Palo Alto,CA94304
+(cid:0) balfanz,smetters,stewart,hcwong
+(cid:1)
+@parc.xerox.com
+Abstract First,youneedawaytoletyouremailgizmoknowhow
+tofindyourdesiredprinteroverthewirelessnetwork. As-
+sumingeachprinterhadauniquename,youcouldtypethe
+Inthis paperweaddressthe problem ofsecurecommu- name of the printer you want to use into your gizmo, or
+nication and authentication in ad-hoc wireless networks. youcouldgothroughsomesortofdiscoveryprotocol,and
+Thisisadifficultproblem,asitinvolvesbootstrappingtrust pick the correctly-named printer out of the list of respon-
+between strangers. We present a user-friendly solution, ders. Second,youwantaguaranteethatyouremailgizmo
+whichprovidessecureauthenticationusingalmostanyes- isactuallytalkingtotheintendedprinter,andthatthecom-
+tablished public-key-basedkeyexchangeprotocol, as well municationissecured.
+as inexpensive hash-based alternatives. In our approach, Ifthatprinterhadacertificateissuedbyanauthorityyou
+devices exchange a limited amount of public information trust,youremailgizmocould,intheory,performakeyex-
+overaprivilegedsidechannel,whichwillthenallowthem changewiththeprinterandestablishanauthenticatedand
+to complete an authenticated key exchange protocol over secret channel to it. Note several problems with this ap-
+the wireless link. Our solution does not require a public proach: first, we haveto assumethat there is an immense
+keyinfrastructure,issecureagainstpassiveattacksonthe public key infrastructure in place – every printer (and ev-
+privilegedsidechannelandallattacksonthewirelesslink, ery other potential participant in anyad-hoc network) has
+anddirectlycapturesusers’intuitionsthattheywanttotalk to have a unique name, and a certificate issued by an au-
+toaparticularpreviouslyunknowndeviceintheirphysical thorityyoutrust. Thisisimpracticaland prohibitivelyex-
+proximity. We have implemented our system in Java for a pensive.Second,evenwithsuchaninfrastructuretherehas
+varietyofdifferentdevices,communicationmedia,andkey tobeareliablewayforyoutofindthenameoftheprinter
+exchangeprotocols. you want. We could imagine having labels that show the
+name of each printer, but then we would have to assume
+thatnoone tampered withthoselabels. Third, this proce-
+1. Introduction dureisnotveryuser-friendly.Itrequiresyoutotypecryptic
+names like printer12345.fancyprint.com into
+Imagine the followingsituation: you are standing in an your email gizmo, or select correctly from a long list of
+airportloungeandwouldliketoprintasensitivedocument similarnamesbeforeyoucanprintsecurely.
+you just received on your wireless email gizmo. You can Without such a universal naming infrastructure, you
+chooseamongasubstantialnumberofprinterssetupinthe might choose to go ahead and wirelessly exchange keys
+loungebyvariousdotcoms,somefamiliar,somenot. What with the most likely candidate from your list. You would
+youwouldliketodoischooseaparticularprinter,andthen then have to make sure you had actually chosen correctly
+makesurethatyouremailgizmoprintstothatprinter–that by comparing the fingerprint of the resulting shared se-
+nootherprinter,andnoothertravelerwaitinginthelounge, cret displayed on your device with one displayed by the
+canlearnthecontentsofyoursensitivedocument. printer. This essential step is annoying and very likely to
+In the good old days, you would take out your printer beskipped.
+cable, connect your email gizmo to your chosen printer, In this paper, we propose a cheaper, more secure, and
+and be done with it. However,you would really prefer to more user-friendly solution to this problem (and to the
+accomplishthistaskusingthewirelesscapabilitiesofboth problem of authentication in local ad-hoc wireless net-
+youremailgizmoandtheprinter. works in general, for which our printing scenario merely
+Whatcanyoudo? serves as one example). In our example (see Figure 1),2.
+A B C
+1.
+Figure 1. Pre-authentication and location-limited channels. The human operator introduces two
+devices, which (1) exchange pre-authentication information over a location-limited channel before
+they(2)authenticateeachotheroverthewirelessnetwork.
+you would walk up to the desired printer and briefly es- which devices are communicating with each other.
+tablish physical contact between it and your email gizmo. The notion of location-limited channels was intro-
+Thatwillbeenoughforthemtoexchangetheirpublickeys. ducedbyStajanoandAnderson(althoughtheydidnot
+Youremail gizmocanthen proceed toperform a standard use that name) [18], as a part of their “Resurrecting
+SSL/TLSkeyexchangewiththeprinteroverawirelesslink Duckling” model of interaction in ad-hoc networks.
+(e.g.,Bluetoothor802.11). Sinceitjustlearnedtosecurely They use secret data exchanged over a contact chan-
+identify the printer’s public key, it can verify that it is in neltobootstrapaparticularauthenticationandkeyex-
+fact talking to the right printer, and establish an authenti- changeprotocol(“imprinting”betweena“mother”or
+catedandsecretcommunicationchannel. controldevice,anda“duckling”).
+Such an exchange directly captures the user’s intuition
+Pre-authentication. Wecandividethe“Duckling”proto-
+thats/hewantstocommunicatewiththatdevicebyusinga
+col of Stajano and Anderson into two parts. In the
+special, location-limited side channel to exchange a small
+first part, duckling and mother exchange secret in-
+amount of cryptographic information. That information
+formation over a particular location-limited channel
+can be used to authenticate standard key exchange proto-
+(physicalcontact). Inthesecondphase, theduckling
+colsperformedoverthewirelesslink.
+uses this secret datato recognize and authenticateits
+Wewouldliketocommentonafewconceptsillustrated
+motherwhenshecontactsitoverthewirelesslink;the
+bythisexample:
+duckling is willing to be controlled by any “mother”
+Demonstrativeidentification. We identified the printer thatcan present theright authentication data. We re-
+theemailgizmoshouldtalktobythehighlyintuitive fertothefirstphaseasapre-authenticationexchange.
+actoftouchingit. Contrastthiswiththeclumsyway The data that is exchanged over the location-limited
+of identifying trusted communication parties on the channel during pre-authentication will then be used
+Internet – in that case one usually has to type URLs for subsequent authentication of the parties on the
+into browsers. In the case of an ad-hoc wireless net- wireless link. We note that while Anderson and Sta-
+workwhereatleastsomeoftheparticipatingdevices jano consider the use of such pre-authentication data
+areportable, youcansimplywalkuptoadeviceand asintrinsictosettingupamother-ducklingcontrolre-
+touchit. There isnoneed fora globalpublickeyin- lationship,thatinfactitcanbeseparatedoutandused
+frastructure,certificationauthorities,orevennames. inawidevarietyofcontexts.
+Location-limitedchannels. The printer and the email In this paper, we generalize this idea of pre-
+gizmo exchanged public information during physi- authentication to secure arbitrary peer-to-peer ad-hoc in-
+cal contact. We call this physical contact a location- teractions using a wide variety of key exchange protocols
+limited channel. Location-limited channels have the (aswesawinourexample),andprovidedetailedblueprints
+property that human operators can precisely control foritsuse.Weintroducetheuseofpublickeycryptographyinthiscontext,andaretherebyabletoremovethesecrecy cationbasedonphysicalcontext(theprinterinfrontofme,
+requirementonlocation-limitedchannelsusedtoauthenti- allthePDA’sinthisroom,etc.).Communicationtechnolo-
+catekeyexchangeprotocols. Thisallowsustobroadenthe gies that have inherent physical limitations in their trans-
+typesofmediasuitableforuseaslocation-limitedchannels missionsaregoodcandidates. Forexample,audio(bothin
+to include, for example, audio and infrared. More impor- theaudibleandultrasonicrange),whichhaslimitedtrans-
+tantly, it allows us to expand the range of key exchange mission range and broadcast characteristics, can be used
+protocolswhichcanbeauthenticatedinthismannertoin- byagroupofPDAsinaroomtodemonstrativelyidentify
+cludealmostanystandardpublic-key-basedprotocol. Asa eachother. Forsituationsthatrequireasinglecommunica-
+result, our approach can be used with an enormous range tion endpoint (e.g., the printer across the room), channels
+ofdevices,protocols,andapplications. withdirectionalitysuchasinfrared arenaturalcandidates.
+Atthesametime,ourapproachissignificantlymorese- Itisthesedemonstrativepropertiesthatallowcommunica-
+cure than previous approaches, as we force an adversary tion across a location-limited channel to “name” a target
+to mount an active attack on the location-limited channel deviceorgroupofdevices.
+itselfinordertosuccessfullysubvertanad-hocexchange. Thesecondpropertyrequiredofalocation-limitedchan-
+Previous approaches (e.g., use of unauthenticated Diffie- nel is authenticity – that it is impossible (or difficult) for
+Hellman key exchange) are either vulnerable to either ac- anattackertotransmitinthatchannel, oratleasttotrans-
+tiveattacksinthemainwirelesschannel,or,inthecaseof mit without being detected by the legitimate participants.
+Anderson and Stajano, to passive (eavesdropping) attacks As we will see below, this property is sufficient to ensure
+inthelocation-limitedsidechannel[18]. thatinformationexchangedoverthelocation-limitedchan-
+The rest of this paper is structured as follows: In Sec- nel willto allow theparties involvedto securelyauthenti-
+tion2weexplainthenotionoflocation-limitedchannelsin cateeachotheroverthewirelesslink,eveninthepresence
+moredetail.Weestablishrequirementsforlocation-limited ofpotentialattackers.
+channelsusedforpre-authenticationanddiscussthesecu- A third property that was required in previous work is
+rity of the resulting composed authentication and key ex- secrecy – that the channel be impervious (or resistant) to
+changeprotocols. InSection3weshowconcreteschemes eavesdropping. For example, Anderson and Stajano [18]
+fortwo-partypre-authentication. Wefirstshowhowtouse usesecretdata,suchasasymmetrickey,exchangedacross
+apre-authenticationstagetoauthenticatealmostanywell- thelocation-limitedchanneltoallowparticipantstoauthen-
+established public-key-based key exchange protocol. We ticateeachother.Asaresult,thatauthenticationprotocolis
+thenpresenttwoadditionalschemesthatmaybeofinterest vulnerable to a passive attacker capable of eavesdropping
+in situations where public key cryptography is considered on the location-limited channel, thereby obtaining the se-
+an unacceptable computational burden. In Section 4 we cretsnecessarytoimpersonateoneofthelegitimatepartic-
+exploretheuseoflocation-limitedchannelswithbroadcast ipants. A location-limited channel used to exchange such
+characteristics (e.g.,audio) for pre-authenticationin order secretpre-authenticationdatamustthereforebeveryresis-
+to secure ad-hoc group communication. In Section 5 we tanttoeavesdropping.1
+briefly report on our first implementation before we wrap If we can remove that requirement that pre-
+upwithacomparisonofrelatedworkinSection6andcon- authentication data be secret, and instead only require
+clusionsinSection7. that it be authentic, we can increase our security dra-
+matically. Because legitimate participants would only
+2. Preliminaries communicate with entities from whom they had received
+pre-authenticationdata,wewouldnowrequireanattacker
+2.1. Location-Limited Channels and Pre- to perform an active attack – to be able to transmit –
+Authentication not only in the main wireless medium, but also in the
+location-limited channel. Because of the physical limita-
+Inspired by Anderson and Stajano [18], we propose
+tions of transmission on location-limited channels, it is
+bootstrappingsecurewirelesscommunicationthroughpre-
+significantly harder for an attacker to passively eavesdrop
+authentication over a location-limited channel. Location-
+onthem,nottomentiontoactivelytransmit.
+limitedchannelsare separate fromthemainwirelesslink,
+For such an active attack to succeed, the attacker must
+andhavespecialsecuritypropertiesbyvirtueofthemedia
+notonlytransmitonthelocation-limitedchannel,butmust
+over which data travels. In this section we examine what
+dosowithoutbeingdetectedbyanylegitimateparticipant.
+isrequiredofsuchachannel,andlistanumberofexisting
+technologiesthatcanbeusedtoimplementone. 1Suchaprotocolmaystillbeconsiderablymoresecurethanonethat
+In order to be used for pre-authentication, a candidate does not use pre-authentication (e.g., an unauthenticated key exchange
+over the wireless link), as the latter may be subject to active (or even
+location-limitedchannelmusthavetwoproperties. First,it
+passive, see [19]) attacks on the wireless link, which are considerably
+mustsupportdemonstrativeidentification;thatis,identifi- easiertomount.To be effective, such detection does not require that we 2.3. Pre-Authentication of Established Key Ex-
+correctlyidentifythedevicestransmittingonthelocation- changeProtocols
+limited channel. Instead, it only requires one’s ability to
+Having described the use of location-limited channels
+count: ifyou knowthatboth youand yourintended com-
+to exchange pre-authentication data, we must now show
+municationpartnerhavesuccessfullyinitiatedcommunica-
+how such data can be used to establish a secure and au-
+tion (e.g., the lights on the targetdevice blink, the human
+thenticated channel over the main wireless link. Instead
+usingtheotherlaptopindicatesthecommunicationattempt
+of proposing novel protocols specific to this application,
+wassuccessful),andyou(oryourproxydevice)knowthat
+therebyintroducingthesecurityflawsendemictonewpro-
+only two participants have attempted to inject messages
+tocols,weprefertoprovidegeneralmethodsthatallowthe
+intothelocation-limitedchannel,thenyouknowyoumust
+use of pre-authentication channels to bootstrap the use of
+betalkingtowhomyouthinkyouare.Ifsomethingappears
+anystandardkeyexchangeprotocoltosetupthesesecure
+tobewrong,youcansimplyabortthecommunicationpro-
+and authenticatedchannels. Thisallowsus totake advan-
+tocol.
+tage ofall of the existingwork in protocol design and se-
+Thedifficultyofmonitoringapre-authenticationforsuch
+curityanalysis. Atthesametime, wegain theadvantages
+unwantedparticipationdependsonthetypeofchannelused
+ofourpre-authenticationschemesinflexibilityandeaseof
+and the number of legitimate parties involved. The more
+use,whichareparticularlyimportantinthead-hocsetting.
+directed the channel and the smaller the number of par-
+Combining pre-authentication with most standard
+ties, the easier it is to monitor. Note that, because of the
+public-key-based key exchange protocols is in fact, quite
+physicallimitationsofthechannelsusedandthismonitor-
+simple (see example in Figure 2). Almost all such proto-
+ing requirement, it is only possible to use our techniques
+colsbeginwiththeassumptionthattheparticipantsalready
+topre-authenticatedevicesthatarephysicallyco-locatedat
+have access to authenticated copies of each other’spublic
+thetimeoffirstintroduction.
+keys [14, 4, 6]. These protocols then provide methods
+We therefore propose that any physically limited chan-
+to establish secure and authenticated channels, given that
+nel suitable for demonstrative identification, on which it
+these public keys have already been exchanged – that the
+is difficult to transmit without being detected by at least
+participantsknowwhotheyaresupposedtobetalkingto.
+one legitimate participant (human or device), is a candi-
+Pre-authentication schemes can be used to perform this
+date for use as a pre-authentication channel. Such candi-
+initial step – to make sure that the legitimate participants
+datesinclude: contact,infrared,near-fieldsignalingacross
+get authenticated copies of each others’ public keys. The
+the body (see [20]), and sound (both audible [16] and ul-
+participants exchange commitments to their public keys
+trasound). The amount of data exchanged across the pre-
+across a chosen location-limited channel. In doing so,
+authenticationchannelisonlyasmallfractionofthatsent
+they each identify who it is they wish to be communicat-
+across the main wireless link, and so we can use channel
+ingwith–thisisthepurposeof“demonstrativeidentifica-
+mediacapableonlyoflowdatarates.
+tion”. Theexchangeofpre-authenticationdatatransforms
+this “demonstrative identification” step – e.g., identifying
+2.2.UseofPublicKeyCryptography thedeviceyouwanttocommunicatewithbytouchingit–
+intoaformofidentificationthatcanbeusedtoauthenticate
+How do we remove the requirement that pre- thatdeviceacrossthewirelesslink(“thedeviceholdingthe
+authentication data be kept secret? We can do this privatekeycorrespondingtothepublickeycommittedtoin
+very simply through the use of public key cryptography. thispre-authenticationmessage”).
+If the participants use the location-limited channel to Thedevicesthencontacteachotheronthewirelesslink,
+exchange their public keys as pre-authentication data, it and exchange their complete public keys. This key ex-
+doesn’t matter whether an attacker manages to eavesdrop changecaneitherbeprefixedtoprotocolexecution,or(as
+on the exchange. The participants will authenticate each inSSL/TLS)occursnaturallyasastandardpartofthecho-
+otheroverthewirelesslinkbyprovingpossessionoftheir sen key exchange protocol. These keys are authenticated
+corresponding privatekeys; asthe attackerdoesnotknow simply by virtue of the fact that they were the ones com-
+those privatekeys, he will not be able to impersonate any mitted to across the pre-authentication channel. The de-
+ofthelegitimateparticipants. vicesnowhaveauthenticatedcopiesofeachothers’public
+If we accept the existence of cryptographically-secure keys,whichiswhatweneedtoproceedwithourchosenes-
+hashfunctions(e.g.,SHA-1),wecanfurtherlimitthesize tablishedkeyexchangeprotocolonthewirelesslink. That
+ofthepre-authenticationdataexchanged. Theparticipants protocolshouldensurethatthedevicesprovetoeachother
+donotactuallyneedtoexchangetheircompletepublickeys thattheyindeedholdtheprivatekeyscorrespondingtotheir
+as pre-authenticationdata, theymerely need to commit to authenticatedpublickeys.
+thosekeys(e.g.,byexchangingtheirdigests). Ifweassumethatthedataexchangedacrossthelocation-Pre-authentication,takingplaceoverthelocation-limitedchannel:
+1
+(cid:2)
+A
+(cid:3)
+B: addr
+A
+(cid:4)
+h
+(cid:5)
+PK
+A
+(cid:6)
+2
+(cid:2)
+B
+(cid:3)
+A: addr
+B
+(cid:4)
+h
+(cid:5)
+PK
+B
+(cid:6)
+Authenticationcontinuesoverthewirelesschannelwithanystandardkeyexchangeprotocol,e.g.,SSL/TLS:
+1
+(cid:2)
+A
+(cid:3)
+B: TLS CLIENT HELLO
+...andsoon.
+Thevarioussymbolsdenote:
+addr
+A
+(cid:4)
+addr : A’s(resp. B’s)addressinwirelessspace,providedstrictlyforconvenience
+B
+PK
+A
+(cid:4)
+PK : thepublickeybelongingtoA(resp. B),eitheralong-livedkeyoranephemeral
+B
+keyusedonlyinthisexchange
+h
+(cid:5)
+PK
+A
+(cid:6)
+: acommitmenttoPK ,e.g.,aone-wayhashofanencodingofthekey
+A
+Figure2.Basicschemeforpre-authentication.
+limitedchannelisindeedauthentic(thatwewouldhavede- 3.1.BasicProtocol
+tectedanyactiveattacks),andthatthepublickeyalgorithm
+and the cryptographic hash function we chose are secure,
+In the most basic of our pre-authentication schemes,
+then the security of the final composed protocol depends
+parties exchange commitment to their public keys over a
+onlyonthesecurityofthechosenkeyexchangeprotocol.
+location-limited channel. The information that is actually
+exchangedcanbethepublickeysthemselves,theircertifi-
+2.4.SecurityofAd-HocInteractions cates, or simply secure digests of the keys using crypto-
+graphic hash functions. The only requirement is that the
+Inchoosingtoengageinanad-hocnetwork,youareef- informationexchangedallowsthereceivertoverifytheau-
+fectively choosing to talk to strangers. As your mother thenticityofthekeythatisusedintheauthenticationpro-
+may have warned you, there are some risks inherent in tocol.
+such a choice – and no cryptographic protocol, no matter InFigure2,partiesexchangedigestsoftheirpublickeys
+howsecure,canprotectyoufromthem. Ifyouchoosede- inthepre-authenticationphase. Forconvenience,eachde-
+liberatelytocommunicatewithamaliciousadversary,that vicecanalsotransmititsaddressinwirelessspace(e.g.,a
+adversarycanpostyourprivatemessagesonto abillboard IPaddressandportnumber,oraBluetoothdeviceaddress)
+somewhere. What we can do, and what we attempt to do andauser-friendlyname. Wenote,however,thatthesecu-
+inthispaper,isensurethatwhenyouchoosetoestablisha rityofourschemedoesnotrelyonthecorrectnessofthese
+connectionto a previouslyunknowndevice,you areactu- additionaldata. (IfyougetawrongIPaddress, forexam-
+ally communicating, securely and authentically, with that ple,thepartyontheotherendwillnothavetherightprivate
+device,andnotanattackerinthenextroom. key,andwillnotbeabletocompleteanauthenticationpro-
+tocolwithyou.)
+Once the pre-authentication is completed, the devices
+3. Two-PartyProtocols proceedtoestablishasecureconnectionbetweenthemover
+themainwirelesslink. Tothisend,theycanuseanyestab-
+In this section, we show concretely how to use pre- lished public-key-based key exchange protocol which re-
+authentication to securely authenticate devices. First, we quiresthemtoprovepossessionofaparticularprivatekey
+describe how to use this approach to authenticate almost (e.g., SSL/TLS [4], SKEME [14] IKE [6], etc.), which in
+any public-key-basedkey exchange protocol. This allows thiscasewillcorrespondtothepublickeycommittedtoin
+existingprotocols(e.g.,SSL/TLS,IKE)tobeusedsecurely thepre-authenticationstep.
+and easily in an ad-hoc setting. Second, because a signif- Thechoice ofkeyexchange protocol may influence the
+icantnumberofdevicesinad-hoc networksmaynothave exactformofthepre-authenticationdataexchanged,andin
+theresourcesfordoingpublickeyoperations,wealsooffer particular whether parties exchange their complete public
+twocheaperalternatives. Thefirstisavariantofourbasic keysormerelycommitmentstothem. Ifthekeyexchange
+scheme,andrequiresonlyoneofthepartiestohavepublic protocol used on the wireless link explicitly sends public
+key. Thesecond, whichprovidesonlyintegrityprotection keysorcertificates,onlycommitmentstothosepublickeys
+insteadofsecrecy,usesdigestsofpre-committedsecretsto need to be exchanged in pre-authentication. If instead it
+replacepublickeys. expects parties to already have each other’s public keys,Pre-authentication,takingplaceoverthelocationlimitedchannel:
+1
+(cid:2)
+A
+(cid:3)
+B: addr
+A
+(cid:4)
+h
+(cid:5)
+PK
+A
+(cid:6)
+2
+(cid:2)
+B
+(cid:3)
+A: addr
+B
+(cid:4)
+h
+(cid:5)
+S
+B
+(cid:6)
+Authenticationcontinuesoverthewirelesschannel,e.g.:
+1
+(cid:2)
+A
+(cid:3)
+B: PK
+A
+2
+(cid:2)
+B
+(cid:3)
+A: E
+PKA
+(cid:5)
+S
+B
+(cid:6)
+...andsoon.
+Symbolsasabove,withthefollowingadditions:
+S : asecretbelongingtoB
+B
+h
+(cid:5)
+S
+B
+(cid:6)
+: acommitmenttoS ,e.g.,aone-wayhashofthesecret
+B
+E
+PKA
+(cid:5)
+S
+B
+(cid:6)
+: theencryptionofS underPK
+B A
+Figure3.Basicpre-authenticationschememodifiedtorequireonlyonepublickey.
+thenthekeysthemselvesshouldbeexchangedduringpre- Whenonlyoneofthedeviceshasresourcesforexpensive
+authentication. (If the location-limited channel does not public key operations, we propose a less computationally
+havesufficientcapacity,wecanstillsendthecommitments expensivevariant(Figure3).
+duringpre-authentication,andprependthekeysthemselves InFigure3onlyAhasapublickeyPK ;Bhasanarbi-
+A
+tothewirelessexchange.) trarysecret S instead(e.g.,a randomnumber). Asinthe
+B
+Notethatapartythatdoesnotreceivepre-authentication basicscheme,Asendsacommitmenttohispublickeydur-
+datacannotauthenticateitscommunicationpartner,andis ingpre-authentication. Asbefore, thecommitmentcanbe
+thereforeunprotectedagainstimpersonation. Thus,inmost thepublickeyitself,acertificate,oradigestofthekey. B
+casespre-authenticationmustbemutual–bothpartiesmust respondswithacommitmenttohissecret,S , intheform
+B
+sendandreceivepre-authenticationdata(asinFigure2). ofadigesth
+There are some applications for which mutual authen-
+ticationisnotrequired. Forinstance,adevicedesignedto
+provideaservicetoanyonethatrequestsitdoesnotneedto
+authenticateitspartner,andthereforewouldbetheonlyone
+tosendpre-authenticationdata. Attheextreme,suchade-
+vicecouldbeapassivebeacon(e.g.,anIRbeaconorRFId
+tag),sendingpre-authenticationdatasufficienttouniquely
+and securely identify its active proxy in wireless space.
+Such an approach could be used to add a measure of se-
+curityandauthenticationtosystemsthatusesuchbeacons
+toprovidea“digitalpresence”forphysicalobjects[13].
+Finally,thisschemeisapplicabletouseeitherlong-lived
+or ephemeral keys2. The choice is based entirely on the
+applicationathand. Ineithercase,thekeysdonotrequire
+certification byany trusted authority. If the key exchange
+protocolchosenrequirestheexchangeofcertificates,they
+canbeself-signed.
+3.2.SinglePublicKeyProtocol
+The basic scheme we proposed in Section 3.1 works
+if both devices are able to execute public key operations.
+2Unlikelong-livedkeys,whicharerepetitivelyusedacrossanumber
+ofkeyexchanges,ephemeralkeysaremadeupafreshforeachnewtrans-
+action.Theyoffertheadvantageofanonymitybecausetransactionsusing
+differentkeyscannotbelinkedtogether.
+(cid:5)
+S
+B
+(cid:6)
+(asS istoremainsecret,itcannotbesent
+B
+intheclearandmustbesentindigestform).
+Once the pre-authentication is complete, they proceed
+withauthentication.PartyAsendsitspublickeyacrossthe
+wireless channel. Party B verifies it against the commit-
+ment, and then uses itto encrypt S (and optionally other
+B
+informationusedtoconstructasymmetrickey)andreturns
+theresulttoA. SuchaprotocolauthenticatesBbyitsabil-
+itytoproducethesecretS ,andAbyrequiringittoprove
+B
+itsabilitytodecryptthatsecret.
+This scheme assumes that PK uses an algorithm for
+A
+whichencryptioniscomputationallycheap(e.g.,RSA),so
+that the computational requirements on B are minimized.
+AprotocollikeSKEME[14]thatauthenticatesparticipants
+by requiring them to provetheir ability to decrypt a mes-
+sagewouldalsobeparticularlyamenableforusehere.
+3.3.InteractiveGuyFawkesProtocol
+Incaseswherethedevicesinvolvedareextremelylimited
+in computational resources (public key operations are in-
+feasible),andtheavailablelocation-limitedchannelsdonot
+permit trusted exchange of secret data, we propose a new
+scheme for constructing a channel that provides authenti-
+cation and integrity protection (though not encryption) of
+communicationbasedentirelyoncryptographichashfunc-Pre-authentication,takingplaceoverthelocation-limitedchannel:
+Round0:
+1
+(cid:2)
+A
+(cid:3)
+B: a
+1
+(cid:7)
+h
+(cid:5)
+A
+1
+(cid:4)
+h
+(cid:5)
+X
+2
+(cid:6)(cid:8) (cid:4)
+X
+1
+(cid:6)(cid:9) (cid:4)
+h
+(cid:5)
+X
+1
+(cid:6) 2
+(cid:2)
+B
+(cid:3)
+A: b
+1
+(cid:7)
+h
+(cid:5)
+B
+1
+(cid:4)
+h
+(cid:5)
+Y
+2
+(cid:6)(cid:9) (cid:4)
+Y
+1
+(cid:6)(cid:8) (cid:4)
+h
+(cid:5)
+Y
+1
+(cid:6) 3
+(cid:2)
+A
+(cid:3)
+B: h
+(cid:5)
+b
+1
+(cid:4)
+X
+1
+(cid:6) 4
+(cid:2)
+B
+(cid:3)
+A: h
+(cid:5)
+a
+1
+(cid:4)
+Y
+1
+(cid:6)
+Authenticationcontinuesoverthewirelesschannel:
+Round1:
+1
+(cid:2)
+A
+(cid:3)
+B: A
+1
+(cid:4)
+h
+(cid:5)
+X
+2
+(cid:6)(cid:9) (cid:4)
+X
+1
+(cid:4)
+a
+2
+(cid:7)
+h
+(cid:5)
+A
+2
+(cid:4)
+h
+(cid:5)
+X
+3
+(cid:6)(cid:8) (cid:4)
+X
+2
+(cid:6) 2
+(cid:2)
+B
+(cid:3)
+A: B
+1
+(cid:4)
+h
+(cid:5)
+Y
+2
+(cid:6)(cid:9) (cid:4)
+Y
+1
+(cid:4)
+b
+2
+(cid:7)
+h
+(cid:5)
+B
+2
+(cid:4)
+h
+(cid:5)
+Y
+3
+(cid:6)(cid:8) (cid:4)
+Y
+2
+(cid:6) 3
+(cid:2)
+A
+(cid:3)
+B: h
+(cid:5)
+b
+2
+(cid:4)
+X
+2
+(cid:6) 4
+(cid:2)
+B
+(cid:3)
+A: h
+(cid:5)
+a
+2
+(cid:4)
+Y
+2
+(cid:6)
+Round2:
+5
+(cid:2)
+A
+(cid:3)
+B: A
+2
+(cid:4)
+h
+(cid:5)
+X
+3
+(cid:6)(cid:9) (cid:4)
+X
+2
+(cid:4)
+a
+3
+(cid:7)
+h
+(cid:5)
+A
+3
+(cid:4)
+h
+(cid:5)
+X
+4
+(cid:6)(cid:8) (cid:4)
+X
+3
+(cid:6) 6
+(cid:2)
+B
+(cid:3)
+A: B
+2
+(cid:4)
+h
+(cid:5)
+Y
+3
+(cid:6)(cid:9) (cid:4)
+Y
+2
+(cid:4)
+b
+3
+(cid:7)
+h
+(cid:5)
+B
+3
+(cid:4)
+h
+(cid:5)
+Y
+4
+(cid:6)(cid:8) (cid:4)
+Y
+3
+(cid:6) 7
+(cid:2)
+A
+(cid:3)
+B: h
+(cid:5)
+b
+3
+(cid:4)
+X
+3
+(cid:6) 8
+(cid:2)
+B
+(cid:3)
+A: h
+(cid:5)
+a
+3
+(cid:4)
+Y
+3
+(cid:6)
+Round3:
+9
+(cid:2)
+A
+(cid:3)
+B: A
+3
+(cid:4)
+h
+(cid:5)
+X
+4
+(cid:6)(cid:9) (cid:4)
+X
+3
+(cid:4)
+a
+4
+(cid:7)
+h
+(cid:5)
+A
+4
+(cid:4)
+h
+(cid:5)
+X
+5
+(cid:6)(cid:8) (cid:4)
+X
+4
+(cid:6) 10
+(cid:2)
+B
+(cid:3)
+A: B
+3
+(cid:4)
+h
+(cid:5)
+Y
+4
+(cid:6)(cid:9) (cid:4)
+Y
+3
+(cid:4)
+b
+4
+(cid:7)
+h
+(cid:5)
+B
+4
+(cid:4)
+h
+(cid:5)
+Y
+5
+(cid:6)(cid:8) (cid:4)
+Y
+4
+(cid:6) 11
+(cid:2)
+A
+(cid:3)
+B: h
+(cid:5)
+b
+4
+(cid:4)
+X
+4
+(cid:6) 12
+(cid:2)
+B
+(cid:3)
+A: h
+(cid:5)
+a
+4
+(cid:4)
+Y
+4
+(cid:6)
+Round4:
+9
+(cid:2)
+A
+(cid:3)
+B: A
+4
+(cid:4)
+h
+(cid:5)
+X
+5
+(cid:6)(cid:9) (cid:4)
+X
+4
+(cid:4)
+a
+5
+(cid:7)
+h
+(cid:5)
+A
+5
+(cid:4)
+h
+(cid:5)
+X
+6
+(cid:6)(cid:8) (cid:4)
+X
+5
+(cid:6) 10
+(cid:2)
+B
+(cid:3)
+A: B
+4
+(cid:4)
+h
+(cid:5)
+Y
+5
+(cid:6)(cid:9) (cid:4)
+Y
+4
+(cid:4)
+b
+5
+(cid:7)
+h
+(cid:5)
+B
+5
+(cid:4)
+h
+(cid:5)
+Y
+6
+(cid:6)(cid:8) (cid:4)
+Y
+5
+(cid:6) 11
+(cid:2)
+A
+(cid:3)
+B: h
+(cid:5)
+b
+5
+(cid:4)
+X
+5
+(cid:6) 12
+(cid:2)
+B
+(cid:3)
+A: h
+(cid:5)
+a
+5
+(cid:4)
+Y
+5
+(cid:6)
+...andsoon.
+Thevarioussymbolsdenote:
+X
+i
+(cid:4)
+Y : randomlygenerateddata,usedasauthenticators
+i
+h
+(cid:5)
+Z
+1
+(cid:4) (cid:2)(cid:10) (cid:2)(cid:11) (cid:2) (cid:4)
+Z
+n
+(cid:6)
+: aone-wayhashontheconcatenationofvaluesZ
+1
+(cid:4) (cid:2)(cid:10) (cid:2)(cid:11) (cid:2) (cid:4)
+Z
+n
+A
+i
+(cid:4)
+B : MeaninglessrandommessagefromA(resp. B)atroundi
+i
+A
+i
+(cid:4)
+B : MeaninfulmessagefromA(resp. B)atroundi
+i
+a
+i
+(cid:4)
+b : thecommitmentfromA(resp.B)forroundi
+i
+Figure4.InteractiveGuyFawkesprotocol1. 2. 3.
+Figure 5. Pre-authentication over broadcast location-limited channels. (1) One device broadcasts
+pre-authenticationinformation. (2)Humanoperatorsobservelegitimategroupmembers’response.
+If unwelcome devices respond, the protocol stops at this point. (3) After authentication and key
+exchange, each device may broadcast encrypted data, which can only be decrypted by legitimate
+groupmembers.
+tions.
+Our proposal is based on the Guy Fawkes protocol [1],
+originallydesignedforauthenticatingdigitalstreams. The
+Guy Fawkes protocol assumes that parties A and B
+want to exchange streams consisting of sequential blocks
+A
+0
+(cid:4)
+A
+1
+(cid:4)
+A
+2
+(cid:4) (cid:2)(cid:10) (cid:2)(cid:10) (cid:2)
+and B
+0
+(cid:4)
+B
+1
+(cid:4)
+B
+2
+(cid:4) (cid:2)(cid:11) (cid:2)(cid:10) (cid:2)
+respectively. At step i, A
+sends to B a packet P containing 4 pieces of data: block
+i
+A; arandomvalueX, usedasanauthenticatorforA;the
+i i i
+digest of the nextauthenticator h
+(cid:5)
+X
+i
+(cid:12)
+1
+(cid:6)
+; and the digest of
+the message a
+i
+(cid:12)
+1
+(cid:7)
+h
+(cid:5)
+A
+i
+(cid:12)
+1
+(cid:4)
+h
+(cid:5)
+Xi
+(cid:13)
+2
+(cid:6)(cid:9) (cid:4)
+X
+i
+(cid:12)
+1
+(cid:6)
+. (B does the
+same.) Assuming that B received an authenticated packet
+P,Bcanauthenticateitassoonasitreceivesit,becauseP
+i i
+containedthe digesta
+i
+(cid:12)
+1
+(cid:7)
+h
+(cid:5)
+A
+i
+(cid:12)
+1
+(cid:4)
+h
+(cid:5)
+Xi
+(cid:13)
+2
+(cid:6)(cid:8) (cid:4)
+X
+i
+(cid:12)
+1
+(cid:6)
+. Note
+that this claim does not hold if A and B do not executein
+lock-step, and the authenticators are revealed before they
+should be (see [2] for details of such an attack). Finally,
+thisprotocolrequiresbothAandBtoknow,onestepahead
+oftime,whattheywanttosaynext,whichmakesthepro-
+tocolunsuitableforinteractiveexchanges.
+We modify the protocol to accommodate interactive
+communication.ThekeyideaconsistsofhavingA(respec-
+tivelyB)committo(andlatersend)ameaninglessrandom
+messagetoB(respectivelyA)wheneverA(respectivelyB)
+isnotinapositiontoknowwhattosaynext.Aisinsucha
+positionafterhehassentameaningfulmessage,butbefore
+hehasreceiveda(meaningful)replyfromB.
+Figure4showsthemodifiedprotocol. Overthelocation-
+limitedchannel,AandBsendthedigestofthefirstsecrets
+(authenticators)theywillusetoauthenticatetheirfirstmes-
+sages(h
+(cid:5)
+X
+1
+(cid:6)
+andh
+(cid:5)
+Y
+1
+(cid:6)
+vealingthemessagestheycommittedtooverthelocation-
+limitedchannel.
+Inround1,astheinitiatorofthecommunication,Asends
+ameaningfulmessageA toB. ThereplyBprovides(B )
+1 1
+is meaningless. It has to be meaningless because it was
+committed to in round 0, when B did not know message
+A . Inround2,AsendsameaninglessmessageA . Ithas
+1 2
+to be meaningless because it is B’s turn to “talk”. B then
+sendsB ,whichisameaningfulmessage. Notethatitwas
+2
+committedtoinround1,rightafterBlearnedthemessage
+A . In round 3, A is meaningless. It has to bebecause it
+1 3
+wascommittedtoinround2,whileAhadnotreceivedB .
+2
+However,A cannowcommitto a meaningfulmessageA
+4
+becausehehaslearnedwhatBhadtosayinround2. B is
+3
+meaninglessbecausethenextto“talk”isA. Inround4,A
+“talks”againand theprotocolrepeatsitself. Notethatthe
+protocol does not actually require the presence of mean-
+ingless random messages to work: these messages can be
+replacedbyemptymessages.
+Notethatthisinteractiveprotocol,aswellastheoriginal
+non-interactive Guy Fawkes protocol, provides integrity
+protection and authentication, but cannot provide encryp-
+tion. (See [1] for a security analysis of the Guy Fawkes
+protocol.) Ifthelocation-limitedchannelbeingusedisbe-
+lievedtoprovidesecrecyaswellasintegrity(e.g.,contact),
+it is possible to directly exchange a secret key across that
+channel, and use the key to encrypt further communica-
+tions.However,suchadirectexchangeofsecretsisvulner-
+abletopassiveeavesdroppinginthelocation-limitedchan-
+, respectively)togetherwiththedi- nel,whereastheinteractiveGuyFawkesprotocolisnot.
+gestsoftheirfirstmessages(a andb ).Theythencontinue
+1 1
+the communication using the main wireless medium, re-First,thekeymanagerbroadcastsitspre-authenticationdataoverthelocation-limitedchannel:
+1
+(cid:2)
+b
+KM
+(cid:14) (cid:3)
+group: addr
+KM (cid:4)
+h
+(cid:5)
+PK
+KM (cid:6)
+Then,groupmemberssendtheirpre-authenticationdata:
+1
+(cid:2)
+A
+(cid:3)
+KM: addr
+A
+(cid:4)
+h
+(cid:5)
+PK
+A
+(cid:6) 2
+(cid:2)
+B
+(cid:3)
+KM: addr
+B
+(cid:4)
+h
+(cid:5)
+PK
+B
+(cid:2)(cid:11) (cid:2)(cid:10) (cid:2)
+(cid:6)
+Theprotocolcontinuesoverthewirelesschannelwithanystandardpoint-to-pointkeyexchangeprotocol,e.g.:
+1
+(cid:2)
+A
+(cid:3)
+KM: TLS CLIENT HELLO
+2
+(cid:2)
+B
+(cid:3)
+KM: TLS CLIENT HELLO
+...andsoon;onceconnectionisestablishedtheKMgivestheappropriatemulticastkeystoeverygroupmember.
+Thevarioussymbolsdenote:
+addr
+A
+(cid:4)
+addr : A’s(resp. KM’s)addressinwirelessspace,providedstrictlyforconvenience
+KM
+PK
+A
+(cid:4)
+PK : thepublickeybelongingtoA(resp. B),eitheralong-livedkeyoranephemeral
+KM
+keyusedonlyinthisexchange
+h
+(cid:5)
+PK
+A
+(cid:6)
+: acommitmenttoPK ,e.g.,aone-wayhashofanencodingofthekey
+A
+b
+(cid:14) (cid:3)
+: messagebroadcast
+Figure6.Basicgroupkeyexchangeprotocolauthenticatedwithlocalinformation.
+4. GroupKeyExchangeProtocols thefactthatourprotocolsaredesignedtobeimperviousto
+passive (eavesdropping) attackers. We defend against ac-
+Some of the location-limited channels we have identi- tiveattackersbyemphasizingtheabilityoflegitimatepar-
+fied have broadcast capability – they can reach more than ticipants(humanordevice)todetecttheseillegitimatemes-
+sagesandaborttheprotocol(seeSection2).
+one target simultaneously. Using such broadcast chan-
+nels,wecanconstructprotocolsthatprovideauthenticated As in the two-party case above, our goal is to use
+group communication. There are a number of applica- location-limited channels to authenticate secure key ex-
+changes using well-established and trusted protocols. In
+tions that would benefit from the ability to rapidly and
+easily designate a group of users or devices to participate this section, we investigate various options for pre-
+authenticating group communication. We will show how
+in a secure network – networkedgamesand meeting sup-
+tousepre-authenticationschemeswiththetwomajorfam-
+port/conferencingsoftwarebeingthetwomostobvious.
+Audio,inparticular,isamediumthatcanprovidesignif- iliesofgroupkeyexchangeprotocols: thosethatdesignate
+aspecially-trustedgroupmember,or“GroupManager”,to
+icantadvantageswhenusedasabroadcastlocation-limited
+channel[16]. First,itcanbemonitoredandtrackedbyhu- distributegroupkeys,andthosethatdonot.
+mans–evenifthepeopleinvolvedintheexchangedonot
+4.1.CentrallyManagedGroups
+know exactly what is carried in the audio messages, they
+can recognize that legitimate group participants ought to Figure 5 illustrates the setting for a centrally-managed
+be sendingthemand the potted plantin thecornershould groupkeyexchange,andFigure6showsastraightforward
+not. Second,itcanbeincorporatedintosoundsthatareal- example of a protocol involving pre-authentication. One
+readyusedbymanypiecesofsoftwaretoprovidefeedback participantis designated to become the manager (e.g.,the
+to humans – for instance, most corporate conference call firsttopre-authenticate,oramorecomplicatedschemecan
+settingsplayashort“jointone”wheneveranewparticipant beusedtoelectarandomparticipant). Thegroupmanager
+entersacall;suchtonescouldbealteredtoalsocontainthat then establishes point-to-point links with every other par-
+participant’skeyinginformation. Third, because there are ticipantusingthetwo-partyprotocolsdescribedabove.For
+alreadydesignatedchannelsdesignedtocarryaudio/voice efficiency,ifthefirstmembertobroadcastisdesignatedas
+information, itcanactually be usedviathe telephone net- thegroupmanager,allparticipantsafterthefirstcanusea
+work(assumingoneplacesreasonabletrustinthecarrier). digest-basedauthenticationscheme(seeSection3.2).
+Audio is in some sense the canonical non-secret chan- In a centrally managed group, managing joining and
+nel–itisliterallypossibletoeavesdroponcommunicated leavingmembersisrelativelyeasy.Inthesimplestpossible
+data. Inusingitasapre-authenticationchannelwerelyon approach, a joining member can use the two-party proto-Eachmemberbroadcastsitspre-authenticationdataoverthelocation-limitedchannel:
+1
+(cid:2)
+b
+A
+(cid:14) (cid:3)
+group: addr
+A (cid:4)
+h
+(cid:5)
+PK
+A (cid:6)
+2
+(cid:2)
+b
+B
+(cid:14) (cid:3)
+group: addr
+B (cid:4)
+h
+(cid:5)
+PK
+B
+(cid:2)(cid:10) (cid:2)(cid:11) (cid:2)
+(cid:6)
+ParticipantsexchangeauthenticatedDiffie-Hellmanpublicvaluesoverthewirelesschannel:
+1
+(cid:2)
+b
+A
+(cid:14) (cid:3)
+group: A
+(cid:4)
+PK
+A
+2
+(cid:2)
+b
+B
+(cid:14) (cid:3)
+group: B
+(cid:4)
+PK
+B
+(cid:2)(cid:10) (cid:2)(cid:11) (cid:2)
+ParticipantscontinuewiththeirchosenprotocoltoderiveasharedsecretkeyK:
+1
+(cid:2)
+A
+(cid:3)
+B: PROTOCOL MSG 1
+A
+(cid:15)
+B
+1
+(cid:2)
+B
+(cid:3)
+C: PROTOCOL MSG 1
+B
+(cid:15)
+C
+(cid:2)(cid:10) (cid:2)(cid:11) (cid:2)
+ThevarioussymbolsareasinFigure6;thepublickeysPK ,etc.areDiffie-Hellmanpublicvalues.
+A
+Figure7.Groupkeyexchangeprotocolwithnodesignatedgroupmanager.
+cols discussed in Section 3.1 with the group manager to useabroadcastlocation-limitedchanneltoallowallgroup
+authenticate itself, and then receive the group key over a participantstocommittotheirpublickeyspublicallytoone
+securedwirelesschannel. Whenamemberleavesagroup, ormoregroupmembers.Groupmemberscanthenproceed
+thegroupmanagercandistributeanewgroupkeytoallre- with their chosen group key exchange protocol over the
+maining members overthe wireless link. This is possible wireless link using these authenticated keys. In Figure 7,
+because the group manager has established shared secrets weshowanexampleofsuchanexchange.
+withallofthegroupmembers. Groupmemberswhojoinasynchronouslycanbroadcast
+theirkeycommitmentsoverthelocation-limitedchannelto
+4.2.UnmanagedGroups therestofthegroupastheyarrive,andarandomlyselected
+current group member can respond, thus ensuring mutual
+There are at least three problems with centrally man- authentication.Thechosengroupkeyexchangeprotocolis
+aged groups. First, the group manager presents a single usedtohandlethedetailsofupdatingthesharedgroupkey
+point of attack. Not only does it know the group key, it forthesenewgroupmembers,orrevokingkeysofdepart-
+alsoknowssharedsecretswitheverygroupmember. Sec- ingmembers.
+ond,thegroupmanageristrustedtogenerateanddistribute
+allgroupkeys;manyapplicationsarenotcompatiblewith 5.Implementation
+such a distinguished trusted party. Third, the group man-
+agercannoteasilyleavethegroup, sincethentherewould We have begun experimenting with these protocols as
+be no one left to manage it. As a result, there is a large partofalargerprojectinvestigatingnewparadigmsforus-
+familyofgroupkeyexchangeprotocols(e.g.,[12,11])de- ablesecurity. Wehaveimplementedthebasicprotocolsin
+signed to allow all members to equally participate in key JavaTM, built to providea flexible substrate for exploring
+generation,and hencealltobeequallytrusted. We would many of the pre-authentication methods discussed in this
+liketouseourframeworktoauthenticatethisclassofpro- paper.
+tocolsaswell. We have built a software framework for using pre-
+Mostgroupkey-exchangeprotocolsemploysomesortof authentication data to authenticate arbitrary key exchange
+modifiedDiffie-Hellmankeyexchangeamonggroupmem- protocols. This framework allows dynamic choice of the
+bers[12,11].However,justliketwo-partyDiffie-Hellman, medium used for the location-limited channel, the public
+we knowthat wecan establisha sharedsecret with some- keyalgorithmusedforthekeycommitments,andthefinal
+one,butwedonotknownecessarilywhothatsomeoneis. authenticated key exchange protocol used over the wire-
+As in the two-party case, these protocols assume that all less link (and in fact, this stage assumes only a TCP/IP
+group members participate in a shared public key infras- socket, allowing pre-authentication data to be used to au-
+tructure,orhavepreviouslyexchangedpublickeys[12]. thenticatesecureconnectionsmadeoverawirednetworkas
+Ifweusepre-authenticationoverlocation-limitedchan- well). Extendingtheframeworktoprovideanewlocation-
+nels,theseassumptionsnolongerhavetobemade. Wecan limited channel type, or a new key exchange protocol,is only a matter of implementing a JavaTM interface to of-bandmechanism,andthenusethatcryptographicinfor-
+provide a small amount of syntactic “glue”. The frame- mation to securely identify the target. Trusted web server
+work providesboth client and servercomponents, and al- certificatesthatlinkdomainnamesto keypairsareanex-
+lows developers to choose from either low-level, step-by- ampleofsuchamechanism. Approachesthatrelyoncer-
+stepcontroloverdataexchange,ortousesimpler,higher- tificatesforbootstrappingtrustrequireheavysetupandon-
+level interfaces. Such interfaces, for instance, provide lineservers,andarethereforeinappropriateforwirelessad-
+serverthreadsthatcanmanagepre-authenticationofmulti- hocnetworks.
+pleclientsoverthelocation-limitedchannel,andoffercon- A number of approaches to trust and key management
+trol over how such pre-authentication data is used to au- have used out-of-band channels to authenticate key ex-
+thenticatethoseclientsoverthewirelesslink(e.g.,serially, changes. In the simplest version of PGP’s web of trust
+whereonlythemostrecentclienttopre-authenticateisal- [21], users obtain public keys from a variety of insecure
+lowedtoconnectwirelessly,orinamulticastconfiguration sources (e.g., web sites, key servers, etc.). To make sure
+where all pre-authenticated clients are allowed to connect thekeythattheyreceiveisauthentic,usersthenengagein
+at once). Framework components maintain state tracking some out-of-band communication (e.g., phone, US mail,
+whohascurrentlypre-authenticated,whatkeyinginforma- face-to-face conversation or exchange of business cards)
+tioniscurrentlyinusebythisendpoint,etc. with the party they believe to be the key’s owner to ob-
+Anexamplescenarioimplementedusingthisframework tain the fingerprint, or digest, of the key, which they can
+consistsofaclient(suchasouremailgizmofromtheexam- thenusetojudgetheauthenticityofthekeytheyobtained
+pleabove),whichistheinitiatoroftheauthenticatedchan- insecurely. They trust the fingerprint because it was ob-
+nel,andarespondingserver. Theservercomponentlistens tainedoverasecurechannel. Theactofgettingthefinger-
+for a connection on both the location-limited channel and printofapublickeyoverthephoneinPGPis,inessence,
+theprimarylink,butonlyadmitsprimary-linkconnections a pre-authentication step. What distinguishes PGP’s pre-
+fromclientswhohaveperformedpre-authenticationonthe authenticationapproachfromoursare: thetypesofout-of-
+location-limitedchannel. band channels used; the type of entity (device or human)
+We currently use IrDA [9] as the medium for the verifyingthepre-authenticationdata;andwhetherthever-
+location-limited channel. We are in the process of con- ification of pre-authentication data is a separate, optional
+structinga contact-mediatedinterface,andplan toexpand (and frequently skipped) step in key exchange, or is built
+shortly to group authentication using audio. The client inasaseamlesspartofthekeyexchangeitself. Inourap-
+opens anIrDAconnection tothe server(generatinganer- proach we use the exchange of pre-authentication data in
+rorifitdiscoversmorethanonepotentialIrDAendpoint). part for demonstrative identification, to select our desired
+Across this connection client and server exchange XML- communication partner at the same time as we automati-
+encodedpre-authenticationdatacontainingacommitment callyauthenticatethem. PGPattemptsinsteadtolinkkeys
+to an ephemeral DSA public key, a “friendly name”, and to email addresses (names), and adds on manual key au-
+an IP address and a port on which the server will be lis- thentication(fingerprintcomparison)asaseparatestep.
+tening. This yieldsa payload of the order of300 bytes in Afewproposalshavebeenputforthrecentlytoaddress
+each direction. With such a small payload size, the pre- the issue of bootstrapping trust in the specific context of
+authenticationstepincursverylittletimeoverheadevenon ad-hoc wireless networks. Bluetooth [3], in its most se-
+low-bandwidthlocation-limitedchannels. cureconfiguration, requirestheusertoenter a (preferably
+With the pre-authentication complete, the IRchannel is longandrandom)PINintobothdevicestobootstraptheir
+closed, and the client extracts the server’s IP address and first communication. This PIN serves as the out-of-band
+port number from the data it received. The client then information,butputsaburdenonusers.Asidefromusabil-
+opens a normal SSL/TLS connection to the server on the ityissues, Bluetoothisplaguedbyawidevarietyofother
+primary link. Each side uses the information gained in security flaws [10]. WEP, the link-layer security protocol
+thepre-authenticationstep(namelythecommitmentstothe for 802.11[8], has thesame usabilityissues. Itrequires a
+publickeys)toauthenticatethenewlyopenedchannel. The groupofcommunicating devicesto beinitializedwiththe
+clientandserverarenowfreetosecurelyexchangeanyin- samekey,usuallyderivedfromapassword. WEPtoohas
+formationtheychooseovertheprimary(wireless)link. beenbroken[5, 19]. Ourproposal ismoreappealing than
+BluetoothandWEPfrombothusabilityandsecuritypoints
+6. RelatedWork of view. Our pre-authentication step is intuitiveand user-
+friendly, and we rely on well-known and tested protocols
+Our work addresses the problem of bootstrapping trust
+forkeyexchange.
+in networked environments. Traditional solutions to this
+StajanoandAnderson [18]suggestedtheuse ofanout-
+problem (e.g., X.509 [7]) link a target to some crypto-
+of-band mechanism for establishing trust when they pro-
+graphic information (e.g., a key pair) through some out-posed the Resurrecting Duckling security model to regu- 7.Conclusions
+latesecuretransientassociationbetweendevicesinad-hoc
+Inthispaperwepresentednewschemesforpeer-to-peer
+wirelessnetworkswhereauthenticationserversmaynotbe
+authentication in ad-hoc wireless networks. Building on
+available. In their model, a master-slave relationship be-
+previous work by Stajano, Anderson, and others, we ex-
+tweentwodevicesissetupwhenthemaster(orthemother,
+plainedhowtousedemonstrativeidentificationtoperform
+in their terminology) establishes a shared secret with the
+pre-authenticationoverlocation-limitedchannels. Demon-
+slave(theduckling)throughacontactchannel. Thisshared
+strative identification providesthe user with an extremely
+secretwillenabletheducklingtorecognizethemotherand
+intuitive way to identify – and authenticate – parties to a
+becontrolledbyherinfutureinteractions. Stajanolaterex-
+communication. Ourschemes donotrequirea public key
+tendedthismodeltoaddresspeer-to-peerinteractions[17].
+infrastructure, and doaway with the naming problem that
+In the extended model, the mother can upload an access-
+plaguestraditionalauthenticationsystems. Belowwesum-
+control policy into the duckling. This policy then deter-
+marizethenovelaspectsofourwork:
+minesthetypeofrelationshipsthattheslavecanhavewith
+other devices (other than the mother). Our work extends Useoflocation-limitedchannels. We propose the use of
+theirs in a number of ways: while Anderson and Stajano location-limited channels to bootstrap a wide range
+suggesttheuseofcontactchannelstoexchangesecretau- key-exchangeprotocols. Inparticular,wedonotlimit
+thentication data, they don’t provide any details of what ourselves to imprinting a duckling device with its
+thatdatashouldbeorhowtocombineitappropriatelywith mother’ssecretkey.
+datasentonthewirelesslink. Wehaveprovidedthosecon-
+Novellocation-limitedchannels. Because our location-
+crete details here. We separate the very general idea of
+limited channels do not have to provide secrecy, we
+pre-authenticationforbootstrappingsecurityinad-hocnet-
+open the door to new media. In our prototype we
+works from their very specific notion of mother-duckling
+arecurrentlyexperimentingwithaudio,infrared, and
+“imprinting”,andshowthatitcaninfactbeusedtosecurea
+contact-basedchannels, butothermediaarecertainly
+widevarietyofprotocolsandapplications.Weextendtheir
+imaginable.
+workthroughtheuseofpublickeycryptography,allowing
+us to take advantage of a much wider range of privileged
+Concretepre-authenticationprotocols. We provide a
+channeltypes,andtomakeuseofwell-establishedkeyex-
+concreterecipeforaugmentingexistingkeyexchange
+change protocols. And finally, for those situations where
+protocolswithapre-authenticationstep. Forthecase
+the computational load of public key cryptography is un-
+thatbothcommunicatingpartiesareincapableofpub-
+acceptable, we provide cheaper, hybrid options that share
+lic key operations, we also introduce a new, interac-
+manyoftheadvantagesofthepublickeyschemes.
+tive, version of the Guy Fawkes protocol. We note
+Outside the security domain, location-limited channels
+thatnoneoftheprotocolspresentedexchangeanyse-
+have been used as a means for accessing devices and
+cret information. Therefore, a passive attacker can-
+services demonstratively. Satchel/MobileDoc [15] from
+not gain anything by eavesdropping on the location-
+XRCE allows users to use a PDA to retrieve documents
+limitedchannel. Weraisethesecuritybarbyrequiring
+located in their home offices, and “beam” them to a
+the attacker to become active in the location-limited
+printer,aPC,oranotherwirelessPDA.InHP’sCooltown
+channel, and we explained how activeattacks can be
+project [13], entities in a user’s surroundings have web
+detectedbyhumanoperatorsorbythesystem.
+presences,aswellasphysicaltagsthatsendouttheircorre-
+spondingURL’sthroughinfrared. Tointeractwithsuchan Groupcommunication. Becauseweuselocation-limited
+entity,theuserfirstpointherwirelessdevicetotheentity’s channels that are not necessarily secret, we can em-
+tag, receiving its URL, and then proceed with a (wired or ploybroadcastcharacteristicsofsomemedia(suchas
+wireless)interactionwiththeentityusingtheURL.There audio)topre-authenticategroupcommunicationover
+have even been attempts to standardize these approaches. location-limitedchannels.
+TheIrDA[9]hasbeencreatingandpromotinginteropera-
+NorelianceonPublicKeyInfrastructure. Key ex-
+ble, infrared connection standards that support a walk-up,
+changeandkeyagreementprotocolsdependonanau-
+point-to-point user model. These efforts all recognize the
+thentication step to verify who we are exchanging a
+usability advantages of demonstrative identification, but
+keywith. PublicKeyInfrastructures(PKI)havebeen
+make no provision for security. Our proposal provides a
+commonlysuggestedasawayofsolvingthisauthen-
+waytosimplyandseamlesslyaddsecuritytotheseefforts
+ticationproblem. PKIsuseatrustedauthoritytobind
+withoutincreasingthedemandontheuser.
+publickeystonamesorotheridentifiers;thosenames
+are used in turn to identify the party with whom you
+wishtocommunicate(e.g.,SSL/TLSimplementationsrequire X.509 certificates that certify a web server’s [15] M. Lamming, M. Eldridge, M. Flynn, C. Jones, and
+DNSnameandaresignedbyacertificationauthority D.Pendlebury. Satchel:Providingaccesstoanydocument,
+trusted by the web client). We have shownthat such any time, anywhere. ACM Transactions on Computer-
+arelianceonpre-existingthirdpartynamingandtrust HumanInteraction,7(3):322–352,2000.
+[16] C.LopesandP.Aguiar.Aerialacousticcommunications.In
+infrastructuresisunnecessaryifonecanbrieflybring
+Proceedingsofthe2001IEEEWorkshoponApplicationsof
+communicatingpartieswithinclosephysicalproxim-
+SignalProcessingtoAudioandAcoustics,NewPaltz,NY,
+ity. In such a case, our pre-authentication protocols
+October2001.
+canbeusedinplaceofaPKI.
+[17] F.Stajano.Theresurrectingduckling-whatnext? InSecu-
+rityProtocols—8thInternationalWorkshop,LectureNotes
+References in Computer Science, Cambridge, United Kingdom, Apr.
+2001.Springer-Verlag,BerlinGermany.
+[1] Anderson,Bergadano,Crispo, Lee, Manifavas, andNeed-
+[18] F.StajanoandR.J.Anderson. Theresurrectingduckling:
+ham. Anewfamilyofauthenticationprotocols. ACMOSR:
+Security issues for ad-hoc wireless networks. In 7th Se-
+ACMOperatingSystemsReview,32,1998.
+curityProtocolsWorkshop, volume1796ofLectureNotes
+[2] S.M.BellovinandM.Merrit. Anattackontheinterlock
+in Computer Science, pages 172–194, Cambridge, United
+protocolwhenusedforauthentication. ACMTransactions
+Kingdom,1999.Springer-Verlag,BerlinGermany.
+onInformationTheory,40(1),January1994.
+[19] A.Stubblefield, J. Ioannidis, andA. D.Rubin. Usingthe
+[3] The official bluetooth SIG website. www.bluetooth.
+Fluhrer, Mantin, and Shamir Attack to Break WEP. In
+com.
+Proceedingsofthe2002NetworkandDistributedSystems
+[4] T.DierksandC.Allen.TheTLSProtocolVersion1.0.IETF
+SecuritySymposium(NDSS’02),SanDiego,CA,February
+- Network Working Group, The Internet Society, January
+2002.TheInternetSociety.
+1999. RFC2246.
+[20] T. G. Zimmerman. Personal Area Networks: Near-
+[5] S.Fluhrer,I.Mantin,andA.Shamir.Weaknessesinthekey
+field intrabody communication. IBM Systems Journal,
+schedulingalgorithmofRC4.InEightAnnualWorkshopon
+35(3&4):609–617,1996.
+SelectedAreasinCryptography,August2001.
+[21] P.R.Zimmermann. TheOfficialPGPUser’sGuide. MIT
+[6] D. Harkins and D. Carrel. The Internet Key Exchange
+Press,Cambridge,MA,USA,1995. ISBN0-262-74017-6.
+(IKE). IETF-NetworkWorkingGroup,TheInternetSoci-
+ety,November1998. RFC2409.
+[7] R.Housley,W.Ford,W.Polk,andD.Solo. InternetX.509
+PublicKeyInfrastructureCertificateandCRLProfile.IETF
+- Network Working Group, The Internet Society, January
+1999. RFC2459.
+[8] IEEE. ANSI/IEEE. 802.11: Wireless LAN medium ac-
+cess control (MAC) and physical layer (PHY) specifica-
+tions,1999.
+[9] IrDAAssociation. TechnicalsummaryofIrDADATAand
+IrDACONTROL,1999.
+[10] M.JakobssonandS.Wetzel. Securityweaknessesinblue-
+tooth. In Topics in Cryptology - CT-RSA 2001, volume
+2020,pages176–191,SanFrancisco,April2001.Springer.
+[11] M. Just and S. Vaudenay. Authenticated multi-party key
+agreement. InAdvancesinCryptology–ASIACRYPT’96,
+LectureNotesinComputerScience,Berlin,1996.Springer-
+Verlag.
+[12] Y.Kim,A.Perrig,andG.Tsudik.Simpleandfault-tolerant
+keyagreementfordynamiccollaborativegroups. InS.Ja-
+jodin and P. Samarati, editors, 7th ACM Conference on
+Computer and Communications Security, pages 235–241,
+2000.
+[13] T.Kindberg,J.Barton,J.Morgan,G.Becker,D.Caswell,
+P. Debaty, G. Gopal, M. Frid, V. Krishnan, H. Morris,
+J.Schettino,B.Serra,andM.Spasojevic.Placesandthings:
+Web presence for the real world. Technical Report HPL-
+2000-16,HPLabs,2000.
+[14] H. Krawczyk. SKEME: A versatile secure key ex-
+change mechanism for internet. In Proceedings of the
+1996 Network and Distributed Systems Security Sympo-
+sium(NDSS’96),pages172–194,SanDiego,CA,February
+1996.TheInternetSociety.

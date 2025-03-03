@@ -1,0 +1,1704 @@
+Termination in Language-based Systems
+Algis Rudys JohnClements Dan S.Wallach
+arudys@cs.rice.edu clements@cs.rice.edu dwallach@cs.rice.edu
+Departmentof Computer Science,Rice University
+Abstract and separation as a side-effect of enforcing its type sys-
+tem. Acombinationofstaticanddynamictypechecking
+would serve to prevent a malicious codelet from forging
+Language runtime systems are increasingly being em- a reference to an arbitrary memory location and subvert-
+beddedinsystemstosupportruntimeextensibilityviamo- ingthesystem. InadditiontoitsapplicationswithinWeb
+bilecode. Suchsystemsraiseanumberofconcernswhen browsers,codeletshavealsobeentoutedforOSkernelex-
+the code running in such systems is potentially buggy or tensions, active networking, extensible databases, agent-
+untrusted. Whilesophisticatedaccesscontrolshavebeen basednegotiatingsystems,andpresumablyotherproblem
+designedformobilecodeandareshippingaspartofcom- domains.
+mercialsystemssuchasJava,thereisnosupportforter- ThepromiseofJavamaybeattractive,butalargenum-
+minatingmobilecodeshortofterminatingtheentirelan- ber of security flaws have been discovered in Java since
+guageruntime.Thispaperpresentsaconceptcalled“soft its release [10, 24]. Significant strides have been made
+termination”whichcanbeappliedtovirtuallyanymobile atunderstandingthetypesystem[1,27,11,12,8,9]and
+codesystem. Softterminationallowsmobilecodethreads protectingtheJavasystemclassesfrombeingmanipulated
+to be safely terminated while preserving the stability of into violating security [30, 31, 18, 13, 14], but efforts to
+the language runtime. In addition, function bodies can controlresourceexhaustionhavelaggedbehind. Asimple
+bepermanentlydisabled,thwartingattackspredicatedon infiniteloopwillstillfreezethelatestWebbrowsers. The
+systemthreadseventuallycallinguntrustedfunctions. We most successful systems to date either run the JVMs in
+presentaformaldesignforsoftterminationandanimple- separateprocessesormachines[23,26],surrenderingany
+mentationofitforJava,builtusingJavabytecoderewrit- performancebenefitsfromrunningtheJVMtogetherwith
+ing, and demonstrating reasonable performance (3-25% itshostapplication,orcreateaprocess-likeabstractionin-
+slowdownsonbenchmarks). side the JVM [4, 28, 20, 5]. These process abstractions
+eithercomplicate memory sharingormake itcompletely
+1. Introduction impossible.
+This paper describes a new language runtime-based
+Inrecentyears, manysystemshaveturnedtolanguage mechanism called soft termination. While it is not spe-
+runtime systems for enforcement of security. Language- cific to Java, soft termination can be deployed on Java,
+based enforcement of security was popularized by Java andwepresentaJava-basedimplementation. Softtermi-
+andtheJavaVirtualMachine(JVM),whichwereadopted nation is intended to be invokedeither by an administra-
+by Netscape for its Navigator 2.0 browser in 1995. Java tororbyasystemresourcemonitorwhichhasconcluded
+promised an environmentwhere untrusted and malicious thatacodeletisexceedingitsallottedresourcesandmay
+code(hereaftercalleda“codelet”1)couldrunsafelyinside no longer be allowed to run. Soft termination provides
+the Web browser, enhancing the user’s Web experience semantics similar to the UNIX ps and kill commands
+without jeopardizing the user’s security. Rather than us- whilepreservingsystemintegrityaftertermination,yetre-
+ingkernel-basedprotection,theJVMwouldruninsidethe quires neither process-likestructures nor limits on mem-
+same address space as the browser, providing protection orysharing.Ourimplementationofsoftterminationisde-
+fined as a code-to-code transformation, and is thus more
+1Theterm“codelet”isalsousedinartificialintelligence,numerical easily portable across languages and implementations of
+processing, XML tagprocessing, and PDA software, allwithslightly
+the same language. Soft termination supports two kinds
+differentmeanings.Whenwesay“codelet,”werefertoasmallprogram
+ofprogramtermination: safethreadterminationandsafe
+meanttobeexecutedinconjunctionwithorasaninternalcomponentof
+alargerprogram.code disabling. Safe thread termination must deal with loaded by the system. J-Kernel isolates threads to run
+caseswhere thetargetthread iscurrently executingcriti- withinspecificcodelets;cross-domaincallsaresupported
+cal system code that may not necessarily be designed to via message passing from one codelet thread to another
+respondtoanasynchronoussignal.Safecodeletdisabling ortothesystem. Byisolatingthreadstotheircodelets, it
+must deal with cases where future threads may invoke becomessafetoarbitrarilydescheduleathread.
+functions of the disabled codelet, yet the codelet should JRes [7] is a resource management system for Java.
+notbeableto“hijack”thethreadandcontinueexecution. Bytecoderewritingisusedtoinstrumentmemoryalloca-
+In the following sections, we discuss the concept of tionandobjectfinalizationinordertomaintainadetailed
+soft termination, and present our implementation. Sec- accountingofmemoryusage. Again,terminationismen-
+tion2discusseshowpriorworkhasaddressedthesecon- tioned,butnosignificantdetailsareprovided.
+cerns. Section3formalizesand describeswhatwe mean KaffeOS[2,3]providesanexplicitprocess-likeabstrac-
+bytermination. Section4describesourJava-basedimple- tionforJavacodelets. KaffeOSisimplementedasaheav-
+mentationofsofttermination, and mentionsa numberof ily customized JVM with significant changes to the un-
+Java-specificissuesthatweencountered. Wepresentper- derlying language runtime system and system libraries.
+formance measurements in section 5. Finally, section 6 Code termination is supported in the same manner as a
+describessomeexperiencewithusingsofttermination in traditional operating system: user codelets are strongly
+real-worldsituations. separated from the kernel by running in separate heaps.
+Memory references across heaps are heavily restricted.
+2. Relatedwork Bernadat et. al. [5] and van Doorn [29] describe similar
+systems that customize a JVM in order to support better
+Systems such as Smalltalk, Pilot, Cedar, Lisp Ma-
+memory account and security. van Doorn takes advan-
+chines, and Oberon have taken advantage of language-
+tage of lightweight mechanisms providedby an underly-
+based mechanisms to provide OS-like services. Perhaps
+ingmicro-kernel.KaffeOSprovidesastyleoftermination
+as early as the Burroughs B5000 series computers, lan-
+we call hard termination (see section 3.2). It’s not clear
+guagebasedmechanismswereusedforsecuritypurposes.
+howterminationissupportedintheothersystems.
+More recently, language-based enforcement of security
+waspopularizedbyJava,originallydeployedbyNetscape
+3. Systemdesign
+foritsNavigator2.0browserin1995torununtrustedap-
+plets.
+A large space of possible designs exist for supporting
+However,thesesystemsprovidelittleornosupportfor
+termination in language runtimes. We first consider the
+resourcemanagementontheprogramstheyrun. Anum-
+na¨ıve solutions and explain the hard problems raised by
+ber of projects have been developed to address this. A
+theirfailings.Wethendiscusshowoperatingsystemsper-
+recent Scheme system called MrEd [17] supports thread
+formterminationandfinally,describeourownsystem.
+termination and management of resources like open files
+but has no way of disabling code from running in future
+3.1.Na¨ıvetermination
+threads. Some systems, such as PLAN [21], restrict the
+language to guarantee that programs will terminate. In One na¨ıve solution to termination would be to iden-
+general, many language systems support interactive de- tify undesired threads and simply removethem from the
+bugging,whichincludestheabilitytointerruptarunning threadscheduler. ThistechniqueisusedbyJava’sdepre-
+programandinspectitsstate. Thiscanbeperformedwith cated Thread.destroy() operation2. Unfortunately,
+operating-systemservicesorbygeneratinginlinecodeto therearenumerousreasonsthiscannotworkinpractice.
+respondtoanexternaldebugger.
+Much of the recent research in this area has been fo- Criticalsections Athreadmaybeinacriticalsectionof
+cused on the Java programming language. PERC [25], system code, holding a lock, and updating a system
+forinstance, isaJava-derivedlanguagethatextendsJava datastructure. Deschedulingthethreadwouldeither
+tosupportasynchronousexceptions. Aprogrammermay leave the system in a deadlock situation (if the lock
+specify blocks with provable limits on their runtime and isnotreleased)orleavethesystemdatastructuresin
+asynchronousexceptionsaredeferreduntiltheblockcom- anundefinedstate,potentiallydestabilizingtheentire
+pletesexecution. system(ifthelockisforciblyreleased).
+J-Kernel [20] is a system for managing multiple Java
+Boundary-crossingthreads In an object-oriented sys-
+codelets running in the same JVM. It is written entirely
+tem, a programwishing to inspector manipulate an
+in Java, giving it the advantage of working with multi-
+pleJVMswithminimaladjustment. Itisimplementedas 2see http://java.sun.com/products/jdk/1.2/docs/
+a transformation on Java bytecode as the bytecodes are guide/misc/threadPrimitiveDeprecation.htmlobject invokesmethodsonthat object. Whenmem- Thissectionintroducesadesignwecallsofttermination
+orysharingisunrestrictedbetweenthesystemandits anddescribesthepropertieswewouldfinddesirable. We
+codelets or among the codelets, these method invo- present an implementation of soft termination based on
+cations could allow a malicious codelet to “hijack” coderewritingforasimplifiedlanguageandprovethatall
+the thread from its caller and perhaps never release programswillterminatewhensignaledtodoso.
+it. Thisisespeciallyaconcernifthethreadinques-
+tionisperformingsystemfunctions, suchasfinaliz- 3.3.1. Key ideas:Soft termination is based on the idea
+ingdeadobjectspriortogarbagecollection. that a codelet may be instrumented to check for a termi-
+nationconditionduringthenormalcourseofitsoperation.
+Blockingcalls Thelanguageruntimesystemhassupport Ourgoalistoperformthesechecksasinfrequentlyasnec-
+formakingnativeOSsystemcalls. Athreadshould essary — only enough to ensure that a codelet may not
+notbe descheduledwhile itisblocking ona system execute an infinite loop. Furthermore, as with the Unix
+callsuchasanI/Ocall. kernel, we would like the termination ofa codelet to not
+disturb any system code it may be using at the time it is
+Anotherna¨ıvesolutionistoforceanasynchronousex-
+terminated,thuspreservingsystemcorrectness.
+ception,asdonebyJava’sdeprecatedThread.stop()
+The soft termination checks are analogous to safe
+operation. While this exception will wait for blocking
+points,whichareusedinlanguageenvironmentstoinsert
+calls to complete, it may still occur inside a critical sec-
+checks for implementing stack overflow detection, pre-
+tionofsystemcode. Inaddition,blockingcallscouldpo-
+emptive multitasking, inter-process and inter-task com-
+tentiallyneverreturn,resultinginanon-terminablethread.
+munication, barrier synchronization, garbage collection
+Finally,aworkaroundisneededtopreventuser-levelcode
+systems,anddebuggingfunctions. Amorecompletedis-
+fromcatchingtheexception.
+cussion is providedin Feeley[15]. In Feeley’sterminol-
+ogy,ourimplementationuses“minimalpolling.”
+3.2.Hardtermination
+3.3.2. Formal design:For our analysis, we begin with a
+Operating systems like Unix support termination by
+simple programming language having methods or func-
+carefully separating the kernel from the user program.
+tions,conditionalexpressions,andsimpleexceptions(see
+When a process is executing in user space, the kernel is
+figures 1 and 2). In our language, a program is a collec-
+free to immediately deschedule all user threads and re-
+tion of function definitions followed by an expression to
+claimtheresourcesinuse.
+be evaluated. A function body contains function/method
+If the process is executing in the kernel, termination
+callsaswellasprimitiveoperations,conditionals,andex-
+is normally delayed; a flag is checked when the kernel
+ceptions. A
+is about to return control to the user process. In cases
+wherethekernelmayperformanoperationthatcouldpo-
+tentially block forever (e.g., reading from the network),
+thekernelmayimplementadditionallogictointerruptthe
+system call. Other system calls, those that complete in a
+guaranteedfinitetime,neednotcheckwhethertheiruser
+processhasbeenterminated,asthekernelwillhandlethe
+terminationsignalonthewayout. Wecallsuchamecha-
+nismahardterminationsystembecauseoncetermination
+is signaled, user-level code may be terminated immedi-
+atelywithnoharmfulside-effects.
+3.3.Softtermination
+Unlikeatraditionaloperatingsystem,theboundarybe-
+tween user and system code in a language runtime is
+hardertodefine. Whileallcodewithinthesystemisgen-
+erallytaggedwithitsprotectiondomain, thereisnothing
+analogous to a system call boundary where termination
+signals can be enforced. Furthermore, because a thread
+could easily cross from user to system code and back
+many times, there may never be a correct time at which
+itbecomessafetoterminateathread.
+(cid:0) CheckTermination
+(cid:1)
+expressionisassumed
+to return a boolean value, indicating whether termina-
+tionforthecurrentcodelethasbeenexternally(andasyn-
+chronously)requested. Wewritethesemanticsofourlan-
+guageusingthesamestyleasFelleisenandHieb[16].
+Thesoftterminationtransformation,
+(cid:2)
+,isdescribedin
+figure 3. Rule 4 of this transformation inserts the check
+for termination before every function invocation. The
+otherrulesdescribehowthetransformationcontinuesre-
+cursivelyonexpressions.
+Proving that a transformed program terminates in a fi-
+nite time, given that (cid:0) CheckTermination
+(cid:1)
+returns true,
+is a straightforward exercise. First, we state without
+proofthatourlanguagesemanticsareconsistentandwell-
+formedandthattherearenocollisionsorunboundnames
+in the name-space (i.e., every reference to a function or
+variablecanbeboundtoasingledefinition).
+Next, we start with all possible expressions M from
+figure 1. After applying
+(cid:2)
+to M, and assuming
+CheckTerminationistrue,wewishtoshowtheprogram
+enters a “locked”state, where termination is guaranteed.P
+(cid:3)
+G M
+G
+(cid:3)
+D
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)
+D
+D
+(cid:3)
+(cid:0) define (cid:0) f x
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:7)(cid:1)
+M
+(cid:1)
+M
+(cid:3)
+(cid:0) f M
+(cid:4)(cid:6) (cid:4)(cid:5) (cid:4)(cid:8)(cid:1)(cid:10) (cid:9)
+(cid:0) if MMM
+(cid:1)(cid:11) (cid:9)
+(cid:0) let (cid:0) xM
+(cid:1)(cid:12) (cid:4)(cid:5) (cid:4)(cid:6) (cid:4)
+M
+(cid:1)(cid:13) (cid:9)
+(cid:0) try MM
+(cid:1)(cid:11) (cid:9)
+(cid:0) throw
+(cid:1)(cid:13) (cid:9)
+V
+V
+(cid:3)
+x
+(cid:9)
+true
+(cid:9)
+false
+(cid:9)
+c
+E
+(cid:3)
+[]
+(cid:9)
+(cid:0) f V
+(cid:4)(cid:6) (cid:4)(cid:5) (cid:4)
+E M
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:8)(cid:1)(cid:13) (cid:9)
+(cid:0) if E MM
+(cid:1)(cid:13) (cid:9)
+(cid:0) try E M
+(cid:1)(cid:13) (cid:9)
+(cid:0) let (cid:0) xV
+(cid:1)(cid:12) (cid:4)(cid:6) (cid:4)(cid:6) (cid:4)
+(cid:0) xE
+(cid:1)
+(cid:0) xM
+(cid:1)(cid:14) (cid:4)(cid:6) (cid:4)(cid:5) (cid:4)
+M
+(cid:1)
+finalstates
+(cid:3)
+V
+(cid:9)
+error
+Figure1.Simplelanguageusedforouranalysis.
+E (cid:0)
+(cid:15)
+f V
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:8)(cid:1)(cid:17) (cid:16)(cid:19) (cid:18)(cid:20)
+E
+(cid:15)
+V
+0
+(cid:16)
+if f
+(cid:21)
+built-inprimitives
+E (cid:0)
+(cid:15)
+f V
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:8)(cid:1)(cid:17) (cid:16)(cid:19) (cid:18)(cid:20)
+error if f
+(cid:22)(cid:21)
+built-inprimitives
+(cid:0)
+(cid:23)
+f V
+(cid:4)(cid:6) (cid:4)(cid:5) (cid:4)(cid:1)
+isundefined
+(cid:23)
+or
+(cid:0) define (cid:0) f x
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:7)(cid:1)
+M
+(cid:1)(cid:13) (cid:22)(cid:21)
+G
+E (cid:0)
+(cid:15)
+f V
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:8)(cid:1)(cid:17) (cid:16)(cid:19) (cid:18)(cid:20)
+E
+(cid:15)(cid:24)(cid:15)
+V
+(cid:4)(cid:6) (cid:4)(cid:5) (cid:4)
+/x
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:16)
+M
+(cid:16)
+if (cid:0) define (cid:0) f x
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:7)(cid:1)
+M
+(cid:1)(cid:25) (cid:21)
+G
+E (cid:0)
+(cid:15)
+if trueM M
+1 2
+(cid:1)(cid:17) (cid:16)(cid:19) (cid:18)(cid:20)
+E
+(cid:15)
+M
+1
+(cid:16)
+E (cid:0)
+(cid:15)
+if falseM M
+1 2
+(cid:1)(cid:17) (cid:16)(cid:19) (cid:18)(cid:20)
+E
+(cid:15)
+M
+2
+(cid:16)
+E (cid:0)
+(cid:15)
+if V M M
+1 2
+(cid:1)(cid:17) (cid:16)(cid:19) (cid:18)(cid:20)
+error ifV
+(cid:22)(cid:3)
+true
+(cid:23)
+false
+E (cid:0)
+(cid:15)
+try V M
+(cid:1)(cid:17) (cid:16)(cid:26) (cid:18)(cid:20)
+E
+(cid:15)
+V
+(cid:16)
+E (cid:0)
+(cid:15)
+let (cid:0) xV
+(cid:1)(cid:27) (cid:4)(cid:6) (cid:4)(cid:5) (cid:4)
+M
+(cid:1)(cid:17) (cid:16)(cid:26) (cid:18)(cid:20)
+E
+(cid:15)(cid:24)(cid:15)
+V
+(cid:4)(cid:6) (cid:4)(cid:5) (cid:4)
+/x
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:16)
+M
+(cid:16)
+E (cid:0)
+(cid:15)
+f V
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)
+(cid:0) throw
+(cid:1)
+M
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:8)(cid:1)(cid:17) (cid:16)(cid:19) (cid:18)(cid:20)
+E (cid:0)
+(cid:15)
+throw
+(cid:1)(cid:28) (cid:16)
+E (cid:0)
+(cid:15)
+if (cid:0) throw
+(cid:1)
+M M
+1 2
+(cid:1)(cid:17) (cid:16)(cid:19) (cid:18)(cid:20)
+E (cid:0)
+(cid:15)
+throw
+(cid:1)(cid:28) (cid:16)
+E (cid:0)
+(cid:15)
+try (cid:0) throw
+(cid:1)
+M
+(cid:1)(cid:17) (cid:16)(cid:26) (cid:18)(cid:20)
+E
+(cid:15)
+M
+(cid:16)
+E (cid:0)
+(cid:15)
+throw
+(cid:1)(cid:17) (cid:16)(cid:19) (cid:18)(cid:20)
+error
+E (cid:0)
+(cid:15)
+let (cid:0) xV
+(cid:1)(cid:27) (cid:4)(cid:5) (cid:4)(cid:6) (cid:4)
+(cid:0) x (cid:0) throw
+(cid:1)(cid:5) (cid:1)
+(cid:0) xM
+(cid:1)(cid:12) (cid:4)(cid:5) (cid:4)(cid:6) (cid:4)
+M
+(cid:1)(cid:17) (cid:16)(cid:26) (cid:18)(cid:20)
+E (cid:0)
+(cid:15)
+throw
+(cid:1)(cid:28) (cid:16)
+eval (cid:0) G (cid:23) M (cid:1) (cid:3)
+(cid:29) V ifG
+(cid:30)
+M
+(cid:18)(cid:20) (cid:31)
+V
+error ifG
+(cid:30)
+M
+(cid:18)(cid:20) (cid:31)
+error
+Figure2.Anoperationalsemanticsforourlanguage.
+(1)
+!# ""
+G M
+$$ % !# ""
+G
+$$& !# ""
+M
+$$
+(2)
+!# ""
+D
+’(cid:17) ’(cid:17) ’
+D
+$$ % !# ""
+D
+$$( ’) ’(cid:17) ’!# ""
+D
+$$
+(3)
+!# ""*
+define
+*
+f x
+’(cid:17) ’(cid:17) ’+
+M
++, $$- % *
+define
+*
+f x
+’(cid:17) ’(cid:17) ’+(cid:8)!. ""
+M
+$$/+
+(4)
+!# ""*
+f M
+’(cid:17) ’) ’+0 $$ % *
+let
+*
+t
+!# ""
+M
+$$/+(cid:13) ’(cid:17) ’(cid:17) ’1 *
+if
+*
+CheckTermination
++2 *
+throw
++3 *
+f t
+’(cid:17) ’(cid:17) ’+(cid:17) +(cid:17) +
+(5)
+!# ""*
+if MMM
++, $$ % *
+if
+!# ""
+M
+$$& !. ""
+M
+$$(cid:5) !# ""
+M
+$$/+
+(6)
+!# ""*
+try MM
++, $$ % *
+try
+!# ""
+M
+$$& !. ""
+M
+$$/+
+(7)
+!# ""*
+throw
++, $$ % *
+throw
++
+(8)
+!# ""*
+let
+*
+xM
++(cid:13) ’(cid:17) ’(cid:17) ’
+M
++, $$ % *
+let
+*
+x
+!# ""
+M
+$$(cid:24)+(cid:13) ’(cid:17) ’(cid:17) ’!# ""
+M
+$$/+
+(9)
+!# ""
+V
+$$ %
+V
+Figure3.Thesoftterminationtransformation.P
+(cid:3)
+G M
+G
+(cid:3)
+D
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)
+D
+L
+(cid:3)
+system
+(cid:9)
+codelet
+D
+(cid:3)
+(cid:0) define L (cid:0) f x
+(cid:4)(cid:6) (cid:4)(cid:6) (cid:4)(cid:7)(cid:1)
+M
+(cid:0)
+(cid:1)(cid:11) (cid:9)
+define blocking (cid:0) f x
+blocking
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:7)(cid:1)
+f M
+nonblocking
+(cid:1)
+M
+(cid:3)
+(cid:0) f M
+(cid:4)(cid:6) (cid:4)(cid:5) (cid:4)(cid:8)(cid:1)(cid:10) (cid:9)
+(cid:0) if MMM
+(cid:1)(cid:11) (cid:9)
+(cid:0) let (cid:0) xM
+(cid:1)(cid:12) (cid:4)(cid:5) (cid:4)(cid:6) (cid:4)
+M
+(cid:1)(cid:13) (cid:9)
+(cid:0) try MM
+(cid:1)(cid:11) (cid:9)
+(cid:0) throw
+(cid:1)(cid:13) (cid:9)
+V
+V
+(cid:3)
+x
+(cid:9)
+true
+(cid:9)
+false
+(cid:9)
+c
+E
+(cid:3)
+[]
+(cid:9)
+(cid:0) f V
+(cid:4)(cid:6) (cid:4)(cid:5) (cid:4)
+E M
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:8)(cid:1)(cid:13) (cid:9)
+(cid:0) if E MM
+(cid:1)(cid:13) (cid:9)
+(cid:0) try E M
+(cid:1)(cid:13) (cid:9)
+(cid:0) let (cid:0) xV
+(cid:1)(cid:12) (cid:4)(cid:6) (cid:4)(cid:6) (cid:4)
+(cid:0) xE
+(cid:1)
+(cid:0) xM
+(cid:1)(cid:14) (cid:4)(cid:6) (cid:4)(cid:5) (cid:4)
+M
+(cid:1)
+finalstates
+(cid:3)
+V
+(cid:9)
+error
+Figure4.Anextendedlanguageforanalysisdistinguishingcodeletsfromsystemcode.
+(1)
+!# ""
+G M
+$$ % !# ""
+G
+$$(cid:5) !
+codelet
+""
+M
+$$
+(2)
+!# ""
+D
+’) ’(cid:17) ’
+D
+$$ % !# ""
+D
+$$( ’(cid:17) ’) ’!# ""
+D
+$$
+(3a)
+!# ""*
+define codelet
+*
+f x
+’) ’(cid:17) ’+
+M
++, $$ % *
+define
+*
+f x
+’(cid:17) ’(cid:17) ’+4 !
+codelet
+""
+M
+$$(cid:24)+
+(3b)
+!# ""*
+define system
+*
+f x
+’(cid:17) ’) ’+
+M
++, $$ % *
+define
+*
+f x
+’(cid:17) ’(cid:17) ’+4 !
+system
+""
+M
+$$(cid:24)+
+(3c)
+!# ""*
+define blocking
+*
+f x blocking
+’(cid:17) ’(cid:17) ’+5 % *
+define
+*
+fwrapperx
+’(cid:17) ’) ’+
+f M
+nonblocking
++, $$ *
+let
+*
+b
+6
+t
+*
+f x
+nonblocking
+*
+’(cid:17) ’) ’+(cid:17) +
+if bt
+*
+if
+*
+CheckTermination
++3 *
+throw
++3 *
+f x
+blocking
+*
+’(cid:17) ’(cid:17) ’+(cid:17) +(cid:17) +7 +(cid:17) +
+define
+*
+f x
+blocking
+’(cid:17) ’(cid:17) ’+
+M
++
+(4a)
+!
+codelet
+""*
+f M
+’(cid:17) ’(cid:17) ’+, $$ % *
+let
+*
+t
+!
+codelet
+""
+M
+*
+$$/+(cid:11) ’) ’(cid:17) ’
+if
+*
+CheckTermination
++8 *
+throw
++3 *!# ""
+f
+$$
+t
+’) ’(cid:17) ’+(cid:17) +9 +
+(4b)
+!
+system
+""*
+f M
+’(cid:17) ’(cid:17) ’+, $$ % *!. ""
+f
+$$& !
+system
+""
+M
+$$( ’) ’(cid:17) ’+ (5a)
+!# ""
+f blocking
+$$ %
+fwrapper if
+*
+define blocking
+*
+f blocking
+’(cid:17) ’) ’+
+f nonblocking
+’(cid:17) ’(cid:17) ’+(cid:14) :
+G
+(5b)
+!# ""
+f
+$$ %
+f otherwise
+(6a)
+!
+codelet
+""*
+if MMM
++0 $$ % *
+if
+!
+codelet
+""
+M
+$$& !
+codelet
+""
+M
+$$& !
+codelet
+""
+M
+$$/+
+(6b)
+!
+system
+""*
+if MMM
++, $$ % *
+if
+!
+system
+""
+M
+$$(cid:5) !
+system
+""
+M
+$$& !
+system
+""
+M
+’(cid:17) ’(cid:17) ’
+$$/+
+Figure5.Thesoftterminationtransformationwithcodeletsandblockingcalls.
+Notethedomainofthistransformationisinlanguageoffigure1withasmallextensiontoallowmultiplereturnvalues.
+Thesemanticsoffigure2apply.WecallthisM .
+lock
+M
+lock
+(cid:3)
+(cid:0) let (cid:0) t M
+lock
+(cid:1)(cid:27) (cid:4)(cid:5) (cid:4)(cid:6) (cid:4)
+(cid:0) a
+(cid:0)
+(cid:1)
+if (cid:0) CheckTermination
+(cid:0)
+(cid:1)
+throw
+(cid:1)
+(cid:0) f t
+(cid:0)
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:8)(cid:1)( (cid:1)(cid:5) (cid:1)(cid:10) (cid:9)
+if (cid:0) CheckTermination
+(cid:1)
+(cid:0) b
+(cid:0)
+(cid:1)
+throw
+(cid:1)
+(cid:0) f V
+(cid:0)
+(cid:4)(cid:6) (cid:4)(cid:5) (cid:4)(cid:1); (cid:1)(cid:10) (cid:9)
+if true (cid:0) throw
+(cid:1)
+(cid:0) f V
+(cid:4)(cid:6) (cid:4)(cid:5) (cid:4)(cid:1); (cid:1)(cid:13) (cid:9)
+(cid:0) c
+(cid:0)
+(cid:1)
+if M M M
+lock lock lock
+(cid:1)(cid:13) (cid:9)
+(cid:0) d
+(cid:0)
+(cid:1)
+let (cid:0) xM
+lock
+(cid:1)(cid:27) (cid:4)(cid:5) (cid:4)(cid:6) (cid:4)
+M
+lock
+(cid:1)(cid:13) (cid:9)
+(cid:0) e
+(cid:0)
+(cid:1)
+try M M
+lock lock
+(cid:1)(cid:13) (cid:9)
+(cid:0) f
+(cid:0)
+(cid:1)
+throw
+(cid:1)(cid:13) (cid:9)
+(cid:0) g
+(cid:1)
+V (cid:0) h
+(cid:1)
+To prove termination, we must show that, once
+(cid:0) CheckTermination
+(cid:1)
+returns true, M is closed under
+lock
+programstepping,andthatthesyntacticlengthofthepro-
+gramwillbestrictlydecreasing.
+Closure may be stated as follows: if M
+(cid:18)(cid:20)
+M
+<
+, and
+M
+(cid:21)
+M , then M lock
+< (cid:21)
+M . By inspection, for all pos- lock
+sibleexpressionsinM , weobservethatoursemantics
+lock
+preservesclosure.
+Thesyntacticlengthpropertymaybestatedasfollows:
+starting with an initial expression M
+0
+(cid:21)
+M , we wish
+lock
+toprovethat
+=
+M
+(cid:23)
+M
+<
+whereM
+0
+(cid:18)(cid:20) (cid:31)
+M
+(cid:18)(cid:20)
+M:
+(cid:9)
+M
+<> (cid:9)@ ?A (cid:9)
+M
+(cid:9)
+.
+For cases (cid:0) d
+(cid:1)
+through (cid:0) h
+(cid:1)
+, the relevant semantic rules in
+figure 2 clearly guarantee
+(cid:9)
+M
+<) (cid:9)7 ?B (cid:9)
+M
+(cid:9)
+. Likewise, while
+(cid:0) CheckTermination
+(cid:1)
+is true, (cid:0) a
+(cid:1)(cid:13) (cid:18)(cid:20) (cid:31)
+(cid:0) b
+(cid:1)(cid:13) (cid:18)(cid:20)
+(cid:0) c
+(cid:1)(cid:13) (cid:18)(cid:20)
+(cid:0) g
+(cid:1)
+,
+reducingtheprogram’ssyntacticlengthoneachstep.
+When a program is executing when
+(cid:0) CheckTermination
+(cid:1)
+is initially false and be-
+comes true at an arbitrary time, the expression being
+evaluated may not be in M . The case where this
+lock
+matters is when termination is requested just after
+stepping case (cid:0) b
+(cid:1)
+. (cid:0) b
+(cid:1)
+would step outside M :
+lock
+(cid:0) b
+(cid:1)(cid:10) (cid:18)(cid:20)
+(cid:0) if false (cid:0) throw
+(cid:1)
+(cid:0) f V
+(cid:4)(cid:5) (cid:4)(cid:6) (cid:4)(cid:7)(cid:1)(cid:6) (cid:1)(cid:11) (cid:18)(cid:20)
+(cid:0) f V
+(cid:4)(cid:6) (cid:4)(cid:6) (cid:4)(cid:7)(cid:1)(cid:10) (cid:18)(cid:20)
+b
+<
+.
+The final step to b
+<
+expands the program’s syntactic
+length. However,italsobringstheprogrambacktoM
+lock
+as the body of f was subject to the
+(cid:2)
+transformation.
+Thereafter,theprogramlengthwillbestrictlydecreasing
+and the program will clearly terminate when
+(cid:9)
+M
+<> (cid:9)7 (cid:3)
+call succeeded and if so, the value is the result. Polling
+f is intended to be semantically equivalent to
+nonblocking
+calling f .
+blocking
+Thetransformationinfigure5ismorecomplexthanthat
+offigure3soitbearssomeexplanation.
+Rules 3a through 3c describe the transformation on
+functiondefinitions. Rules3aand3bsaythatsystemcode
+and codelets have separate transformations,
+1
+(i.e.,avalueorerror).
+Codelet, system, and blocking code Termination be-
+comes trickier when blocking calls are introduced and
+when we distinguish between codelet and system code.
+Figure 4 introduces an extension to our little language
+wherefunctionsarelabeledastotheoriginoftheircode,
+andwhetherornottheyblock. Theblockinglabelwould
+normallybeappliedtosystemfunctionsknowntoblock,
+such as I/O operations. By convention, every block-
+ing function f is defined to have some roughly
+blocking
+equivalent f which returns a tuple containing a
+nonblocking
+boolean and a value. The boolean indicates whether the
+(cid:2)
+and
+system
+(cid:2)
+, respectively. Rule 3csays a non-blocking wrap-
+codelet
+periscreatedforeveryblockingfunction. Inthiscase,the
+wrapper invokes the non-blocking call equivalent to the
+original. If thecall succeeds, the valueis returned. Oth-
+erwise, the wrapper polls to see if termination has been
+indicatedandthrowsanexceptionifithas.Otherwise,the
+non-blocking call is recursivelypolled again. When soft
+terminationisimplementedinaconcretelanguage,other
+mechanismsmaybeavailabletocreatethesewrappers.
+Rules 4a and 4b describe how function calls are han-
+dled for (cid:2) and system (cid:2) . For codelets, the termina- codelet
+tion checks are added, just as in figure 3. For system
+code, no termination checks are added. The purpose of
+thisistoavoiddestabilizingsystemcode. Whentermina-
+tionisdesired,itwillonlychangethecontrolflowofthe
+codelet, notthesystem. Ifsystemcodemakesanup-call
+toacodelet,itbecomespossibleforaterminatedcodelet
+to throw an exception. System code would be responsi-
+ble for catching this exception and proceeding appropri-
+ately. In a mobile code environment, where codelets are
+untrusted,systemcodemustalreadybepreparedforsuch
+up-calls to throw exceptions, but system code now need
+notbeconcernedwithasynchronoustermination.
+Rules 5a and 5b describe how blocking function calls
+are replaced with calls to their non-blocking wrappers.
+The remainder of the rules describe how the transforma-
+tioncontinuesrecursivelyonexpressions.
+Despite the domain of the transformation in figure 5
+being within the language of figures 1 and 2, we can no
+longer provetermination; system code may have infinite
+loops. It is now the programmer’sresponsibility to label
+allcodethatmaypotentiallyhavesuchinfiniteloopsand
+providesomekindofnon-blockingwrappers. It’simpor-
+tanttopointoutthataprogramconsistingstrictlyoffunc-
+tions labeled
+(cid:2)
+willbe transformedto precisely the
+codelet
+same result as if it were written in the simpler language,
+and thus can be terminated. When control flow is exe-
+cuting in a system function, the termination checks will
+be deferred. Whencontrol flow isexecutingin a codelet
+function,terminationwillhappennormally. Thisalsoad-
+dressesthetheboundary-crossingthreadconcern(seesec-
+tion 3.1): if system code calls a function within a termi-
+nated codelet, that function will be guaranteed to termi-
+nate in a finite time, and thus a system thread cannot be
+“hijacked.”4. Javaimplementation
+In an effort to understand the practical issues involved
+with soft termination, we implemented it for Java as a
+transformation on Java bytecodes. Our implementation
+reliesonanumber ofJava-specificfeatures. We alsoad-
+dress a number of Java-specific quirks that would hope-
+fullynotposeaprobleminotherlanguagesystems.
+4.1.Terminationcheckinsertion
+Java compilers normally output Java bytecode. Every
+Java source file is translated to one or more class files,
+later loaded dynamically by the JVM as the classes are
+referenced by a running program. JVMs know how to
+loadclassfilesdirectlyfromthediskorindirectlythrough
+“classloaders,”invokedaspartofJava’sdynamiclinking
+mechanism. A class loader,among other things, embod-
+ies Java’s notion of a name space. Every class is tagged
+withtheclassloaderthatinstalledit,suchthataclasswith
+unresolvedreferencesislinkedagainstotherclassesfrom
+the same source. A class loader provides an ideal loca-
+tion to rewrite Java bytecode, implementing the soft ter-
+mination transformation. A codelet appears in Java as a
+set of classes loaded by the same class loader. System
+code is naturally loaded by a different class loader than
+codelets, allowing us to naturally implement the codelet
+transform(
+(cid:2)
+)separatelyfromthesystemcodetrans-
+codelet
+form(
+(cid:2)
+).
+system
+Our implementation uses the CFParse3 and JOIE [6]
+packages, which provide interfaces for parsing and ma-
+nipulatingJavaclassfiles.
+Thebasicstructureofourbytecodemodificationisex-
+actlyasdescribedinsection3.3.2. Astaticbooleanfieldis
+addedtoeveryJavaclass,initiallysettofalse.TheCheck-
+Termination operation, implemented in-line, tests if this
+fieldistrue,andifso,callsahandlermethodthatdecides
+whethertothrowanexception. Asanextensiontothese-
+mantics of figure 5, we allow threads and thread groups
+to be terminated as well as specific codelets, regardless
+oftherunningthread. Theterminationhandler,whenin-
+voked,comparesitscalleranditscurrentthreadagainsta
+listofknownterminationtargets.Notethat,iftheboolean
+field isset tofalse, the runtimeoverheadisonly the cost
+ofloadingandcheckingthevalue,andthenbranchingfor-
+wardtotheremainderofthemethodbody.
+Figure6showshowthecodeletsoftterminationtrans-
+form(
+(cid:2)
+getstatic termination signal Z
+ifeq SKIP
+invokestatic termination handler()V
+SKIP: original invoke instruction
+Figure 6. Bytecodes inserted into Java for the
+softterminationcheck.
+code has a general-purpose branch instruction. We do
+nothing special for forward branches, but we treat back-
+wardbranchesasiftheyweremethodinvocationsandper-
+form the appropriate code transformation. An additional
+specialcasewemusthandleisabranchinstructionwhich
+targetsitself.
+Java bytecode also supports many constructions that
+have no equivalent Java source code representation. In
+particular,itispossibletoarrangeforthecatchportion
+of an exception handler to be equal to the try portion.
+That means an exception handler can be defined to han-
+dleitsownexceptions. Suchaconstructionallowsforin-
+finite loops without any method invocation or backward
+branching. While such code should most likely be re-
+jected by the Java bytecode verifier, as it is not allowed
+in the JVM specification [22], the bytecode verifier cur-
+rently treats such constructions as valid. We specifically
+checkforandrejectprogramswithoverlappingtryand
+catchblocks.
+Lastly, Java bytecode supports a notion of subroutines
+withinaJavamethodusingthejsrandretinstructions.
+jsrpushesareturnaddressonthestackwhichretcon-
+sumes before returning. The Java bytecode verifier im-
+poses a number of restrictions on how these instructions
+may beused. Inparticular,a returnaddress isanopaque
+typewhichmaybeconsumedatmostonce. Theverifier’s
+intentistoinsurethattheseinstructionsmaybeusedonly
+to createsubroutines, notgeneral-purpose branching. As
+such, we instrument jsr instructions the same way we
+wouldinstrumentamethodinvocationandwedonothing
+forretinstructions.
+4.3.Blockingcalls
+Toaddressblockingcalls,wefollowthetransformation
+outlined in section 3.3.2. Luckily, all blocking method
+calls in the Java system libraries are native methods
+(implemented in C) and can be easily enumerated and
+)wouldbeappliedtoaJavamethodinvoca-
+codelet
+studied by examining the source code of the Java class
+tion.
+libraries.
+4.2.Controlflow Java provides a mechanism for interrupting
+blocking calls: Thread.interrupt(). This
+Java has a much richer control flow than the little lan-
+method causes the blocking method to throw a
+guage introduced earlier. First and foremost, Java byte-
+java.lang.InterruptedException or
+3http://www.alphaworks.ibm.com/tech/cfparse java.io.InterruptedIOException exception.While the
+(cid:2)
+transformation is defined to poll a theycompleteexecution. Oncethetargetthreadhascom-
+non-blockingversion,wewouldprefertotakeadvantage pleted, the termination signals are cleared and execution
+oftheinterruptionsupportalreadyinsidetheJVM. returnstoitsnormalperformance.
+To accomplish this, we must track which threads are If multiple threads are executingconcurrently overthe
+currently blocking and the codelets on behalf of whom same set of classes and only one is terminated, the ter-
+they are blocking. The wrapper classes now get the cur- minationhandlerwillbeinvokedforthreadsnottargeted,
+rentthreadandsaveitinaglobaltableforlaterreference. only to return shortly thereafter. These threads will ex-
+Inordertolearnthecodeletonwhosebehalfweareabout periencedegradedperformancewhile thetargetthreadis
+toblock,wetakeadvantageofthestackinspectionprimi- stillrunning.
+tivesbuiltintomodernJavasystems[31,18]. In the case where we wish to terminate a specific
+Stack inspection provides two primitives that we use: codelet,disablingallitsclassesforever,wesimplysetthe
+java.security.AccessController. terminationsignalonallclassesinthecodeletandimme-
+doPrivileged() and getContext(). diately return. Anycode thatinvokesamethodona dis-
+getContext() returns an array of Protec- abled class will receive an exception indicating the class
+tionDomains that map one-to-one with codelets. hasbeenterminated.
+The ProtectionDomain identities are then saved Once a codelet has been signalled to terminated, if a
+alongside the current thread before the blocking call is codelet’sthreadisexecutinginasystemclassatthetime,
+performed. executioncontinuesuntilthethreadreturnstoauserclass.
+When we wish to terminate a codelet, we look up Ifthecodeletiscurrentlymakingablockingcall,thecall
+whetheritiscurrentlywaitingonablockedcall,andonly isinterruptedandthethreadresumesexecution. Oncethe
+thendoweinterruptthethread. thread has resumed executing in the user’s class, it be-
+Taking advantageofanother property ofJava stackin- comessubjecttothesoftterminationsystem.
+spection, we can distinguish between blocking calls be- For all codelet threads which are executing within the
+ing performed on behalf of system code and those being codelet,iftheytrytocallamethodwithinthecodelet,the
+performed indirectly by a codelet. Generally, we would methodfailswithanexception.Iftheytrytomakeaback-
+rather not interrupt a blocking call if system code is de- ward branch, the soft termination code added will throw
+pendingonitsresultand systemstatecouldbecomecor- anexception.Inallcases,eachthreadofcontrolunwinds,
+rupted if the call were interrupted. On the other hand, preventing the codelet from performing any meaningful
+wehavenoprobleminterruptingablockingcallifonlya work. Finally,ifanyothercodeletorthesystemmakesa
+codelet is depending on its result. Java system code al- call into this codelet, it will fail immediately, preventing
+readyusesdoPrivileged()tomarkregionsofprivi- the codelet from performing any meaningful work. As
+leged system code and getContext() to getdynamic showninsection3.3.2,thecodeletisguaranteedtotermi-
+traces for making access control checks. These regions nate.
+areexactlythesameregionswherepreservingsystemin- Note that termination requests can be handled concur-
+tegrity upon termination is important; if system code is rently. A potential for deadlock occurs where a thread
+using its own security privileges, it wants the operation could request its own termination, or where a cycle of
+to succeed regardless of its caller’s privileges. Thus, we threads may request each others’ termination. In pro-
+overload the semantics of these existing security primi- duction, where a user is manually terminating threads or
+tives to include whether blocking calls should be inter- codelets,thiswouldnotbeanissue. Theterminationop-
+rupted. erationitselfshouldnotbeprovidedtountrustedcodelets.
+Instead, it is protected using the same security mecha-
+4.4.Invokingtermination nismsasotherJavaprivilegedcalls.
+Oursystemsupportsthreekindsoftermination: termi-
+4.5.Optimizations
+nationofindividualthreads,terminationofthreadgroups,
+andterminationofcodelets. IfaJavamethodcontainsalargenumberofmethodin-
+Toterminateathreadorthreadgroup,wemustmapthe vocations, the transformed method may be significantly
+threadswewishtoterminatetothesetofcodeletspoten- larger than the original, causing performance problems.
+tiallyrunningthosethreadsandsettheterminationsignal We address this concern by observing that we get simi-
+onallclassesbelongingtothetargetcodelet.Furthermore, lar termination semantics by adding the soft termination
+wemustcheckifanyofthesethreadsarecurrentlyblock- checkattheentrypointstomethodsratherthanatthecall
+ing and interrupt them, as appropriate (see section 4.3). sites. So long as a soft termination check occurs either
+At this point, the thread requesting termination performs before or immediately after a method invocation, the re-
+aThread.join()onthetargetthread(s),waitinguntil sultingprogramwillexecutethesame.Additionally,weimplementedanoptimizationtostati- termination of the malicious thread. This would defeat
+callydetermineifamethodhasnooutgoingmethodcalls softtermination.
+(aleafmethod). Forleafmethods,aterminationcheckat
+thebeginningofthemethodisunnecessary.Ifthemethod 4.8.Systemcodeinterruptibility
+hasloops,theywillhavetheirownterminationchecks. If
+Ourworkfundamentallyassumesthatallsystemmeth-
+not,themethodisguaranteedtocompleteinafinitetime.
+odsthatmaybeinvokedbyacodeletwilleitherreturnin
+Regardless, removing the initial termination check from
+a finite time or will reach a blocking native method call
+leaf methods preservesthe semantics of soft termination
+whichcanbeinterrupted. Itmaybepossibletoconstruct
+and shouldoffera significant performanceimprovement,
+an input to system code that will cause the system code
+particularlyforshortmethodssuchas“getter”and“setter”
+itself to have an infinite loop. Addressing this concern
+methods.
+wouldrequirealengthyauditofthesystemcodetoguar-
+Amoreaggressiveoptimization,whichwehavenotyet
+antee there exist no possible inputs to system functions
+performed, wouldbeaninter-proceduralanalysisofstat-
+thatmayinfinitelyloop.
+ically terminating methods. A method which only calls
+otherterminatingmethodsandhasnobackwardbranches
+4.9.Memoryconsistencymodels
+willalwaysterminate.Likewise,wehavenotattemptedto
+distinguishloops that canbestatically determinedto ter- TheJavalanguagedefinesarelaxedconsistencymodel
+minate in a finite time(i.e., loops that canbecompletely whereupdatesneednotbepropagatedwithouttheuseof
+unrolled). Such analyses could offer significant perfor- locking primitives. In our current prototype, we use no
+mancebenefitstoaproductionimplementationofsoftter- synchronization primitives when accessing this variable.
+mination. Sinceexternalupdatestotheterminationsignalcouldpo-
+tentiallybeignoredbytherunningmethod,thiscouldde-
+4.6.Synchronization
+featthesoftterminationsystem.
+Aparticularlytrickyaspectofsupportingsofttermina- Instead,wetakeadvantageofJava’svolatilemod-
+tioninaJavasystemissupportingJava’ssynchronization ifier. Thismodifierisprovidedtoguaranteethatchanges
+primitives. must be propagated immediately [19]. On the bench-
+The Java language and virtual machine specifications markplatformweused, theperformanceimpactofusing
+arenotclearonhowthesystembehaveswhenadeadlock volatileversusnotusingitisnegligible.However,on
+isencountered[19,22].WithSun’sJDK1.2,theonlyway other platforms, especially multiprocessing systems, this
+torecoverfromadeadlockistoterminatetheJVM.Obvi- maynotbethecase.
+ously,thisisanunsatisfactorysolution. Ideally,wewould
+liketoseeamodificationtotheJVMwherelockingprimi- 4.10.Defensivesecurity
+tivessuchasthemonitorenterbytecodeareinterrupt-
+Ourprototypeimplementationmakesnoattempttopro-
+ibleasareotherblockingcallsinJava. Wecouldthenap-
+tect itself from bytecode designed specifically to attack
+plystandarddeadlockdetectiontechniquesandchosethe
+the termination system (e.g., setting the termination flag
+threadstointerrupt.
+to false, either directly or through Java’s reflection inter-
+Additionally, it is possible to construct Java classes
+face). Such protection could be added as a verification
+wherethethemonitorenterandmonitorexitop-
+stepbeforethebytecoderewriting.
+erations are not properly balanced. Despite the fact that
+there exist no equivalent Java source programs, current
+5. Performance
+JVM bytecode verifiers accept such programs. As such,
+it is possible for a malicious program to acquire a series
+We measured the performance of our soft termination
+oflocksandterminatewithoutthoselocksbeingreleased
+system using Sun Microsystems Ultra 10 workstations
+untiltheJVMterminates.
+(440 MHz UltraSparc II CPU’s, 128 MB memory, So-
+Our current system makes no attempt to address these
+laris 2.6), and Sun’sJava 2, version 1.2.1 build 4, which
+issues.
+includes a JIT. Our benchmarks were compiled with the
+correspondingversionofjavacwithoptimizationturned
+4.7.Threadscheduling
+on.
+Our work fundamentally assumes the Java thread sys- We used two classes of benchmark programs: mi-
+tem is preemptive. This was not the case in many early crobenchmarks that test the impact of soft termination
+Javaimplementations. Withoutapreemptivescheduler,a on various Java language constructs (and also measuring
+maliciouscodeletcouldenteraninfiniteloopandnoother worst case performance), and macrobenchmarks which
+threadwouldhavetheopportunitytorunand requestthe represent a number of real-world applications. We mea-Microbenchmark Performance
+3 2.679 2.642 2.849
+2.5
+2.156 2.135
+2 1.991
+1.5
+1.0301.041 1.1401.137 1.0921.042
+1
+0.5
+0
+Empty Loop Loop Field Loop Method Exceptions Synchronization Input/Output
+Operation Invocation
+M C icrobenchmarks
+sessalC
+deifidomnU
+ot evitaleR
+emitnuR
+Original Classes
+Modified Classes
+Modified Optimized
+Figure7.Performanceofrewrittenmicrobench-
+mark class files relative to the performance of
+thecorrespondingoriginalclassfiles.
+Application Performance
+1.6
+1.425
+1.4
+1.2 1.0821.062 1.0671.032 1.181
+1.2171.253
+1
+0.8
+0.6
+0.4
+0.2
+0
+JavaCup Jess OTP LinPack
+Applications
+deifidomnU
+ot
+evitaleR
+emitnuR
+sessalC
+As one would expected, tight loops suffered the worst
+slow-downs: roughly a factor of two. When we rewrite
+theloop,theterminationcheckcostsroughlythesameas
+theoriginalloopterminationcheck,soit’ssensibletosee
+afactoroftwoperformancedegradation.
+Forothermicrobenchmarks,wesawmuchsmallerover-
+heads. Theoverheadofhandling exceptions, performing
+synchronization, or doing I/O operations dominates the
+costofcheckingfortermination. Thelargestoverheadof
+these was14% for thesynchronizationmicrobenchmark.
+The additional overhead can be attributed to performing
+theterminationcheckonceforeachiterationoftheloop.
+For the I/O and exception-handling microbenchmarks,
+the performance figures are much better. Since I/O and
+exception handlingarerelativelycostlyoperations, mod-
+ifications don’t have as significant an impact on perfor-
+mance.
+We observe that the leaf method optimization gener-
+ally has a small performance benefit. The loop method
+invocationmicrobenchmarkshowsthemostdramaticim-
+provement;theoptimizedbenchmarkruns30%fasterthan
+the unoptimized benchmark. In one case, the exception
+Original Classes handling benchmark, the optimizedprogram ranroughly
+Modified Classes
+Modified Optimized 1%slowerthantheunoptimizedprogram. Similarbehav-
+ior occurred in the Linpack macrobenchmark. The op-
+timized programs are genuinely performing fewer termi-
+nation checks, but still have a longer running time. The
+culpritappearstobeSun’sJITcompiler(sunwjit). When
+the benchmarks are run with the JIT disabled, the opti-
+Figure 8. Performance of rewritten application mizedprogramsarestrictlyfasterthanthenon-optimized
+class files relative to the performance of the programs. We have observed similar deviant behavior
+correspondingoriginalclassfiles. with Sun’s HotSpot JIT running on Sparc/Solaris and
+Linux/x86.WehavesentanappropriatebugreporttoSun.
+5.2.Applicationbenchmarks
+sured the performance ofthese systems in three configu-
+rations:theiroriginalunmodifiedstate,theirstateafterbe-
+Webenchmarkedthereal-worldapplicationsJavaCup5,
+ingrewritten,andtheirstateafterbeingrewrittenwiththe Linpack6, Jess7, and JOTP8. These programs were cho-
+leaf method optimization discussed in section 4.5. Gen- sentoprovidesufficientlybroadinsightintooursystem’s
+erally,whenwediscussresultsinthissection,wereferto performance.
+theoptimizednumbers. JavaCup,aparser-generator,waschosentodemonstrate
+how the rewritten classes perform in handling text pro-
+5.1.Microbenchmarks cessing. Jess, an expert system, was chosen to demon-
+stratetheperformanceoftherewrittenclassesinhandling
+We first measured a series of microbenchmarks to symbolic data and solving logic problems. Linpack is a
+stress-test the JVM with certain language constructs: loop-intensivefloating-point benchmark. JOTP is a one-
+looping, method and field accesses, exception handling, timepasswordgeneratorwhichusesacryptographichash
+synchronization, and I/O. We used a microbenchmark function. Theresultsareshowninfigure8.
+packagedevelopedatUniversityofCalifornia,SanDiego,
+ftp/benchmarks/Benchmark.java
+and modified at University of Arizona for the Sumatra 5http://www.cs.princeton.edu/˜appel/modern/
+Project4. Theresultsareshowninfigure7. java/CUP/
+6http://netlib2.cs.utk.edu/benchmark/
+4The original web site is http://www-cse.ucsd.edu/ linpackjava/
+users/wgg/JavaProf/javaprof.html. The source we used 7http://herzberg1.ca.sandia.gov/jess/
+wasdistributedfromhttp://www.cs.arizona.edu/sumatra/ 8http://www.cs.umd.edu/˜harry/jotp/Microbenchmarks ApplicationBenchmarks
+Microbenchmark ChecksperSecond ApplicationBenchmark ChecksperSecond
+Unoptimized Optimized Unoptimized Optimized
+EmptyLoop 4
+(cid:4)
+723
+D
+107 4
+(cid:4)
+843
+D
+107 JavaCup 2
+(cid:4)
+771
+D
+107 2
+(cid:4)
+152
+D
+107
+LoopFieldOperation 3
+(cid:4)
+887
+D
+107 3
+(cid:4)
+914
+D
+107 Jess 1
+(cid:4)
+013
+D
+107 1
+(cid:4)
+501
+D
+107
+LoopMethodInvocation 3
+(cid:4)
+995
+D
+107 3
+(cid:4)
+515
+D
+107 JOTP 4
+(cid:4)
+102
+D
+107 2
+(cid:4)
+905
+D
+107
+Exceptions 3
+(cid:4)
+729
+D
+107 7
+(cid:4)
+366
+D
+107 Linpack 3
+(cid:4)
+128
+D
+107 2
+(cid:4)
+598
+D
+107
+Synchronization 5
+(cid:4)
+427
+D
+107 4
+(cid:4)
+082
+D
+107
+Input/Output 5
+(cid:4)
+978
+D
+105 9
+(cid:4)
+713
+D
+105
+Figure9.Averagenumberofterminationchecksperformedperonesecondofincreaseinruntimeforthe
+microandapplicationbenchmarks.
+For the JavaCup test, we generated a parser for the
+Java 1.1 grammar. There was a modest 6% increase in
+execution time. For the Jess test, we ran several of the
+sample problems included with Jess through the system,
+andcalculated thecumulativeruntimes. Therewasa 3%
+increaseinexecutiontime. BothJavaCupandJessrepre-
+sentapplicationswhichdonotmakeextensiveuseoftight
+loops.Instead,theseapplicationsspendmoreoftheirtime
+performing I/O and symbolic computations. Their per-
+formance closely tracks the performance of the I/O mi-
+crobenchmark.
+For the Java OTP generator, we generated a one-time
+passwordfromarandomly-chosenseedandpassword,us-
+ing200,000iterations. Therewasa18%increaseinrun-
+time. For the Linpack benchmark, there was a 25% in-
+crease in runtime. Linpack is a loop-intensive program,
+while JOTP makesextensiveuse ofmethod calls aswell
+asloops. Asaresult,wewouldexpecttheirperformance
+to more closely track the loop-based microbenchmarks.
+Note in particular the benefit JOTP got from the leaf
+methodoptimization.
+5.3.Terminationcheckoverhead
+To gauge the actual impact of our class file modifica-
+tions,wecountedthenumberoftimeswecheckedtheter-
+minationflag for eachbenchmark. Using this, we calcu-
+lated the number of termination checks being performed
+per every second increase in runtime overhead. The re-
+sultsforallbenchmarksarelistedinfigure9.
+Forthethreeloopingmicrobenchmarks,Wefoundthat
+roughly40
+(cid:23)
+000
+(cid:23)
+persecondofoverhead.
+For the input/output microbenchmark, however, only
+around 970
+000checksareperformed for everysec-
+ond of runtime overhead. This evaluates to around 10
+CPU cyclesfor eachcheck performed. Likewise, for the
+exception and synchronization microbenchmarks, while
+the cost of performing these original operations far out-
+weighsthecostoftheterminationchecks,stillweseethe
+samenumberof,andsometimesmore,terminationchecks
+(cid:23)
+000 termination checks are performed per
+secondofoverhead.Thiscanbeattributedtotheotherop-
+erationsbeingperformedbytheinput/outputbenchmark.
+Inparticular,itneedstocontendwiththeadditionalover-
+headoftheblockingcallmanagementcode. Itisalsoim-
+portanttokeepinmindthatthecostofperformingI/Ofar
+outweighsthecostofterminationchecks.
+Theapplicationbenchmarksreflecttheresultsofthemi-
+crobenchmarks. All of these results fell within the same
+range, between 15
+(cid:23)
+000
+(cid:23)
+000 and 29
+(cid:23)
+000
+(cid:23)
+000 checks per
+second of overhead. Since none of the benchmarks per-
+form any significant amount of I/O, these figures are in
+linewiththemicrobenchmarksresults.
+These performance figures seem to indicate that for
+real-world applications, the showdown will be roughly
+proportional to how much the application’s performance
+isdependentontightloops. Applicationswhichhavetight
+loops may experience at worst a factor oftwo slowdown
+andmorecommonly15
+E
+25%.Applicationswithouttight
+loopscanexpectmoremodestslowdowns,mostlikelybe-
+low 7%. The number of termination checks the system
+can performpersecondseems notto bea limitingfactor
+insystemperformance.
+6. Softtermination inpractice
+Inordertodemonstrateoursoftterminationsystem,we
+integrateditintotheJigsawwebserver. Jigsaw isafree,
+openJava-basedwebserverwhichsupportsservlets9. We
+integrated our bytecode-rewritingsystem into the servlet
+loader for Jigsaw. Thus, everyservlet that is loaded into
+Jigsawisfirstrewrittentosupportsofttermination.
+We also wrote an administrative screen similar to the
+toputilityinUNIX.Itprovidesalistofallactiveservlets
+9http://www.w3.org/Jigsaw/on the system. It also gives an option to terminate a
+servlet.Selectingthisoptionactivatestheterminatesignal
+in the specified servlet. We observedthat servlets would
+takeatmosttensecondstoterminate.
+A numberofattacks againstJavafocusing onresource
+exhaustionhavebeenproposed[24]. Severalofthesefo-
+cusonflawsin Java’saccesscontrolframework. Forex-
+ample, the standard recipe for designing such attack in-
+cludessettingathreadsprioritytottMAX PRIORITYto
+help ensure the program does its job. Java specifies an
+accesscontrolprivilegeforchangingthreadpriority. The
+more serious Business Assassin applet relied on Java al-
+lowingunprivilegedthreadstostopone-another. Oursoft
+terminationsystemdoesnottrytostoptheseattacks.
+A number of other resource exhaustion attacks do
+not take advantage of flaws in Java’s security system.
+These include creating threads which loop infinitely,
+overriding the Applet.stop() method, or catching a
+ThreadDeath exception and recreating the thread. As
+mentioned in section 4.4, soft termination successfully
+stopssuchapplets.
+7. Conclusion
+While Java and other general-purpose language-based
+systems for codeletshavegoodsupportfor memory pro-
+tection, authorization, and access controls, there is little
+support for termination. Without termination, a system
+can be vulnerable to denial-of-service attacks or even to
+bugswhereafaultycodelethasaninfiniteloop.
+Wehaveintroducedaconceptwecallsofttermination,
+alongwithaformaldesignandanimplementationforJava
+thatallowsforasynchronousandsafeterminationofmis-
+behaving or malicious codelets. Soft termination can be
+implemented without making any changes to the under-
+lyinglanguageorruntimesystem. OurJavaimplementa-
+tionreliessolelyonclass-filebytecoderewriting,making
+itportableacrossJavasystemsandeasiertoconsiderap-
+plying to non-Java systems. In real-world benchmarks,
+our system shows slow-downs of 3
+E
+8. Acknowledgments
+Jiangchun “Frank” Luo and Liwei Peng helped imple-
+mentanearlyprototypeofthissystem.MatthiasFelleisen
+andShriramKrishnamurthyprovidedmanyhelpfulcom-
+ments. This work is supported by NSF Grant CCR-
+9985332.
+References
+[1] J. Alves-Foss, editor. Formal Syntax and Semantics of
+Java. Number 1523 in Lecture Notes in Computer Sci-
+ence.Springer-Verlag,July1999.
+[2] G. Back and W. Hsieh. Drawing the Red Line in
+Java. In Proceedings of the Seventh IEEE Workshop
+on Hot Topics in Operating Systems, Rio Rico, Arizona,
+Mar. 1999. http://www.cs.utah.edu/flux/
+papers/redline-hotos7.ps.
+[3] G. Back, W. C. Hsieh, and J. Lepreau. Pro-
+cesses in KaffeOS: Isolation, resource management,
+and sharing in Java. In Proceedings of the Fourth
+Symposium on Operating Systems Design and Im-
+plementation (OSDI 2000), San Diego, California,
+Oct. 2000. http://www.cs.utah.edu/flux/
+papers/kaffeos-osdi00-base.html.
+[4] G. Back, P. Tullmann, L. Stoller, W. C. Hsieh, and
+J. Lepreau. Techniques for the design of Java Op-
+erating System. In Proceedings of the 2000 Usenix
+Annual Technical Conference, San Diego, California,
+June 2000. http://www.cs.utah.edu/flux/
+papers/javaos-usenix00-base.html.
+[5] P. Bernadat, D. Lambright, and F. Travostino. Towards
+aresource-safeJavaforserviceguaranteesinuncoopera-
+tive environments. In IEEE Workshop on Programming
+LanguagesforReal-TimeIndustrialApplications,Madrid,
+Spain,Dec.1998.
+[6] G. Cohen, J. Chase, and D. Kaminsky. Automatic pro-
+gram transformation with JOIE. In Proceedings of the
+1998 Usenix Annual Technical Symposium, pages 167–
+178,NewOrleans,Louisiana,June1998.
+[7] G.CzajkowskiandT.vonEicken. JRes: Aresourceac-
+counting interface for Java. In Proceedings of the ACM
+Conference on Object-Oriented Programming, Systems,
+Languages, and Applications, pages 21–35, Vancouver,
+BritishColumbia,Oct.1998.
+25%. This could [8] D.Dean. Thesecurityofstatictypingwithdynamiclink-
+possibly be further reduced if we could leverage a safe ing. InFourthACMConferenceonComputerandCom-
+pointmechanismalreadyimplementedwithintheJVM. municationsSecurity,Zurich,Switzerland,Apr.1997.
+Alargerresearcharearemains: buildinglanguagerun- [9] D.Dean. FormalAspectsofMobileCodeSecurity. PhD
+thesis, PrincetonUniversity, Princeton,NewJersey, Nov.
+times that support the general process-management se-
+1998.
+manticsofoperatingsystems. Becauselanguageruntimes
+[10] D.Dean,E.W.Felten,D.S.Wallach,andD.Balfanz.Java
+allow and take advantage of threads and memory refer-
+security: Web browsers and beyond. In D. E. Denning
+ences that easily cross protection boundaries, traditional
+andP.J.Denning,editors,InternetBesieged: Countering
+operatingsystemprocessesmaynotbetheappropriatein
+Cyberspace Scofflaws, pages241–269.ACMPress, New
+thisnewsetting. Opportunitiesexisttodesignnewmech- York,NewYork,Oct.1997.
+anisms to add these semantics to programming language [11] S. Drossopoulou and S. Eisenbach. Java is type safe —
+runtimes. probably. InProceedingsoftheEuropeanConferenceonObject-OrientedProgramming (ECOOP ’97), Jyva¨skyla¨, [22] T.LindholmandF.Yellin.TheJavaVirtualMachineSpec-
+Finland,June1997. ification.Addison-Wesley,Reading,Massachusetts,1996.
+[12] S. Drossopoulou, D. Wragg, and S. Eisenbach. What is [23] D.Malkhi,M.Reiter,andA.Rubin. Secureexecutionof
+Java binary compatibility? In Proceedings of the ACM Javaappletsusingaremoteplayground.InProceedingsof
+Conference on Object-Oriented Programming, Systems, the1998IEEESymposiumonSecurityandPrivacy,pages
+Languages,andApplications,pages341–358,Vancouver, 40–51,Oakland,California,May1998.
+BritishColumbia,Oct.1998. [24] G. McGraw and E. W. Felten. Securing Java: Getting
+[13] G.Edjlali,A.Acharya,andV.Chaudhary. History-based Down to Business with Mobile Code. John Wiley and
+accesscontrolformobilecode. InProceedingsofthe5th Sons,NewYork,NewYork,1999.
+ACMConference onComputer andCommunicationsSe- [25] K.Nilsen,S.Mitra,S.Sankaranarayanan,andV.Thanu-
+curity(CCS’98),pages38–48,SanFrancisco,California, van. Asynchronous Java exception handling in a
+Nov.1998.ACMPress. real-time context. In IEEE Workshop on Program-
+[14] U.ErlingssonandF.B.Schneider. SASIenforcementof ming Languages for Real-Time Industrial Applications,
+securitypolicies: A retrospective. InProceedingsofthe Madrid, Spain, Dec. 1998. NewMonics, Inc. http:
+1999 New Security Paradigms Workshop, Caledon Hills, //www.newmonics.com/news/conferences/
+Ontario,Canada,Sept.1999.ACMPress. rtss/plrtia/async.exception.pdf.
+[15] M.Feeley. Pollingefficientlyonstockhardware. InPro- [26] E. G. Sirer, R. Grimm, A. J. Gregory, and B. N. Ber-
+ceedings of the conference on Functional programming shad. Designandimplementationofadistributedvirtual
+languagesandcomputerarchitecture, Copenhagen,Den- machinefornetworkedcomputers. InProceedingsofthe
+mark,June1993. SeventeenthACMSymposiumonOperatingSystemPrin-
+[16] M.FelleisenandR.Hieb. Therevisedreportonthesyn- ciples,pages202–216,KiawahIslandResort,SouthCar-
+tactictheoriesofsequentialcontrolandstate. Theoretical olina,Dec.1999.ACM.
+ComputerScience,102:235–271,1992. [27] R. Stata and M. Abadi. A type system for Java byte-
+[17] M. Flatt, R. B. Findler, S. Krishnamurthy, and codesubroutines. InProceedingsofthe25thACMSym-
+M. Felleisen. Programming languages as operating sys- posium onPrinciplesofProgramming Languages, pages
+tems (or revenge of the son of the Lisp machine). In 149–160.ACM,Jan.1998.
+Proceedings of the 1999 ACM International Conference [28] P. Tullman and J. Lepreau. Nested Java processes: OS
+on Functional Programming (ICFP ’99), Paris, France, structureformobilecode. InEighthACMSIGOPSEuro-
+Sept.1999. http://www.cs.rice.edu/CS/PLT/ peanWorkshop,Sept.1998.
+Publications/icfp99-ffkf.ps.gz. [29] L. van Doorn. A secure Java virtual machine. In Ninth
+[18] L.Gong. Inside Java 2PlatformSecurity: Architecture, USENIX Security Symposium Proceedings, Denver, Col-
+APIDesign,andImplementation. Addison-Wesley,Read- orado,Aug.2000.
+ing,Massachusetts,June1999. [30] D.S.Wallach,D.Balfanz,D.Dean,andE.W.Felten.Ex-
+[19] J.Gosling,B.Joy,andG.Steele.TheJavaLanguageSpec- tensiblesecurityarchitecturesforJava. InProceedingsof
+ification.Addison-Wesley,Reading,Massachusetts,1996. theSixteenthACMSymposiumonOperatingSystemPrin-
+[20] C. Hawblitzel, C.-C. Chang, G. Czajkowski, D. Hu, and ciples,pages116–128,Saint-Malo,France,Oct.1997.
+T.vonEicken.Implementingmultipleprotectiondomains [31] D.S.WallachandE.W.Felten. UnderstandingJavastack
+in Java. In USENIX Annual Technical Conference, New inspection. InProceedingsofthe1998IEEESymposium
+Orleans,Louisiana,June1998.USENIX. onSecurityandPrivacy, pages52–63,Oakland, Califor-
+[21] M. Hicks, P. Kakkar, J. T. Moore, C. A. Gunter, and nia,May1998.
+S. Nettles. PLAN: A Packet Language for Active Net-
+works. In Proceedings of the Third ACM SIGPLAN In-
+ternationalConferenceonFunctionalProgrammingLan-
+guages,pages86–93.ACM,1998. http://www.cis.
+upenn.edu/˜switchware/papers/plan.ps.

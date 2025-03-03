@@ -1,0 +1,355 @@
+DELTA: A Security Assessment Framework
+for So9ware-Defined Networks
+SEUNGSOO LEE†, CHANGHOON YOON†, CHANHEE LEE†, SEUNGWON
+SHIN†, VINOD YEGNESWARAN‡, PHILLIP PORRAS‡
+† KAIST ‡SRI INTERNATIONALOutline
+1. Background and Mo2va2on
+2. System Design
+3. Blackbox Fuzzing
+4. Implementa=on
+5. Evalua=on
+6. Conclusion
+2 / 23What is So9ware-defined Networking?
+● SoCware Defined Networking (SDN)
+SDN Controller
+• Separate the control plane from the data plane
+● Centralized network management
+• Via global network view
+● Programmable network
+• Flexible and dynamic network control
+Control Plane
+• Useful, innova=ve SDN applica=ons
+Data Plane
+● OpenFlow protocol Control Plane
+• A de-facto standard
+Data Plane
+Control Plane
+Data Plane
+Control Plane
+Network Device
+Data Plane
+3 / 23MoSvaSng Example
+● Event Listener Unsubscrip=on aSack [1]
+Malicious App Firewall Load Balancer L2 Forwarding
+(5)
+PACKET_IN
+PACKET_IN
+Packet-IN No2fier
+Load B alancer
+(1)
+Core Services
+(2) L2 Forw arding
+SDN Controller
+(4) PACKET_IN
+(6)
+(3)
+SDN Switch
+Host A Host B
+[1] hSp://sdnsecurity.org/vulnerability/ASackList.html 4 / 23A network operator wants to know …
+Is my SDN secure?
+A Security Assessment Framework
+for So?ware-Defined Networks
+• Which vulnerabili2es exist now?
+• How to reproduce each test case?
+• Any more vulnerabili2es?
+• …
+5 / 23DELTA: A Security Assessment Framework for SDN
+Security Assessment Framework for SDN
+Reproducing Known
+Finding Unknown
+AFack Cases ASack Cases
+● We propose a SDN penetra=on framework that can …
+20
+1. Cover as many aVack scenarios as possible
+2. Be highly automated, to minimize the human exper=se and =me
+necessary to conduct tes=ng
+3. Be inter-operable with a diverse set of SDN components
+6 / 23DELTA: A Security Assessment Framework for SDN
+Security Assessment Framework for SDN
+Finding Unknown
+Reproducing Known
+ASack Cases AFack Cases
+● DELTA can assist in finding unknown aSack cases
+7
+• By adop=ng blackbox fuzzing techniques
+● What target?
+• SDN control flows (i.e., OpenFlow messages)
+7 / 23System Design
+●●●●● KAACHehgpoyeaps ntnlci ntcao agemm=el apaonnognt aen agnegetne rt ns to f DELTA
+Out-of-band, dedicated
+DELTA c• o nAtro lle ngeit=wmorakt e network host par=cipa=ng in the target SDN
+• The “Control tower”
+• Generates network traffic as instructed by the agent manager
+• SDN applica=ons that conduct aSack procedures as instructed
+• Re•m o ete .gly
+.
+Dco Dn ot Sr ,o Lls
+L
+Dth Pe
+i
+na jg ee cn =t os
+n
+d ee tp cl .o yed to the target network
+by the manager
+• Leverages different agents to perform various security test cases
+• The know• n Ims aloliccaioteuds bfuentwc2eoenns t haree c iomnptrleomlleern atnedd tahse a snw aiptcphli ca=on
+• Analyzes the test results collected from the agents
+agent library
+• Sniffs and modifies the unencrypted control messages
+• Fuzzing modules (control flow sequence and input value)
+• Fuzzing modules (control flow sequence and input value)
+8 / 23Basic OperaSon
+● Procedure for genera=ng known and unknown test cases
+Fuzzing
+Modules
+1. Select reproducing known
+Fuzzing
+test case or finding unknown
+Modules
+test case
+OpenFlow Messages
+2. Instruct each agent to
+conduct the test
+3. Collect the result of the
+test from each agent
+4. No2fy the result
+9 / 23Blackbox Fuzzing
+● To more efficiently and systema2cally randomize control flows
+(i.e., OpenFlow messages)
+● Define three types of control flow opera=ons
+• Symmetric control flow
+SDN Applica2ons
+SDN Applica2on
+• Asymmetric control flow
+• Intra-controller control flow
+Core services
+(e.g., topology manager)
+MRESQG
+MSG
+SDN Switch
+MRSEGS
+SDN controller
+10 / 23OperaSonal State Diagram
+Ee send HELLO receive HELLO send FEATURES_REQ receive FEATURES_RES send GET_CONFIG_REQ receive GET_CONFIG_RES send SET_CONFIG
+S1 S2 S3 S4 S5 S6 S7
+send STATS_REQ S8 receive S STAT xS _RES àS9 Sdel yiver
+m
+to ap mplicat eions
+tric flow transiSons
+update topology
+receive PORT_STATUS update topology
+A1
+send ECHO_REQ receive EC HO_RES
+S10 S11
+update topology
+A3 I1
+Rr
+Ax à Asymmetric flow transiSons
+send VENDOR receive VENDOR send FLOW_MOD
+S12 S13
+send BARRIER_REQ receive BARRIER_RES
+S14 S15
+receive PACKET_IN deliver to applications
+A2
+update internal
+flow tables
+send FLOW_MOD update internal flow tables
+à Intra-cAo4 ntroller flow transiSons
+Ix
+receive FLOW_REMOVED update internal flow tables
+A5
+send PACKET_OUT
+send PORT_MOD update internal flow tables
+A6
+send PACKET_OUT update internal flow tables
+A7 I2
+1. Inferring current state
+2. Manipula=ng the control flow sequence or input values
+11 / 23Randomizing Control Flow Sequence
+● In the case of symmetric control flows
+send HELLO receive HELLO send FEATURES_REQ receive FEATURES_RES send GET_CONFIG_REQ receive GET_CONFIG_RES send SET_CONFIG
+S1 S2 S3 S4 S5 S6 S7
+R
+SDN controller SDN Switch
+HELLO
+HELLO
+FEATURE_REQ
+FEATURE_RES
+GET_CONFIG_REQ
+GET_CONFIG_RES
+SET_CONFIG
+12 / 23Randomizing Control Flow Sequence
+● In the case of asymmetric control flows
+A3
+R
+receive PACKET_IN deliver to applications
+A2
+AApppp DA AApppp BC AApppp CB AApppp DA
+(2)
+Packet-IN
+Core Services
+No2fier
+SDN controller
+(1) Message
+SDN Switch SDN Switch
+Host A Host B
+13 / 23Randomizing Input Values
+● Between an SDN controller and an SDN switch
+● Between applica=ons
+A3
+R
+SDN controller
+receive PACKET_IN deliver to applications
+A2
+send FLOW_MOD
+A4
+FLOW_MOD
+e.g.) ADD (0x0000)
+à (Undefined) (0x0005)
+SDN Switch
+14 / 23ImplementaSon
+● Supports four different SDN controllers
+• 3 open source controllers (ONOS, OpenDaylight, and Floodlight)
+• 1 commercial controller
+● OpenFlow v1.0 and v1.3 supported
+< Supported applicaSon agents >
+ONOS OpenDaylight Floodlight A commercial one
+Version 1.2 1.3 1.4 1.5 Hydrogen Helium Lithium Beryllium 0.91 1.0 1.1 1.2 2.3.0
+Release Date 6/5/15 9/18/15 12/16/15 3/10/16 2/4/14 9/29/14 6/29/15 2/22/16 12/8/14 12/30/14 4/17/15 2/7/16 2016
+Supported ✓ ✓ ✓ ✓ ✓ ✓ ✓ - ✓ ✓ ✓ ✓ ✓
+15 / 23EvaluaSon
+1. Fuzz-tes2ng Effec2veness
+(Finding unknown aSacks)
+2. Test Coverage and Flexibility
+(Reproducing known aSacks)
+16 / 23Use Case 1: Finding Unknown A]acks
+● How to detect a vulnerability 1. A controller crash
+2. An applica=on crash
+• Based on defined test criteria
+3. Internal-storage poisoning
+4. A switch disconnec=on
+5. Switch-performance downgrade
+6. Error-packet genera=on
+● Effec2veness of fuzz tes=ng
+7. Inter-host communica=on
+• 7 unknown aVack cases found
+disconnec=on
+< Test Criteria >
+Unknown AFack Name Flow Target
+Sequence and Data-Forge Asymmetric Floodlight
+Stats-Payload-Manipula=on Symmetric Floodlight, OpenDaylight
+Echo-Reply-Payload-Manipula=on Symmetric OpenDaylight
+Service-Unregistra=on Intro-controller OpenDaylight
+Flow-Rule-Obstruc=on Intro-controller ONOS
+Host-Tracking-Neutraliza=on Intro-controller ONOS
+Link-Discovery-Neutraliza=on Intro-controller Floodlight
+< Unknown aFack classificaSon >
+17 / 23Use Case 1: Finding Unknown A]acks
+● Sequence and Data-Forge ASack
+• Target: asymmetric control flow and Floodlight v1.2
+Modified
+PAKCET_IN
+AppLink FuzzingTopology OTthoeprology App FOutzhzeinrg
+ADgeisnctoveMryodulesManager AppliMcaatnioangser AgentApMploicdautlieosns
+PPAACCKKEETT__IINN OOtthheerr
+CCoorree SSeerrvviicceess
+NNoottiififieerr SSeerrvviicceess
+FFllooooddlliigghhtt IInnssttaannccee
+1. Select Asymmetric control flow
+AAggeenntt CCoonnttrroolllleerr
+2. Start fuzz tes=ng
+MMaannaaggeerr PAKCET_IN
+3. Randomize the control flow
+NNNNeeeettttwwwwoooorrrrkkkk HHHHuuuubbbb
+sequence first CChhaannnneell AAggeenntt
+4. Generate packets
+5. Randomize the contents
+SSwwiittcchh SSwwiittcchh
+of the PACKET_IN message HHoosstt AAggeenntt NNoorrmmaall HHoosstt
+18 / 23Use Case 1: Finding Unknown A]acks
+● Results of the Sequence and Data-Forge aSack experiment
+(Floodlight v1.2)
+1. A controller crash
+2. An applica=on crash
+3. Internal-storage poisoning
+4. A switch disconnecSon
+5. Switch-performance downgrade
+6. Inter-host communica=on
+disconnec=on
+7. Error-packet genera=on
+< Test Criteria >
+19 / 23Use Case 2: Reproducing Known A]acks [1]
+Flow Type AFack AFack Name Controller
+O: Successful
+Code ONOS OpenDaylight Floodlight
+X: Unsuccessful
+Symmetric Flows SF-1 Switch Table Flooding X X O
+N/A: Not available
+SF-2 Switch Iden=fica=on Spoofing X O O
+SF-3 Malformed Control Message X O O
+SF-4 Control Message Manipula=on O O O
+Asymmetric Flows AF-1 Control Message Drop O O O
+AF-2 Control Message Infinite Loop O O O
+AF-3 PACKET_IN Flooding O O O
+AF-4 Flow Rule Flooding O O O
+AF-5 Flow Rule Modifica=on O O O
+AF-6 Switch Firmware Misuse O O O
+AF-7 Flow Table Clearance O O O
+AF-8 Eavesdrop O O O
+AF-9 Man-In-The-Middle O O O
+Intra-controller CF-1 Internal Storage Misuse O O O
+Flows CF-2 Applica=on Evic=on O O N/A
+CF-3 Event Listener Unsubscrip=on N/A O O
+Non Flow NF-1 System Command Execu=on O X O
+Opera2ons NF-2 Memory Exhaus=on X O O
+NF-3 CPU Exhaus=on X O O
+NF-4 System Variable Manipula=on O O O
+[1] hSp://sdnsecurity.org/vulnerability/ASackList.html 20 / 23Use Case 2: Reproducing Known A]acks
+● Flexibility of DELTA
+• 3 open source controllers and 1 commercial controller
+• For example: Applica=on Evic=on ASack
+ACTIVE
+INACTIVE
+21 / 23Conclusion
+● We categorize known vulnerabili=es that can mislead network
+opera=ons into three control flow types and non flow opera=ons
+● We propose an automated security assessment framework for
+SDN capable of reproducing those vulnerabili=es
+● We incorporate blackbox fuzzing techniques into our framework
+to detect new unknown aVack scenarios
+● We show the flexibility of system design by evalua=ng it against
+three popular open-source SDN controllers and the commercial
+controller
+● DELTA is now available as on OFFICIAL ONF Sponsored Open
+Source Project hVps://github.com/OpenNetworkingFounda2on/
+delta
+22 / 23Q&A
+23 / 23Appendix: Performance
+Control Flow Type Average Running Time AFack Name Controller
+Asymmetric Control Flow 82.5 sec ONOS ODL Floodlight
+Switch Table Flooding - - 5400 sec
+Symmetric Control Flow 80.4 sec
+Switch Iden=fica=on Spoofing 16.09 sec 16.34 sec 15.96 sec
+Intra-controller Control Flow 75.2 sec
+Malformed Control Message 21.50 sec 12.33 sec 11.09 sec
+Control Message Manipula=on 28.10 sec 19.27 sec 18.60 sec
+Finding unknown aFack microbenchmark
+Control Message Drop 12.55 sec 8.47 sec 3.13 sec
+Control Message Infinite Loop 3.38 sec 8.12 sec 3.21 sec
+PACKET_IN Flooding 12.59 sec 17.79 sec 11.96 sec
+Flow Rule Flooding 43.65 sec 23.28 sec 43.20 sec
+Flow Rule Modifica=on 40.43 sec 40.24 sec 20.35 sec
+Switch Firmware Misuse 20.52 sec 20.25 sec 20.20 sec
+Flow Table Clearance 20.60 sec 20.32 sec 20.17 sec
+Eavesdrop 33.62 sec 33.18 sec 33.14 sec
+Man-In-The-Middle 17.80 sec 17.19 sec 7.88 sec
+Internal Storage Misuse 2.60 sec 3.14 sec 2.14 sec
+Applica=on Evic=on 22.57 sec 13.33 sec N/A
+Event Listener Unsubscrip=on N/A 13.22 sec 13.11 sec
+System Command Execu=on 0.028 sec 0.095 sec 0.127 sec
+About 5 minutes
+Memory Exhaus=on 23.54 sec 23.20 sec 23.16 sec
+CPU Exhaus=on 23.43 sec 23.36 sec 23.35 sec
+Reproducing known aFacks microbenchmark System Variable Manipula=on 3.39 sec 4.86 sec 3.17 sec
+Total 346.38 sec 317.98 sec 274.84 sec
+24 / 23

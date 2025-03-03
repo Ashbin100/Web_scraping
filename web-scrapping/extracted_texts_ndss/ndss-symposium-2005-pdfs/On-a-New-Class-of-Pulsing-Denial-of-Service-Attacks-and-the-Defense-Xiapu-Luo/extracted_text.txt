@@ -1,0 +1,1552 @@
+On a New Class of Pulsing Denial-of-Service Attacks and the Defense
+XiapuLuoandRockyK.C.Chang
+Department ofComputing
+TheHongKongPolytechnicUniversity
+Kowloon,HongKong,SAR,China
+{csxluo,csrchang}@comp.polyu.edu.hk
+Abstract bandwidth, e.g. DNS reply flooding, or exhaust the vic-
+tim’s system resources, e.g. SYN flooding. Based on
+ananomalousriseinthetrafficrate,theseflooding-based
+Inthispaperweanalyzeanewclassofpulsingdenial- attacks can be easily detected at the victim’s side. The
+of-service (PDoS) attacks that could seriously degrade response to the detection is usually to ask the upstream
+the throughput of TCP flows. During a PDoS attack, provider to drop the attack packets inscribed with the
+periodic pulses of attack packets are sent to a vic- victim’s address. Since the attack packets usually con-
+tim. The magnitude of each pulse should be significant tainspoofedsourceIPaddresses,variousdetectionmech-
+enough to cause packet losses. We describe two spe- anisms based on other signatures have been proposed,
+cific attack models according to the timing of the at- suchasthestatisticaldistributionofsourceaddresses[14],
+tackpulseswithrespecttotheTCP’scongestionwindow sourceanddestinationaddresses[18],andtheTTLvalues
+movement: timeout-based and AIMD (additive-increase- [6].
+multiplicative-decrease)-based. We show through an Inthispaper,weconsideranewgenerationofDoSat-
+analysis that even a small number of attack pulses can tacks, called pulsing DoS attacks (PDoS). PDoS attacks
+cause significant throughput degradation. The second are not entirely new, having been reported by Asta Net-
+part of this paper is a novel two-stage scheme to detect works in 2001 [9]. Based on a six-month period of ana-
+PDoSattacksonavictimnetwork. Thefirststageisbased lyzingthetrafficintheInternet2Abilenebackbone, they
+on a wavelet transform used to extract the desired fre- have discovered the presence of pulsing zombies. In-
+quency components of the data traffic and ACK traffic. stead of generating a flood of attack packets, these zom-
+The second stage is to detect change points in the ex- bies sent out short bursts of attack packets to a victim.
+tracted components. Through both simulation and test- KuzmanovicandKnightlyhaverecentlyproposedalow-
+bedexperiments,weverifythefeasibilityandeffectiveness rateTCP-basedattackthatalsoinvolvessendingpulsesof
+ofthedetectionscheme. packets[13].
+In this paper, we propose and analyze a class of PDoS
+attacksagainstTCP-basedapplications. Thisclassofnew
+1 Introduction attacks can be further categorized into timeout-based at-
+tacks and AIMD-based attacks (AIMD stands for Addi-
+Starting from the most well-known denial-of-service tiveIncreaseandMultiplicativeDecrease), dependingon
+(DoS)attacksinFebruary2000againstanumberofvery the timing of the attack pulses with respect to the TCP’s
+popular web sites, such as Yahoo, Amazon, and eTrade, congestionwindowmovement. Aswillbeexplainedlater,
+DoSattackscontinuetoplaguetheInternet. Themostre- there are also variants within each category. It turns out
+centoneistheattackagainstAkami’sDNSservers,which thatthelow-rateattackproposedin[13]isaspecificcase
+disrupted their services for hours. Unlike other system- ofthetimeout-basedattacks.
+specific attacks, DoS attacks are more generic in nature. ThePDoSattacksaremuchmoresophisticatedandef-
+Therefore, their impact can be very significant in scope fectivethanthetraditionalflooding-basedattacks. Firstof
+anddamage. all, by adjusting the parameters in the attack tool, differ-
+ConventionalDoSattacksareflooding-based[8]. That ent levels of damage can be launched. On one extreme,
+is, an attacker sends out an unusually large number of the result can be the same as the flooding-based attacks.
+packets to a victim via a single host or multiple infected On the other, it can create a degradation-of-service at-
+hosts. These attack packets either exhaust the victim’s tack, i.e., the victim’s performance will be degraded butnot to the extent of being denied of service. Second, the following:
+amount of attack traffic required to achieve a DoS attack
+A(T (n),S (n),T (n),N),
+isalsomuchlowerthaninflooding-basedattacks. Conse- Extent Extent Space
+quently,thePDoSattackcaneludethedetectionmethods
+where,
+designed for flooding-based attacks. Finally, the number
+of attack sources can be very small in a PDoS attack, as • N isthetotalnumberofpulsessentduringanattack.
+comparedwithaconventionaldistributedDoS(DDoS)at-
+• T (n),n = 0,1,...,N −1,isthe duration of
+tack. Therefore,thepacketfieldsintheattackpacketscan Extent
+thenthattackpulse.
+besetwithcorrectvaluesinordertoescapethedetection
+methodsproposedin[14,18,6]. • S (n),n = 0,1,...,N − 1, determines the
+Extent
+Webelievethatthisworkisthefirsttoformallyaddress
+shapeofthenthattackpulse. IfS (n)isacon-
+Extent
+andanalyzePDoSattacks. Therefore,ourcontributionsis
+stant,theattackpulseisrectangular.
+two-fold. First, we identify and formally describe a new
+classofPDoSattacksagainstTCP-basedapplications.We • T Space(n),n = 0,1,...,N −2, measures the time
+also model them and analyze their properties and effec- between the end of the nth attack pulse and the be-
+tiveness. Second, we propose a novel two-stage scheme ginningofthe(n+1)thattackpulse. IfT Space(n)=
+to detect the attacks on the victim’s side. The methods 0,∀n, the PDoS attack is the same as a flooding-
+ofdetectionaredesignedbasedontwokeyobservations: basedattack.
+(1)thePDoSattackcausestherateofincomingtrafficto
+Back to Table 1, a TCP sender’s response to the re-
+fluctuatemoreseverelythanwouldnormallybethecase,
+cipient of three duplicate ACKs is generally known as
+and (2) the outgoing TCP ACKs will decline after an at-
+a additive-increase, multiplicative-decrease (AIMD) al-
+tack has been launched. We have employed a wavelet
+gorithm. Although TCP is the prime target for such
+transforminthefirststagetoextractrelevantinformation,
+PDoS attacks in the Internet today, it is useful to exam-
+whichisthenfedintoanonparametricCUSUMalgorithm
+ine more general AIMD algorithms in a similar manner
+fordetectingabruptchanges.
+as in [24]. That is, we denote an AIMD algorithm by
+The rest of the paper is organized as follows. In sec-
+AIMD(a,b), a > 0, 1 > b > 0. In this general
+tion 2, we describe and analyze the new class of PDoS
+AIMD algorithm, a sender will decrease its cwnd from
+attacks. In section 3, we describe a two-stage detection
+W to b × W whenever it enters the fast recovery state,
+schemeforthePDoSattacks.Insection4,weevaluatethe
+and then it will increase its cwnd from W to W +a per
+performance of the detection system based on the ns-2
+round-trip time (RTT) until receiving another congestion
+simulationandatestbed. Section5concludesthispaper.
+signal.
+Depending on the type of the false congestion signal
+received,aPDoSattackcanforceavictimTCPsenderto
+2 Modelling and analyzing of the PDoS at-
+frequentlyenterthetimeoutstateortofrequentlyenterthe
+tacks
+fast recovery state. The result is a persistently low value
+of cwnd, which translates into a very low throughput for
+Onecanviewtheflooding-basedattackasabrute-force the victim TCP connection. Accordingly we classify the
+attack, which exploits the finiteness of network and sys- PDoSattacksintotimeout-basedattacksandAIMD-based
+tem resources. However, the PDoS attack is more so- attacks,tobepresentednext.
+phisticated in the sense that it exploits a transport proto-
+2.1 Timeout-basedattacks
+col’scongestioncontrolmechanism. Therearetwomain
+mechanismsinatypicalend-to-endcongestioncontrolal-
+In a timeout-based attack, the attack pulses are severe
+gorithm. The first is the generation of a congestion sig-
+enough to cause a victim TCP sender to frequently enter
+nalthatservestonotifythesenderofpossiblecongestion.
+the timeout state. Without receiving (or without a suffi-
+Thesecondisthesender’sresponsetothereceiptofsuch
+cient number of) ACKs, the sender eventually timeouts
+acongestionsignal. Table1summarizesthemechanisms
+andtheretransmissiontimeoutvalue(RTO)iscomputed
+usedinTCP.
+byEq.(1)[19],asfollows:
+In essence, a PDoS attacker generates a sequence of
+false congestion signals to a TCP sender using attack RTO =max{RTO ,SRTT+max(G,4×VRTT)},
+min
+pulses, so that the sender’s cwnd is constrained to a low (1)
+value.Therefore,themagnitudesoftheattackpulsesmust where RTO , the lower bound on RTO, is recom-
+min
+besignificantenoughtocausepacketdropsinarouter.We mended to be 1 second for the purpose of avoiding spu-
+formallymodelthesequenceofattackpulsesbyusingthe rious retransmissions [2], and G is the clock granularity.Table1.TCP’snetworkcongestionsignalsandresponses
+CongestionSignals Sender’sResponses
+1 Retransmissiontimerexpired Reducethecongestionwindow(cwnd)tooneandperformaslowstart
+(thesenderissaidtoenterthetimeoutstate).
+2 ThreeduplicateACKs Halvethecwndandincreasethecwndbyoneperround-triptime
+received (thesenderissaidtoenterthefastrecoverystate).
+SRTT isthesmoothedRTTandVRTT istheRTTvari- 2.1.2 Asynchronoustimeout-basedattacks
+ation,whichareupdatedaccordingtoEq.(2)andEq.(3)
+Thesynchronoustimeout-basedattackisaperfectlytimed
+uponreceivinganewRTTmeasurementrtt,respectively.
+attack that is obviously not quite feasible in practice.
+SRTT =7/8×SRTT +1/8×rtt. (2) Therefore,theattackepochesinthesecondclassofPDoS
+attacksareasynchronouswiththeretransmissionepoches.
+VRTT =3/4×VRTT +1/4×|SRTT −rtt|. (3) A most straightforward realization of the asynchronous
+timeout-basedattacksistosendpulseswithfixedperiods.
+KuzmanovicandKnightlyhaverecentlyshowedthatthis
+2.1.1 Synchronoustimeout-basedattacks
+kindofattackisindeedpossible[13].Theirattackscheme
+The first type of timeout-based attacks is synchronous worksinthefollowingway:
+with the RTO value. That is, if the attacker knows the AfteravictimTCPsenderentersthetimeoutstateafter
+RTO value of the targeted TCP sender and is able to the launch of the first attack pulse, the attacker lets the
+causeeveryretransmittedpacket todrop, thenthevictim sendersenddatawithinashortperiodT . Thisperiod
+Shift
+TCPsender’scwnd alwaysstaysat1,andthethroughput shouldbesmallbutlongenoughforthesendertotransmit
+isequalto0. ThistypeofattackisshowninFig.1,which somepacketssuccessfully. Therefore, T maybeset
+Shift
+shows that the attack epoches coincide with the retrans- to 2 ∼ 3 RTTs. Thus, the SRTT, VRTT, and RTO
+missionepoches. valuesareupdatedaccordingtoEqs.(1-3)duringT .
+Shift
+AssumethattheRTOvalueattheattackepochisgivenby
+Proposition 1 (Attack epoches for synchronous time-
+RTO , i.e., the value of second argument of the max
+out-basedattacks). Lett ,n = 0,...,bethenthattack min
+n function in Eq. (1) is smaller than RTO . If the new
+epoch. Thefirstattackstartsatt ,andforn>0,thenth min
+0 rtts do not deviate too much from the SRTT value, it
+attackepochinasynchronoustimeoutattackisgivenby
+is very likely that the RTO value is still being given by
+⎧
+⎪⎪⎨ t 0+(2n−1)×RTO if 1≤n≤N
+max
+RTO min at the end of T Shift. Thus, subsequent attack
+t +(2Nmax −1) if N <n≤A pulsescanbelaunchedwithafixedperiodofRTO min+
+t n = ⎪⎪⎩ ×0 RTO+(n−N max) max max T Shift,asdepictedinFig.2.
+×RTO ,
+max 2.2 AIMD-basedattacks
+(4)
+where RTO max is the maximum value of RTO, and InaAIMD-basedattack, theattackpulsescauseavic-
+A max isthemaximumnumberofattemptsinretransmis- timTCPsendertofrequentlyenterthefastrecoverystate.
+s(cid:5)ionsbeforetheTC(cid:6)Psendergivesup. Moreover,N max = Recall that we consider a general AIMD algorithm de-
+log 2 RT RO Tm Oax +1 . noted by AIMD(a,b), a > 0, 1 > b > 0. If an at-
+tack pulse is able to cause some packet losses in a TCP
+Proof. AccordingtoRFC2988,aTCPsenderwilldouble connection, but a sufficient number of duplicate ACKs
+thecurrentRTOvaluewhentheretransmissiontimerex- canstillbereceivedbythesender,thecwnd willdropby
+pires [19]. If the new RTO is not more than RTO max, (1−b)%. After that, the cwnd will increase by an MSS
+then (cid:7)the sender will use the new RTO. Hence, t n = everyRTT.Moreover,manyTCPimplementationsdonot
+t 0+ n i=− 012i×RTO = t 0+(2n−1)×RTOfor1 ≤ send an ACK for every received packet. Instead, they
+n ≤ N max, where N max = max{n : 2n−1 ×RTO ≤ send a delayed ACK after receiving d consecutive full-
+RTO max}. Otherwise,theRTOvalueissettoRTO max sizepackets, where d istypically equal to2[15]. Inthis
+andthesendercontinuestoretransmitthelostpacketuntil case the sender’s cwnd is only increased by a per RTT.
+d
+thetotalnumberofattemptsreachesA max. Thecaseofd = 1correspondstotheACK-every-packet
+strategy. TCPTahoe,TCPReno,andTCPnewRenouseby a per RTT. Let W ,n = 0,1,2,..., be the cwnd
+cwnd d n
+value of a victim TCP connection just before the nth at-
+Attack epoches
+tack epoch. Therefore, W is the cwnd value just be-
+0
+fore the attack. Suppose that an attack epoch always oc-
+curs at the instant when the cwnd rises from W n−1 to
+f ×W n−1,n ≥ 1,1 ≥ f > b after a multiplicative de-
+crease. The attack epoches for this type of synchronous
+1
+AIMD-basedattackaregiveninProposition2.
+time Proposition 2 (Attack epoches for synchronous
+RTO 2*RTO 4*RTO AIMD-basedattack). ForthesynchronousAIMD-based
+attackjustdescribed,thenumberofattackpulsesrequired
+Figure1.Anexampleofthesynchronous
+to reduce the cwnd to 2 (the minimum value) is given by
+timeout-basedPDoSattack. log(2/W0).
+logf
+Assume that the RTT value is fixed. Let t be the first
+0
+cwnd
+attack epoch. For n > 0, the nth attack epoch is then
+Attack epoches givenby
+1−fn (f −b)×d×W
+t =t + × 0 ×RTT, n≥1.
+n 0 1−f a
+(5)
+1 Proof. Since the cwnd is decreased from W to f × W
+at each attack epoch, cwnd = fn ×W after the nth at-
+0
+minRTO minRTO minRTO minRTO tack. Hence,theattackwillbringdownthecwnd to2by
+time
+launchingasequenceof log(2/W0) attackpulses.
+logf
+Accordingtotheattackstrategy,beforethearrivalofthe
+Figure 2. An example of a timeout-based nth(n ≥ 1)attackpulsethecwnd canonlybeincreased
+PDoSattackwithfixedperiods. to(f −b)×W n−1,whichtakes (f−b)×d a×Wn−1 ×RTT
+amountoftime,accordingtotheAIMDalgorithm.There-
+fore,thenthattackepochshouldtakeplaceat
+AI SM incD e( i1 t, w0 i. l5 l) t. akeatleast (1− ab)×d×W numberofRTTs t n =t n−1+(f −b)× ad×W n−1 ×RTT, n≥1. (6)
+to restore the cwnd to W after a decrease from W to
+bW,thecwndvaluecoulddropcontinuouslyiftheattack Furthermore, by substituting W n = f ×W n−1 into Eq.
+pulses are launched frequently enough. Moreover, when (6),
+the cwnd is dropped to a certain level, there may not be
+(f −b)×d×f(n−1)×W
+e cn eso su .gh Thd uu sp ,li tc ha ete AA IC MK Ds -bto ast er digg ate tr acth ke cf aa nst ar le soco av ce hry ievp ero a- t
+n
+=t n−1+
+a
+0×RTT, n≥1.
+(7)
+similareffectasthetimeout-basedattackwithoutcausing
+WecanthereforeobtainEq.(5)byarepeatedsubstitution
+timeoutsatthebeginningoftheattack. Ontheotherhand,
+the AIMD-based attack could also launch a degradation-
+oft n−1.
+of-service attack by lowering the attack frequency. Sim-
+Fig.3showsanexampleofasynchronousAIMD-based
+ilar to the timeout-based attacks, there are two types of
+attack. Thesolidlinedepictsthetrajectoryofcwnd con-
+AIMD-basedattacks.
+trolled by AIMD(1,0.5). The dashed line, on the other
+hand,depictsthetrajectoryofcwndwhentheTCPsender
+2.2.1 SynchronousAIMD-basedattacks isexperiencingasynchronousAIMD-basedattack.
+This type of AIMD-based attacks is referred to as syn-
+2.2.2 AsynchronousAIMD-basedattacks
+chronous in the sense that the attack epoches always co-
+incide with a fixed set of cwnd values. For example, Similartothecaseofsynchronoustimeout-basedattacks,
+consider a general AIMD algorithm AIMD(a,b),where itisdifficulttolaunchasynchronousAIMD-basedattack
+a > 0, 1 > b > 0, and the sender’s cwnd is increased becauseofthedifficultyinestimatingtheattackepoches.thecwndvalueisgivenby
+cwnd Normal
+Attack
+a T
+W = b×W + × AIMD
+n+1 n d RTT
+a 1−bn+1 T
+= bn+1×W + × × AIMD(9.)
+0 d 1−b RTT
+Ifthecwnd converges, W = W forsomen. There-
+n+1 n
+fore,bysubstitutingW = W intoEq.(9),weobtain
+n+1 n
+theresult.
+2
+Attack epoches
+Proposition 4 (Minimum number of attack pulses).
+time
+Consider a AIMD-based attack with a fixed period of
+T againstAIMD(a,b). LetW =W +δ,where
+Figure 3. An example of a synchronous AIMD 0 C
+δ > 0. Moreover, if W −W < (cid:2), where (cid:2) is a small
+AIMD-basedattackagainstAIMD(1,0.5). n C
+value,W isconsideredthesameasW . Then,themini-
+n C
+mumnumberofattackpulsesrequiredtoreducethecwnd
+cwnd Normal fromW toW isgivenby
+Attack 0 C
+log(cid:2)−logδ
+N < . (10)
+attack logb
+Proof. From Eq. (8) and Eq. (9), we have W = bn ×
+n
+W + (1 − bn)W . By substituting W = W + δ
+0 C 0 C
+into the equation and solving for n, we obtain n =
+log(Wn−WC)−logδ.SinceW
+isconsideredtobethesame
+2 asW l io fg Wb −W <(cid:2),wen obtainEq.(10).
+Attack epoches C n C
+time
+InFig.5weplotEq.(10)fordifferentvaluesofb. The
+Figure4.AnexampleofaAIMD-basedat- figure shows that the flow throughput of a typical TCP
+tackwithfixedperiods. (b = 1/2) can be brought to the converged value using
+fewer than 10 attack pulses. With a higher value of b,
+more attack pulses will be required to achieve the same
+effect,becausethecwnddropswithaslowerrateinthese
+Therefore, we remove the synchronization requirement, cases. Withahighervalueofδ,itwillalsotakealonger
+andconsideraAIMD-basedattackwithafixedperiodof
+timeforcwndtoconverge.
+T = T +T . Proposition3presentsthe
+AIMD Space Extent
+steady-statevalueofcwnd inthemidstofsuchanattack.
+2.2.3 AcomparisonofthetwoPDoSattacks
+Afterthat,Proposition4givestheminimumnumberofat-
+tackpulsesforreducingthecwndtothesteady-statevalue. It is now useful to point out a major and important dif-
+ference between the timeout-based attacks and AIMD-
+Proposition 3 (Convergence of the cwnd). Consider a
+based attacks. Recall from section 2.1 that the timeout-
+AIMD-basedattackwithafixedperiodofT against
+AIMD
+based attack can effectively deny service to TCP flows
+aTCPconnectionusingAIMD(a,b). Ifthecwndofthe
+whose RTOs are less than the RTO . That is, an at-
+victimconnectionwillconvergeduringtheattack,thenthe min
+tacker can launch the attack epoches using Eq. (4) and
+convergedvalueisgivenby
+RTO = RTO in a synchronous attack and, as ex-
+min
+a T plained before, the attack period is deterministic in an
+W C = (1−b)×d × RAI TM TD. (8) asynchronousattack. Ontheotherhand,otherTCPflows
+maysurvivethetimeout-basedattack. Thesimulationre-
+sultspresentedin[13]haveindeedshownthatthoseflows
+with an RTT higher than 180ms are less affected under
+Proof. Justbeforethearrivalofthe(n+1)thattackpulse, theproposedlow-rateattack.However,thisisnotthecasewithAIMD-basedattacks. InaperiodicAIMD-basedat- 45
+tack, Proposition 3 indicates that all flows, regardless of
+40
+theirRTTs,willbeadverselyaffectedbytheAIMD-based
+attackbylimitingtheircwndtoalowvalueofW . 35
+C
+To drive the point further, in Fig. 6 we use Eq. (8) to
+30
+showtherelationshipbetweenW and TAIMD foraTCP C RTT 25 flowandaTCP-friendlyflow(AIMD(0.31,0.875))with
+d = 2. According to [24], a flow with AIMD(a,b) 20
+is considered to be TCP-friendly if its parameters satisfy
+a=
+4×(1−b2).
+Therefore,theconvergedcwndvaluefora
+15
+3
+TCP-friendlyflowisgivenbyW = 4×(1+b) × TAIMD. 10
+C 3×d RTT
+Thefigurealsoshowsalowerboundandanupperbound 5
+onW .
+C 0
+Thefigureshowsthatif TAIMD issmall,theflow’scwnd 0 20 40 60 80 10 δ0 120 140 160 180 200
+RTT
+willbeconstrainedtoaverylowvaluethatwillseverely
+limit the flow’s throughput. For example, consider those
+flows with RTT between 200ms and 500ms. In [13], the
+simulationresultshaveshownthattheseflowswillsurvive
+a periodic timeout-based attack. However, Fig. 6 shows
+thataperiodicAIMD-basedattackwithaperiodof1sis
+sufficienttodegradetheirthroughputtotheextentthatthe
+cwnd will be confined within (4/3,20/3). Note that the
+TCPfastrecoveryalgorithmusuallyrequiresthreedupli-
+cateACKs. Therefore,evenifthecwndvalueisgivenby
+theupperbound,itisverylikelythatthefastrecoverypro-
+cedurecannotbestartedandthatatimeoutwilltherefore
+occur.
+3 A two-stage detection scheme for PDoS
+attacks
+We propose in this section a novel two-stage scheme
+for detecting PDoS attacks. In so doing, we assume that
+both the timeout-based and AIMD-based attacks can be
+launched.SinceasuccessfulPDoSattackdoesnotrequire
+a sustained high attack packet rate, the feasible location
+fordetectingsuchanattackisatthevictimnetwork. The
+patterns of both incoming traffic and outgoing traffic are
+thenundersurveillance. Moreover,sincethePDoSattack
+can be effectively launched even by a single source, our
+detectionsystemisbasedonthedetectionoftrafficpattern
+anomalies.
+Wehavediscoveredatotaloftwoanomaliesthatwere
+incurred by a PDoS attack. The first is that the incom-
+ing data traffic will fluctuate in a more extreme manner
+duringanattack. Theabnormalfluctuationisacombined
+result of two different kinds of anomalous events caused
+by the attack. The first kind is obviously the introduc-
+tionoftheattackpulses,andtheotherisafastdeclinein
+thetrafficvolumeoftheaffectedTCPflows. ForAIMD-
+based attacks, the unusually high level of traffic fluctua-
+tionscanimmediatelybeobservedatthebeginningofthe
+attack. Thefluctuationmayevencontinueafterthecwnd
+kcattaN b=7/8 b=3/4 b=5/8 b=1/2
+Figure5.TherelationshipbetweenN attack
+andδ.
+30
+25
+20
+15
+10
+5
+0
+2 4 6 8 10TAIMD/RTT12 14 16 18 20
+CW
+Upper bound (b=1)
+AIMD(0.31,0.875)
+TCP
+Lower bound (b=0)
+Figure 6. The relationship between W
+C
+and TAIMD.
+RTT
+converges to W , because it is very likely that the flows
+C
+involvedwilltimeoutbecauseofasmallvalueofW .
+C
+The second anomaly has to do with the outgoing TCP
+ACK traffic. As just mentioned, the incoming legitimate
+TCP traffic volume will decline because of the attack.
+However, the overall incoming TCP traffic volume may
+or may not decline during the attack, because the attack
+packetscanalsobeTCPbased. Hence,ourdetectionsys-
+tem is also required to observe a possible decline in the
+outgoing TCP ACK traffic. It is important to emphasize
+thatdetectingbothanomaliesisnecessaryforconfirming
+aPDoS.Doingonewithouttheotherwillresultinahigh
+falsepositiverate.3.1 The first stage: A wavelet analysis of the to the upper bound of E (n), and set β to E (n) −
+H L L
+networktraffic P ×[(cid:6)(E (n))], where (cid:6)(E (n)) is the stan-
+tolerance L L
+darddeviationofE (n),andP controlsthelimit
+L tolerance
+Basedontheabovediscussion,thefirststageinthede-
+oftheallowabledecreaseinE (n).
+L
+tectionprocessistomonitorthevariabilityintheincom-
+LetTInbethedetectiontimeforZ (n)when
+H
+ing traffic and in the outgoing TCP ACK traffic. Here
+we employ a discrete wavelet transform (DWT) for this y (n)>CIn , (15)
+purpose. The DWT represents a signal f(t) ∈ L2(R) ZH cusum
+using scaling functions ϕ j,k(t), and a translated and di- where y ZH(n) is the CUSUM value of Z H(n) and
+latedversionofwaveletfunctionsψ j,k(t)[23]. Sincethe CIn is the corresponding threshold. Similarly, let
+cusum
+wavelet functions operate like high-pass filters that use TOutbethedetectiontimeforZ (n)when
+L
+narrow time windows to compute differences in signals,
+theycancapturethevariabilityoftheincomingtrafficvol- y (n)>COut , (16)
+ZL cusum
+umes. On the other hand, the scaling functions perform
+likelow-passfilters;therefore,theycanbeusedtoextract wherey ZL(n)istheCUSUMvalueofZ L(n)andC cO uu st
+um
+thetrendoftheoutgoingTCPACKtraffic. isthecorrespondingthreshold. Thedetectionsystemcon-
+To realize an on-line detection, we use a moving win- firmstheonsetofaPDoSattackwhenbothEq. (15)and
+dowtogroupGcontinuoussamplestocomputetheDWT. Eq. (16) hold. Hence, the final detection time is deter-
+Moreover,wedefineastatisticbasedonthesignalenergy minedby
+to quantify the variability in the incoming traffic for the
+nthwindowofsamplesasfollows. TFinal =max{TIn,TOut}. (17)
+(cid:8)
+1 Let T be the start time of a PDoS attack, and τIn,
+E (n)= |dIn|2, (11) Attack
+H G 1,k τOut,andτFinalbethedetectiondelaysasdefinedbelow.
+k
+where dIn is the wavelet coefficient at the finest scale τIn =TIn−T Attack (18)
+1,k
+(j = 1). Similarly,wedefineastatisticbasedonthesig-
+τOut =TOut−T (19)
+nal energy to characterize the trend in the outgoing TCP Attack
+ACKtrafficforthenthwindowofsamplesasfollows. τFinal =max{τIn,τOut} (20)
+(cid:8)
+E (n)= 1 |cOut|2, (12) OtherdetailsabouttheCUSUMalgorithmcanbefound
+L G L,k inAppendixB.
+k
+wherecOutisthescalingcoefficientatthehighestdecom- 4 Performanceevaluation
+L,k
+posedscale(j = L). FurtherdetailsabouttheDWTcan
+befoundinAppendixA. Wehaveconductedexperimentsusingbothns-2sim-
+ulation [1] and a test-bed to evaluate the effectiveness of
+3.2 The second stage: A CUSUM detection for thePDoSattacksandthetwo-stagedetectionsystem.
+changepoints
+4.1 Simulationexperimentsandresults
+The second stage is then to detect abrupt changes in
+E (n) for the incoming traffic and in E (n) for the We have conducted extensive ns-2 simulation exper-
+H L
+ACK traffic. We employ a nonparametric CUSUM al- iments based on the simulation scripts provided by [13].
+gorithm for this purpose. The CUSUM method assumes The network topology is shown in Fig. 7(a). It consists
+thatthemeanvalueofthevariableundersurveillancewill ofN pairsofTCPsendersandTCPreceivers. Thelinks
+change from negative to positive when a change occurs. connecting the router S, the senders, and an attacker are
+Since both E (n) and E (n) are larger than zero, we 100 Mbps, as are the links between router R and the re-
+H L
+transform them into two random sequences, Z (n) and ceivers. Both routers are connected through a bottleneck
+H
+Z (n), which have negative mean values under normal linkof10MbpswithREDqueuemanagement[10]. The
+L
+conditions. simulation period is 900 seconds, and the attack begins
+Z (n)=E (n)−β (13) at 181 seconds (T = 181) and ends at 720 sec-
+H H H Attack
+onds. Since S (n) is set to a constant in all exper-
+Z (n)=β −E (n), (14) Extent
+L L L iments,weuseA(T (n),R ,T (n),N)to
+Extent Attack Space
+whereβ andβ areconstantsfordeterminingthemean describe the PDoS attack, where R is the sending
+H L Attack
+values of Z (n) and Z (n). Normally, we can set β rateineachattackpulse.
+H L HThesettingsforthedetectionsystemareselectedasfol-
+lows. Thedetectionsystemaggregatestheincomingdata
+traffic and outgoing TCP ACK at a fixed time interval
+T = 0.25s. In order to achieve a small detection de-
+s
+lay, the moving window size is chosen to be G = 120,
+whichmeansthateachobservationperiodishalfaminute
+(0.25s×120 = 30s). Attheendofeachobservationpe-
+riod, the detector generates the statistics, such as Z (n)
+H
+and Z (n), and then executes the CUSUM algorithm to
+L
+searchforabruptchanges.
+We employ the Daubechies family of wavelets in the
+Sender 1 Receiver 1
+firststage of the detection, which have been widely used
+toanalyzenetworktraffic. TheDaubechieswavelets,rep-
+resentedbyDB(N),areorthonormalandcompactlysup- Sender 2 Receiver 2
+ported with N vanishing moments and 2N − 1 support
+length. DB(1), the Haar wavelet, is used to analyze the
+incomingdatatrafficandDB(4)isappliedtoanalyzethe Router S Router R
+outgoingTCPACKtraffic.
+We calculate C in Appendix B by selecting τ =
+cusum
+m+1 and h = 2(cid:7)a(cid:7) in Eq. (30). In principle, β can
+H
+besettotheupperthresholdofE (n),whichcanbees-
+H Receiver N-1
+Sender N
+timated by the value that corresponds to 95% of the cu-
+mulativedistributionfunctionofE (n). Tosimplifythe
+H
+Attacker Receiver N
+process, we set the value of β to the maximum value
+H
+ofE (n),andsetthetoleranceparameterP to1
+H tolerance
+inthesimulationexperiments. Asaresultoftheparame- (a) Thetopologyofthesimulationmodel.
+ter selection, the detection system will be more sensitive
+tochangesintheACKtraffic,butwilltoleratethenormal
+oscillationsofincomingtrafficinordertokeepalowfalse
+Attacker
+positiverate.
+4.1.1 Timeout-basedattacks
+Victim
+When we discuss the two types of PDoS attacks, we as-
+sumethataPDoSattackiseitheratimeout-basedattackor
+aAIMD-basedattack. However,aPDoSattackwillgen-
+erallycauseanaffectedTCPtofrequentlyenterboththe
+Legitimate Users Nist Net
+timeoutandfastrecoverystates. Therefore,intherestof
+(b) Thetopologyofthetest-bed.
+thispaper,aPDoSattackisconsideredasatimeout-based
+attackifitwillcause“manymore”returnstothetimeout
+Figure7.Networktopologiesforsimulation
+statethantothefastrecoverystate. Similarly,aPDoSat-
+andtest-bedexperiments.
+tack is regarded as a AIMD-based attack if it will cause
+many more returns to the fast recovery state than to the
+timeoutstate.Inthissectionwefirstconsiderthetimeout-
+basedattack,andthenexaminethesamesetofissuesfor
+aAIMD-basedattack.
+We have conducted simulation experiments for three
+types of flows: TCP Reno, TCP New Reno, and TCP-
+friendlyflowsthatarebasedonAIMD(0.31,0.875)and
+TCPSACK[22]. Thesimulationresultsfortheincoming
+data traffic are shown in Figs. 8(a)-8(b), and the results
+for the outgoing ACK traffic in Figs. 9(a)-9(b). In each
+experiment,thereare30flowswithheterogeneousRTTsrangingfrom20msto460ms. ThePDoSattackisparam- Mbps, theattack candeplete approximately 40%oftotal
+eterizedasA(150ms, 10Mbps, 1050ms, (cid:8) 540 (cid:9)= throughout. In this low-rate attack, our scheme can still
+1.05+0.15
+450). In order to compare the results, we adjust all of detecttheattackonlyafteroneobservationperiod.
+the horizontal axes with the same scale. However, this Table2showsotherlower-rateattacks, i.e.,1,2.5, and
+does not mean that each figure contains the same num- 4 Mbps. We use the symbol “*” to show that the cor-
+ber of points. For example, Fig. 8(a) consists of 3600 respondingattackscansometimesbedetectedbutnotall
+points,eachofwhichisacountduringanintervalof0.25s, thetime,andthesymbol“X”toshowthatthecorrespond-
+whereas Fig. 8(b) contains only 30 points that represent ingattackscannotbedetectedinallexperimentruns. The
+the values of y computed at the end of each obser- detectionoutcomesarelargelydependentonthechoiceof
+ZH(n)
+vationperiod. detectionparameters. Forexample, arelativelylargeβ
+H
+As shown in Fig. 8(a), the wavelet coefficients clearly will fail to detect extremely low-rate attacks, because it
+indicate that the incoming traffic exhibits more oscilla- cannotdifferentiatebetweenthetrafficfluctuationscaused
+tions during the PDoS attack between 181s to 720s, as by the attack and the normal traffic fluctuations. More-
+comparedwithperiodswithouttheattack,i.e.,[1s,180s]∪ over, a relatively small P will increase the false
+tolerance
+[721s,900s]. In the other direction, Fig. 9(a) shows that positive rate, because it would be too sensitive to the
+the outgoing TCP ACK traffic declines after the onset of changesintheACKtrafficandwillthereforeraisemany
+thePDoSattack. falsealarms.
+Fig. 8(b) displays the statistic Z (n) of the incoming
+H
+datatrafficandtheCUSUMresults: y (n)andCIn .
+ZH cusum
+ThedetectiontimesforZ (n)forallthreetypesofflows 4.1.2 AIMD-basedattacks
+H
+areallequaltoTIn =210s,whichis30safterthebegin-
+In this section, we re-examine the issues discussed
+ningoftheattack. FortheoutgoingACKtraffic,Fig.9(b)
+in the last section for attacks that are dominated by
+givestheresultofZ (n), y (n), andCIn . Aswith
+L ZL cusum the AIMD-based attack. Therefore, we have em-
+thedatatraffic,thedetectiontimesforZ (n)forallthree
+L
+ployed the same topology and parameter settings as be-
+types of flows are all equal to TOut = 210s. As a re-
+fore. But for the purpose of comparison, we consider
+sult,thefinaldetectiontimesforallthreecasesareequal
+to TFinal = max{TIn,TOut} = 210s. The detection only the New-Reno flows. The results are presented
+delayisτFinal = max{τIn,τOut} = 30s,whichmeans in Figs. 10-11. There are two different PDoS at-
+tacks in each figure. The graphs on the left are for
+that the total detection delay is equal to the length of an
+A(10ms, 100Mbps, 800ms , 667), while those on the
+observationperiod.
+rightareforA(10ms, 50Mbps, 400ms, 1317).
+Table2summarizesotherexperimentalresultsthatare
+FortheattackA(10ms, 100Mbps, 800ms, 667),Fig.
+obtained by changing the value of S . The first
+Extent
+10showsthatthetotalthroughputgraduallydecreasesaf-
+column (Mbps) shows the different attack rates, ranging
+ter an abrupt change at the beginning of the attack. The
+from1Mbpsto20Mbps. τFinal,τFinal ,andτFinal
+Reno NewReno AIMD first high-rate pulse causes many flows to decrease their
+showthefinaldetectiondelay(inseconds)forTCPReno,
+cwnds. After that, the AIMD-based attack will force the
+New-Reno, and AIMD(0.31,0.875), respectively. On
+senders’cwndtograduallydecreasetoW . Itmaynotbe
+the other hand, Loss , Loss , and Loss give the es- C
+R N A
+easytoobserveinFig.10(a)thedifferencesinthewavelet
+timatesonthepercentagedecreaseinthelegitimateTCP
+coefficientsbeforeandaftertheattack. However,ourde-
+traffic. Theseestimatesarecomputedbydividingtheav-
+tectionschemecanstillquicklydiscoveritbycombining
+eragenumberofACKsobservedduringaPDoSattackby
+thedetectionresultsinbothFig. 10(b)andFig. 11(b).
+thatduringanattack-freeenvironment. Theresultsshow
+As for the attack A(10ms, 50Mbps, 400ms, 1317),
+that AIMD(0.31,0.875) is more robust than the other
+Fig. 10(a) shows that this attack also forces most TCP
+two versions of TCP under the PDoS attack and that the
+flowstoconvergetoW duringtheperiodbetween600s
+TCPRenoismostvulnerable,primarilybecausethecwnd C
+and 720s, i.e., the relationship between the AIMD-based
+isdecreasedonlyto0.875ofitspreviousvalue(insteadof
+attack and TCP flows is stable. Fig. 10(b) captures the
+0.5).
+phenomenainwhichtheCUSUMvalueY (n)dropsfrom
+Moreover,whentheattackburstrateisatleastthesame Z
+itsmaximumvalue. Sincethethroughputisverylowdur-
+asthebandwidthofthebottleneck,i.e.,10,15,20Mbps,
+ingthatperiod,thefluctuationalsobecomeweak. Other-
+theLoss columnsshowthatthetotalthroughputcan
+R,N,A
+wise, the severe fluctuation will continue because of the
+be reduced by as least 50%. The results also show that
+increaseintheprobabilityoftimeout. Ineithercase, our
+our detection scheme will discover the attack after one
+detectionmechanismcandetectitquickly.
+observation period (30 seconds). When the attack burst
+Table 3 compares the three PDoS attacks (one from
+rateisonlyhalfofthebandwidthofthebottleneck,i.e. 5
+section 4.1.1). All three attacks have similar aver-x 105 TCP Reno
+3
+2.5
+2
+1.5
+1
+0.5
+0 200 400 600 800
+Time (Seconds)
+)setyB(
+ciffarT
+gnimocnI
+x 105 TCP Reno
+1
+0.5
+0
+−0.5
+−1
+−1.5
+0 200 400 600 800
+Time (Seconds)
+stneiciffeoC
+televaW
+x 105 TCP NewReno
+3
+2.5
+2
+1.5
+1
+0.5
+0 200 400 600 800
+Time (Seconds)
+)setyB(
+ciffarT
+gnimocnI
+x 105 TCP NewReno
+1.5
+1
+0.5
+0
+−0.5
+−1
+−1.5
+0 200 400 600 800
+Time (Seconds)
+stneiciffeoC
+televaW
+x 105AIMD(0.31,0.875)
+3
+2.5
+2
+1.5
+1
+0.5
+0 200 400 600 800
+Time (Seconds)
+)setyB(
+ciffarT
+gnimocnI
+x 105AIMD(0.31,0.875)
+1
+0.5
+0
+−0.5
+−1
+−1.5
+0 200 400 600 800
+Time (Seconds)
+stneiciffeoC
+televaW
+(a) Theincomingtrafficandtheirwaveletcoefficients.
+x 108 TCP Reno
+15
+10
+5
+0
+0 200 400 600 800
+Time (Seconds)
+)n(
+Z
+H
+x 1010 TCP Reno
+2.5
+2
+1.5
+1
+0.5
+0
+0 200 400 600 800
+Time (Seconds)
+)n(
+y
+Z H
+x 108 TCP NewReno
+15
+10
+5
+0
+0 200 400 600 800
+Time (Seconds)
+)n(
+Z
+H
+x 1010TCP NewReno
+2.5
+2
+1.5
+1
+0.5
+0
+0 200 400 600 800
+Time (Seconds)
+)n(
+y
+Z H
+x 108AIMD(0.31,0.875)
+10
+8
+6
+4
+2
+0
+0 200 400 600 800
+Time (Seconds)
+)n(
+Z
+H
+x 109AIMD(0.31,0.875)
+15
+10
+5
+0
+0 200 400 600 800
+Time (Seconds)
+)n(
+y
+Z H
+y (n) y (n) y (n)
+Z Z Z CInH CInH CInH
+cusum cusum cusum
+(b) Z H(n)andtheCUSUMresults.
+Figure8.Theincomingtrafficandthedetectionresultsforthetimeout-basedattacks.TCP Reno
+14000
+12000
+10000
+8000
+6000
+4000
+2000
+0
+0 200 400 600 800
+Time (Seconds)
+)setyB(
+ciffarT
+KCA
+PCT
+x 104 TCP Reno
+10
+8
+6
+4
+2
+0
+0 200 400 600 800
+Time (Seconds)
+stneiciffeoC
+gnilacS
+TCP NewReno
+14000
+12000
+10000
+8000
+6000
+4000
+2000
+0
+0 200 400 600 800
+Time (Seconds)
+)setyB(
+ciffarT
+KCA
+PCT
+x 104 TCP NewReno
+10
+8
+6
+4
+2
+0
+0 200 400 600 800
+Time (Seconds)
+stneiciffeoC
+gnilacS
+AIMD(0.31,0.875)
+15000
+10000
+5000
+0
+0 200 400 600 800
+Time (Seconds)
+)setyB(
+ciffarT
+KCA
+PCT
+x 104AIMD(0.31,0.875)
+10
+8
+6
+4
+2
+0
+0 200 400 600 800
+Time (Seconds)
+stneiciffeoC
+gnilacS
+(a) TheoutgoingACKtrafficandtheirscalingcoefficients.
+x 108 TCP Reno
+4
+3
+2
+1
+0
+0 200 400 600 800
+Time (Seconds)
+)n(Z
+L
+x 109 TCP Reno
+8
+6
+4
+2
+0
+0 200 400 600 800
+Time (Seconds)
+)n(
+y Z L
+x 108 TCP NewReno
+4
+3
+2
+1
+0
+0 200 400 600 800
+Time (Seconds)
+)n(Z
+L
+x 109 TCP NewReno
+7
+6
+5
+4
+3
+2
+1
+0
+0 200 400 600 800
+Time (Seconds)
+)n(
+y Z L
+x 108AIMD(0.31,0.875)
+5
+4
+3
+2
+1
+0
+0 200 400 600 800
+Time (Seconds)
+)n(Z
+L
+x 109AIMD(0.31,0.875)
+8
+6
+4
+2
+0
+0 200 400 600 800
+Time (Seconds)
+)n(
+y Z L
+y (n) y (n) y (n)
+Z Z Z COLut COLut COLut
+cusum cusum cusum
+(b) Z L(n)andtheCUSUMresults.
+Figure9.TheoutgoingACKtrafficandthedetectionresultsforthetimeout-basedattacks.x 105 A(10ms,100Mbps,800,540/0.81)
+3
+2.5
+2
+1.5
+1
+0.5
+0 200 400 600 800
+Time(Seconds)
+s)etyB(
+ciffarT
+gnimocnI
+x 104 A(10ms,100Mbps,800,540/0.81)
+5
+0
+&5
+&10
+&15
+0 200 400 600 800
+Time(Seconds)
+tsneiciffeoC
+televaW
+x 105A(10ms,50Mbps,400,540/0.41)
+3
+2.5
+2
+1.5
+1
+0.5
+0 200 400 600 800
+Time(Seconds)
+s)etyB(
+ciffarT
+gnimocnI
+x 104A(10ms,50Mbps,400,540/0.41)
+5
+0
+&5
+&10
+&15
+0 200 400 600 800
+Time(Seconds)
+tsneiciffeoC
+televaW
+(a) Theincomingtrafficandtheirwaveletcoefficients.
+x 107 A(10ms,100Mbps,800,540/0.81)
+6
+4
+2
+0
+2
+0 200 400 600 800
+Time(Seconds)
+)n(
+Z
+H
+x 108 A(10ms,100Mbps,800,540/0.81)
+4
+3
+2
+1
+0
+0 200 400 600 800
+Time(Seconds)
+)n(
+y Z H
+x 107A(10ms,50Mbps,400,540/0.41)
+10
+5
+0
+0 200 400 600 800
+Time(Seconds)
+y (n) Z
+CInH
+cusum
+)n(
+Z
+H
+x 107A(10ms,50Mbps,400,540/0.41)
+12
+10
+8
+6
+4
+2
+0
+0 200 400 600 800
+Time(Seconds)
+)n(
+y Z H
+y (n) Z
+CInH
+cusum
+(b) Z H(n)andtheCUSUMresults.
+Figure10.TheincomingtrafficandthedetectionresultsfortheAIMD-basedattacks.A(10ms,100Mbps,800,540/0.81)
+14000
+12000
+10000
+8000
+6000
+4000
+2000
+0
+0 200 400 600 800
+Time(Seconds)
+s)etyB(
+ciffarT
+KCA
+PCT
+x 104 A(10ms,100Mbps,800,540/0.81)
+10
+8
+6
+4
+2
+0
+0 200 400 600 800
+Time(Seconds)
+tsneiciffeoC
+gnilacS
+A(10ms,50Mbps,400,540/0.41)
+14000
+12000
+10000
+8000
+6000
+4000
+2000
+0
+0 200 400 600 800
+Time(Seconds)
+s)etyB(
+ciffarT
+KCA
+PCT
+x 104 A(10ms,50Mbps,400,540/0.41)
+10
+8
+6
+4
+2
+0
+0 200 400 600 800
+Time(Seconds)
+tsneiciffeoC
+gnilacS
+(a) TheoutgoingACKtrafficandtheirscalingcoefficients.
+x 108 A(10ms,100Mbps,800,540/0.81)
+2
+1.5
+1
+0.5
+0
+0 200 400 600 800
+Time(Seconds)
+)n(Z
+L
+x 109 A(10ms,100Mbps,800,540/0.81)
+3.5
+3
+2.5
+2
+1.5
+1
+0.5
+0
+0 200 400 600 800
+Time(Seconds)
+)n(
+y
+Z L
+x 108 A(10ms,50Mbps,400,540/0.41)
+2
+1.5
+1
+0.5
+0
+0 200 400 600 800
+Time(Seconds)
+y (n)
+Z
+COLut
+cusum
+)n(Z
+L
+x 109 A(10ms,50Mbps,400,540/0.41)
+4
+3
+2
+1
+0
+0 200 400 600 800
+Time(Seconds)
+)n(
+y
+Z L
+y (n)
+Z
+COLut
+cusum
+(b) Z L(n)andtheCUSUMresults.
+Figure11.TheoutgoingACKtrafficandthedetectionresultsfortheAIMD-basedattacks.Table2.Detectiontimeandlossratecausedbythetimeout-basedattacks.
+R τFinal Loss τFinal Loss τFinal Loss
+Attack Reno R NewReno N AIMD A
+20 30 0.8039 30 0.7781 30 0.7757
+15 30 0.7341 30 0.6962 30 0.6594
+10 30 0.6234 30 0.5679 30 0.5098
+5 30 0.4538 30 0.4024 30 0.3221
+4 30 0.3969 30 0.353 60* 0.281
+2.5 30* 0.2933 30* 0.2547 X 0.1877
+1 X 0.1076 X 0.0805 X 0.0463
+age attack rates, which is computed by R = lay time is τIn = 30s. The outgoing TCP ACK traffic
+Average
+TExtent∗RAttack,
+but they differ in their values of begins to decrease after the attack is launched, as shown
+TExtent+TSpace
+R Attack, T Extent, and T Space. It is interesting to note in Fig. 13(a). The detection time for Z L(n) is given by
+that, although it has the lowest attack rate, the attack TOut = 240s. Thus, the final detection time isgiven by
+A(10ms,50Mbps,400ms,1317) causes the worst dam- max{TIn,TOut}=240s,andthedetectiondelayisonly
+age to the TCP throughput. The results suggest that the max{τIn,τOut} = 60s. Thus,theresultsobtainedfrom
+AIMD-based attack can achieve the same effect as the thetest-bedarequiteconsistentwiththosefromthesimu-
+timeout-basedattack,butwithalowerattackrate. More- lationexperimentspresentedinthelastsection.
+over,ourdetectionschemecandetectallofthesepulsing The NIST NET implements the Derivative Random
+attacksinatimelymannerafteroneobservationperiod. Drop(DRD)algorithminsteadoftheRandomEarlyDe-
+tection (RED) algorithm. Although both of them are su-
+4.2 Test-bedexperimentsandresults periortothedroptailmethodintermsofeffectivelycon-
+trolling the average queue size, DRD is more sensitive
+The test-bed topology is shown in Fig. 7(b). We use to the traffic burst than RED[7]. Hence, we have con-
+NIST Net [7] to simulate the network and iperf to ducted experiments on RED-based routers by replacing
+measure the TCP throughput. The link between NIST NIST NET with dummynet[21]. We set the parame-
+Net and the victim is 10 Mbps, whereas the links con- ters of RED with the following values: min = 80,
+th
+nectingthelegitimateusersandtheattackertotheNIST max = 160,w = 0.002,max = 0.1,andthequeue
+th q p
+Net are 100 Mbps. We also set the RTTs of both the sizeis250packets. Theiperfgenerates15TCPflows
+legitimate users and the attacker to 100ms. In this set- with RTT = 150ms. We have conducted a total of 15
+ting, the legitimate user is running Linux 2.4.20-8 (Red PDoS attacks with different parameters as shown in Ta-
+Hat 9 (Shrike)), whose RTO is 200 ms, instead of ble4.
+min
+the 1 second suggested in [19]. There are two reasons The results from Table 4 have clearly shown that the
+for using this setup. First, it is important to see what ef- PDoS attack can still seriously degrade TCP throughput
+fect the PDoS attack will have on the TCP/IP stacks that even when the RTO is not equal to 1 second, as
+min
+may not follow the standard RFCs. Even though an at- suggested by [19]. For Linux (2.4.20-8), which sets the
+tacker may not be able to determine the actual value of RTO to200msandTCPflowswithanRTTof150ms,
+min
+RTO , it is still possible for the attack to seriously a periodic timeout-based attack may not be effective be-
+min
+degrade the victim’s throughout. The second is to test causeitisverydifficulttoestimatetheRTO.However,the
+thedetectionschemeundera“nonoptimal”PDoSattack. AIMD-basedattackcanstillreducethethroughputwitha
+For this purpose, we launch a PDoS attack at 181 sec- reasonable attack rate, e.g., the 5th PDoS in Table 4 can
+onds with R = 10Mbps, T = 200ms, and cause a 41.5% loss in throughput with a relatively small
+Attack Extent
+T =1000ms. averageattackrate(1.25Mbps).
+Space
+AsshowninFigs.12-13,ourschemecandetecttheon- GiventhesamevaluesofR andT ,aPDoS
+Attack Extent
+going attack in a timely manner. Fig. 12(a) shows that attackwithasmallerT causesabiggerloss,e.g. 1st,
+Space
+the PDoS attack not only successfully degrades the TCP 4th,7th,10th,and13thattacksinTable4. Anotherinter-
+throughput, but also causes severe fluctuations in the in- estingobservationisthatthosePDoSattacks,whichhave
+comingtrafficasshowninFig.12(b). Thedetectiontime the same value of R ×T (n), may have dif-
+Attack Extent
+for Z (n) is given by TIn = 210s; therefore, the de-
+HTable3.DetectiontimeandlossrateforthreedifferentPDoSattacks.
+A(150ms,10Mbps,1050ms,450) A(10ms,100Mbps,800ms,667) A(10ms,50Mbps,400ms,1317)
+AverageRate 1.25Mbps 1.235Mbps 1.22Mbps
+LossRate 0.5679 0.6073 0.7639
+τIn 30 30 30
+τOut 30 30 30
+τFinal 30 30 30
+Table4.Differentpulsingattacksandthedetectiontime
+Seq T (ms) R (Mbps) T (ms) R (Mbps) Loss τFinal (s)
+Extent Attack Space Average
+1 100 10 900 1 0.239 60
+2 200 10 1800 1 0.328 60
+3 100 15 1400 1 0.258 60
+4 100 10 700 1.25 0.272 60
+5 200 10 1400 1.25 0.415 30
+6 100 15 1100 1.25 0.371 30
+7 100 10 566 1.5 0.293 60
+8 200 10 1133 1.5 0.484 30
+9 100 15 900 1.5 0.374 30
+10 100 10 471 1.75 0.308 30
+11 200 10 943 1.75 0.521 30
+12 100 15 757 1.75 0.449 30
+13 100 10 400 2 0.318 30
+14 200 10 800 2 0.535 30
+15 100 15 650 2 0.476 30
+R (bandwidthofthebottleneck): 10Mbps.
+bottleneck
+ferent effects on the TCP flows. For example, from our 5 Conclusions
+experiments,thePDoSattackwithT =200msand
+Extent
+R = 10Mbpsalwayshasamoresevereeffectthan
+Attack In this paper, we have identified a new class of PDoS
+theothertwotypesofPDoSattackswhenallofthemhave
+attacks. Unlike the traditional DoS attack, the PDoS at-
+thesameaverageattackrate. Thismaybeduetoitslarge
+tackcaneffectivelyachievethesamepurposewithamuch
+T value,whichcanclogthebottlenecklinkforsuch
+Extent lower attack rate. We have presented two specific attack
+alongperiodthatthepacket-markingprobabilityinRED
+methods: timeout-basedandAIMD-based,andtheirvari-
+[10] increases and the packets belonging to many flows
+ants. Our analysis has confirmed that the attacks can be
+are dropped. The experiment results also show that the
+veryeffectivebyforcingtheaffectedTCPsenderstocon-
+proposedtwo-stagedetectionschemecaneffectivelydis-
+tinuously re-enter the fast recovery state or the timeout
+coverthepulsingDoSattack. Inmostcases,thedetection
+state.
+delayisonlyoneobservationperiod,i.e.,30s.
+Anotherimportantcontributionofthispaperisanovel,
+two-stagedetectionschemeforthePDoSattacks. Thede-
+tection is based on an unusually high variability in the
+incoming data traffic and a drastic decline in the outgo-
+ing ACK traffic observed in the midst of a PDoS attack.x 105
+2
+1.8
+1.6
+1.4
+1.2
+1
+0.8
+0.6
+0.4
+0.2
+0 100 200 300 400 500 600 700 800 900
+Time (Seconds)
+)setyB(
+ciffarT
+gnimocnI
+x 105
+1
+0.5
+0
+−0.5
+−1
+0 100 200 300 400 500 600 700 800 900
+Time (Seconds)
+(a) IncomingtrafficfortheTest-bed.
+stneiciffeoC
+televaW
+(b) Waveletcoefficientsoftheincomingtraffic.
+6x 108
+5
+4
+3
+2
+1
+0
+−1
+−20 100 200 300 400 500 600 700 800 900
+Time (Seconds)
+)n(HZ
+8x 109
+7
+6
+5
+4
+3
+2
+1
+00 100 200 300 400 500 600 700 800 900
+Time (Seconds)
+(c) Z h(n)oftheincomingtraffic.
+)n( HZy
+CyZ
+cInH
+u( sn u)
+m
+(d) TheCUSUMresults
+Figure12.Detectionbasedonincomingtraffic.
+As a result, we have employed wavelet transform to ob- A Discretewavelettransform
+servetheincomingdatatrafficandoutgoingACKtraffic,
+andanonparametricCUSUMalgorithmtodetectchange
+points. The results from both the simulation and test- Wavelettransformisverysuitableforanalyzingirregu-
+bedexperimentsshowthattheproposedschemeiseffec- larsignals,suchasnetworktraffic,becauseitgivesamore
+tive at detecting a low-rate PDoS attack. Moreover, our accuratelocaldescriptionofsignalcharacteristicsinboth
+schemeisfeasibleforon-linedetectionbecauseofthelow time and frequency domains. Indeed, wavelet transform
+time complexity for both the computation of the discrete has been applied to analyze network traffic and identify
+wavelettransformandtheCUSUMmethod. trafficanomalies. Forexample,waveletanalysishasbeen
+employedtoidentifytrafficanomaliescausedbyflooding-
+Acknowledgment based DoS and flash crowds through a deviation score
+[16]. Comparedwiththeworkin[16],therearetwomain
+The work described in this paper was partially sup- differences in our wavelet analysis. First, the wavelet
+ported by a grant from the Research Grant Council of analysisthereisusedtoperformapostmortemanalysisof
+the Hong Kong Special Administrative Region, China tracedata,whereasoursconcentratesonareal-timeanal-
+(ProjectNo. PolyU5080/02E).Wealsothanktheanony- ysis of incoming data. Second, the analysis there only
+mousreviewersfortheirhelpfulcomments. considers the signal variations in the high and medium-
+frequencybandsthatarenotsufficienttodetectthePDoS
+attack.Ouranalysisrequiresbothhighandlow-frequency
+bands.
+The discrete wavelet transform (DWT) represents a
+signal f(t) ∈ L2(R) using scaling functions ϕ (t),
+j,k
+and a translated and dilated version of wavelet functions6000
+5000
+4000
+3000
+2000
+1000
+00 100 200 300 400 500 600 700 800 900
+Time (Seconds)
+)setyB(
+ciffarT
+KCA
+PCT
+x 104
+3.5
+3
+2.5
+2
+1.5
+1
+0.5
+00 100 200 300 400 500 600 700 800 900
+Time (Seconds)
+(a) OutgoingACKtrafficfortheTest-bed.
+stneiciffeoC
+gnilacS
+(b) Scalingcoefficientsoftheoutgoingtraffic.
+x 107
+2.5
+2
+1.5
+1
+0.5
+0
+−0.5 0 100 200 300 400 500 600 700 800 900
+Time (Seconds)
+)n(LZ
+5x 108
+4.5
+4
+3.5
+3
+2.5
+2
+1.5
+1
+0.5
+00 100 200 300 400 500 600 700 800 900
+Time (Seconds)
+(c) Z L(n)oftheoutgoingACKtraffic.
+)n( LZy
+CyZ
+cOL
+u(
+u
+sn
+t
+u)
+m
+(d) TheCUSUMresults.
+Figure13.DetectionbasedonoutgoingACKtraffic.
+ψ (t): is,
+j,k
+(cid:9)
+(cid:8) (cid:8)(cid:8) (cid:8) (cid:8)(cid:8)
+f(t)= c (k)ϕ (t)+ d (k)ψ (t), (21) |f(t)|2dt= |c (k)|2+ |d (k)|2. (24)
+j0 j0,k j j,k j0 j
+k k j=j0 k k j=j0
+where {ϕ (t) = 2−j/2ϕ(2−jt − k), j,k ∈ Z} and Since the wavelet functions operate like high-pass filters
+j,k
+{ψ (t) = 2−j/2ψ(2−jt−k), j,k ∈ Z}. Inthisexpan- that use narrow time windows to compute differences in
+j,k
+signals[23],theycancapturethevariabilityoftheincom-
+sion, the first summation describes a coarse approxima-
+ing traffic volumes. On the other hand, the scaling func-
+tionoff(t),andthesecondsummationdepictsthedetails
+tionsperformlikelow-passfilters; therefore, theycanbe
+of f(t). In practice, the coefficients c (k) and d (k) are
+j j
+usedtoextractthetrendoftheoutgoingTCPACKtraffic.
+calculatedviatheMallat’spyramidalgorithm:
+Inordertorealizeanon-linedetection,weuseamoving
+(cid:8)
+windowtogroupW continuoussamplesforthecomputa-
+c j(k)= h 0(m−2k)c j−1(m), (22)
+tionofDWT.LetS = s(t),t ≥ 1,bethetrafficsamples,
+m and S (n) = {s(t)}n×W ,n ≥ 1, be the se-
+W t=(n−1)×W+1
+(cid:8)
+quential windows of the samples. We use SIn and SOut
+d j(k)= h 1(m−2k)c j−1(m), (23)
+to denote the traffic samples for the incoming data traf-
+m
+fic and outgoing ACK traffic, respectively. We also use
+where h and h are the coefficients of low-pass and SIn(n) and SOut(n) to refer to the observation periods
+0 1 W W
+high-passfilters,respectively. Ifthescalingfunctionsand forthetworespectivecases.
+wavelet functions form an orthonormal basis, Parseval’s Sincethefluctuationoftheincomingtrafficcanbecap-
+theoremstatesthatf(t)’senergyisequaltotheenergyin turedbyitshigh-frequencypart,wecontinuouslyprocess
+its scaling coefficients and wavelet coefficients [5]. That SIn(n)throughtheDWTandobtaintheirwaveletcoeffi-
+WcientsdIn. Inordertoquantifythedegree ofvariability, TheCUSUMmethodassumesthata<0and h+a>
+j,k
+wedefineastatisticbasedonthesignalenergyasfollows. 0,whichtogetherimpliesthatthemeanvalueofx(n)will
+change from negative to positive when a change occurs.
+(cid:8)
+1
+E (n)= |dIn|2, (25) Therefore, it may necessary to first transform the statis-
+H W 1,k tics under the change-point detection to new random se-
+k
+quences which have negative mean values under normal
+where dIn is the wavelet coefficient at the finest scale conditions.
+1,k
+(j = 1). A similar approach was used in [17] to inves-
+tigatethescalingpropertiesofthenetworktraffic. References
+On the other hand, we process SOut(n) to obtain the
+W
+trendoftheoutgoingTCPACKtraffic. Wealsodefinea [1] The network simulator - ns-2.
+statisticbasedonthesignalenergytorepresentthetrend http://www.isi.edu/nsnam/ns/.
+oftheoutgoingTCPACKtrafficasfollows. [2] M.AllmanandV.Paxson. Onestimatingend-to-endnet-
+work path properties. In Proc. ACM SIGCOMM Conf.,
+(cid:8)
+1 1999.
+E (n)= |cOut|2, (26)
+L W L,k [3] B.BrodskyandB.Darkhovsky. NonparametricMethods
+k inChange-PointProblems. KluwerAcademicPublishers,
+wherecOutisthescalingcoefficientatthehighestdecom- TheNetherlands,1993.
+L,k
+posedscale(j =L). [4] B.BrodskyandB.Darkhovsky. Non-ParametricStatisti-
+calDiagnosisProblemsandMethods. KluwerAcademic
+Publishers,TheNetherlands,2000.
+B The nonparametric CUSUM algorithm
+[5] C. Burrus, R. Gopinath, and H. Guo. Introduction to
+forchange-pointdetection Wavelets and Wavelet Transforms: A Primer. Prentice
+Hall,UpperSaddleRiver,NJ,1998.
+Inordertoautomaticallylocatethechangepointinthe
+[6] C. Jin, H. Wang, and K. Shin. Hop-count filtering:
+statistics E and E as soon as possible, we apply the
+H L an effective defense against spoofed DDoS traffic. In
+nonparametric sequential detection algorithm at the end Proc.ACMConf.ComputerandCommunicationsSecurity
+of every observation period. Here, we employ the non- (CCS),2003.
+parametric CUSUM algorithm for this purpose. This al- [7] M.CarsonandD.Santay. NISTNet: aLinux-basednet-
+gorithmhasalsobeenusedinotherdetectionmethodsfor workemulationtool.ACMComputerCommunicationRe-
+D/DoSattacks[20,12,11]. view,33(3),July2003.
+TheformaldefinitionofthenonparametricCUSUMal- [8] R.Chang. Defendingagainstflooding-based, distributed
+gorithmissummarizedasfollows[3,4]: denial-of-service attacks: a tutorial. IEEE Communica-
+tionsMagazine,40(10),2002.
+y(n)=(y(n−1)+x(n))+, y(0)≡0, n=1,2,..., [9] M. Delio. New breed of attack zombies
+lurk. http://www.acm.org/technews/articles/2001-
+(27)
+3/0514m.html,May2001.
+where(y(n))+isequaltoy(n)ify(n)>0,and0,other-
+[10] S.FloydandV.Jacobson. Randomearlydetectiongate-
+wise. Itsdecisionruleis:
+ways for congestion avoidance. IEEE/ACM Trans. Net-
+working,1(4):397–413,August1993.
+d (·)=d (y(n))=I(y(n)>C ), (28)
+N N cusum [11] H.Wang,D.Zhang,andK.Shin.DetectingSYNflooding
+attacks. InProc.IEEEINFOCOMConf.,2002.
+where C is the threshold. x(n) is defined on the
+cusum [12] J. Baras, A. Cardenas, and V. Ramezani. On-line detec-
+probabilityspace(Ω,F,P)bythemodel
+tion of distributed attacks from space-time network flow
+patterns. InProc.23rdArmyScienceConf.,2002.
+x(n)=a+h(n)I(n≥m)+ξ(n), (29)
+[13] A.KuzmanovicandE.Knightly. Low-rateTCP-targeted
+denialofserviceattacks.InProc.ACMSIGCOMMConf.,
+where ξ = {ξ(n)}∞ is the random sequence such that
+n=1 August2003.
+itsmathematicalexpectationξ(n) ≡0,and{h(n)}isthe
+[14] L.Feinstein,D.Schnackenberg,R.Balupari,andD.Kin-
+deterministicsequencerepresentingtheprofileofchanges
+dred.StatisticalapproachestoDDOSattackdetectionand
+thattakeplaceatthemomentm[4]. Assuggestedin[3, response.InProc.DARPAInformationSurvivabilityConf.
+11], we calculate the threshold C cusum by the following andExposition,2003.
+equation: [15] M.Allman,V.Paxson,andW.Stevens. TCPcongestion
+control. RFC2581,April1999.
+C cusum =(τ −m)+(h−(cid:7)a(cid:7)), if m≥1, (30) [16] P.Barford,J.Kline,D.Plonka,andA.Ron.Asignalanal-
+ysisofnetworktrafficanomalies. InProc.ACMInternet
+whereτ isthepreferreddetectiontime. MeasurementWorkshop,2002.[17] P. Huang, A. Feldmann, and W. Willinger. A non-
+intrusive, wavelet based approach to detecting network
+performanceproblems. InProc.ACMInternetMeasure-
+mentWorkshop,2001.
+[18] K.ParkandH.Lee. Ontheeffectivenessofroute-based
+packet filtering for distributed DoS attack prevention in
+power-lawInternets.InProc.ACMSIGCOMMConf.,Au-
+gust2001.
+[19] V.PaxsonandM.Allman. ComputingTCP’sretransmis-
+siontimer. RFC2988,November2000.
+[20] R.Blazek,H.Kim,B.Rozovskii,andA.Tartakovsky. A
+novelapproachtodetectionofdenialofserviceattacksvia
+adaptivesequentialandbatch-sequentialchange-pointde-
+tectionmethods. InProc.IEEEWorkshoponInformation
+AssuranceandSecurity,June2001.
+[21] L.Rizzo. Dummynet:asimpleapproachtotheevaluation
+ofnetworkprotocols.ACMComputerCommunicationRe-
+view,27(1),January1997.
+[22] S. Floyd, M. Handley, and J. Padhye. A compari-
+son of equation-based and AIMD congestion control.
+http://www.icir.org/tfrc/,May2000.
+[23] G. Strang and T. Nguyen. Wavelets and Filter Banks.
+Wellesley-CambridgePress,Wellesley,MA,1996.
+[24] Y.YangandS.Lam. GeneralAIMDcongestioncontrol.
+InProc.IEEEIntl.NetworkProtocols,2000.

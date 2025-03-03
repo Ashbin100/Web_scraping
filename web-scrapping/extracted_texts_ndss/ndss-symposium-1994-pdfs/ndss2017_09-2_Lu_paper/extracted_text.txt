@@ -1,0 +1,1324 @@
+Unleashing Use-Before-Initialization Vulnerabilities
+in the Linux Kernel Using Targeted Stack Spraying
+Kangjie Lu†, Marie-Therese Walter‡, David Pfaff‡, Stefan Nürnberger‡§, Wenke Lee†, and Michael Backes‡¶
+† § ¶ ‡
+Georgia Institute of Technology DFKI, MPI-SWS, CISPA, Saarland University
+Saarland Informatics Campus
+{kjlu, wenke}@cc.gatech.edu, {walter, pfaff, backes}@cs.uni-saarland.de, stefan.nuernberger@dfki.de
+Abstract—A common type of memory error in the Linux a functional point of view since such an unnecessary use
+kernel is using uninitialized variables (uninitialized use). Unini- of CPU cycles can cause a significant runtime overhead if
+tializedusesnotonlycauseundefinedbehaviorsbutalsoimposea it occurs up to millions of times per second, as it does in
+severesecurityriskifanattackertakescontroloftheuninitialized programs such as in OS kernels. However, manually keeping
+variables. However, reliably exploiting uninitialized uses on the
+track of all possible code paths to ensure proper initialization
+kernel stack has been considered infeasible until now since the
+is an error-prone task. Even worse, automatic detection of
+codeexecutedpriortotriggeringthevulnerabilitymustleavean
+uninitializeduse,suchasthewarningofcompilers,isinaccurate
+attacker-controlled pattern on the stack. Therefore, uninitialized
+for several reasons. First, inter-procedural tracking often leads
+usesarelargelyoverlookedandregardedasundefinedbehaviors,
+rather than security vulnerabilities. In particular, full memory- to false positives and false negatives because of problems such
+safety techniques (e.g., SoftBound+CETS) exclude uninitialized as aliasing. Second, whether an uninitialized-use warning is
+use as a prevention target, and widely used systems such as justified is highly subjective: While some programmers may
+OpenSSLevenuseuninitializedmemoryasarandomnesssource. preferawarningineverypossiblecase,othersmightconsidera
+warning unnecessary if it would not cause an observable error
+In this paper, we propose a fully automated targeted stack-
+or is likely a false positive.
+spraying approach for the Linux kernel that reliably facilitates
+theexploitationofuninitializeduses.Ourtargetedstack-spraying
+Uninitialized data represents arbitrary values that were
+includes two techniques: (1) a deterministic stack spraying
+coincidentally stored in the memory. If the uninitialized data is
+techniquethatsuitablycombinestailoredsymbolicexecutionand
+usedforcontrolflow,suchasthecaseinwhichanuninitialized
+guidedfuzzingtoidentifykernelinputsthatuser-modeprograms
+function pointer is dereferenced, the execution of the program
+can use to deterministically guide kernel code paths and thereby
+leave attacker-controlled data on the kernel stack, and (2) an oreventhekernelcanpotentiallybehijacked.Arecentexample
+exhaustive memory spraying technique that uses memory occu- of that control flow hijacking is caused by uninitialized use is
+pationandpollutiontoreliablycontrolalargeregionofthekernel shown in Figure 1. Here, the pointer backlog, defined at line
+stack.Weshowthatourtargetedstack-sprayingapproachallows 7, is not initialized in a code path that can be triggered only
+attackers to reliably control more than 91% of the Linux kernel by special inputs (i.e., when cpg->eng_st != ENGINE_IDLE),
+stack,which,incombinationwithuninitialized-usevulnerabilities, which is dereferenced at line 15. An attacker can exploit such
+sufficesforaprivilegeescalationattack.Asacountermeasure,we
+an uninitialized-use vulnerability to achieve arbitrary code
+propose a compiler-based mechanism that initializes potentially
+execution by controlling the value of backlog, such as making
+unsafe pointer-type fields with almost no performance overhead.
+backlog point to a function pointer to malicious code.
+Our results show that uninitialized use is a severe attack vector
+that can be readily exploited with targeted stack-spraying, so Despite their potentially dangerous consequences,
+future memory-safety techniques should consider it a prevention
+uninitialized-use bugs are very seldom classified as security
+target, and systems should not use uninitialized memory as a
+vulnerabilities [16, 49], which arguably originates from
+randomness source.
+the perception that it is hard for an attacker to control the
+memory layout in order to make dereferencing exploitable. In
+I. INTRODUCTION
+particular, widely used systems such as OpenSSL explicitly
+InprogramminglanguagessuchasCandC++,programmers use uninitialized data for the generation of entropy (see
+decide whether to initialize a variable with a deterministic function ssleay_rand_bytes() in the SSLeay implementation)
+value when it is allocated. C enthusiasts often argue that if and hence ground their security on the assumption that such
+programmers know that the code will later set a proper value data is impossible to control or predict. On the other hand,
+anyway, initialization on allocations is an unnecessary use our study revealed that in 2015 and 2016 alone, although
+of precious CPU cycles. This argument makes sense from 16 uninitialized-use vulnerabilities have been patched in the
+Linux Kernel, only one was reported for a CVE. In fact,
+since 2004, only eight uninitialized-use vulnerabilities in the
+Permission to freely reproduce all or part of this paper for noncommercial Linux kernel have been reported for a CVE. For example,
+purposes is granted provided that copies bear this notice and the full citation
+the severe uninitialized-use vulnerability shown in Figure 1
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author has not been reported for a CVE. From a security point of
+(for reproduction of an entire paper only), and the author’s employer if the view, uninitialized use or more precisely, temporal memory
+paper was prepared within the scope of employment. errors should be included as a prevention target in state-of-
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+the-art memory protection mechanisms. However, advanced
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23387 security mechanisms such as SoftBound+CETS [30, 31] and1 /* file: drivers/crypto/mv_cesa.c parameters, which is uncommon in practice. As this finding
+2 * uninteresting code lines are omitted wasnotbackedupbyaprincipledmethodology,itwasa“lucky
+3 */
+4 static int queue_manag(void *data) shot.” In contrast, we will show that automatic control of the
+5 { uninitialized memory can be achieved in a more general way.
+6 /* back log is defined without initialization */
+7 struct crypto_async_request *backlog;
+8
+9 if (cpg->eng_st == ENGINE_IDLE) { B. Contributions
+10 backlog = crypto_get_backlog(&cpg->queue);
+11 } In this work, we show that we can meet requirement
+12 R2 without an additional memory-corruption vulnerability or
+13 if (backlog) {
+14 /* uninitialized pointer dereferenced! */ special assumptions. In particular, we show that almost the
+15 backlog->complete(backlog, -EINPROGRESS); whole kernel stack is controllable to a local attacker by either
+16 } executing syscalls based on how they leave the stack after
+17
+18 return 0; they return or exhausting memory and guiding stack allocation.
+19 } We first survey existing reported and patched uninitialized-use
+vulnerabilitiesintheLinuxkernelandthenproposethereliable
+Fig. 1: A recent uninitialized pointer dereference vulnerability targeted stack-spraying technique to write and retain arbitrary
+discovered in the Linux kernel and patched in April 2015. backlog, data on the kernel stack.
+a pointer that is not initialized if cpg->eng_st != ENGINE_IDLE, is
+dereferenced later on. Therefore, arbitrary code execution occurs if The core of the fully automated targeted stack spraying
+an attacker can control the value of backlog on the kernel stack. includes a deterministic stack spraying technique and a reliable
+exhaustive memory spraying technique. The deterministic stack
+spraying technique consists of three components: a tailored
+symbolic execution engine that explores paths and outputs
+WatchdogLite [29]), which claim full memory safety, do not
+the concrete parameters to trigger the paths; a guided fuzzer
+currently cover uninitialized uses.
+that takes as input information generated by the symbolic
+executionenginetoverifythatstackcontrolisindeedachieved;
+A. Challenges and a coordinator that safely and efficiently parallelizes the
+symbolic execution engine and the fuzzer. The exhausting
+Most uninitialized uses stem from the stack rather than the
+memory spraying technique complements deterministic stack
+heap: Out of the 16 aforementioned uninitialized-use variables
+spraying by strategically consuming a huge region of memory
+in the Linux kernel, 11 variables are stored on the stack. In
+to guide stack allocations and preparing malicious data in the
+contrast to uninitialized memory on the heap, that on the stack
+memorypagesthatwillbeusedbytheguidedstackallocations.
+is hard to control for several reasons:
+Combiningbothapproachesallowsustoreliablycontrolalmost
+1) Stack memory is frequently and unpredictably reused by the whole kernel stack.
+other parts of code; hence, prepared data on the stack is
+We have implemented both deterministic stack spraying
+likely to be overwritten by other data.
+and exhausting memory spraying. The deterministic stack
+2) The size of the stack objects is usually small and fixed,
+sprayer is based on the S2E [11] symbolic execution engine
+so stack control is inherently challenging.
+and the Trinity [18] syscall fuzzer. As we need concrete test
+3) Stack depth (especially for the kernel) is strictly checked,
+cases to use S2E, we implemented an automated test case
+so the broad control of the stack is challenging.
+generator that produces S2E test cases for each syscall. To
+As a result, to control the value of an uninitialized variable, maximize the coverage, we also implemented an S2E plugin
+any successful attack needs to overcome these three challenges. that identifies loops in the kernel so that our guided fuzzer
+To overcome these challenges, we need to fulfill three require- can selectively explore loop-related parameters. The exhaustive
+ments: memory sprayer is implemented as a user-level program that
+runs before triggering an uninitialized-use vulnerability. Using
+R1: The relative address of the uninitialized variable inside kprobes [2], we also implemented a checker that scans the
+the stack must be known. stack memory at each syscall entry or syscall return to verify
+R2: The memory at the discovered address of R1 must be that we can indeed control the kernel stack.
+controllable. That is, we can write arbitrary data to this
+memory. To evaluate the performance of the targeted stack-spraying,
+R3: Data written in R2 must not be overwritten before it we measured the range, the distribution, and the frequency of
+is used by the vulnerable function that suffers from an control and the time it takes to achieve control. Our evaluation
+uninitialized use. results show that we are able to control an impressive range
+of 91% of the kernel stack in total. While exhaustive memory
+Until now, fulfilling all three requirements has constituted a spraying reliably controls 89% of the kernel stack on average,
+manual and labor-intense task if it succeeds at all. In the deterministic stack spraying controls 32% of the frequently
+past, successful exploits relied on other memory-corruption used stack region, which cannot be reached by exhaustive
+vulnerabilities to fulfill requirement R2, or they were simply memory spraying. By adapting Cook’s attack to our technique,
+crafted in an unprincipled manner. For example, as we will the attacker can automatically prepare the malicious pointer on
+show in §VI-F, Cook [12] found that the syscall with the the kernel stack and successfully launch an arbitrary memory
+uninitialized-pointerdereferencingvulnerabilitycouldalsosave write or even a privilege escalation attack without the need for
+some user-controlled data on the stack by manually tuning the known memory corruptions or any special assumptions.
+2In a nutshell, this paper makes the following contributions:
+7
+• We propose automated targeted stack-spraying, which 6
+reliably writes arbitrary data to the kernel stack.
+5
+• We leverage tailored symbolic execution and guided
+4 fuzzing to deterministically control the frequently used
+stack region, and design a strategy to control dynamically 3
+allocated kernel memory, including the kernel stack.
+2
+• We show that uninitialized memory on the kernel stack
+1
+is controllable. Future memory-safety techniques should
+include uninitialized use as a prevention target. 0
+500 1000 1500 2000 2500 3000 3500 4000 4500
+• Weproposeapracticalmitigationagainstuninitialized-use Stack usage (byte)
+exploits with negligible performance overhead.
+II. UNINITIALIZEDUSESANDTHEKERNELSTACK
+A. Uninitialized Uses in OS Kernels
+In this section, we present uninitialized-use issues in OS
+kernels. We first investigate how widespread uninitialized-use
+vulnerabilities actually are in the Linux kernel and how aware
+people are of this problem. To this end, we have manually
+analyzed the reported Common Vulnerabilities and Exposures
+(CVE) entries that lead to privilege escalation attacks in the
+Linux kernel since 2004 [36], and the commit log of the
+Linux kernel git repository [48], which dates back to 2005.
+To reduce the huge number of commits to a manageable
+size, we mostly concentrated on the commit log messages
+between the years 2015 and 2016. For the CVEs, we find
+that eight out of 199 (4%) privilege escalation vulnerabilities
+reported since 2004 are caused by the use of uninitialized
+objects or pointers. For Linux kernel commit messages, we
+first identified candidates of uninitialized use by inspecting
+the commit messages using keywords such as uninitialized
+pointer dereference and undefined pointer, which resulted in
+52 candidate commits from 2015 and 2016, 28 of which were
+subsequently filtered out by our manual analysis because they
+are not exploitable (e.g., NULL pointer dereference bugs).
+Out of the remaining 24 cases, eight are uninitialized pointer-
+based reads, which can lead to information leaks, and 16
+are uninitialized pointer-based writes or function calls, which
+are particularly interesting to attackers. We further inspected
+these 16 interesting cases and found that 11 cases (69%) are
+from the stack while only five cases are from the heap. These
+findings not only show that uninitialized-use vulnerabilities are
+quite common in the Linux kernel but also indicate that these
+vulnerabilities are not considered particularly security-relevant
+or even not reported at all. Moreover, our findings confirm
+that most uninitialized variables are from the stack rather than
+the heap, which is a significant difference from use-after-free
+vulnerabilities.
+B. Kernel Stack Management
+Since most uninitialized variables are from stack, our
+primary focus lies on vulnerabilities caused by uninitialized
+uses of stack variables and pointers in the Linux kernel, and
+thus understanding how Linux manages its kernel stacks and
+which features it offers in this regard is important. In Linux,
+every thread has its own kernel stack allocated in the kernel
+memory space with the maximum size of the stack depending
+on the specific Linux version. In general, the stack is 4KB or
+8KB for a 32-bit OS (x86) and 8KB or 16KB for a 64-bit OS
+)%(
+egatnecrep
+ni
+sllacsys
+fo
+rebmuN
+Stack Usage of Syscalls in the Linux Kernel
+90% syscalls use <1,260 bytes
+Fig. 2: The profile for stack usage of syscalls in the Linux kernel.
+Thetotalsizeofthekernelstackis16KB.90%syscallsuselessthan
+1,260 bytes aligned to stack base. The average stack usage is less
+than 1,000 bytes, and the vast majority of stack objects are allocated
+within the highest 1KB stack region.
+(x86-64), which is quite small compared to the default stack
+size soft limit of 8MB for Linux user space stacks. The special
+data structure struct thread_info, whose size is 104-byte
+in our system, is saved at the stack top (low address). The
+fundamental goal behind limiting the kernel stack size is to
+limit overall memory consumption when a large number of
+threads is running in the kernel in parallel, and each thread
+has its own kernel stack. Because of the limited stack size,
+storinglargevariablesonthekernelstackandcreatinglongcall
+chains in the kernel space is discouraged. To ensure that the
+stack depth is shallow enough to avoid a stack overflow, Linux
+providesthecheckstack.pltoolforstaticanalysisofthestack.
+Although the small size of the Linux kernel stack improves the
+success rate of a stack-spraying attack, the shallow stack depth
+(or the lack of loops and recursions) limits the spraying range.
+Besides normal thread stacks, Linux also has other specialized
+stack types. For example, while debug stacks are used for
+hardware (interrupt1) and software (INT3) debug interrupts,
+interrupt stacks are used for external hardware interrupts or
+for processing software interrupts. Since these stacks do not
+accept user-controlled data, we do not take them into account
+and instead focus on normal per-thread kernel stacks that are
+used when syscalls are issued.
+C. Stack Usage of Syscalls
+The more frequently a stack region is used, the more likely
+an uninitialized variable will reside in this region. Therefore,
+taking control over frequently used memory regions increases
+thesuccessrateofanuninitialized-useattack.Wehenceanalyze
+stack usage of syscalls to understand which portions of the
+kernel stack are most frequently used.
+To profile stack usage of syscalls, we use kprobes to
+intercept syscall enters and returns, and scan the stack memory
+to check maximum stack usage of these syscalls. Specifically,
+upon syscall enter, we zero out the stack memory and continue
+the normal execution; upon syscall return, we scan the stack
+memory from stack top (i.e., the lowest stack address) until
+we find the first non-zero byte. We conservatively treat the
+offset of the first non-zero byte into stack base (i.e., the value
+of stack pointer upon syscall entry) as the maximum stack
+usage of the syscall. We use the Trinity fuzzer to invoke all
+3syscalls to obtain stack usage for all syscalls. Because Trinity Deterministic Stack Spraying
+usually takes a long time to explore a syscall or even just
+does not terminate, we set five-second timeout for fuzzing each Symbolic Execution Concrete parameters Guided Fuzzer
+syscall. Figure 2 summarizes the maximum stack usage for all Engine and loop information (Verifying spraying)
+(Exploring paths)
+syscalls. In particular, we find that (1) the average stack usage
+of syscalls is less than 1,000 bytes (aligned to the stack base at
+high address) and (2) 90% syscalls use only the highest 1,260
+Coordinator
+bytes on the stack. It is important to note that the stack usage Start (Scheduling and
+represents the maximum stack region a syscall uses. Assuming point bookkeeping)
+stack objects are uniformly distributed in stack regions used by
+syscalls, we find that the average location of stack objects is
+Spraying ranges and trigger inputs
+510 bytes into the stack base and more than 90% stack objects
+are allocated in the highest 960-byte stack region. Therefore, Fig.3:Overviewofthearchitectureofourdeterministicstackspraying
+techniquethatconsistsofthreecomponents.Itautomaticallyanalyzes
+the highest 1KB stack region is frequently used and thus is the
+all syscalls and outputs results, including which range of the stack
+primary target of our spraying.
+we can control and how to control the stack.
+III. THETARGETEDSTACK-SPRAYINGAPPROACH
+The main challenge in exploiting uninitialized uses is
+reasons,wecombinebothmethodssothatattackerscanachieve
+to control data in the uninitialized memory. By planting
+reliable or even deterministic control over a broad stack region.
+maliciouspointersinthetargetmemory,anuninitializedpointer
+In this section, we present an overview of both methods.
+dereference can be turned into arbitrary memory read/write
+or code execution. However, unlike heap spraying, in which
+the number and the size of allocated heap objects are user- A. Deterministic Stack Spraying
+controlled, stack spraying has the additional problem of stack
+Wedesignthedeterministicstacksprayingtechnique,which
+objects usually being static and fixed in size. The placement
+finds an execution path that prepares data overlapping that of
+of the Linux thread_info structure, at the stack top, requires
+an uninitialized variable. The main challenge of deterministic
+the stack size to be limited; otherwise, stack buffer overflows
+stack spraying is to find a syscall with specific parameters
+may occur. In addition, kernel space is shared by all threads.
+that will trigger an overlapping execution path. An overview
+Not limiting the size of stack will easily exhaust memory.
+of the technique used for the attack is shown in Figure 3.
+Therefore, Linux kernel developers are encouraged to use
+The technique consists of three components: a symbolic
+the script (scripts/checkstack.pl) to statically analyze stack
+executionengine,aguidedfuzzer,andacoordinatorthathandles
+usage. The script in particular checks the stack usage (in byte)
+communication between the symbolic execution engine and the
+of each function so that developers can find functions that use
+guided fuzzer. The goal of the symbolic execution engine is to
+toomuchstackmemory.Becauseofthesefeatures—thelimited
+explore as many execution paths as possible to find one that
+stack size, the static and fixed-size stack objects, and the stack
+saves user-controlled data on that stack, which will overlap an
+usage check, a targeted stack-spraying attack is significantly
+uninitialized variable. However, symbolic execution is prone
+more difficult than a heap-spraying attack.
+to the path explosion problem because of that the number of
+To enable a targeted stack-spraying attack in the kernel feasible paths in a program can be infinite when the program
+space, we need to prepare malicious data in a specific location contains unbounded loop iterations. A possible solution for
+ofthekernelstackinthepresenceofaforementioneddifficulties. this problem is to use heuristics for either path-finding or
+Specifically, the location itself needs to be chosen in such a concretizing the loop condition. To achieve high coverage
+way that the uninitialized memory will overlap the prepared in path exploration, we follow the second method: During
+data. In general, we can store malicious data in such a location symbolic execution, we concretize the loop conditions and at
+in two ways: (1) finding an execution path that prepares data the same time, identify loops and their symbolic conditions,
+overlapping that of the vulnerability and (2) finding a way to andthenletthefuzzerselectivelyexploretheseloops.Toverify
+guide the kernel to allocate stacks on the memory pages with whether a syscall can actually save arbitrary data on the kernel
+prepared data. The first method is deterministic: Once such a stack,ourguidedfuzzerreplacesthenon-controllingparameters
+pathanditstriggeringinputsarefound,wecandeterministically (thatareconfirmednottoaffectexecutionpathsduringsymbolic
+write arbitrary data at the specified location. Since the data execution)withamagiccode.Whenthesyscallreturns,weuse
+is saved at the target location by normal execution paths, this kprobes to intercept the execution and scan the kernel stack to
+method is stealthy and hard to detect. By contrast, the second check which ranges of the stack memory have been polluted
+method affects the stack allocation of another process/thread by magic code. These ranges are those we can control.
+by exhausting memory, which can be reliable but not fully
+deterministic. This method can achieve broad control because
+B. Exhaustive Memory Spraying
+the overlapping is at page level. However, since the creation
+of a new process/thread executes kernel functions that use the Theexhaustivememorysprayingtechniqueguidesthestack
+kernelstack,aportion(nearthestackbase)oftheprepareddata allocation of a new process or thread so that the memory
+willbeoverwritten.Asaresult,thesecondmethodlosescontrol pages used by the stack overlap those with prepared data.
+of the stack region at high address. As mentioned in §II-C, our The main challenge of such a technique is to improve the
+primary spraying target is the highest 1KB stack region. To reliability of the overlapping. To overcome this challenge, we
+control this region, we have to use the first method. For these design a strategy that reliably controls the memory of the
+4kernel stack. Specifically, our exhaustive memory spraying 1 char pathname[PATH_SIZE];
+technique includes two steps: (1) occupying the majority of 2 int flags = O_RDWR;
+3
+memoryinthetargetmachineand(2)pollutingalltheavailable 4 s2e_enable_forking();
+remaining memory with malicious data (for uninitialized 5 /* symbolize the pathname parameter */
+6 s2e_make_symbolic(pathname, PATH_SIZE, "pathname");
+variables). Memory occupation forces the kernel to use the
+7
+remaining memory, which is small, for the newly allocated 8 /* symbolically execute the open syscall */
+kernel stacks. Because the remaining memory is small, the 9 int res = open(pathname, flags);
+10
+pollution operation can be done quickly and effectively. Once 11 s2e_disable_forking();
+we ensure that almost all available memory is polluted by 12 s2e_kill_state(0, "program terminated");
+malicious data, the memory of the newly allocated stacks will
+contain the malicious data. Note that in the kernel space, the Fig. 4: This example shows how to symbolically execute the open
+kernel does not zero out the allocated memory pages, so the syscall in s2E. Here, we symbolize only the pathname parameter but
+malicious data will not be cleared. not the flag parameter. s2e_enable_forking is a S2E feature that
+enables parallel execution upon branches.
+IV. DESIGN
+Inthissection,wediscussdesignchoiceswemadeforboth
+the pathname parameter by specifying the pointer of pathname
+deterministic stack spraying and exhaustive memory spraying.
+and its size (i.e., PATH_SIZE).
+A. Deterministic Stack Spraying Given that current Linux kernel has about 300 syscalls
+and many of which have up to six parameters, manually
+Our primary spraying goal is to deterministically control
+writingtestcaseswouldbehighlytime-consumingandtherefore
+thefrequentlyusedstackregion(thehighest1KBstackregion),
+impractical. Therefore, we opted for an automatic approach to
+which is likely used by uninitialized variables. To this end, we
+generate test cases used as input for S2E. However, automatic
+need to find a suitable syscall and set its parameters such that
+test case generation entails two challenges: (1) Some syscalls
+its execution will write the data in the location, and to verify
+depend on other syscalls and therefore have to be called in a
+that the data is retained after the syscall returns. We design the
+properorder.Forexample,read/writesyscallscannotbecalled
+deterministic stack spraying technique, which includes three
+before the open syscall; and (2) for pointer-type parameters,
+parts: symbolic execution that explores execution paths, guided
+we are usually unable to specify the size of the buffer referred
+fuzzing that verifies spraying, and coordination that safely runs
+to by the pointer. To overcome the first challenge, we rely
+symbolic execution and guided fuzzing in parallel.
+on the Linux Test Project (LTP) because it properly sets up
+1)Symbolic Execution of Syscalls: To find syscalls for execution conditions for each syscall. For the second challenge,
+deterministic stack control, we need to iterate over possible we observe that execution paths (i.e., control flows of the
+execution paths of syscalls as completely as possible and syscall)areoftenindependentofthenumberofelementslocated
+generate the concrete parameters that trigger these paths. by pointer-type parameters and thus the size of the respective
+Since symbolic execution can explore execution paths in a buffer. Therefore, for symbolic execution, we conservatively
+target program and generate concrete inputs to trigger the assumepointer-typeparametersalwayspointtoasingleelement,
+respective paths, it is an ideal tool for our purpose. For each but later, we will use the guided fuzzer to explore the syscall
+syscall, we use symbolic execution to iterate over its execution with more elements (see §IV-A2). Apart from these challenges,
+paths and generate concrete inputs that we can then use to the automatic test case generation is intuitive: We generate
+verify if an execution path saves data in a target location on the C source code that iteratively symbolizes each parameter
+the kernel stack. To symbolically execute the Linux kernel, usingthesyscalldefinitionwithtypeinformationofparameters.
+we can adopt two widely used symbolic execution engines, The syscall definition itself is directly derived from the Linux
+KLEE[7]and S2E[11],both ofwhicharecapable ofhandling kernel source code.
+C/C++ programs. KLEE is built on top of the LLVM compiler
+infrastructurewhileS2EisbasedonQEMU,whichenablesS2E Path Exploration. When running the QEMU virtual machine
+to do full-system symbolic execution. Moreover, compared to intheS2Emode,executingatestcasewillautomaticallytrigger
+KLEE,S2Ecanperformanalysesin-vivowithinarealsoftware symbolic execution. During this phase, each program state
+stack(e.g.,userprograms,libraries,kernel,anddrivers)instead represents an execution path. Whenever a state is terminated,
+ofusingabstractmodelsoftheselayers.Evenmoreimportantly, i.e.,executionof apath isfinished,we tellS2E togenerateand
+S2E supports binaries and employs the selective symbolic outputsampleparametersthattriggerthisexecutionpath.These
+execution mechanism to boost performance. Considering these sample parameters are then passed to the guided fuzzer for
+features, we choose S2E as our symbolic execution engine. further verification described in §IV-A2. Since the verification
+process relies on the presence of magic code, which is stored
+Automatic generation of test cases. Since S2E does not on the stack using syscall parameters, S2E needs to tell the
+automatically decide which variables should be symbolized, it fuzzer which parameters can be replaced by magic code and
+requires as input not only the program to be tested but also a which need to take on a sample value. The criterion used to
+list of variables it should replace with symbolic values. In our distinguishthesetwotypesofparameteristheirrelevancetothe
+case, we have to explicitly tell S2E which buffers, including controlflowof theprogram:If aparameteris usedin acontrol-
+their address and size, to symbolize. As an example, Figure 4 flow relevant condition, i.e., it affects the execution path of the
+shows how to symbolically execute the open syscall. Using the program, it is considered a controlling parameter, and thus the
+s2e_make_symbolicfeature,weexplicitlytellS2Etosymbolize fuzzer uses a sample value for it; otherwise, it is considered a
+5non-controlling parameter and can be replaced by magic code. additional loop information). The result of the fuzzing phase
+To distinguish controlling and non-controlling parameters, we is essentially an overview of what we have to do in order
+obtain the path constraints when a state is terminated; if the to control the kernel stack, including which syscalls, which
+parameter is used as a constraint, it as a controlling parameter; parameters of these syscalls we need to use, and the effect of
+otherwise, it is a non-controlling parameter. thesesyscallsonthekernelstack(i.e.,whichrangeofthestack
+we can control).
+Identifying Loops. Loopsthatrepeatedlysaveuser-controlled
+Verifying spraying. To verify whether spraying is achieved
+data on the kernel stack are ideal for targeted stack-spraying
+(i.e., the magic code is left on the kernel stack), first, the
+because they may write arbitrary data to a large region of the
+guidedfuzzingpreparestheconcreteparametersforthesyscalls
+stack. Unfortunately, although symbolic execution can help
+reported by the symbolic execution component, which are
+explore execution paths with a high coverage, it generally
+either the sample parameters generated by S2E or magic code.
+cannot handle loops properly when the looping condition is
+As described in §IV-A1, we assume a pointer-type parameter
+also a symbolic value [35]. We address this limitation of
+always points to a single-element buffer. To reduce crashes
+symbolic execution by offloading the path exploration for
+caused by out-of-bound accesses and increase the spraying
+loops to the guided fuzzer. Specifically, we identify the loops
+rangeduringthefuzzing,forapointer-typeparameter,wemmap
+during the symbolic execution and provide loop information,
+a memory of the size of the kernel stack, fill in it with magic
+(i.e., the looping condition in the form of the respective
+code, and let the pointer-type parameter point to this memory.
+parameter and its value range to the guided fuzzer). The
+Second, we need to scan the stack memory right after a syscall
+fuzzer then focuses on exploring this particular parameter in
+returns.Therefore,weneedtointerceptthereturnofthesyscall
+the particular range. However, identifying loops in S2E is
+and dump the stack memory at the point of the return. The
+challenging. Traditional loop detection mechanisms rely on
+methods to intercepting syscalls include: (1) instrumenting the
+a dominator tree [22] to extract the dependence relationships
+Linux kernel source code, (2) patching the syscall table, and
+among blocks. The dominator tree, however, is not available in
+(3) using kprobes [2]. Method (1) might introduce a bias when
+S2E because it transforms the binary code of a program into
+verifying the success of the targeted stack-spraying because
+an LLVM IR representation block by block thus losing the
+it requires changing the source code. Therefore, this method
+information about dependencies among blocks. Without this
+is not desirable. Method (2) and method (3) are similar in
+information,apreciseidentificationofloopsisinfeasible.Since
+principle; however, since kprobes provides a more flexible and
+false positives in identifying potential loops during symbolic
+reliable way of intercepting syscalls, we chose method (3)
+execution only introduce more work for the fuzzer, we use a
+to intercept the return of syscalls and insert our logic in the
+two-layered approach to conservatively identify loops during
+handler for the interception. Upon intercepting a syscall return,
+symbolicexecution.Thefirstlayerisanexecutionhistory-based
+theverificationisperformedbyscanningthestackmemoryand
+identification, and the second is based on the relative offsets
+checking which ranges of stack memory have been polluted
+between instructions. Specifically, in the first layer, when given
+with the magic code. Once the magic code is found, the range
+a function, we maintain the list of executed instructions, and
+information together with the corresponding syscall parameters
+wheneveraconditionaljumpisexecuted,wecheckitstarget:If
+are reported.
+ittargetsanalreadyexecutedinstruction,weidentifyitasaloop.
+This execution history-based approach, however, is unable to
+Fuzzing loops. A well-known limitation with symbolic
+detectaloopifitisexecutedonlyonce.Inthiscase,weinvoke
+execution is the path explosion problem that the number of
+the second layer of our approach to further check the address
+feasible paths in a program grows exponentially in the case of
+of the jump target: If the address is lower than the one of the
+programs with loops. Even a single loop can generate a huge
+conditional jump instruction, we also identify it as a loop. It is
+number of symbolic execution paths corresponding to the loop
+importanttonotethattherelativeoffset-basedcheckisalsonot
+iterations [35], thus resulting in the path explosion problem.
+entirely reliable since it is possible that a conditional jump for
+To handle this problem, KLEE (internally adopted by S2E)
+a loop may target a higher address, resulting in false negatives.
+randomly picks or uses search heuristics [7] to select a state to
+Nonetheless, our two-layered approach works reasonably well
+execute. This design decision inherently prevents our targeted
+andcanlargelysolvetheloopidentificationprobleminatimely
+stack-spraying from finding and exploiting a syscall containing
+manner. Once we have successfully identified a conditional
+alooptosprayahugeandcontinuousrangeofstack.Therefore,
+jump that is used for looping, we extract the loop condition
+instead of letting S2E symbolically execute the loop, we let
+from the comparison instruction. By checking whether the loop
+it tell us which syscall contains loops and which parameters
+conditionisasymbolicvalue,weareabletodeterminewhether
+are used as the loop condition. Then we let our guided fuzzer
+the loop condition is dependent on the syscall parameters. To
+handle loop cases by specifically fuzzing the condition-related
+further reduce the search space for the guided fuzzer, we also
+parameters. All other parameters that are used as input for
+querytheconstraintsolverofS2Eforthepossiblevalueranges
+the fuzzer are either the sample values generated by S2E or
+of the symbolic loop condition. These value ranges are then
+magic code, as mentioned in §IV-A1. With the combination of
+used to guide the fuzzing process.
+S2E (with the loop information) and the guided fuzzer, we are
+abletoefficientlyandcomprehensivelyidentifythecontrollable
+2)Guided Fuzzing: The fuzzing mechanism verifies that
+range of the stack.
+the targeted stack-spraying is indeed achieved when executing
+the kernel with the inputs generated by symbolic execution. 3)Coordination: Thecoordinationunitisdesignedtosafely
+As shown in Figure 3, the guided fuzzing mechanism takes run the symbolic execution and the guided fuzzing components
+as input the output of the symbolic execution component (i.e., in parallel. Both the symbolic execution engine and the guided
+the sample parameters for the respective syscall and, if present, fuzzerarecontainedinaQEMUvirtualmachine,forwhichtwo
+6separateQEMUsnapshotsarecreatedthatspecificallyruneither a few megabytes of memory. To avoid being “shrunk” by
+the symbolic execution engine or fuzzing mechanism. Instead techniques Copy-on-Write and Deduplication, we explicitly
+of running all syscalls in the same instance of a snapshot, each writearandom8-bytevalue(obtainedfrom/dev/urandom)into
+syscall is tested in a separate instance, thereby enabling us to eachmemorypage.Moreover,wekeeptheseprocessesrunning
+run the syscalls independently of each other and thus safely during the attack to ensure the memory remains occupied
+contain the crash or the error of the running of each syscall. To throughout the exhaustive memory spraying process.
+facilitate the coordination between the different components,
+2)Polluting Memory: Since the majority of memory has
+we have designed two features: (1) a communication scheme
+already been occupied, when the kernel creates a new process
+for the whole testing framework and (2) a controlling scheme
+orthread,theallocatedkernelstackwillbeforcedtousethere-
+for sending commands to the testing instances.
+mainingavailablememory.Bypollutingtheremainingmemory
+Communication scheme. To efficiently find the syscall and withmaliciousdata(thatattackerswanttosprayintothekernel
+its parameters that can achieve the targeted stack-spraying, the stack),theallocatedkernelstackwilloverlapthememorypages
+symbolic execution snapshot and the guided fuzzing snapshot with the malicious data. The polluting process also obtains the
+run in parallel; therefore, a real-time communication scheme is size of available memory (after memory occupation), mmaps
+required.Thecommunicationisusedforsending(1)commands a memory of this size and writes the malicious data into it.
+from the coordinator to the virtual machines, (2) outputs of the Afterwards, the pollution process munmaps the polluted memory.
+symbolic execution engine to the guided fuzzing mechanism, Note that munmap does not clear the malicious data in memory.
+and (3) verification results from the guided fuzzing mechanism To ensure that the pollution is effective and that the polluted
+tothecoordinator.Wechosepipeasthecommunicationchannel memory contents are not overwritten by another process, we
+and use the paravirtualized drivers (virtio) [3] of KVM to perform the munmap operation right before invoking the syscall
+improve the performance of I/O operations. with an uninitialized-use vulnerability.
+Controllingscheme. Duringtheanalysisprocess,itiscommon V. IMPLEMENTATION
+that the symbolic execution engine and the guided fuzzing
+mechanism crash or get stuck in infinite loops. In these In this section, we present the prototype of both the deter-
+cases, the controlling scheme must terminate or restart the ministic stack spraying technique and the deterministic stack
+virtual machines. Specifically, we design a command receiver spraying technique technique. Although the implementation
+along with a set of pre-defined commands, which runs in currently targets the Linux kernel, it is possible to extend it
+both snapshots of the QEMU virtual machine for symbolic to other OS kernels (e.g. windows) since it only requires the
+executionandguidedfuzzing.Asanexample,whentheguided syscall interfaces and can directly work on binaries.
+fuzzing does not terminate after a specified period of time,
+the coordinator will send the command STOP to terminate the A. Deterministic Stack Sprayer
+snapshot.
+1)SymbolicExecutionEngine: Asdiscussedin §IV-A1,we
+useS2Easthesymbolicexecutionengineinourtargetedstack-
+B. Exhaustive Memory Spraying
+spraying system. To facilitate the analysis of large numbers of
+syscalls, we additionally implemented an automatic test case
+Although the deterministic stack spraying technique can
+generator for syscalls and two S2E plugins that handle the
+deterministically control the frequently used stack region, its
+input generation for the fuzzer and the identification of loops.
+coverage is limited: It is hard to find an execution path that
+can save attacker-controlled data in the stack region after the
+Test case generator. The automatic test case generator takes
+highest1KBbecausestackobjectsarerarelysavedinthisregion.
+as input the definition (i.e., the signatures) of the syscalls
+To control this region that spans the majority of the kernel
+to be tested. To obtain these definitions, we searched the
+stack, we design the exhaustive memory spraying technique.
+source code of the Linux kernel for the pattern of syscall
+Note that this technique is general: It can control not only the
+definition. Specifically, syscalls are always defined using the
+kernelstackbutalsoothermemoryregionsthataredynamically
+uniform macro SYSCALL_DEFINEx where x denotes the number
+allocatedinthekernelspace,suchasthekernelheap.Compared
+of parameters. For example, the open syscall is defined as
+to the deterministic stack spraying technique, the exhaustive
+follows:
+memory spraying technique is straightforward, which includes
+twoparts:(1)memoryoccupation,whichconsumesthemajority SYSCALL_DEFINE3(open,constchar*,filename,int,flags,uint16_t,mode)
+of available memory in a system and (2) memory pollution,
+Given that we achieve targeted stack-spraying by preparing
+which writes malicious data in the remaining memory.
+data in parameters, syscalls that do not have parameters (e.g.,
+1)Occupying Memory: The goal of occupying the majority getpid) and therefore cannot take user-controlled data are
+of available memory is to restrict the kernel to use the small ignored. Also, because the underlying hardware architecture
+remaining memory for new stack allocations. Because the of our testing machine is x86/x86_64, only syscalls for this
+remaining memory is small, attackers can finish the next architecture are selected. The test case generator itself is
+step, memory pollution, in a quick and effective manner. To implemented asa pythonscript with theexecutionenvironment
+decide how much memory to occupy, we first obtain the being set up by LTP. As mentioned in §IV, when handling
+total size of available memory and allow attackers to specify pointer-type parameters, we only symbolize the first element
+the amount of non-occupied memory (e.g. 50MB). All other of the buffer the pointer refers to. To reduce potential issues
+available memory is then to be occupied. Specifically, we caused by out-of-bound accesses, during symbolic execution,
+incrementally create many processes, each of which mmaps we allocate memory chunks of the kernel-stack size (i.e.,
+716KB) for these elements. Once the respective parameters are executioncomponent.Inparticular,ifaparameterisloop-related
+symbolized, we use the general syscall() function to trigger (i.e., it is used as the looping condition), we let Trinity focus
+the symbolic execution for the syscall under analysis. onthisparameterbygeneratingrandomvalueswithinthevalue
+range specified by the symbolic execution component.
+S2E Plugins. We implemented two S2E plugins to facilitate
+the automatic analysis of large numbers of syscalls: (1) a Spraying verifier. As discussed in §IV-A2, intercepting
+path explorer plugin that explores possible execution paths and syscall returns is done by using the kprobes tool. kprobes
+generates concrete parameters for each execution path, and provides three different types of probes depending on the
+(2) a loop explorer plugin that identifies loops whose looping intendedpurpose:kprobeforinterceptingsyscallentries,jprobe
+conditions depend on syscall parameters. The path explorer forinterceptingjumpinstructions,andkretprobeforintercepting
+plugin intercepts the state-killing signal that occurs when an syscall entries and returns. Since we check the stack at syscall
+execution path is finished, i.e., when a state is terminated. The returns, the most suitable probe for us is kretprobe, which we
+signalhandlerthenaskstheconstraintsolvertogeneratesample implemented in a kernel module. Our kretprobe kernel module
+parametersthattriggerthispath.Foreachparameter,theplugin takes as input the name of syscall under analysis and intercepts
+further checks if it is contained in the path constraints: If yes, the return of this particular syscall. Upon interception, we
+theparameterisclassifiedasacontrollingparameterthataffects derive the stack top (the lowest address) of the current kernel
+the execution path; otherwise, it is a non-controlling parameter stack by computing stack_pointer & (THREAD_SIZE - 1)
+thatwillbereplacedwithmagiccodeduringtheguidedfuzzing. where stack_pointer is provided by kprobes and the macro
+The loop explorer plugin aims to identify loops with symbolic THREAD_SIZE defines the size of the kernel stack, which varies
+conditions. We identify loops using a two-layered approach on operating systems, e.g. it is typically 8K on 64-bit Ubuntu
+that tracks the execution history for each function as well and 16KB on 64-bit Debian. Once we have computed the stack
+as the relative offsets between these instructions inside the top and size of the kernel stack, verification is performed by
+respective function. Specifically, we hook S2E at the end of searching the stack memory for magic code. To output the
+each block by catching the onTranslateBlockEnd signal and verification results, we need to write the data into user space
+then check if the last instruction of the block is a direct call files from our kernel module. For safety and reliability reasons,
+or indirect call instruction to intercept function calls. Note that writing to a user space file from kernel space is discouraged.
+S2E translates the binary at block level rather than function Therefore, we use the /proc virtual file system to pass results
+level,socheckingthelastinstructionofeachblockisnecessary to user space, which is later passed to the coordinator.
+toidentifyfunctioncalls.Whentheexecutionentersafunction,
+3)Coordinator: The coordinator controls the symbolic
+we create a list to maintain the executed instructions. Since the
+execution engine and the guided fuzzer. The input for the
+(virtual)addressofeachinstructioninthememoryisunique,we
+coordinator is the specific range of stack that we want to
+savethePCvalues(i.e.,thevaluesofinstructionpointer)inthe
+control,whichisusedtotellourtargetedstack-sprayingtofind
+list. To know whether an instruction is a conditional jump, we
+syscalls with corresponding parameters that can save arbitrary
+read the machine code pointed to by the PC to get the opcode
+data in this range. Once it receives that range, the coordinator
+and then match the opcode to confirm the instruction. Once a
+runs the symbolic execution engine and the guided fuzzer in
+conditional jump is identified, the PC of the next instruction
+parallel to identify suitable syscalls and their parameters as
+(i.e., the target of the jump) is checked: If it is already in the
+quickly as possible.
+executed instruction list, we report it as a loop. Otherwise, we
+check whether its PC is smaller than the one of the conditional
+Ranking and syscalls. To identify syscalls that can spray the
+jump instruction: If it is, we also report it as a loop. If the
+specifiedrangeasquicklyaspossible,thecoordinatorprioritizes
+loop condition is symbolic, we use the getRange() function
+three types of syscalls: (1) syscalls that set configurations or
+provided by the constraint solver to compute the possible value
+write data. Such syscalls (e.g., pwritev) are very likely to
+range of the condition value.
+save data on kernel stack; (2) syscalls that contain loops. Such
+2)GuidedFuzzer: Theguidedfuzzerverifiesifthespraying syscalls usually affect a large region of the kernel stack; and
+can be actually achieved and also mitigates the limitations (3) syscalls that contain (multiple) pointer-type parameters.
+of symbolic execution by specifically fuzzing loop-related By directing pointers to attacker-controlled buffers containing
+parameters. Our guided fuzzer is implemented on top of the magic code, syscalls containing more pointer-type parameters
+Trinity fuzzer [18]. are likely to have a higher chance to save the magic code
+on kernel stack. Remaining syscalls are analyzed after the
+Tailoring the Trinity fuzzer. Fuzzing in general faces the aforementioned ones. With more interesting syscalls being
+problem that purely randomized inputs for functions often lead analyzed first, it is more likely to find a suitable sprayer in a
+to failures (i.e., being terminated by sanity checks), preventing fixed amount of time.
+theexplorationofinterestingexecutionpaths.Forexample,ifa
+file descriptor parameter (4-byte) would be purely randomized,
+B. Exhaustive Memory Sprayer
+thekernelwouldlikelysimplyrejecttheexecutionofthesyscall
+and return -EINVAL. Trinity addresses this problem by creating We implemented the exhaustive memory sprayer as a user-
+a list of file descriptors: opening pipes, scanning file systems space program. The amount of available memory in the system
+(e.g.,sysfs,procfs,and/dev),andcreatingabunchofsockets is obtained with command free -m. In our case, we want to
+using random network protocols; and then passing one of these keep some small portion of memory (e.g. 50MB) available and
+entities at random whenever a syscall needs a file descriptor. occupy all other memory. During memory occupation, we fork
+Forparametersotherthanfiledescriptors,weinstructTrinityto processes,eachofwhichoccupies2MBmemory,toexhaustall
+takeasinputtheconcreteparametersgeneratedbythesymbolic memory besides that we want to intentionally leave available.
+8The polluting process then writes malicious data (magic code
+1.0
+in our case) to the remaining available memory and munmaps it.
+Toverifyifthenewlyallocatedstacksusethepollutedmemory
+pages,weinterceptsyscallentriesusingkprobesandscanstack 0.8
+memory for magic code. We instrumented the Trinity fuzzer
+to asynchronously run memory occupation and call memory
+pollution before invoking syscalls. 0.6
+VI. EVALUATION
+0.4
+We evaluated the effectiveness of our targeted stack-
+spraying approach with regard to exploiting uninitialized-use
+0.2
+vulnerabilities by measuring the control coverage we achieved.
+We present the total stack ranges that we can control with
+deterministic stack spraying and exhaustive memory spraying, 0.0
+14200 14400 14600 14800 15000 15200
+the distribution of controlled regions, and the time spraying
+Size of controlled regions (aligned to low stack address)
+takes. In particular, we investigate the following questions:
+• Stack spraying coverage. What is the overall range of
+the kernel stack can we control with our two spraying
+techniques?
+• Coverage distribution and frequency. In deterministic
+stack spraying, how is the control coverage distributed
+over the kernel stack? And how frequently can we control
+a specific stack region?
+• Spraying reliability. In exhaustive memory spraying,
+how reliably can we control memory?
+• Spraying efficiency. How long does it take for our
+spraying techniques to achieve memory control?
+A. Experimental Setup
+We obtained the symbolic execution engine S2E from
+the master branch of its git repository1, which uses QEMU
+1.0.50 and clang 3.2. Our guided fuzzer is based on Trinity
+version 1.7pre. Both the symbolic execution and guided fuzzer
+run on virtual machines with Debian 8.5.0 (64-bit) on Linux
+kernel version 3.16. We selected syscalls in the way described
+in §V; out of 313 syscalls available in the kernel source,
+we selected 229 for the evaluation. The stack of the Debian
+system is 16K-byte. The stack has two regions that are at fixed
+locations and cannot be sprayed: the lowest 104 bytes reserved
+for thread_info and the highest 160 bytes reserved for OS
+operations such as context switches. In all evaluations, the
+magic code is set to be 4-byte string "UBIE".
+B. Stack Spraying Coverage
+We evaluated the coverage for deterministic stack spraying
+and exhaustive memory spraying separately and then measured
+their combined coverage. In both scenarios, we used 229 pre-
+selected syscalls for the evaluation.
+In deterministic stack spraying, we found that only 34
+syscalls do not allow us to take control of any stack region.
+After manual inspection, we concluded that this is because
+these syscalls do not admit any parameters that will be stored
+on the stack. Table I summarizes the amount of bytes that can
+be controlled by the top 10 syscalls. In the highest 1KB stack
+region, which is frequently used (§II-C), deterministic stack
+spraying covers 315 bytes using all available syscalls. Hence,
+1https://github.com/dslab-epfl/s2e.gitasofAugust2016
+sllacsys
+dellortnoc
+fo
+FDC
+Coverage of Exhaustive Memory Spraying
+Fig. 5: The cumulative distribution (CDF) of coverage achieved by
+exhaustive memory spraying. Its average control rate is about 90%.
+The controlled memory is aligned to the low address of the kernel
+stack; a portion (1,700 bytes on average) near the stack base cannot
+be controlled.
+32% of the frequently used region of the kernel stack can be
+manipulated using deterministic stack spraying.
+Stack memory after the highest 1KB is subjected to
+exhaustive memory spraying. As mentioned in §III, a portion
+of the prepared malicious data in the kernel stack of a
+victim process by exhaustive memory spraying is likely to
+be overwritten because of some kernel operations (e.g., setting
+up a new process) in the victim process. To evaluate which
+areas are overwritten, we enabled exhaustive memory spraying
+and ran the Trinity fuzzer to invoke syscalls. We then used
+kprobes to intercept syscall entry points and check which
+regions have been polluted by magic code (indicating that they
+were successfully sprayed). Figure 5 shows the results: Besides
+asmalloverwrittenregionnearstackbase,theremainingregion
+can be fully controlled. The size of the uncontrollable region
+varies. On average, the highest 1,722 bytes at the stack base
+are overwritten, and in some cases, this region can be as small
+as 1,200 bytes. Overall, while losing control of this region,
+exhaustive memory spraying retains control of all other stack
+memory, achieving an average coverage rate of 89%.
+Deterministic stack spraying and exhaustive memory spray-
+ing work as two complementary techniques: While exhaustive
+memory spraying retains the majority of the memory, it cannot
+control the frequently used stack region. Deterministic stack
+spraying complements it by controlling 32% memory of the
+frequently used stack region. Overall, by combining both
+spraying techniques, targeted stack-spraying reliably controls
+more than 91% of the kernel stack.
+C. Coverage Distribution and Frequency
+We further investigated how the control coverage is dis-
+tributed over the kernel stack when using deterministic stack
+spraying. Figure 6 presents the distribution. We found that the
+coverage ranges from 200 to 800 bytes. More importantly, the
+controlwithdeterministicstacksprayingishighlyconcentrated:
+Some regions can be controlled by more than 100 syscalls. We
+9Systemcall Coverage(Byte)
+vmsplice 224
+uname 99
+fcntl 96
+setpriority 88
+sched_get_priority_min 88
+sched_get_priority_max 88
+personality 84
+iopl 84
+umask 80
+io_destroy 76
+TABLE I: Top 10 syscalls with highest individual control coverage
+in the kernel stack.
+Systemcall UniqueCoverage
+wait4 16
+waitid 12
+timerfd_create 8
+clock_getres 8
+fcntl 8
+mq_open 8
+sched_rr_get_interval 8
+mq_notify 8
+timer_gettime 4
+Total 80
+TABLE II: Syscalls that uniquely control a stack region. Unique
+coverage is the number of uniquely controlled bytes.
+believe these regions are most likely used by stack objects,
+and uninitialized variables likely reside in these regions, so
+controlling these regions is critical to exploit uninitialized uses
+fromthekernelstack.TableIpresentstop10syscallswithhigh
+coverage.Syscallsvmsplice,uname,andfcntlhavethehighest
+individual coverage. We further investigated which regions
+of the stack are uniquely controlled by a syscall. Table II
+contains all syscalls that uniquely control a region. Overall,
+only 80 bytes are uniquely controllable by a single syscall.
+Other covered bytes can be controlled with multiple syscalls,
+thus their sprayers are more reliable.
+D. Reliability of Exhaustive Memory Spraying
+We investigated the reliability of exhaustive memory spray-
+ingbymeasuringhowlikelythekernelusesthesprayedmemory
+140
+120
+100
+80
+60
+40
+20
+0
+0 100 200 300 400 500 600 700 800
+Controlled regions (offset into the stack base in byte)
+sllacsys
+gnillortnoc
+fo
+rebmuN
+for the kernel stack, i.e. whether the allocated stack memory
+overlaps the one with prepared data. Specifically, we enable
+the exhaustive memory spraying and run the Trinity fuzzer
+to invoke syscalls. Then we count the number of times (i.e.,
+probes) a syscall has been invoked until we find that the kernel
+stack for the syscall is sprayed. After running all syscalls with
+Trinity, we found that in most cases, the kernel uses the
+sprayed memory as stack in the first or second probe. The
+average number of probes we achieve overlapping is 1.8. The
+worse case is less than 10 probes. Such results show that the
+exhaustive memory spraying technique is very effective and
+thus can reliably control the uninitialized memory.
+E. Efficiency of Spraying
+Indeterministicstackspraying,boththesymbolicexecution
+and the guided fuzzing are time-consuming processes. In many
+cases, they do not terminate even after running for a few
+hours. To handle this problem, we have set a timeout for this
+analysis: If the analysis for a syscall does not generate new
+coverage within a pre-set timeout, we forcibly terminate the
+analysisforthissyscallandcontinuetoanalyzenextone.After
+experimenting with various timeouts, we ultimately set the
+timeout to 30 minutes. We found that the vast majority of
+syscalls can be thoroughly analyzed within this time-frame,
+with only 12 syscalls not finishing in time. With the syscall
+rankingmentionedin§V-A3,wewereabletocontrolmorethan
+200 bytes in the frequently used region within a few minutes.
+Compared to deterministic stack spraying, exhaustive memory
+spraying is much more efficient. The time memory occupying
+takes depends on the size of the available memory. In our case,
+thememoryis512MB,andthetimeforoccupyingthememory
+is less than 2 seconds. Since memory pollution writes data into
+a small memory region, its time is unobservable.
+F. Case Study
+Thetargetedstack-sprayingtechniqueprovidesaconceptual
+approach for exploiting a given uninitialized-use vulnerabilities
+by preparing malicious data at a target stack location. For
+the sake of illustration, we exemplify the applicability of our
+approach by adapting Cook’s exploit [12].
+Tothebestofourknowledge,Cook’sexploitistheonlyone
+that exploited an uninitialized-use vulnerability (CVE-2010-
+2963) in the Linux kernel stack. Figure 7 shows how the
+code is subject to the uninitialized use. The pointer data in
+Statistics of Deterministic Stack Spraying object karg.vc is not initialized but dereferenced in function
+copy_from_user(). Cook exploited this vulnerability by tuning
+the cmd argument to let the union struct adopt the type of
+struct video_tuner, causing karg.vt to be written with user-
+controlled data. For such a spraying attack to succeed, at least
+four requirements must be satisfied: (1) The object having the
+uninitialized pointer must be contained by a union struct; (2)
+another type in the union struct has to have a non-pointer field
+that overlaps with the uninitialized pointer because users are
+not allowed to specify pointers pointing to kernel space; 3)
+this non-pointer field can be overwritten with user-controlled
+data; and 4) the user-controlled data will not be cleared. An
+Fig. 6: The coverage, distribution, and frequency of stack control execution path satisfying all these requirements is uncommon
+achieved by the deterministic stack spraying technique. in practice, and finding such a path manually is unrealistic in
+most cases.
+101 static long do_video_ioctl(struct file *file, unsigned int cmd, that uninitialized-use exploits usually control an uninitialized
+2 unsigned long arg) { pointer to achieve arbitrary read/write/execution. By zero-
+3 union {
+4 struct video_tuner vt; initializing pointer-type fields in an allocated object, we can
+5 struct video_code vc; prevent an adversary from controlling these pointers. Since
+76 } ..k .arg; memory page at the address zero is not accessable in Linux2,
+8 /* karg.vc contains an uninitialized pointer */ zero-initialization becomes a safe prevention operation. More
+9 err = get_microcode32(&karg.vc, up); specifically, we perform an intra-procedural analysis for the
+10 ...
+11 } Linux kernel source code. We realize both the analysis that
+12 int get_microcode32(struct video_code *kp, identifiesunsafepointer-typefieldsandtheinstrumentationthat
+13 struct video_code32 __user *up) { zero-initializes the identified pointer-type fields based on the
+14 ...
+15 /* uninitialized pointer is dereferenced */ LLVM compiler Infrastructure [24].
+16 copy_from_user(kp->data, up->data, up->datasize))
+17 ...
+18 } A. Identifying Unsafe Pointer-Type Fields
+Our analysis is carried out on the LLVM IR, so type
+Fig. 7: The uninitialized-use vulnerability used in Cook’s exploit.
+information is preserved. In most cases, we can differentiate
+pointer-type fields from other fields based on type information.
+We start our analysis from allocation sites (i.e., AllocaInst
+In this case study, we show that our targeted stack-spraying instructions in LLVM IR). The first step is to identify all
+technique can automatically find many execution paths that are pointer-type fields by recursively (a field could be a struct
+able to prepare a malicious pointer on the kernel stack, thus or an array type) traversing each field in the allocated object.
+controlling the uninitialized pointer kp->data. To reproduce Since integer values might be used as a pointer, we also treat
+Cook’s exploit, we installed version 2.6.27.58 of the Linux the 8-byte-integer type as a pointer type.
+kernel in 64-bit Ubuntu 14.04; the kernel source code in file
+To initialize identified pointer-type fields, we could conser-
+compat_ioctl32.c was reverted to contain the vulnerability
+vatively zero out them upon allocations. This strategy, however,
+described in CVE-2010-2963. Determined by the operating
+will overly initialize many already initialized pointers and
+system, the size of the kernel stack is 8KB instead of 16KB
+therefore introduce unnecessary performance overhead. To
+in this case study. As mentioned in §IV, to benefit from
+reduce initialization overhead while still ensuring security, we
+our targeted stack-spraying technique, we need to find out
+designed an intra-procedural program analysis that checks the
+the location of the uninitialized pointer in the stack. To get
+following two conditions: (1) the pointer field is not properly
+the pointer location, we used kprobes to hook the function
+initialized in the function; and (2) the pointer is sinking (e.g.,
+do_video_ioctl. The handler provided by kprobes enables us
+being used or passed to other functions). Only those pointer-
+to find the location of the stack pointer when do_video_ioctl
+type fields satisfying both conditions require zero-initialization.
+iscalled.Usingthis information,wecomputedtheoffsetof the
+More specifically, once all pointer-type fields are identified, we
+uninitialized pointer kp->data from the stack base, which is
+perform taint analysis to keep track of the initialization status
+396. After knowing this offset, we employed our deterministic
+and sinking status of the pointer-type fields in the following
+stack spraying technique to find syscalls that can prepare a
+conservative ways:
+8-byte malicious pointer at this offset. Altogether, we were
+able to find 27 such syscalls with corresponding parameters. • When a pointer-type field is explicitly assigned by other
+Independent of the chosen syscall, we could always prepare a values (i.e., it is the store-to target in a memory storing
+malicious pointer at the target offset, resulting in an arbitrary instruction (StoreInst)), we record that this field is
+write. initialized.
+• When a pointer-type field that is not fully initialized
+Thiscasestudyshowshowtousetheproposeddeterministic
+is passed to other functions as a parameter or stored
+stack spraying technique to find syscalls that can control a
+to memory, we report it as unsafe, which thus requires
+specific location on stack. It also confirms that control of the
+initialization.
+stack can be achieved generally and automatically, and, in
+• When a pointer-type field that is not fully initialized is
+the presence of a suitable uninitialized-use vulnerability, a
+dereferenced(i.e.,usedasthepointerargumentinmemory
+successful exploit can be built reliably and readily.
+loadinginstruction(LoadInst),StoreInst,orfunctioncall
+instruction (CallInst), we treat it as unsafe as well.
+VII. MITIGATION
+The basic alias analysis [23] provided by LLVM is adopted
+We showed that uninitialized-use vulnerabilities can be
+to tackle the alias problem, so accessing pointer-type fields
+readily and reliably exploited using our targeted stack-spraying
+via their aliases is also tracked. Since our analysis is intra-
+technique. While use-after-free and buffer overflow problems
+procedural, such a basic alias analysis suffices for the purpose
+have been extensively studied, which has resulted in various
+of efficiently detecting pointer-type fields that lack proper
+protection techniques (e.g., memory safety), the uninitialized-
+initialization.Withthisconservativetaintanalysis,wemanaged
+use problem has rarely received attention. Our findings show
+to reduce the number of to-be-initialized bytes from 105,960
+that uninitialized use constitutes a severe attack vector that
+to 66,846.
+calls for practical defense mechanisms; however, to date no
+such defense mechanisms exist. As such, we designed and
+2Since the Linux kernel with version 2.6.23, the
+implemented an efficient and practical mitigation that counters
+/proc/sys/vm/mmap_min_addrtunablewasintroducedtopreventunprivileged
+uninitializeduses.Ourmitigationisinspiredbytheobservation usersfromcreatingnewmemorymappingsbelowtheminimumaddress
+11Systemcall Baseline W/defense Overhead(%) Programs Baseline W/defense Overhead(%)
+nullsyscall 0.04 0.04 (0.0%) perlbench 3.62 3.62 (0.0%)
+stat 0.42 0.40 (-4.8%) bzip2 4.74 4.75 (0.2%)
+open/close 1.20 1.14 (-5.0%) gcc 0.945 0.945 (0.0%)
+selectTCP 2.44 2.62 (7.4%) mcf 2.71 2.68 (-1.1%)
+signalinstall 0.11 0.11 (0.0%) gobmk 13.9 13.9 (0.0%)
+signalhandle 0.60 0.64 (6.7%) hmmer 2.02 2.03 (0.5%)
+fork+exit 163 157 (-3.7%) sjeng 3.28 3.30 (0.6%)
+fork+exec 447 460 (2.9%) libquantum 0.0365 0.0365 (0.0%)
+protfault 0.327 0.356 (8.9%) h264ref 9.35 9.40 (0.5%)
+pipe 8.906 9.058 (1.7%) omnetpp 0.342 0.349 (2.0%)
+TCP 25.6 27.5 (7.4%) astar 7.77 7.74 (-0.4%)
+xalancbmk 0.0611 0.0611 (0.0%)
+Average 1.95%
+milc 4.47 4.51 (0.9%)
+namd 8.84 8.85 (0.1%)
+TABLE III: LMBench results. Time is in microsecond.
+dealII 10.5 10.6 (1.0%)
+soplex 0.0201 0.0201 (0.0%)
+povray 0.407 0.417 (2.5%)
+lbm 1.66 1.68 (1.2%)
+B. Implementation sphinx 1.16 1.17 (0.9%)
+Both the analysis pass and the instrumentation pass are Average 0.47%
+implemented with LLVM. Both passes are inserted after all
+TABLEIV:Userspace(x86_64)performanceevaluationresultswith
+optimization passes. To use the mitigation, users only need
+the SPEC benchmarks. Time is in second, the smaller the better.
+to specify the option (i.e., -fsanitize=init-pointer) when
+compiling the kernel source code. To compile Linux kernel
+source code with LLVM, we applied the patches provided
+by the LLVMLinux project [25]. The zero-initialization code VIII. RELATEDWORK
+is inserted right after allocation sites. In LLVM IR, inline In this section, we provide a compact overview of the
+assembly is invoked by a CallInst, which is treated as a sink offensive and defensive related works.
+inouranalysis,sothecommoninlineassemblyinLinuxkernel
+is not an issue. A. Memory Spraying
+Memorysprayingisapopularmeanstomemory-corruption
+C. Evaluating Pointer Initialization
+attacks.Byfarthemostpopularmemorysprayingtechniquesis
+To confirm that our mitigation is practical, we applied it heap spraying, an attack that was first described by SkyLined
+to the latest Linux vanilla kernel (x86_64, version 4.7) and in 2004 [38]. Heap spraying attacks fill large portions of
+evaluated its performance. The testing is performed in the the victim’s heap memory with malicious code (e.g., NOP
+virtual machine with the secured kernel. The host machine sleds), thus increasing the chance of hitting malicious code for
+is equipped with an Intel(R) Core(TM) i7-2760QM CPU @ hijackingthecontrolflow[14,15].Althoughtheheapspraying
+2.40GHz processor and 10GB of RAM; the running OS is technique itself has been countered by the introduction of Data
+64-bit Ubuntu 14.04 with Linux kernel version 3.13.0-55. The Execution Prevention (DEP), the evolution of heap spraying—
+virtual machine (VirtualBox) was configured to have a 4-core JIT spraying—has become a popular concept for enabling a
+processor and 4GB RAM; its OS is also 64-bit Ubuntu 14.04. variety of web-based attacks [42]. JIT spraying exploits the
+We used the default configuration to compile the kernel code. predictability of the JIT compiler to create predictable code
+fragmentsthatcanbeusedtohijackcontrol-flow[42,50].Since
+Performance with system services. We used LMbench [27]
+these fragments reside in an executable code cache, mitigation
+asthemicrobenchmarktotesttheruntimeslowdowninsystem
+techniques like DEP or W ⊕ X can be bypassed [42, 50].
+services. The selected system services are mainly syscalls,
+Existing defenses against heap/JIT spraying attacks either try
+which conform to typical kernel performance evaluations (e.g.,
+to detect the attack by searching for large amounts of NOP
+[19]).TheevaluationresultsareshowninTableIII.Theaverage
+sleds and shell code [14, 15, 38] or randomizes the memory
+performance overhead is only 2%, and in most cases, the
+layout and register assignments [13, 14, 50]. Recently, memory
+performance overhead is less than 5%. These numbers confirm
+spraying has also been used to exploit the "Rowhammer"
+that our zero-initialization-based mitigation for kernel stack is
+vulnerability in DRAM devices where repeated access to a
+efficient.
+certain row of memory causes bit flips in adjacent memory
+rows [5, 40].
+Performancewithuserprograms. WefurtherusedtheSPEC
+CPU 2006 benchmarks as a macro-benchmark to test the In contrast to all these existing spraying techniques, our
+performance impacts of our mitigation over the user-space targeted stack-spraying target the stack instead of the heap.
+programs. We ran the test 10 times and adopted the average More importantly, our stack spraying technique is deterministic
+number. Table IV shows the evaluation results. Our zero- andstealthy(thusishardtodetect),andourexhaustivememory
+initialization-based mitigation imposes almost no performance spraying technique is highly reliable.
+overhead (0.47%) to the SPEC benchmarks on average.
+B. Kernel Exploits and Automated Exploits
+Both the LMbench and SPEC benchmark results confirm
+that our mitigation is very efficient and reliable (no single error Sincethekernelisoftenapartofthetrustedcomputingbase
+was observed during the evaluation). ofasystem,avoidingexploitablekernelvulnerabilitiesiscritical
+12forthesecurityofasystem[9].Nonetheless,despitetheefforts proposed a technique for preventing exploits of memory-
+of kernel developers to find and eliminate these vulnerabilities, corruption vulnerabilities. Their approach relies on single-split
+new such vulnerabilities are still frequently detected. As of kernels where system calls of untrusted processes can only
+the paper writing, a total of 1,526 vulnerabilities have been access a hardened kernel version while trusted processes can
+reported in the Linux kernel alone, 203 of which were reported access the unmodified kernel. A solution that is specifically
+in 2016 [37]. With Linux kernel vulnerabilities being on the targeted towards uninitialized-use vulnerabilities is offered by
+rise, corresponding exploitation techniques have caught the the PaX team, known for the invention of ASLR. Their GCC
+interests of attackers. One recent approach exploits use-after- compiler plugins, STACKLEAK and STRUCTLEAK, clear
+freevulnerabilitiesintheLinuxkernelbyleveragingitsmemory the kernel stack on kernel-to-user transitions and initialize
+recycling mechanism [51], while another one circumvents all local variables that might be copied to user space, which
+existing defenses by manipulating the kernel page table [21]. effectively prevents uninitialized uses of kernel memory [46].
+A key difference of our efficient defense against uninitialized
+Although many vulnerabilities and their corresponding
+uses is that instead of initializing all local variables, we
+exploits are still discovered manually, automatic detection
+specifically initialize pointer-type fields that have not been
+and exploit generation is becoming increasingly popular, as is
+properly initialized before. While STACKLEAK and Split
+evidenced by the DARPA Cyber Grand Challenge (DARPA
+kernel introduce a significant performance overhead (e.g.,
+CGC) [43]. In this challenge, teams are required to build
+STACKLEAK introduces an average of 40% runtime overhead
+automated vulnerability scanning engines, which they then
+in system operations [26]), our lightweight defense imposes
+use to compete in a Capture The Flag tournament. One of the
+almost no performance overhead.
+toolsspecificallydevelopedforthischallengeisFuzzbomb[28],
+which combines static analysis with symbolic execution and
+E. Memory Safety Techniques
+fuzzing to detect vulnerabilities in programs. The combination
+of symbolic execution and fuzzing is also used for the Driller Memory-corruption errors such as dangling pointers are a
+tool[45],whichhasalsobeentestedon126oftheDARPACGC long-known problem in unsafe programming languages like C.
+binaries. Driller, like our approach, uses symbolic execution In the last ten years, several approaches have been proposed
+to guide its fuzzing engine in case it fails to generate input to mitigate the exploits of these errors.
+to satisfy complex checks in the code. This combination is
+also used together with static and dynamic program analysis Watchdog [32] and its successor WatchdogLite [29] both
+to automatically generate exploits for a wide variety of leverage hardware supports to store and check allocation meta-
+applications [47]. Similar to these approaches, we also use data to prevent use-after-free vulnerabilities. Softbound [30]
+a combination of symbolic execution and fuzzing to discover and CETS [31] are software-based approaches that aim to
+execution paths that can achieve targeted spraying in the Linux prevent memory-corruption errors at compile-time. Softbound
+kernel. enforces spatial memory safety by storing base and bound
+informationasmetadataforeverypointer,whileCETSenforces
+temporal memory safety by storing unique identifiers for each
+C. Uninitialized Use Exploits object, which are then used to check if the object is still
+allocated upon pointer dereferences. Notably, although these
+Despite the fact that uninitialized-use bugs are seldom
+memory safety techniques claim full memory safety, they
+consideredtobesecurity-critical,anumberofexploitsforthese
+currentlydonotcoveruninitializeduseasapreventiontarget.In
+vulnerabilities have become known in recent years. Flake [16]
+contrast to these metadata-based approaches, DieHard [4] and
+used a manual approach towards exploiting uninitialized local
+its successor, DieHarder [34] both focus on randomizing the
+variables on the user-space stack, while Cook [12] used an
+location of heap objects to make dangling-pointer dereferences
+uncheckedcopy_from_user()callwithanuninitializedvariable
+hard to exploit. Since both techniques focus on heap objects,
+to exploit the Linux kernel and gain root privileges. Jurczyk
+they cannot detect and prevent uninitialized-use errors on the
+in turn exploited CVE-2011-2018, a stack-based uninitialized-
+stack. StackArmor [10] also adopts randomization to achieve
+variable reference vulnerability in the Windows kernel, which
+the memory safety for stack. All these randomization-based
+allows an attacker to execute arbitrary code with system
+memory-safety techniques are probabilistic.
+privileges [17]. Last but not least, Chen exploited an heap-
+based uninitialized-use vulnerability in Microsoft’s Internet
+Explorer (CVE-2015-1745) using fuzzing [8]. Unlike these IX. DISCUSSION
+ad-hoc attacks, our targeted stack-spraying is general and
+In this section, we discuss the potential limitations of
+automated.
+targeted stack-spraying and corresponding defenses. We also
+discusstherequirementstoporttargetedstack-sprayingtoother
+D. Uninitialized Use Detection and Prevention programs such as web browsers.
+Researchers have proposed some detection mechanisms
+A. Exploitability of Uninitialized-Use Vulnerabilities
+for uninitialized uses; however, only few defenses against
+uninitializeduseshavebeenproposed.Fordetection,toolssuch Notalluninitialized-usevulnerabilitiesareexploitable.First,
+askmemcheck[33],Dr.Memory[6],andValgrind[41]leverage in order to benefit from targeted stack-spraying, the execution
+dynamicinstrumentationandanalysistotrackmemoryaccesses path that triggers an uninitialized-use vulnerability must not
+while compiler-based approaches like MemorySanitizer [44] overwrite the prepared malicious data. Otherwise, the targeted
+and Usher [52] insert tracking code to find uninitialized uses stack-spraying technique will lose control of the uninitialized
+at runtime. For defense mechanisms, Kurmus and Zippel [20] memory thus cannot exploit this uninitialized-use vulnerability.
+13To verify if the prepared data persists until triggering the X. CONCLUSION
+uninitialized-use vulnerability, attackers can obtain the address
+Using uninitialized variables (uninitialized use) constitutes
+of the instruction using the uninitialized memory and use
+a common type of memory error in the Linux kernel. Reliably
+kprobes to intercept the instruction to verify if the prepared
+exploiting uninitialized uses on the kernel stack has been
+data persists. Second, our current deterministic stack spraying
+consideredinfeasiblesincethecodeexecutedpriortotriggering
+does not consider the case in which the preparation of the
+thevulnerabilitymustleaveanattacker-controlledpatternonthe
+malicious data occurs in the same syscall that also triggers
+stack.Asaconsequence,uninitializedusesarewidelytolerated
+the uninitialized-use vulnerability. We ensure only that the
+as undefined behaviors, and full memory safety techniques
+prepared malicious data persists until the entry point of the
+such as SoftBound+CETS therefore exclude uninitialized use
+syscall triggering the uninitialized-use vulnerability.
+as a prevention target. Moreover, uninitialized uses are even
+intentionally used as a randomness source by popular systems
+such as OpenSSL.
+B. Porting to Other Programs
+We have shown in this paper that uninitialized use consti-
+To port the deterministic stack spraying technique to other tutesasevereattackvectorthatfuturememorysafetytechniques
+programs such as the JavaScript engine in web browsers, we should seriously defend against. We have proposed the fully
+need interface definition (e.g. the JavaScript API), a targeted automated targeted stack-spraying approach, which includes
+symbolic execution engine (e.g Kudzu [39]), and a fuzzer a deterministic stack spraying technique and an exhaustive
+(e.g. jsfunfuzz [1]). Test suites are usually available for well- memory spraying technique. While exhaustive memory spray-
+maintained programs, which can be used to automatically ing reliably controls 89% of the kernel stack on average,
+generate the test cases needed for symbolic execution and deterministic stack spraying controls 32% of the frequently
+fuzzing. When these resources are available, the deterministic used stack region, which cannot be reached by exhaustive
+stack spraying technique can be conveniently ported to support memory spraying. Therefore, attackers can use the targeted
+other programs. To port the exhaustive spraying technique stack-spraying approach to readily exploit an uninitialized-
+to other programs, we only need to provide the function for use vulnerability for a privilege escalation attack. To mitigate
+allocating large memory and the size of available memory. uninitialized use exploits, we have proposed a compiler-based
+mechanism, which initializes potentially unsafe pointer-type
+fields with almost no performance overhead.
+C. Improving Mitigation and Other Defenses
+ACKNOWLEDGMENT
+As mentioned in §VII, we can efficiently mitigate
+uninitialized-use exploits by zero-initializing all pointer-type We thank Chengyu Song, Taesoo Kim, Insu Yun, and the
+fieldsforwhichthecompilercannotprovethattheyareproperly anonymous reviewers for their valuable feedback. This work
+initialized before reaching a sink (i.e., they are used). This was supported by the German Federal Ministry for Education
+lightweight approach works for most cases. However, false and Research (BMBF) through funding for the Center for
+negatives cannot be fully excluded: If a pointer is modified IT-Security, Privacy and Accountability (CISPA). Kangjie Lu
+by (or depends on) an uninitialized non-pointer value, zero- and Wenke Lee were supported in part by the NSF award
+initializing this pointer cannot effectively prevent the exploits CNS-1017265, CNS-0831300, CNS-1149051, CNS-1563848
+because the resulting pointer is still controllable by attackers if and DGE-1500084, by the ONR under grant N000140911042
+they can control the non-pointer value. Therefore, one possible and N000141512162, by the DHS under contract N66001-
+improvement for our proposed defense is to zero-initialize non- 12-C-0133, by the United States Air Force under contract
+pointer values as well. Two approaches that already offer a FA8650-10-C-7025, by the DARPA Transparent Computing
+broader defense in this respect are PaX’s STACKLEAK [46] program under contract DARPA-15-15-TC-FP-006, by the
+and split kernel [20] (see §VIII for details). Both approaches ETRI MSIP/IITP[B0101-15-0644]. Any opinions, findings,
+provide strong security to prevent uninitialized-use exploits, conclusions or recommendations expressed in this material
+but come at the cost of a significant runtime overhead [26]. are those of the authors and do not necessarily reflect the
+As such, a sophisticated inter-procedural and field-sensitive views of the BMBF, NSF, ONR, DHS, United States Air Force,
+analysis is necessary to filter out safe allocations. We leave DARPA or MSIP.
+this challenging problem for future work.
+Another defense direction is to defeat targeted stack- REFERENCES
+spraying. A mitigation against the deterministic stack spraying
+[1] jsfunfuzz: a JavaScript-based fuzzer, 2016. https://github.com/
+technique is to randomly adjust the stack base upon syscall MozillaSecurity/funfuzz.
+entrysothatthemaliciousdatapreparedintheprevioussyscall [2] KernelProbes,2016. https://www.kernel.org/doc/Documentation/kprobes.
+may not overlap the uninitialized variable in the vulnerable txt.
+[3] Virtio:Paravirtualizeddriversforkvm/Linux,2016. http://www.linux-
+syscall. Since the kernel stack has only 8KB or 16KB, the
+kvm.org/page/Virtio.
+entropy of such a randomization is limited. To detect the [4] E.D.BergerandB.G.Zorn. Diehard:probabilisticmemorysafetyfor
+exhaustive memory spraying technique, systems can monitor a unsafelanguages. InAcmsigplannotices,volume41,pages158–168.
+large amount of process creations or large memory allocations. ACM,2006.
+[5] E.Bosman,K.Razavi,H.Bos,,andC.Giuffrida. Dedupestmachina:
+However, this spraying technique can be stealthy by reducing
+Memorydeduplicationasanadvancedexploitationvector.InProceedings
+the amount of process creations and the size of memory
+ofthe37thIEEESymposiumonSecurityandPrivacy(Oakland),San
+allocations, and probing more times. Jose,CA,USA,May2016.IEEE.
+14[6] D.BrueningandQ.Zhao. Practicalmemorycheckingwithdr.memory. (CGO).
+InProceedingsofthe2004InternationalSymposiumonCodeGeneration [30] S.Nagarakatte,J.Zhao,M.M.Martin,andS.Zdancewic. SoftBound:
+andOptimization(CGO),Washington,DC,Mar.2011. Highly compatible and complete spatial memory safety for C. In
+[7] C. Cadar, D. Dunbar, and D. Engler. Klee: Unassisted and automatic Proceedingsofthe2009ACMSIGPLANConferenceonProgramming
+generation of high-coverage tests for complex systems programs. In Language Design and Implementation (PLDI), Dublin, Ireland, June
+Proceedingsofthe8thUSENIXSymposiumonOperatingSystemsDesign 2009.
+andImplementation(OSDI),SanDiego,CA,Dec.2008. [31] S.Nagarakatte,J.Zhao,M.M.Martin,andS.Zdancewic.CETS:compiler
+[8] Chen. HeyMan,HaveYouForgottenToInitializeYourMemory?,2015. enforcedtemporalsafetyforC. InInternationalSymposiumonMemory
+URLhttps://www.blackhat.com/docs/eu-15/materials/eu-15-Chen-Hey- Management,2010.
+Man-Have-You-Forgotten-To-Initialize-Your-Memory.pdf. [32] S.Nagarakatte,M.M.Martin,andS.Zdancewic.Watchdog:Hardwarefor
+[9] H.Chen,Y.Mao,X.Wang,D.Zhou,N.Zeldovich,andM.F.Kaashoek. safeandsecuremanualmemorymanagementandfullmemorysafety. In
+Linuxkernelvulnerabilities:State-of-the-artdefensesandopenproblems. ACMSIGARCHComputerArchitectureNews,volume40,pages189–200.
+InProceedingsoftheSecondAsia-PacificWorkshoponSystems,page5. IEEEComputerSociety,2012.
+ACM,2011. [33] V.Nossum. GettingStartedWithkmemcheck,2015. https://www.kernel.
+[10] X. Chen, A. Slowinska, D. Andriesse, H. Bos, and C. Giuffrida. org/doc/Documentation/kmemcheck.txt.
+StackArmor:ComprehensiveProtectionfromStack-basedMemoryError [34] G.NovarkandE.D.Berger.Dieharder:securingtheheap.InProceedings
+VulnerabilitiesforBinaries. InProceedingsofthe2015AnnualNetwork ofthe17thACMconferenceonComputerandcommunicationssecurity,
+and Distributed System Security Symposium (NDSS), San Diego, CA, pages573–584.ACM,2010.
+Feb.2015. [35] J. Obdrzalek and M. Trtik. Efficient loop navigation for symbolic
+[11] V.Chipounov,V.Kuznetsov,andG.Candea. S2e:Aplatformforin-vivo execution. In Proceedings of the 9th International Conference on
+multi-pathanalysisofsoftwaresystems. InProceedingsoftheSixteenth AutomatedTechnologyforVerificationandAnalysis,ATVA’11,2011.
+International Conference on Architectural Support for Programming [36] S.Özkan. CVEDetails:Linuxkernelsecurityvulnerabilities-gainprivi-
+LanguagesandOperatingSystems,2011. lege,2016. URLhttps://www.cvedetails.com/vulnerability-list/vendor_id-
+[12] K. Cook. Kernel Exploitation Via Uninitialized Stack. 2011. 33/product_id-47/opgpriv-1/Linux-Linux-Kernel.html. [Online;accessed
+https://www.defcon.org/images/defcon-19/dc-19-presentations/Cook/ 12-Aug-2016].
+DEFCON-19-Cook-Kernel-Exploitation.pdf. [37] S.Özkan. CVEDetails:Linuxkernelsecurityvulnerabilities-overview,
+[13] S.Crane,C.Liebchen,A.Homescu,L.Davi,P.Larsen,A.-R.Sadeghi, 2016. URLhttps://www.cvedetails.com/product/47/Linux-Linux-Kernel.
+S.Brunthaler,andM.Franz. Readactor:Practicalcoderandomization html?vendor_id=33l. [Online;accessed15-Aug-2016].
+resilienttomemorydisclosure. In2015IEEESymposiumonSecurity [38] P.Ratanaworabhan,V.B.Livshits,andB.G.Zorn. Nozzle:Adefense
+andPrivacy,pages763–780.IEEE,2015. against heap-spraying code injection attacks. In USENIX Security
+[14] Y.Ding,T.Wei,T.Wang,Z.Liang,andW.Zou. Heaptaichi:exploiting Symposium,pages169–186,2009.
+memoryallocationgranularityinheap-sprayingattacks. InProceedings [39] P.Saxena,D.Akhawe,S.Hanna,F.Mao,S.McCamant,andD.Song.
+ofthe26thAnnualComputerSecurityApplicationsConference,pages Asymbolicexecutionframeworkforjavascript. InProceedingsofthe
+327–336.ACM,2010. 31thIEEESymposiumonSecurityandPrivacy(Oakland),Oakland,CA,
+[15] M.Egele,P.Wurzinger,C.Kruegel,andE.Kirda. Defendingbrowsers May2010.
+against drive-by downloads: Mitigating heap-spraying code injection [40] M.SeabornandT.Dullien. Exploitingthedramrowhammerbugtogain
+attacks. In International Conference on Detection of Intrusions and kernelprivileges. BlackHat,2015.
+Malware,andVulnerabilityAssessment,pages88–106.Springer,2009. [41] J.SewardandN.Nethercote. UsingValgrindtodetectundefinedvalue
+[16] H.Flake. AttacksonUninitializedLocalVariables. 2006. http://www. errorswithbit-precision. InProceedingsofthe2004USENIXAnnual
+blackhat.com/presentations/bh-europe-06/bh-eu-06-Flake.pdf. TechnicalConference(ATC),Anaheim,CA,June–July2005.
+[17] M."j00ru"Jurczyk.ThestoryofCVE-2011-2018exploitation,2012.URL [42] C.Song,C.Zhang,T.Wang,W.Lee,andD.Melski. Exploitingand
+http://j00ru.vexillium.org/blog/20_05_12/cve_2011_2018.pdf. [Online; protectingdynamiccodegeneration. InNDSS,2015.
+accessed16-Aug-2016]. [43] J. Song and J. Alves-Foss. The darpa cyber grand challenge: A
+[18] D. Jones. Trinity: A Linux System call fuzz tester, 2015. http: competitor’sperspective. IEEESecurity&Privacy,13(6):72–76,2015.
+//codemonkey.org.uk/projects/trinity. [44] E.StepanovandK.Serebryany. MemorySanitizer:fastdetectorofunini-
+[19] V.P.Kemerlis,G.Portokalidis,andA.D.Keromytis.kguard:Lightweight tializedmemoryuseinC++. InProceedingsofthe2015International
+kernelprotectionagainstreturn-to-userattacks. InProceedingsofthe SymposiumonCodeGenerationandOptimization(CGO).
+21stUSENIXSecuritySymposium(Security),Bellevue,WA,Aug.2012. [45] N. Stephens, J. Grosen, C. Salls, A. Dutcher, R. Wang, J. Corbetta,
+[20] A.KurmusandR.Zippel. Ataleoftwokernels:Towardsendingkernel Y.Shoshitaishvili,C.Kruegel,andG.Vigna.Driller:Augmentingfuzzing
+hardening wars with split kernel. In Proceedings of the 2014 ACM through selective symbolic execution. In Proceedings of the Network
+SIGSACConferenceonComputerandCommunicationsSecurity,pages andDistributedSystemSecuritySymposium,2016.
+1366–1377.ACM,2014. [46] P. Team. PaX - gcc plugins galore, 2015. URL https://pax.grsecurity.
+[21] J.Lee,H.Ham,I.Kim,andJ.Song. Poster:Pagetablemanipulation net/docs/PaXTeam-H2HC13-PaX-gcc-plugins.pdft. [Online; accessed
+attack.InProceedingsofthe22ndACMSIGSACConferenceonComputer 15-Aug-2016].
+andCommunicationsSecurity,pages1644–1646.ACM,2015. [47] H. A. Thanassis, C. S. Kil, and B. David. Aeg: Automatic exploit
+[22] T.LengauerandR.E.Tarjan. Afastalgorithmforfindingdominators generation. Inser.NetworkandDistributedSystemSecuritySymposium,
+inaflowgraph. ACMTrans.Program.Lang.Syst.,1(1),Jan.1979. 2011.
+[23] LLVM. LLVMAliasAnalysisInfrastructure,2016. http://llvm.org/docs/ [48] L.Torvalds. LinuxKernelGitRepository,2016. URLgit://git.kernel.
+AliasAnalysis.html. org/pub/scm/linux/kernel/git/torvalds/linux.git. [Online;accessed5-Aug-
+[24] LLVM. TheLLVMCompilerInfrastructure,2016. http://llvm.org/. 2016].
+[25] LLVMLinux.TheLLVMLinuxProject,2016.http://llvm.linuxfoundation. [49] X.Wang,H.Chen,A.Cheung,Z.Jia,N.Zeldovich,andM.F.Kaashoek.
+org/index.php/Main_Page. Undefinedbehavior:Whathappenedtomycode? InProceedingsofthe
+[26] K.Lu,C.Song,T.Kim,andW.Lee. UniSan:ProactiveKernelMemory 3rdAsia-PacificWorkshoponSystems(APSys),Seoul,SouthKorea,July
+InitializationtoEliminateDataLeakages. InProceedingsofthe23rd 2012.
+ACM Conference on Computer and Communications Security (CCS), [50] T.Wei,T.Wang,L.Duan,andJ.Luo. Securedynamiccodegeneration
+Vienna,Austria,Oct.2016. againstspraying.InProceedingsofthe17thACMconferenceonComputer
+[27] L.W.McVoyandC.Staelin. Lmbench:Portabletoolsforperformance andcommunicationssecurity,pages738–740.ACM,2010.
+analysis. InUSENIXAnnualTechnicalConference,1996. [51] W.Xu,J.Li,J.Shu,W.Yang,T.Xie,Y.Zhang,andD.Gu.Fromcollision
+[28] D. J. Musliner, S. E. Friedman, M. Boldt, J. Benton, M. Schuchard, toexploitation:Unleashinguse-after-freevulnerabilitiesinlinuxkernel.
+P.Keller,andS.McCamant. Fuzzbomb:Autonomouscybervulnerability InProceedingsofthe22ndACMSIGSACConferenceonComputerand
+detectionandrepair. InFourthInternationalConferenceonCommunica- CommunicationsSecurity,pages414–425.ACM,2015.
+tions,Computation,NetworksandTechnologies(INNOV2015),2015. [52] D.Ye,Y.Sui,andJ.Xue. Acceleratingdynamicdetectionofusesof
+[29] S. Nagarakatte, M. M. K. Martin, and S. Zdancewic. Watchdoglite: undefinedvalueswithstaticvalue-flowanalysis. InProceedingsofthe
+Hardware-acceleratedcompiler-basedpointerchecking.InProceedingsof 2014InternationalSymposiumonCodeGenerationandOptimization
+the2014InternationalSymposiumonCodeGenerationandOptimization (CGO).
+15

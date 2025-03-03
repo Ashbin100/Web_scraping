@@ -1,0 +1,450 @@
+Towards automated detection of buffer
+overrun vulnerabilities: a first step
+David Wagner Jeffrey S. Foster
+Eric A. Brewer Alexander Aiken
+NDSS 2000 Feb 3, 2000
+1Introduction
+(cid:15)
+The state of computer security today is depressing
+: : :
+and most holes arise from simple programming errors in legacy C code
+(cid:15)
+‘Buffer overruns’ are one of the worst offenders
+– A common coding error with uncommonly-devastating effects
+Goal: eliminate buffer overruns from security-critical source code.
+2A puzzle: spot the bug
+Here’s sendmail-8.9.3 source; can you spot the coding error?
+3Organization
+(cid:15)
+Introduction
+(cid:15)
+Background and motivation
+(cid:15)
+Techniques for automated detection of buffer overruns
+(cid:15)
+Evaluation of our prototype
+(cid:15)
+Summing up
+4Review
+(cid:15)
+An example code fragment vulnerable to buffer overruns:
+(cid:15)
+v
+}
+o i d
+c
+s
+h
+t
+f
+a
+r
+o
+r
+c
+o
+p
+(
+b
+y
+v
+u
+(
+o
+f
+b
+i
+[
+u
+d
+8
+f
+)
+0
+,
+]
+{
+;
+g e t h o s t b y a d d r ( . . . ) - > h p _ h n a m e ) ;
+Exploits are possible by writing past the end of
+b u f
+.
+– Typically allows attacker to execute arbitrary code
+– Hacker tools are very good; even an off-by-one error can be exploited
+5Why are buffer overruns important?
+35 100
+Total vulnerabilities Percentage of vulneabilities that are buffer overruns
+Buffer overrun vulnerabilities
+30
+80
+25
+60
+20
+15
+40
+10
+20
+5
+0 0
+1988 1990 1992 1994 1996 1998 2000 1988 1990 1992 1994 1996 1998 2000
+Absolute number of vulnerabilities reported Relative frequency of buffer overruns
+Overruns account for 40%–50% of recent holes!
+(cid:15)
+Compare: this is
+2 (cid:2)
+what can be blamed on poor crypto
+(cid:15)
+Upwards trend due to development of hacker tools
+6Organization
+(cid:15)
+Introduction
+(cid:15)
+Background and motivation
+(cid:15)
+Techniques for automated detection of buffer overruns
+(cid:15)
+Evaluation of our prototype
+(cid:15)
+Summing up
+7Overview
+Our approach:
+(cid:15)
+A lint-like tool for analyzing C source code
+– Finds potential buffer overruns
+– But might issue false alarms, and might miss some bugs—no guarantees!
+(cid:15)
+Key technique: whole-program static analysis
+– Borrow ideas from program analysis and theory literature
+(Avoid unnecessary innovation.)
+8Why static analysis?
+How do you look for potential vulnerabilities?
+(cid:15)
+Runtime testing?
+(i.e., dynamic checking)
++ Some tools already exist [fuzz,Purify,
+: : :
+]
+– But hard to generate test cases, and hard to know when you’re done
+(cid:15)
+Compile time warnings?
+(i.e., static checking)
++ Opportunity to find and eliminate holes proactively
+– But implementation is a challenge
+)
+Static analysis is potentially very attractive, but how to do it?
+9Our tool
+Approach:
+(cid:15)
+Simplify!
+– e.g.: flow-insensitive analysis
+)
+Trade off precision for easeofprototypingand scalability.
+Architecture:
+(cid:15)
+Constraint-based analysis
+– Two phases: constraint generation, constraint solving
+10Notation
+Each dynamic quantity of interest gets a set-variable.
+If
+s
+is a string variable, let len
+( s )
+(resp., alloc
+( s )
+) denote the set of possible
+lengths (resp., number of bytes allocated) for
+s
+during a run of the program.
+We find a conservativeapproximationfor len
+(
+s
+)
+and alloc
+(
+s
+)
+.
+(cid:15)
+Then, checking the safety condition len
+( s ) (cid:20)
+alloc
+( s )
+is easy.
+11Constraints
+Let
+[ m ; n ]
+denote the range
+f m ; m + 1 ; : : : ; n g
+.
+Constraints take the form, e.g.,
+X (cid:18) Y
+, where
+X ; Y
+are range-variables.
+For example,
+s t r c p y ( d s t , s r c ) ; )
+len
+( s r c ) (cid:18)
+len
+( d s t )
+12Constraint generation
+(cid:15)
+Constraint generation is best described by example
+– So here is a code snippet to illustrate the analysis:
+c
+w
+}
+h
+h
+a
+i
+r
+l
+i
+}
+.
+e
+f
+.
+b
+.
+u
+(
+(
+c
+s
+d
+f
+f
+!
+h
+p
+i
+[
+g
+s
+a
+r
+e
+1
+e
+t
+r
+i
+(
+2
+t
+r
+n
+e
+8
+s
+c
+e
+t
+r
+]
+(
+h
+r
+f
+r
+;
+b
+r
+r
+(
+o
+u
+(
+o
+e
+r
+f
+b
+r
+r
+)
+,
+u
+[
+r
+;
+f
+1
+o
+1
+,
+2
+r
+2
+8
+,
+8
+’
+]
+,
+\
+;
+"
+n
+L
+s
+’
+i
+t
+)
+n
+d
+)
+e
+i n
+{
+t
+)
+o
+)
+o
+{
+l o n g : % s \ n " , b u f ) ;
+13The example, with annotations
+Original source code The constraints we generate
+c h a r b u f [ 1 2 8 ] ; [ 1 2 8 ; 1 2 8 ] (cid:18)
+alloc
+w h i l e ( f g e t s ( b u f , 1 2 8 , s t d i n ) ) { [ 1 ; 1 2 8 ] (cid:18)
+( b u f )
+len
+i f (
+c
+!
+h
+s
+a
+t
+r
+r c
+e
+h
+r
+r
+r
+(
+o
+b
+r
+u
+[
+f
+1
+,
+2 8
+’
+]
+\
+;
+n ’ ) ) {
+[ 1 2 8 ; 1 2 8 ] (cid:18)
+( b u f )
+alloc
+s p r i n t f ( e r r o r , " L i n e t o o l o n g : % s \ n " , b u f ) ;
+( e r r o r )
+len
+( b u f ) + 1 6 (cid:18)
+len
+}
+}
+. . .
+d i e ( e r r o r ) ;
+( e r r o r )
+Notice how we focus on primitive string operations?
+(cid:15)
+We largely ignore pointer ops; we treat strings as abstract datatypes
+(We don’t always catch missing
+’ \ 0 ’
+terminators or unsafe pointer
+dereferences, but in principle we could, with more effort)
+14The constraint solver
+(cid:15)
+Uses graph-based algorithms
+(cid:15)
+Fast, precise, and scalable
+)
+Runs in linear time in practice
+And that’s all I’ll say. See the paper for more.
+15Organization
+(cid:15)
+Introduction
+(cid:15)
+Background and motivation
+(cid:15)
+Techniques for automated detection of buffer overruns
+(cid:15)
+Evaluation of our prototype
+(cid:15)
+Summing up
+16Results
+(cid:15)
+We implemented the analysis
+(cid:15)
+We used the tool to find newvulnerabilities in realprograms
+– Linux nettools: 7k lines, previously hand-audited
+Found several new holes, exploitablefromremotehosts
+– Latest sendmail: 32k lines, previously hand-audited
+Found several new buffer overruns, most likely not exploitable
+– Re-discovered old serious holes in e.g. sendmail-8.7.5, popd,
+: : :
+(Could have prevented some widespread attacks, if tool had been
+available)
+(cid:15)
+Just a prototype, many rough edges, but it’s already useful
+17Limitations
+Lots of false alarms:
+(cid:15)
+Example: 44 warnings for sendmail, only 4 real coding errors
+– Mostly because we traded precision for simplicity; see next slide.
+(cid:15)
+But this still compares quite favorably to the alternatives
+– Comparison:
+g r e p
+shows ˜ 700 calls to unsafe string ops,
+so we reduce the manual auditing effort by
+1 5 (cid:2)
+over
+g r e p
+A few false negatives:
+(cid:15)
+But false negatives appear to be relatively rare.
+– Of the (
+(cid:21)
+10) bugs in sendmail 8.7.5 that have been fixed,
+the tool missed only one
+18Possibilities for future improvements
+Classifying the cause of false alarms in sendmail:
+Improved analysis False alarms eliminated
+flow-sensitive 47.5%
+flow- and context-sensitive, with pointer analysis 95%
+and inter-variable invariant inference
+(flow-sens. = models control flow;
+context-sens. = doesn’t merge function call sites)
+(cid:15)
+Might do
+2 0
+(cid:2)
+better, using only known techniques?
+)
+Know how to build a much better second system.
+19Solution to the puzzle
+Shows an overrun. Red spots = lines of code you must understand to find it.
+Bug has been there for
+> 3
+years, and has survived several hand audits.
+20Summary
+(cid:15)
+A successful research prototype
+– Already finding new vulnerabilities in real programs
+– But lots of room for improvement
+(cid:15)
+A promising new methodology: static analysis for code auditing
+– Key advantages: proactivesecurityfor legacycode;
+possibility of compensatingforlanguagedeficiencies
+21

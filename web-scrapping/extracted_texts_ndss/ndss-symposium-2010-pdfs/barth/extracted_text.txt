@@ -1,0 +1,856 @@
+Protecting Browsers from Extension Vulnerabilities
+AdamBarth,AdriennePorterFelt,PrateekSaxena AaronBoodman
+UniversityofCalifornia,Berkeley Google,Inc.
+{abarth,afelt,prateeks}@eecs.berkeley.edu aa@google.com
+Abstract browser’s full privileges. If an attacker can exploit an ex-
+tensionvulnerability,theattackercanusurptheextension’s
+Browserextensionsareremarkablypopular,withonein broadprivilegesandinstallmalwareontheuser’smachine.
+threeFirefoxusersrunningatleastoneextension.Although At this year’s DEFCON, Liverani and Freeman presented
+well-intentioned,extensiondevelopersareoftennotsecurity attacksagainstanumberofpopularFirefoxextensions[24].
+expertsandwritebuggycodethatcanbeexploitedbyma- Inoneexample,iftheuserdraggedanimagefromamali-
+liciouswebsiteoperators. IntheFirefoxextensionsystem, cious web page into the extension, the web site operator
+these exploits are dangerous because extensions run with couldinstallaremotedesktopserverontheuser’smachine
+the user’s full privileges and can read and write arbitrary andtakecontroloftheuser’smouseandkeyboard.
+files and launch new processes. In this paper, we analyze Theseattacksraisethequestionofwhetherbrowserex-
+25 popular Firefox extensions and find that 88% of these tensions require such a high level of privilege. To investi-
+extensionsneedlessthanthefullsetofavailableprivileges. gate this question, we examine 25 popular Firefox exten-
+Additionally, we find that 76% of these extensions use un- sions to determine how much privilege each one requires.
+necessarilypowerfulAPIs,makingitdifficulttoreducetheir We find that only 3 of the 25 extensions require full sys-
+privileges. Weproposeanewbrowserextensionsystemthat tem access. The remainder are over-privileged, needlessly
+improvessecuritybyusingleastprivilege,privilegesepara- increasingtheseverityofextensionvulnerabilities. Anex-
+tion, and strong isolation. Our system limits the misdeeds tensionsystemthatnarrowsthisprivilegegapwouldreduce
+an attacker can perform through an extension vulnerabil- theseverityofextensionexploits,buttheFirefoxextension
+ity. Our design has been adopted as the Google Chrome platform does not provide sufficiently fine-grained privi-
+extensionsystem. leges. Forexample,manyextensionsstoresettingswithan
+interfacethatcanreadandwritearbitraryfiles.
+Weproposeanewextensionsystem, builtwithsecurity
+inmind. Inparticular,weaimtoprotectusersfrombenign-
+1 Introduction
+but-buggyextensionsbydesigningleastprivilege,privilege
+separation,andstrongisolationintoourextensionsystem.
+Web browser extensions are phenomenally popular:
+Insteadofrunningwiththeuser’sfullprivileges,extensions
+roughly one third of Firefox users have at least one
+in our system are limited to a set of privileges chosen at
+browser extension [23]. Browser extensions modify the
+install time. If an extension later becomes compromised,
+core browser user experience by changing the browser’s
+the extension will be unable to increase this set of privi-
+user interface and interacting with web sites. For exam-
+leges. In particular, our case studies of Firefox extensions
+ple, the Skype browser extension rewrites phone numbers
+suggestthatmostextensionsdonotrequiretheprivilegeto
+found in web pages into hyperlinks that launch the epony-
+execute arbitrary code; consequently, the privilege to exe-
+mous IP-telephony application [5]. Although there have
+cute arbitrary code will often be unavailable to an attacker
+been several recent proposals for new web browser archi-
+whocompromisesanextensioninoursystem.
+tectures [19, 11, 33], little attention has been paid to the
+Inadditiontolimitingtheoverallprivilegesofeachex-
+architectureofbrowserextensionsystems.
+tension, our system further reduces the attack surface of
+Manyextensionsinteractextensivelywitharbitraryweb
+extensionsbyforcingdeveloperstodividetheirextensions
+pages, creating a large attack surface that attackers can
+into three components: content scripts, an extension core,
+scourforvulnerabilities. Inthispaper,wefocusonbenign-
+andanativebinary(seeFigure1):
+but-buggy extensions. Most extensions are not written by
+security experts, and vulnerabilities in benign extensions • Each content script has direct access to the DOM of
+are worrisome because Firefox extensions run with the a single web page and is thereby exposed to poten-Attacker
+Figure1.Extensionsaredividedintothreecomponents,eachwithprogressivelymoreprivilegesand
+lessexposuretomaliciouswebcontent.
+tially malicious input. However, content scripts have Our extension system design has been adopted by
+nootherprivilegesexceptfortheabilitytosendmes- GoogleChromeandisavailableinGoogleChrome4. Al-
+sagestotheextensioncore. thoughitisdifficulttopredicthowdeveloperswillusethe
+extensionsystem,webelievethatthisarchitecturewillpro-
+• The extension core contains the bulk of the extension
+videasolidfoundationforbuildingmoresecureextensions.
+privileges, but the extension core can only interact
+withwebcontentviaXMLHttpRequestandcontent
+2 AttacksonExtensions
+scripts. Even the extension core does not have direct
+accesstothehostmachine.
+A browser extension is a third-party software module
+• An extension can optionally include a native binary
+thatextendsthefunctionalityofawebbrowser,lettingusers
+that can access the host machine with the user’s full
+customize their browsing experience. Because extensions
+privileges. The native binary interacts with the ex-
+interactdirectlywithuntrustedwebcontent,extensionsare
+tensioncoreviathestandardNPAPIinterfaceusedby
+atriskofattackfrommaliciouswebsiteoperatorsandac-
+Flashandotherbrowserplug-ins.
+tivenetworkattackers. Inthissection,wepresentageneric
+threatmodelforextensionsecuritythatappliestoboththe
+To gain the user’s full privileges, an attacker would need
+Firefoxextensionsystemandthenewextensionsystemwe
+to convince the extension to forward malicious input from
+introduceinthispaper. Wethenfocusourattentiononthe
+thecontentscripttotheextensioncoreandfromtheexten-
+Firefox extension system, providing background material
+sion core to the native binary, where the input would need
+andexamplesofrealattacks.
+to exploit a vulnerability. We argue that exploiting such a
+multi-layervulnerabilityismoredifficultthanexploitinga
+simplecross-sitescriptingholeinaFirefoxextension. 2.1 ThreatModel
+Finally,thedifferentcomponentsofanextensionareiso-
+latedfromeachotherbystrongprotectionboundaries:each We focus on benign-but-buggy extensions: we assume
+componentrunsinaseparateoperatingsystemprocess.The the extension developer is well-intentioned but not a secu-
+contentscriptandtheextensioncoreruninsandboxedpro- rity expert. The attacker attempts to corrupt the extension
+cesses that cannot use most operating system services. As and usurp its privileges. For example, the attacker might
+a first layer of defense, the content script is isolated from be able to install malware on the user’s machine if the ex-
+itsassociatedwebpagebyrunninginaseparateJavaScript tensionhasarbitraryfileaccess. Weassumetheattackeris
+heap. Although both the content script and the web page unable to entice the user into downloading or running na-
+haveaccesstothesameunderlyingDOM,thetwoneverex- tive executables. We further assume the browser itself is
+change JavaScript pointers, helping prevent JavaScript ca- vulnerability-free, letting us focus on the additional attack
+pabilityleaks[12]. surfaceprovidedbyextensions.We consider two related threat models: a web attacker • Replacing Native APIs. A malicious web page can
+andanactivenetworkattacker. Thewebattackercontrolsa confuse (and ultimately exploit) a browser extension
+web site, canonically https://attacker.com/, that by replacing native DOM APIs with methods of its
+the user visits. (Note that we do not assume that the user own definition. These fake methods might superfi-
+confusestheattacker’swebsitewithanotherwebsite.)Typ- cially behave like the native methods [9] and trick
+ically,theattackerattemptstocorruptanextensionwhenthe an extension into performing some misdeed. To
+extensioninteractswiththeattacker’swebsite. Inaddition help mitigate this class of attack, Firefox automati-
+totheabilitiesofawebattacker,anactivenetworkattacker cally wraps references to untrusted objects with an
+canintercept,modify,andinjectnetworktraffic(e.g.,HTTP XPCNativeWrapper. An XPCNativeWrapper
+responses). Theactivenetworkattackerthreatmodelisap- is analogous to X-ray goggles: viewing a JavaScript
+propriate,e.g.,forawirelessnetworkinacoffeeshop. object through an XPCNativeWrapper shows the
+underlying native object, ignoring any modifications
+madebythepage’sJavaScript. However,thissecurity
+Plug-ins. In this paper, we focus on browser extensions,
+mechanism has had a long history of implementation
+whichdifferfrombrowserplug-ins.Plug-insrenderspecific
+bugs[4,3,1].Recentworkhasdemonstratedthatthese
+media types (such as PDF and Flash) or expose additional
+bugsareexploitableinsomeextensions[24].
+APIstowebcontent(suchastheGearsAPIs). Plug-insare
+requested explicitly by web sites, usually by loading con-
+• JavaScript Capability Leaks. JavaScript capability
+tent with a specific MIME type. By way of contrast, ex-
+leaks [12] are another avenue for exploiting exten-
+tensionsinteractwithwebpageswithouttheirexplicitcon-
+sions. If an extension leaks one of its own objects to
+sent. Although plug-in security is an important area of re-
+a malicious web page, the attacker can often access
+search[19,18],securingbrowserextensionsrequiresdiffer-
+otherJavaScriptobjects,includingpowerfulextension
+enttechniques.
+APIs. Forexample,anearlyversionofGreasemonkey
+exposed a privileged version of XMLHttpRequest
+2.2 ExploitingFirefoxExtensions
+to every web page [34], letting attackers circumvent
+thebrowser’ssame-originpolicybyissuingHTTPre-
+In Firefox, browser extensions run with the same privi- quests with the user’s cookies to arbitrary web sites
+legesasthebrowseritself. Firefoxextensionshavefullac- andreadingbacktheresponses.
+cess to browser internals and the user’s operating system.
+Extensions can change the functionality of the browser, • MixedContent. Anactivenetworkattackercancon-
+modify the behavior of web sites, run arbitrary code, and trol content loaded via HTTP. The most severe form
+accessthefilesystem.Firefoxextensionscombinetwodan- of this attack occurs when a browser extension loads
+gerousqualities:highprivilegeandrichinteractionwithun- a script over HTTP and runs it. The attacker can re-
+trustedwebcontent. Takentogether,thesequalitiesriskex- place this script and hijack the extension’s privileges
+posing powerful privileges to attackers. We describe four toinstallmalware. Asimilar,butlesspowerful,attack
+classes of attacks against browser extensions and the rele- occurswhenanextensioninjectsanHTTPscriptinto
+vantmitigationsprovidedbytheFirefoxextensionsystem: an HTTPS page. For example, we discovered that an
+extension [6] injects an HTTP script into the HTTPS
+• Cross-Site Scripting. Extension cross-site script- version of Gmail. (We reported this vulnerability to
+ing (XSS) vulnerabilities result from interacting di- the developers of the extension on August 12, 2009,
+rectlywithuntrustedwebcontent. Forexample, ifan andthedevelopersreleasedafixedversionthereafter.)
+extensionusesevalordocument.writewithout
+sanitizing the input, the attacker might be able to in- Eventhoughwemightbeabletodesigndefensesforeach
+ject a script into the extension. In one recent exam- oftheseattackclasses,wearguethattheunderlyingissueis
+ple [24], a popular RSS aggregation extension evalu- thatFirefoxextensionsinteractdirectlywithuntrustedcon-
+ated data from the <description> element of an tentwhilepossessingahighlevelofprivilege.
+arbitrarywebsitewithoutpropersanitization. Tohelp
+mitigateXSSattacks,FirefoxprovidesasandboxAPI,
+3 LimitingFirefoxExtensionPrivileges
+evalInSandbox. When evaluating a script using
+evalInSandbox,thescriptrunswithouttheexten-
+sion’s privileges, thereby preventing the script from A natural approach to mitigating extension vulnerabil-
+causing much harm. However, use of this sandbox ities is to reduce the privileges granted to extensions. To
+evaluation is discretionary and does not cover every evaluatethefeasibilityofthisapproach,westudied25pop-
+kindofinteractionwithuntrustedcontent. ular Firefox extensions to determine how much privilege/012*
+!"#$%&’(
+6470( 3*
+)(
+8( +#,-*
+345(
+.*
+)(
+/012( *#+,( !"#$%&’
+-.( ()*
+)(
+(a) Mostpowerfulbehavior. (b) Mostpowerfulinterface.
+Figure2.Thechartontheleftshowstheseverityratingsofthemostdangerousbehaviorsexhibited
+byeachextension. Thechartontherightshowsthesecurityratingsoftheextensioninterfacesused
+toimplementthesebehaviors.
+each needs to implement its features. In addition to pre- sourcecode.(Thismethodologyunder-approximatestheset
+senting our case studies, we also present an algorithm for of interfaces.) We then manually correlated the interfaces
+findingmethodsintheFirefoxextensionAPIthatleadfrom with the extensions’ functionality. This process could not
+aless-privilegedinterfacetoamore-privilegedinterface. beautomatedbecauseunderstandinghigh-levelfunctional-
+ityrequireshumanjudgement.
+3.1 CaseStudies Tocomparethesetofinterfaceswithextensionfunction-
+ality,weassignedoneoffiveratings(critical,high,medium,
+We review 25 extensions manually to determine their low,andnone)toeachinterfaceandfunctionalitybasedon
+privilegerequirements: theFirefoxSecuritySeverityRatings[8]:
+1. Weanalyzethebehaviorofanextensiontodetermine • Critical: Can run arbitrary code on the user’s system
+how much privilege an extension needs to realize its (e.g.,arbitraryfileaccess)
+functionality,lettinguscompareitsrequiredprivileges
+• High: Can access site-specific confidential informa-
+toitsactualprivileges.
+tion(e.g.,cookiesandpassword)ortheDocumentOb-
+2. Weanalyzetheimplementationofanextensiontode- jectModel(DOM)ofallwebpages
+terminehowmuchpowertheextensionreceives,given
+• Medium:Canaccessprivateuserdata(e.g.,recenthis-
+thesetofinterfacesitusestorealizeitsfunctionality.
+tory)ortheDOMofspecificwebpages
+This lets us evaluate how much we could reduce its
+privilegesifwelimitedaccesstointerfaces. • Low: Canannoytheuser
+We find that most extensions do not require arbitrary file • None: No security privileges (e.g., a string) or privi-
+system access (the most powerful privilege), meaning that
+legeslimitedtotheextensionitself
+most extensions are over-privileged. We also find that ex-
+tensions commonly use powerful interfaces to accomplish
+Results. Ofthe25subjectextensions,only3requirecriti-
+simpletasksbecausetheFirefoxAPIsarecoarse-grained.
+calprivileges(seeFigure2(a)). Therefore,22ofthesubject
+extensions are over-privileged because all extensions have
+Methodology. We randomly selected two extensions
+theprivilegetoperformcriticaltasks. Despitethefactthat
+fromeachofthe13categoriesinthe“recommended”sec-
+only 3 need critical privileges, 19 use a critical-rated in-
+tionoftheFirefoxAdd-ondirectory. (SeeAppendixAfor
+terface (see Figure 2(b)). An additional 3 use high-rated
+alist.) Weexcludedoneoftheselectedextensionsbecause
+interfaces despite needing only medium or less privileges,
+it was distributed only as a binary. We verified that the 25
+meaningthatatotalof19extensionsuseinterfacesthathave
+subject extensions were also highly ranked in the “popu-
+broaderprivilegesthantheyrequire. Figure3showsthede-
+lar” directory. To determine the extensions’ functionality,
+tailedresults. Wesummarizetheseresultsbelow:
+we ran each extension and manually exercised its user in-
+terface. WealsolocatedusageoftheextensionsystemAPI • Three extensions, all download managers, require the
+bysearchingforexplicitinterfacenamesintheextensions’ ability to create new processes. (These are the onlyBehavior Interface Disparity? Frequency
+Processlaunching(C) Processlaunching(C) No 3 (12%)
+Userchoosesafile(N) Arbitraryfileaccess(C) Yes 11 (44%)
+Extension-specificfiles(N) Arbitraryfileaccess(C) Yes 10 (40%)
+Extension-specificSQLite(N) ArbitrarySQLiteaccess(H) Yes 3 (12%)
+Arbitrarynetworkaccess(H) Arbitrarynetworkaccess(H) No 8 (40%)
+Specificdomainaccess(M) Arbitrarynetworkaccess(H) Yes 2 (8%)
+ArbitraryDOMaccess(H) ArbitraryDOMaccess(H) No 9 (36%)
+Pagefordisplayonly(L) ArbitraryDOMaccess(H) Yes 3 (12%)
+DOMofspecificsites(M) ArbitraryDOMaccess(H) Yes 2 (8%)
+Highlightedtext/images(L) ArbitraryDOMaccess(H) Yes 2 (8%)
+Password,loginmanagers(H) Password,loginmanagers(H) No 3 (12%)
+Cookiemanager(H) Cookiemanager(H) No 2 (8%)
+Same-extensionprefs(N) Browser&allextprefs(H) Yes 21 (84%)
+Languagepreferences(M) Browser&allextprefs(H) Yes 1 (4%)
+Figure 3. The frequency of security-relevant behaviors. The security rating of each behavior is ab-
+breviatedinparentheses. Iftheinterface’sprivilegeisgreaterthantherequiredbehavioralprivilege,
+thereisadisparity.
+three extensions that actually require critical privi- Unfortunately, reducing the privileges of extensions in
+leges.) Oneextensionconvertsfiletypesusingsystem the Firefox extensions system is difficult because the Fire-
+utilities,anotherrunsauser-suppliedvirusscanneron fox extension API bundles many privileges into a single
+downloadedfiles,andthethirdlaunchesanewprocess interface. This is evidenced by the 19 extensions that use
+tousetheoperatingsystem’sshutdowncommand. excessively powerful interfaces: 16 use critical-rated in-
+terfaces and 3 use high-rated interfaces without needing
+• Noneoftheextensionswestudiedrequirearbitraryfile
+that level of privilege. For example, most extensions use
+access. Several extensions access files selected by a
+thepreferenceservicetostoreextension-localpreferences.
+fileopendialog,andmostusefilestostoreextension-
+Thisservicecanalsochangebrowser-widepreferencesand
+localdata. Thedownloadmanagersinteractwithfiles
+preferencesbelongingtootherextensions.
+astheyaredownloaded.
+Weidentifiedthefilesysteminterfaceasacommonpoint
+ofexcessiveprivileges. Mostextensionsusethefilesystem
+• 17 extensions require network access (e.g., observing
+interface, which can read and write arbitrary files. These
+network data) and/or web page access (e.g., manipu-
+extensions could make use of lower-privilege file storage
+lating a page’s DOM). 10 require network access and
+interfacesifsuchinterfacesexisted. Forexample,11ofthe
+11 requireaccesstoweb pages. Ofthe 10 extensions
+extensionscouldbelimitedtofilesselectedbytheuservia
+thatrequirenetworkaccess,2requireaccessonlytoa
+afileopendialog(analogoustotheHTMLfileuploadcon-
+specificsetoforigins.
+trol), and 10 extensions could be limited to an extension-
+• Nearly all of the extensions require access to an local persistent store (like the HTML 5 localStorage
+extension-local preference store to persist their own API)oranextension-specificdirectory.Thedownloadman-
+preferences,butonlyonechangesglobalbrowserpref- agerscouldalsobelimitedtothedownloadsfolder.
+erences(toswitchlanguages).
+3.2 TheSecurityLattice
+Discussion. Although every Firefox extension runs with
+the user’s full privileges, only three of the extensions we Evenifadeveloperexplicitlyrequestsonlyasmallnum-
+analyzeactuallyrequiretheseprivileges. Theremaining22 ber of interfaces, other interfaces could be reachable from
+extensionsexhibitaprivilegegap: theyrunwithmorepriv- that set. For example, a developer might request access
+ileges than required. Moreover, none of the extensions re- to a low-type object with a method that returns a critical-
+quirearbitraryfileaccessandonly70%requirenetworkor typeobject;eventhoughthedeveloperhasnotaskedforthe
+webpageaccess.Theextensionsystemcanreducethepriv- critical-typeobject,itisavailable. Weconsiderthisaform
+ilegesoftheseextensionswithoutimpactingfunctionality. ofprivilegeescalation. Tofullylimittheprivilegelevelsof(cid:96)ρ(cid:44)→η α (cid:13)α.subtype(β) (cid:96)ρ(cid:44)→η α (cid:13)α.method(β)
+SUBTYPING METHOD
+(cid:96)ρ(cid:44)→η β (cid:96)ρ(cid:44)→η β
+(cid:13)α.getter(β) (cid:13)α.setter(β)
+(cid:13)α.method(1→β)GETTER
+(cid:13)α.method(β
+→1)SETTER
+TYPEFORGERY
+(cid:96)ρ(cid:44)→ρ α
+(cid:96)ρ(cid:44)→η α→β (cid:96)ρ(cid:44)→γ α (cid:96)η (cid:44)→δ β
+RETURN
+(cid:96)ρ(cid:44)→δ β
+(cid:96)ρ(cid:44)→η α→β (cid:96)ρ(cid:44)→γ α (cid:96)η (cid:44)→δ β
+PARAMETER
+(cid:96)η (cid:44)→γ α
+Figure 4. Inference rules for reachability in a type system with type forgery, such as the Firefox
+extensionAPI.
+extensions, we must control these escalation points, either TypebarhasamethodgetFilethatreturnsafiletype.
+byaddingareferencemonitor(e.g.,toimplementanaccess We do not know whether an implementation of foo actu-
+controlapproach)orbytamingtheinterface(e.g.,toimple- allyevercallsbar.getFile,butweknowitispossible.
+ment an object-capability approach). We analyze a subset
+oftheFirefoxextensionAPItofindtheseescalationpoints.
+Deductive System. Our deductive system (see Figure 4)
+InFirefox,extensionsandinternalbrowsercomponents
+computes which additional interfaces a principal (the
+use the same interfaces (known as XPCOM interfaces).
+browser or an extension) can obtain from one interface.
+These strictly typed interfaces are defined in a CORBA-
+Alongwiththeinterfacename,therulestrackwhichprinci-
+like Interface Description Language (IDL). We analyzed
+palimplementseachconcreteinstanceoftheinterface. We
+the XPCOM interfaces from Firefox 3.5 by adding a Dat-
+write ρ (cid:44)→η α when principal ρ has a reference to an in-
+alog back-end to the Firefox IDL compiler. By default,
+terfaceαimplementedbyprincipalη. Thedeductionrules
+theseinterfacesareimplementedinternallybythebrowser.
+thendescribevariouswaysareferencetooneinterfacecan
+However,extensionscan(anddo)replacetheseimplemen-
+lead to a reference to another interface. For example, if ρ
+tations.Forexample,theSafeCache[22]browserextension
+possesses both a method of type α → β implemented by
+replacestheHTTPcache.Regardlessoftheimplementation
+η and an object with interface α implemented by γ, then
+ofanXPCOMinterface,thebrowserenforcesthereturnand
+ρ can give the α object to η by calling the method. After-
+parametertypesdeclaredintheinterfacedescription.
+wards,ηwillhaveareferencetoanobjectwithinterfaceα
+We analyze the API for escalation points by organizing
+implementedbyδ.
+the XPCOM interfaces into a security lattice. We manu-
+One subtle rule in the deductive system is the type
+ally label the severity of 613 interfaces (of 1582 total), in-
+forgeryrule. Thisrulestatesthateveryprincipalcancreate
+cluding all the interfaces used by the subject extensions.
+anobjectthatimplementsanarbitraryinterface.Thisruleis
+We then automatically compute when an extension with a
+appropriateforXPCOMbecauseanextensioncancreatea
+reference to one interface might be able to obtain a ref-
+JavaScriptobjectthatimplementsanXPCOMinterfaceby
+erence to another interface by deductive inference on the
+implementing the requisite methods and announcing sup-
+types used in the interfaces. Our deductive system is an
+port in its queryInterface method. This technique is
+over-approximation because we do not consider the actual
+usefultoattacksbecauseanattackercanusea“forged”ob-
+implementationoftheinterfaces. Deductionsbasedonthe
+jecttocallamethodtheattackercouldnotcallotherwise.
+handling of input parameters might be overly conservative
+because it is not known which methods are called on the
+inputparametersintheimplementation. Forexample,type Reachability. We computed the security lattice for the
+foo has a method that accepts type bar as a parameter. Firefox extension interfaces by implementing our rules in4.1 LeastPrivilege
+Insteadofrunningwiththeuser’sfullprivileges,exten-
+sions run with a restricted set of privileges. The browser
+grants an extension access only to those privileges explic-
+itlyrequestedintheextension’smanifest. Byrequiringex-
+tensionstodeclaretheirprivilegesatinstalltime,anattacker
+whocompromisesanextensionislimitedtotheseprivileges
+atruntime. Forexample,considerthemanifestforthesam-
+pleGmailCheckerextension[13]:
+{
+"name": "Google Mail Checker",
+"description": "Displays the number of unread
+messages...",
+"version": "1.2",
+Figure 5. The Firefox extension API reacha- "background_page": "background.html",
+"permissions": [
+bility graph, from our deductive system. Up-
+"tabs",
+wardedgescouldleadtoprivilegeescalation. "http://*.google.com/",
+"https://*.google.com/"
+],
+"browser_action": { "default_title": "" },
+Datalog. We add an edge from one interface to another if "icons": { "128": "icon_128.png" }
+}
+ourdeductivesystemcomputesthatareferencetoanobject
+withthefirstinterfaceimplementedbyoneprincipalcould Intheexample,GmailCheckerneedsaccesstosubdomains
+leadtoanobjectwiththesecondinterfaceimplementedby ofgoogle.comandthetabsAPI.Anextensioncanre-
+thesameprincipal.Noticethatthetypeforgeryrulepermits questanumberofdifferentprivilegesinitsmanifest:
+ustoreasonabouteachinterfaceindividuallyinsteadofre-
+• Execute Arbitrary Code. Although our case study
+quiringustobuildalatticeoversetsofinterfaces. Figure5
+suggests that a majority of extensions do not require
+summarizesthelatticebycoalescingalltheinterfaceswith
+the privilege to execute arbitrary code, some exten-
+thesamesecurityratingintoasinglevertexandcontracting
+sionsdorequirethisprivilege. Torequesttheprivilege
+theunlabeledinterfaces.
+to execute arbitrary code, an extension lists a native
+Of the 2920 edges in the lattice, 147 edges go “up” the
+binaryinitsmanifest.
+lattice. These upward edges represent potential escalation
+pointsthatmakereducingtheprivilegeofextensionsdiffi- • Web Site Access. Extensions can also request the
+cult. Becauseouranalysisisanover-approximation, some privilege to interact with web sites. Instead of re-
+of these edges might not actually be exploitable given the ceiving access to all web sites, extensions designate
+Firefox implementation of the extension interfaces. How- which web sites they would like to access by ori-
+ever,eventheseedgesmightbecomeexploitableifanexten- gin. For example, Gmail Checker requests access
+sionreplacesthebuilt-inimplementationoftherelevantin- to Google by listing http://*.google.com and
+terface. ToretrofitsecurityontotheFirefoxextensionAPI, https://*.google.com in its manifest. If the
+werecommendpreventingprivilegeescalationbyremoving extension were compromised, the attacker would not
+theseedges,eitherbyaddingruntimeaccesscontrolchecks gainaccesstohttps://bank.com.
+orbytamingtheinterfacesatdesigntime. Whendesigning
+• API Access. Figure 6 shows how extensions can im-
+anewextensionsystem,wesuggestnotintroducingescala-
+plement their functionality using the extension sys-
+tionpointsintothesecuritylattice.
+tem. ExtensionsusestandardwebplatformAPIs(e.g.,
+HTML5 storage) to access files, storage, web pages,
+4 GoogleChromeExtensionSystem
+andthenetwork. Inadditiontotheusualwebplatform
+APIs, extensions can also request access to extension
+Inthissection,wedescribeandevaluatethesecurityar- APIs, which are grouped according to functionality.
+chitectureoftheGoogleChromeextensionsystem. Wefo- For example, the extension system contains an API
+cusontheaspectsofthedesignrelatedtoprotectingusers group called tabs for interacting with the browser’s
+frombenign-but-buggyextensions. Thesecuritymodelfor tab strip (creating tabs, moving tabs, etc.). An exten-
+the extension system is based on least privilege, privilege sionisgrantedaccesstoanAPIgrouponlyiftheAPI’s
+separation,andstrongisolation. groupappearsintheextension’smanifest.Behavior Implementation
+Userchoosesafile(N) Filepicker,with<input type=’file’>(N)
+Extension-specificdata&preferences(N) HTML5storage(N)
+Specific-domainnetworkaccess(M) ListspecificXHRdomainsinmanifest(M)
+DOMofspecificsites(M) Listspecificdomainsinmanifest(M)
+Pagefordisplayonly(L) Openanewframewiththepage(L)
+Highlightedtext/images(L) Notyetsupported–fullDOMaccessrequired(M/H)
+Figure 6. The proposed extension system supports fine-grained implementation of behaviors, re-
+movingmostoftheprivilegedisparitybetweenbehaviorandimplementation.
+Withoutadditionalencouragement,developersarelikelyto • Content Scripts. Content scripts, written in
+request the maximum possible privileges for their exten- JavaScript, let extensions interact directly with un-
+sions, reducing the benefits of least privilege. To encour- trustedwebcontent. Acontentscriptisnewlyinstan-
+agedeveloperstorequesttheminimumrequiredprivileges, tiatedforeachwebpage,andithasdirectaccesstothe
+wealtertheuserexperienceforinstallinganextensionfrom DOMofthepageviathestandardDOMAPIs.Content
+theGoogle-controlledextensiongallerybasedonthemaxi- scriptsareonlyaddedtopagesfromoriginsthatmatch
+mumprivilegeleveltheextensionrequests. Themostdan- the permissions defined in the manifest file. Content
+gerous class of extensions (extensions with the privilege scripts do not have access to the powerful extension
+to execute arbitrary code) are not permitted in the gallery APIsprovidedbythebrowser. BeyondtheDOMAPI,
+unless the developer signs a contract with Google. An- the only other privilege granted to content scripts is
+other approach is to review extensions manually, as in the theprivilegetosendJSON[2]messagestotheexten-
+addons.mozilla.org gallery. In this approach, the sioncoreviaapostMessage-likeAPI.Likeregular
+manifestsmakeiteasierforreviewerstoprioritizereviews webcontent,contentscriptscannotmakecross-origin
+oflow-privilegeextensions. Thisincentivizesdevelopersto XMLHttpRequests.
+requestfewerprivilegestoreducereviewlatency. Whether
+these incentives are sufficient to encourage least privilege • Extension Core. The extension core, written in
+will depend largely on whether developers can gain more HTML and JavaScript, controls the extension’s user
+exposure for their extensions by appearing in the gallery interface (e.g., browser actions, pop-ups) and has ac-
+sooner or more prominently. We examine a set of Google cesstotheextensionAPIsdeclaredintheextension’s
+ChromeextensionsinSection4.4toseewhetherdevelopers manifest. The extension core contains the majority
+arefollowingtheprincipleofleastprivilege. of the extension’s privileges, but it is insulated from
+Extensionscanalsobeinstalledfromarbitrarywebsites. direct interaction with untrusted web content. To in-
+Thisinstallexperienceisdifferentfrominstallinganexten- teract with untrusted content, the extension core can
+sion from the gallery. When installing an extension from either (1) communicate with a content script or (2)
+outside the gallery, the user experience is the same as the issue an XMLHttpRequest. Both of these mecha-
+user experience for downloading and running a native ex- nismsrequiretheextensionauthortotakeexplicitac-
+ecutable. An attacker who can trick a user into installing tionandrestricttheinteractiontoplaindata. Theman-
+a malicious extension this way can likely already trick the ifest file defines what origins the extension core can
+userintorunninganarbitraryexecutable,givingtheattacker makeXMLHttpRequeststo.
+littleadditionalleverage.
+• NativeBinary. Onlynativebinariescanrunarbitrary
+4.2 PrivilegeSeparation codeoraccessarbitraryfiles. Togaintheseprivileges,
+theextensiondevelopermustsupplyanativeNetscape
+Plug-in API (NPAPI) binary. For example, on Win-
+To make it more difficult for a malicious web site
+dows such a binary consists of a dynamically linked
+to usurp an extension’s privileges, the extension platform
+library (DLL) with certain entry points. By default,
+forces developers to divide their extensions into multiple
+the native binary can interact only with the extension
+components: content scripts, the extension core, and a na-
+core (e.g., not with contentscripts). Furthermore, the
+tivebinary(seeFigure1):
+interactionistypicallylimitedtotheinterfacesdefined
+when the native binary was compiled, but, of course,
+the native binary can re-compile itself because it canrun arbitrary code. Similarly, the manifest lets devel- newmanifestrequestscriticalprivilegesandchangesthein-
+opers expose their native binaries to web pages be- stallexperience). Whenthebrowserreloadstheextension,
+causetherearenotechnicalmeansforstoppinganex- the updated version inhabits the same security context as
+tension that can run arbitrary code from installing a theoldversion,analogoustore-visitingawebsite. Inpar-
+regularbrowserplug-in. ticular,theupdatedextensionstillhasaccesstoitsprevious
+persistentstatebecauselocalStorageissegregatedby
+Content scripts, which have the largest attack surface, do originanditsoriginremainsthesame.
+not have a direct channel to the component with critical
+privileges. By dividing the extension’s privileges among
+ProcessIsolation. Eachcomponentoftheextensionruns
+threecomponents,theextensionsystemmakesitharderfor
+inadifferentprocess. Theextensioncoreandthenativebi-
+an attacker to exploit the user’s machine. To run arbitrary
+naryeachreceivededicatedprocesses. Contentscriptsrun
+code, the attacker first convinces the extension’s content
+inthesameprocessastheirassociatedwebpages.Thispro-
+scripttoforwardmaliciousinputtotheextensioncore. The
+cess isolation has two benefits: it defends against browser
+attacker then convinces the extension core to forward the
+errors and low-level exploits. Process isolation helps pro-
+maliciousinputtothenativebinary(assumingoneevenex-
+tect the extension core from browser implementation er-
+ists). Finally,theattackerwouldneedtoexploitavulnera-
+rors, such as cross-origin JavaScript capability leaks [12],
+bilityinthenativebinary.
+becauseJavaScriptobjectscannotleakfromoneprocessto
+another. Process isolation also defends against low-level
+4.3 IsolationMechanisms exploits in the browser. For example, if a malicious web
+site operator manages to corrupt the renderer process [11]
+The extension system uses three mechanisms to isolate (e.g.,viaabufferoverflow),theattackerwillnotbegranted
+extensioncomponentsfromeachotherandfromwebcon- accesstotheextensionAPIsbecausetheextensioncorere-
+tent. First, we leverage the same-origin web sandbox by sidesinanotherprocess.
+runningtheextensioncoreinauniqueorigindesignatedby
+apublickey. Second,weruntheextensioncoreandnative IsolatedWorlds. Weprovideanadditionallayerofisola-
+binariesintheirownprocesses. Finally,contentscriptsrun tionbetweenthecontentscriptandtheuntrustedwebsite’s
+inaseparateJavaScriptheapfromuntrustedwebcontent. JavaScriptenvironmentbyrunningthecontentscriptinan
+isolated world. Instead of accessing the underlying DOM
+datastructuresviathesameJavaScriptobjectsusedbythe
+Origin. In the web platform, the authority of a script is
+page,eachcontentscriptaccessestheDOMwithits“own”
+derived from its origin (in particular, the scheme, host,
+JavaScriptobjects. Contentscriptsandwebpagestherefore
+and port of the URL from which the browser obtained the
+neverexchangeJavaScriptpointers,makingitmoredifficult
+script). However, extension scripts are not loaded from
+foramaliciouswebpagetoconfusethecontentscript(e.g.,
+thenetwork;extensionsarestoredintheuser’sfilesystem.
+withaJavaScriptrootkit[9]).
+Consequently,extensionsdonothaveanoriginintheusual
+This design changes the normal one-to-one relation be-
+sense. Weassignan“origin”toanextensionbyincludinga
+tween DOM implementation objects and their JavaScript
+publickeyintheextension’sURLasfollows:
+representations (see Figure 7) into a one-to-many rela-
+chrome-extension:// tion (see Figure 8). For example, both the page and the
+ilpnegfhimflflifcnmgpeihglhedbnn/ content script have a global variable named document,
+but these variables refer to two distinct JavaScript objects.
+When loading an extension, the browser verifies that the Consistency is still maintained: when either script calls a
+extension package is “self-signed” by the public key in its DOM method, such as appendChild, both objects are
+URL.Placingtheextension’spublickeyinitsURLfreesthe updated to reflect the modified document tree. However,
+extension system from depending on a central naming au- whenascriptmodifiesanon-standardDOMproperty,such
+thority (like a public-key infrastructure or DNS), reducing as document.foo, the modification is not reflected in
+theattacksurfaceoftheplatformandsimplifyingextension the other object. These rules help maintain the invariant
+signing. By using this approach, we can reuse the web’s thatJavaScriptobjects(i.e.,non-primitivevalues)arenever
+same-origin machinery to isolate extensions from browser transmittedbetweenworlds.
+internals,webpages,andeachother. Thestandardone-to-onerelationisimplementedusinga
+Thisapproachtoextensionidentityalsomakesupdating hashtablekeyedbyDOMimplementationobject(depicted
+extensions easy. If the browser encounters a newer exten- asblackrectanglesinthefigures). Forisolatedworlds,we
+sionpackagesignedwiththesamepublickey,thebrowser create a hash table for each world and choose which hash
+canreplacetheinstalledversionoftheextension(unlessthe tabletousebasedonthecurrentlyexecutingworld.Medium
+DOM (C++) JavaScript (V8) Critical 2
+3
+High
+20
+Figure 7. The normal one-to-one relation
+between DOM implementation objects and
+JavaScriptrepresentations.
+Figure9.HighestprivilegeofpopularGoogle
+Chromeextensions.
+JavaScript (V8)
+W1 (Page)
+Wethenmeasuretheprivilegegapbycomparingtheexten-
+sion’srequestedprivilegeswithitsbehavior.Theextensions
+wesurveyarenotasdiverseastheextensionsintheFirefox
+survey(Section3.1)becausetheGoogleChromeextension
+DOM (C++) W2 (Extension 1) platformisnewand9oftheextensionsweredevelopedby
+Googleemployees.
+Figure 9 shows the highest severity privileges that ex-
+tensions ask for in their manifests. Of the three critical-
+rated extensions, two include NPAPI plug-in and one in-
+W3 (Extension 2) jects content scripts into documents from the local file
+system. The 20 high-rated extensions request arbitrary
+web/networkaccess,andthetwomedium-ratedextensions
+requestweb/networkaccessforalimitednumberoforigins.
+Wefoundoneextension(Cooliris)thatrequestsmorepriv-
+ileges than required to implement its behavior. This ex-
+tension requires 3D accelerated graphics, which could be
+Figure8.Theone-to-manyrelationcausedby
+provided to extensions without granting the extension the
+runningcontentscriptsinisolatedworlds.
+abilitytorunarbitrarycode. (ThecurrentAPIsdonotpro-
+videthisfunctionality.) However,therestoftheextensions
+request appropriate privileges given their feature set. We
+When entering the JavaScript virtual machine (e.g., when conclude that extensions in the Google Chrome extension
+invokingacallbackfunctionregisteredviasetTimeout), systempossessignificantlyfewerprivilegesthanextensions
+thebrowsermuststartexecutingthefunctionintheproper intheFirefoxextensionsystem.
+world. If the browser executes the function in the wrong
+Inadditiontoanalyzingthehighestseverityprivilegere-
+world,weriskleakingaJavaScriptpointerbetweenworlds.
+questedbyanextensionoverall,wealsoexaminehowpriv-
+Toselectthecorrectworld,wecacheareferencetotheap-
+ileges are separated within the extension (see Figure 10).
+propriateworldonthefunctionobjectitselfatthetimethe
+Even if the extension as a whole has arbitrary DOM ac-
+callbackisregistered.
+cess via content scripts, its core might have access only to
+a limited set of origins, or vice versa. During our review,
+4.4 Evaluation
+wefoundthattwoextensionsrequestedmoreprivilegesfor
+theircorethannecessary.However,theprivilegesrequested
+Reduced Privileges. We evaluated the privileges of the for the core extension were a subset of the privileges re-
+25mostpopularGoogleChromeextensions[17]. (SeeAp- questedforthecontentscripts,leavingtheoverallprivilege
+pendix B for a list.) For each extension, we examine its level of the extension the same. It appears that develop-
+manifesttodeterminetheprivilegesrequestedbytheexten- ersoverallarewillingtolimitDOMandnetworkaccessto
+sion,bothforthecoreextensionandforitscontentscripts. smallsetsoforiginswhenpossible.Privilege #ofextensions 5 RelatedWork
+ContentscriptDOMaccess
+Read-onlyfilesystemaccess 1
+In addition to the Firefox extension system we analyze
+Allsites 14
+inthispaper,Firefoxhasasecond,experimentalextension
+Limitednumberofsites 3
+system: Jetpack [27]. Similar to the extension system we
+Nosites 8
+propose, Jetpackexposesbrowserfunctionalityvianarrow
+CoreextensionXHRaccess
+interfaces. Currently,however,eachJetpackextensionruns
+Allsites 12
+withtheuser’sfullprivilegesandhasaccesstothecomplete
+Limitednumberofsites 8
+Firefox extension API. As Jetpack matures, we expect the
+Nosites 5
+Firefox developers to restrict the privileges of Jetpack ex-
+OtherAPIs
+tensions,butthedesignersofJetpackhavechosentofocus
+Tabs 20
+firstonusabilityandgenerativity[29].
+Bookmarks 2
+InternetExplorerhasacombinedplug-inandextension
+Plugin 2
+system known as Browser Helper Object (BHO) modules.
+Forexample,theYahooToolbarforInternetExplorerisim-
+Figure10.Privilegeusebreakdownofpopular plementedasaBHO.Theseextensionsarewritteninnative
+GoogleChromeextensions. code and have direct access to the win32 API. If a BHO
+hasavulnerability(suchasabufferoverflow),amalicious
+web site can issue arbitrary win32 API calls by exploiting
+the vulnerability. Recent versions of Internet Explorer run
+Performance. Separating extensions into components
+these BHOs in “protected mode,” [26] reducing their priv-
+could potentially add overhead to inter-component opera-
+ileges. However, acompromisedBHOstillhasfullaccess
+tions. For example, if a content script needs to use privi-
+to web pages (including passwords and cookie) and read
+leges held by the extension core, the content script has to
+accesstothefilesystem.
+sendamessagetothecoreprocessinsteadofsimplycalling
+One recent paper [25] considers limiting the privileges
+afunctioninitsownaddressspace. Similarly,DOMaccess
+ofFirefoxextensions. Theyproposeamechanismforsand-
+fromcontentscriptsrequirescrossingfromtheextension’s
+boxing extensions by intercepting various events in the
+isolated world to the page’s world, incurring an additional
+XPCOM object marshaling layer, incurring a performance
+hashtablelookuponsomeexecutionpaths.
+overhead of 19% for a particular policy. Unlike our work,
+Toevaluatetherun-timeoverheadofinter-processcom-
+this paper focuses entirely on mechanism, and the authors
+munication, we measured the round-trip latency for send-
+do not determine which policies their mechanism ought to
+ingamessagefromacontentscripttotheextensioncorein
+enforce. WecouldimaginereducingtheprivilegesofFire-
+Google Chrome 4.0.249.22 on Mac OS X. We observe an
+foxextensionsbyusingthismechanismtorestrictextension
+averageround-triplatencyof0.8ms(n=100,σ =0.0079
+behaviorattheescalationpointsweidentifyinSection3.2.
+ms), where each trial is the average of 1000 inter-process
+Anumberofpapers[15,35,7,16,31]considertheprob-
+round-trips. Of course, an extension incurs this added la-
+lemofrunningnativeplug-incodesecurelyusingfaultiso-
+tencyonlyforoperationsthatrequirecoordinationbetween
+lation and system call interposition. These techniques fo-
+multiplecomponents. Forexample, anextensionthatadds
+cus on isolating untrusted native code, whereas we focus
+additionalEXIFmetadatatoFlickr[28]incursthisoverhead
+on code written in JavaScript, letting us use the standard
+once per page load to issue a cross-origin XMLHttpRe-
+same-originJavaScriptsandbox. Wearechieflyconcerned
+quest,increasingtheloadtimebyanunnoticeable0.8ms.
+withtheprivilegesaffordedtoextensionsviaexplicitAPIs,
+Toevaluatetherun-timeoverheadoftheisolatedwords
+a topic that has not been studied in much detail. Their
+mechanism, we ran a DOM core performance bench-
+techniques for plug-in confinement are complimentary to
+mark [20] in Chromium 4.0.266.0 on Mac OS X. The
+ourworkandcouldbeusedtomonitornativebinariesdis-
+benchmark measures the total speed of a set of append,
+tributedwithextensions.
+prepend,insert,index,andremoveDOMoperations. Inthe
+Our work is also related to mashups, which are web
+mainworld,thebenchmarkrequiredanaverageof231ms
+pages that result from sophisticated communication and
+(n = 100, σ = 5.46 ms) to complete. When run in an
+data sharing between multiple parties (e.g., plotting data
+isolated world, the benchmark took an average of 309 ms
+from one source on a map from another source). In a
+(n = 100, σ = 6.33ms). Theuseofisolatedworldsadds
+sense, a browser is a mashup combining extension code
+33.3% to DOM access time, which we expect would be a
+and web content into a personalized browsing experience.
+smallfractionofoverallrunandloadtime.
+Our design draws inspiration from MashupOS [32] and
+OMash [14], albeit taking into account subsequent attacksanddesignrecommendations[10]. Inaddition,theisolated Acknowledgments
+worldsheap-segregationmechanismisanoutgrowthofthe
+perspective expressed in [12]. Finally, placing the exten-
+We would like to thank Nick Baum, Erik Kay, Collin
+sion’spublic-keyintheURLwassuggestedin[21]torem-
+Jackson, Matt Perry, Dawn Song, David Wagner, and the
+edyavulnerabilityinFirefox’ssignedJARmechanism.
+Google Chrome Team. This work is partially supported
+Browser extensions are also analogous to kernel mod-
+bytheAirForceOfficeofScientificResearchunderMURI
+ulesinoperatingsystems. Buggykernelmoduleshavelong
+GrantNo.22178970-4170andtheNationalScienceFoun-
+been a major cause of failures and security vulnerabilities
+dationTRUSTGrantNo.CCF-0424422.
+in operating systems. Nooks [30] and SafeDrive [36] em-
+ploy memory access confinement to limit the privileges of
+References
+kernelmodules. Althoughthetwoproblemsareanalogous,
+thetechniquesusedarequitedifferent.
+[1] Arbitrarycodeexecutionusingbug459906.
+https://bugzilla.mozilla.org/show_bug.
+6 Conclusion
+cgi?id=460983.
+[2] JSON. http://www.json.org.
+Browserextensionsareoftennotwrittenbysecurityex- [3] MozillaSecurityAdvisory2009-19.
+perts,andmanyextensionscontainsecurityvulnerabilities. http://www.mozilla.org/security/
+Every cross-site scripting vulnerability in a Firefox exten- announce/2009/mfsa2009-19.html.
+sionisanavenueformaliciouswebsiteoperatorstoinstall [4] MozillaSecurityAdvisory2009-39.
+malware onto the user’s machine because Firefox exten- http://www.mozilla.org/security/
+sionsrunwiththeuser’sfullprivileges.Toevaluatewhether
+announce/2009/mfsa2009-39.html.
+[5] Skype. http://www.skype.com.
+extensionsactuallyrequiresuchahighlevelofprivilegeto
+[6] Zemanta. http://www.zemanta.com.
+implementtheirfeatureset,weanalyze25“recommended”
+[7] M.Abadi,M.Budiu,U.Erlingsson,andJ.Ligatti. Control-
+extensionsfromtheFirefoxextensiongallery. Wefindthat
+flow integrity: Principles, implementations, and applica-
+the majority of these extensions do not require full privi-
+tions. InACMConferenceonComputerandCommunica-
+leges. However,reducingtheprivilegesofexistingFirefox
+tionsSecurity(CCS),November2005.
+extensionsisdifficultbecausemanyFirefoxAPIsaremore
+[8] L.Adamski. SecuritySeverityRatings. https://wiki.
+powerfulthanrequiredtoimplementextensionfeatures. mozilla.org/Security_Severity_Ratings.
+Although one could imagine restructuring the Firefox [9] B.Adida,A.Barth,andC.Jackson. RootkitsforJavaScript
+extensioninterface,weinsteadrecommendbuildinganew Environments.In3rdUSENIXWorkshoponOffensiveTech-
+extension platform with security in mind. In our proposed nologies,2009.
+system, extensions enumerate which privileges they desire [10] A. Barth, C. Jackson, and W. Li. Attacks on JavaScript
+atinstall-timeandarelimitedtothoseprivilegesatruntime. MashupCommunication. InProceedingsoftheWeb2.0Se-
+Ifanextensiondoesnotincludeanativebinary(whichmost curityandPrivacy2009.
+[11] A. Barth, C. Jackson, C. Reis, and The Google Chrome
+donotrequire), thenanattackerwhocompromisestheex-
+Team.TheSecurityArchitectureoftheChromiumBrowser.
+tensionwillnotgaintheprivilegetorunarbitrarycode.
+Technicalreport,Google,2008.
+In addition to least privilege, we separate privileges by
+[12] A. Barth, J. Weinberger, and D. Song. Cross-Origin
+dividingextensionsintothreecomponents: contentscripts,
+JavaScript Capability Leaks: Detection, Exploitation, and
+theextensioncore,andanativebinary. Contentscriptsare
+Defense. InUSENIXSecuritySymposium,2009.
+exposed directly to web content but have few privileges.
+[13] A.BoodmanandE.Kay. GoogleMailChecker.
+Nativebinariesarepowerfulbut(bydefault)havenodirect http://code.google.com/chrome/
+contact with web content. The three components interact extensions/samples.html.
+via narrow interfaces, reducing the attack surface for the [14] S.Crites,F.Hsu,andH.Chen.Omash:Enablingsecureweb
+privileged components. We expect vulnerabilities to exist, mashupsviaobjectabstractions.InCCS’08:Proceedingsof
+ofcourse,butwehopetheywillbehardertoexploitthana the15thACMconferenceonComputerandcommunications
+singlecross-sitescriptinghole. security,pages99–108.ACM,2008.
+[15] J.R.Douceur,J.Elson,J.Howell,andJ.R.Lorch.Leverag-
+inglegacycodetodeploydesktopapplicationsontheweb.
+InUSENIXOperatingSystemDesignandImplementation,
+2008.
+[16] U´.Erlingsson, M.Abadi, M.Vrable, M.Budiu, andG.C.
+Necula.XFI:Softwareguardsforsystemaddressspaces.In
+Symposium on Operating System Design and Implementa-
+tion(OSDI),2006.[17] Google. GoogleChromeExtensions:Mostpopulargallery. A FirefoxExtensionSurvey
+https://chrome.google.com/extensions/
+list/popular.
+OurFirefoxextensionsurvey(Section3.1)examinesex-
+[18] C.Grier,S.T.King,andD.S.Wallach. HowILearnedto
+tensions from the Firefox Add-on “recommended” direc-
+StopWorryingandLovePlugins. InWeb2.0Securityand
+tory. We selected two from each category in the directory.
+Privacy,2009.
+[19] C. Grier, S. Tang, and S. T. King. Secure Web Browsing Thethirteencategoriesare: Alerts&Updates,Appearance,
+withtheOPWebBrowser. InIEEESymposiumonSecurity Bookmarks,DownloadManagement,FeedsNews&Blog-
+andPrivacy,2008. ging, Language Support, Photos Music & Videos, Privacy
+[20] I.Hickson. DOMCorePerformance,Test1. & Security, Search Tools, Social & Communication, Tabs,
+http://www.hixie.ch/tests/adhoc/perf/ Toolbars,andWebDevelopment.
+dom/artificial/core/001.html.
+The twenty-five extensions in our extension survey are:
+[21] C.JacksonandA.Barth.Bewareoffiner-grainedorigins.In
+Adblock Plus 1.0.2, Answers 2.2.48, AutoPager 0.5.0.1,
+Web2.0SecurityandPrivacy,2008.
+Auto Shutdown (InBasic) 3.1.1B, Babel Fish 1.84, Cool-
+[22] C. Jackson, A. Bortz, D. Boneh, and J. C. Mitchell. Pro-
+tectingbrowserstatefromwebprivacyattacks. InProceed- Previews 2.7.4, Delicious Bookmarks 4.3, docked JS-
+ingsofthe15thInternationalWorldWideWebConference Console 0.1.1, DownloadHelper 4.3, Download Statusbar
+(WWW),May2006. 2.1.018, File and Folder Shortcuts 1.3, Firefox Showcase
+[23] kkovash. How Many Firefox Users Customize Their 0.3.2009040901,Fission1.3,Glue4.2.18,GoogleEnhancer
+Browser? BlogofMetrics,2009. 1.70, ImageTweak0.18.1, Lazarus: FormRecovery1.0.5,
+[24] R.S.LiveraniandN.Freeman.AbusingFirefoxExtensions.
+Mouseless Browsing 0.5.2.1, Multiple Tab Handler 0.9.5,
+Defcon17,July2009.
+Quick Locale Switcher 1.6.9, Shareaholic 1.7, Status-bar
+[25] M.T.Louw,J.S.Lim,andV.N.Venkatakrishnan. Enhanc-
+Scientific Calculator 4.5, TwitterFox 1.7.7.1, WeatherBug
+ing web browser security against malware extensions. In
+JournalinComputerVirology,August2008. 2.0.0.4,andZemanta0.5.4.
+[26] MicrosoftDeveloperNetwork.IntroductionoftheProtected
+ModeAPI.http://msdn.microsoft.com/en-us/
+B GoogleChromeExtensionSurvey
+library/ms537319(VS.85).aspx.
+[27] MozillaLabs. Jetpack.
+https://wiki.mozilla.org/Labs/Jetpack. Our Google Chrome extension survey (Section 4.1) ex-
+[28] D.Pupius. FittrFlickrExtensionforChrome. amines extensions from the Google Chrome “most popu-
+http://code.google.com/p/fittr/. lar” directory. There are no official categories for Google
+[29] A.Raskin. JetpackFAQ. http://www.azarask.in/
+Chromeextensions. Notethat9oftheextensionsaremade
+blog/post/jetpack-faq/,2009.
+byGoogledevelopers.
+[30] M.M.Swift,B.N.Bershad,andH.M.Levy.Improvingthe
+Thetwenty-fiveextensionsinourGoogleChromeexten-
+ReliabilityofCommodityOperatingSystems. ACMTrans-
+sionsurveyare:GoogleMailChecker1.2,AdThwart0.4.1,
+actionsonComputerSystems,23(1):77–110,2005.
+[31] R.Wahbe,S.Lucco,T.E.Anderson,andS.L.Graham. Ef- GoogleTranslate1.1.4, IETab, GoogleWaveNotifier2.2,
+ficientSoftware-BasedFaultIsolation. InACMSymposium RSSSubscriptionExtension1.8.1,Xmarksbookmarksync
+onOperatingSystemsPrinciples(SOSP),1994. 0.5.24, Docs PDF/PowerPoint Viewer 1.5.3, AdBloack
+[32] H. J. Wang, X. Fan, J. Howell, and C. Jackson. Protec- 1.1.91,GoogleQuickScroll0.5.4,CoolIris,ChromedBird
+tionandCommunicationAbstractionsforWebBrowsersin
+1.2.0, Facebook for Google Chrome 1.3, Google Reader
+MashupOS. In21stACMSymposiumonOperatingSystems
+Notifier1.1,GoogleCalendarChecker1.0.3,SmoothScroll
+Principles(SOSP),2007.
+0.6.1, Speed Tracer 0.6, Evernote Web Clipper 1.1, Send
+[33] H.J.Wang,C.Grier,A.Moshchuk,S.T.King,P.Choud-
+from Gmail 1.11, Bubble Translate 1.2, Chrome Gesture
+hury,andH.Venter.TheMulti-PrincipalOSConstructionof
+theGazellWebBrowser. InUSENIXSecuritySymposium, 1.8.0,AniWeather0.6.19.2,FlashBlock1.2.11.11,Selectto
+2009. GetMaps1.1.1,StumbleUpon1.0.11208.1.
+[34] S. Willison. Understanding the Greasemonkey vulnerabil-
+ity. http://simonwillison.net/2005/Jul/20/
+vulnerability/.
+[35] B. Yee, D. Sehr, G. Dardyk, J. B. Chen, R. Muth, T. Or-
+mandy, S. Okasaka, N. Narula, and N. Fullagar. Native
+client: A sandbox for portable, untrusted x86 native code.
+InIEEESymposiumonSecurityandPrivacy,2009.
+[36] F. Zhou, J. Condit, Z. Anderson, I. Bagrak, R. En-
+nals, M. Harren, G. Necula, and E. Brewer. SafeDrive:
+Safeandrecoverableextensionsusinglanguage-basedtech-
+niquesXFI. InSymposiumonOperatingSystemDesignand
+Implementation(OSDI),2006.

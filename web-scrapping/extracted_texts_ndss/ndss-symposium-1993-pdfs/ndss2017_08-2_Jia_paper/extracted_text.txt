@@ -1,0 +1,1162 @@
+ContexIoT: Towards Providing Contextual Integrity
+to Appified IoT Platforms
+Yunhan Jack Jia, Qi Alfred Chen, Shiqi Wang†, Amir Rahmati, Earlence Fernandes, Z. Morley Mao, Atul Prakash
+University of Michigan,
+Shanghai JiaoTong Unviersity†
+{jackjia, alfchen, rahmati, earlence, zmao, aprakash}@umich.edu,
+{wangshiqi}@sjtu.edu.cn†
+Abstract—TheInternet-of-Things(IoT)hasquicklyevolvedto where programming frameworks are provided for third-party
+a new appified era where third-party developers can write apps developers to build applications (apps) to manage a single or
+for IoT platforms using programming frameworks. Like other even a number of smart devices at the same time to realize
+appifiedplatforms,e.g.,thesmartphoneplatform,thepermission more advanced and smarter control. Many such appified IoT
+system plays an important role in platform security. However,
+platforms, for example Samsung SmartThings [13], Apple
+design flaws in current IoT platform permission models have
+HomeKit [3], and Google Weave/Brillo [7], have already
+beenreportedrecently,exposinguserstosignificantharmsuchas
+gained great popularity among home users today.
+break-insandtheft.Tosolvetheseproblems,anewaccesscontrol
+modelisneededforbothcurrentandfutureIoTplatforms.Inthis Like other appified platforms such as the smartphone
+paper,weproposeContexIoT,acontext-basedpermissionsystem platform, the permission model plays an important role in
+for appified IoT platforms that provides contextual integrity by
+the security of these appified IoT platforms, defining an app’s
+supportingfine-grainedcontextidentificationforsensitiveactions,
+access to sensitive resources [19]. However, security-critical
+andruntimepromptswithrichcontextinformationtohelpusers
+design flaws in the permission1 model of these platforms, for
+performeffectiveaccesscontrol.ContextdefinitioninContexIoT
+example overprivilege problems due to the current coarse-
+is at the inter-procedure control and data flow levels, that we
+show to be more comprehensive than previous context-based grained permission definitions, have already been reported
+permission systems for the smartphone platform. ContexIoT is recently, exposing smart home users to significant harm such
+designed to be backward compatible and thus can be directly as break-ins and theft [35]. To solve these problems, a new
+adopted by current IoT platforms. accesscontrolmodelisneededintheseappifiedIoTplatforms
+in order to provide home users with more fine-grained control
+We prototype ContexIoT on the Samsung SmartThings plat-
+of app behavior.
+form, with an automatic app patching mechanism developed to
+support unmodified commodity SmartThings apps. To evaluate
+Existing access control mechanisms employed by the most
+the system’s effectiveness, we perform the first extensive study
+recentappifiedplatformwithhugepopularity—thesmartphone
+of possible attacks on appified IoT platforms by reproducing
+platform—have long been criticized to be coarse-grained,
+reported IoT attacks and constructing new IoT attacks based
+insufficient, and undemanding [19], [56], [64], [67], which
+on smartphone malware classes. We categorize these attacks
+based on lifecycle and adversary techniques, and build the first are quite similar to the aforementioned problems in current
+taxonomized IoT attack app dataset. Evaluating ContexIoT on IoT platforms. From numerous studies on Android and iOS
+this dataset, we find that it can effectively distinguish the attack permission systems, a key design flaw is that they either
+context for all the tested apps. The performance evaluation on require users to make uninformed decision at install time [1]
+283commodityIoTappsshowsthattheapppatchingaddsnearly or prompt users at runtime when an app requests any of a
+negligibledelaytotheeventtriggeringlatency,andthepermission handful of resources, without providing essential contextual
+request frequency is far below the threshold that is considered
+information [2], [8]. These studies conclude that it is highly
+to risk user habituation or annoyance.
+desirable to put the user in context when making permission
+granting decisions at runtime. This helps ensure a property
+I. INTRODUCTION
+known as “contextual integrity” defined by Nissenbaum [52]
+The Internet-of-Things (IoT) has quickly evolved from withwhich“informationflowsaccordingtocontextualnorms,”
+its initial stage where sensors and actuators each provide and it is advocated as the desired norm for future permission
+hard-coded and disjoint functionality, to a new appified era, system design of the smartphone platform [64], [68], [19].
+Taking lessons from previous permission systems, in this
+paper we aim to provide contextual integrity in appified IoT
+Permission to freely reproduce all or part of this paper for noncommercial
+purposes is granted provided that copies bear this notice and the full citation platforms in order to solve the security problems arising in
+on the first page. Reproduction for commercial purposes is strictly prohibited current IoT platform permission systems. However, as dis-
+without the prior written consent of the Internet Society, the first-named author cussed in previous attempts to support it in the smartphone
+(for reproduction of an entire paper only), and the author’s employer if the
+platform [64], [19], providing contextual integrity in appified
+paper was prepared within the scope of employment.
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA systems is challenging due to two reasons:
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23051 1SmartThingsusesthetermcapabilityinsteadofpermission[35]• Availability of context is not guaranteed in the life- cloudbackend,wedevelopedanapppatchingmechanismthat
+cycle of the app: majority of sensitive permission can convert unmodified commodity SmartApps to ContexIoT-
+requests occur when the user is not interacting with compatible SmartApps. The patching process separates the
+therequestingapp[64].Thissituationonlygetsworse execution flow of a sensitive action in the original SmartApp
+in the IoT scenario, since unlike the UI-oriented into two steps: (1) Collect the context information before the
+smartphone apps, the whole point of developing IoT action is executed, and (2) Allow or deny the action based on
+appsistoprovideautomateddevicecontrolwithmin- the in-context user decision. ContexIoT uses a cloud backend
+imum user involvement. Except sending notifications, torememberthepreviousdecisionsbymaintainingamapping
+usually no user interaction is required after the app between an in-context sensitive action for an app and the
+setup procedure, making it more difficult to involve grantingdecision.Ifnomappingisfound,thesystemprompts
+user in the context at runtime. the user with the context and the requested action, and stores
+the user decision to the ContexIoT cloud backend.
+• Frequency of prompts is another important factor
+for a permission system to be effective [64]. On the To evaluate the effectiveness of our approach, we exten-
+smartphone platform, since the request frequencies sively collect the reported IoT attacks from multiple sources.
+for some permissions are too high to prompt the For exploits on non-appified platforms, we explore the pos-
+user each time a request occurs without risking user sibility of migrating them to appified IoT platforms. In total,
+habituationorannoyance,currentdesignsshifttoward we have constructed 10 SmartApps that are either malware or
+a model of only prompting the user the first time a vulnerableappsbasedonthereportedIoTattacks.Considering
+request occurs to increase usability [64]. However, that appified IoT platforms are still in a primitive stage and
+this harms contextual integrity since the subsequent not many attacks are reported, we further survey malware
+sensitive actions may be performed in a completely classes from appified smartphone platforms. We taxonomize
+different context than that of the initial request. them into 4 categories based on the malware lifecycle, with
+3–6 species in each category. Out of the 17 species in total,
+In view of these challenges, we design and implement we find that 15 of them can be naturally migrated to IoT
+ContexIoT (means putting IoT into context), a context-based platforms due to the similarity of appified platforms. Overall,
+permission system for appified IoT platforms which supports we build an IoT attack app dataset with 25 SmartApps, each
+fine-grained identification of context for a sensitive action and representing a unique attack class. Evaluating ContexIoT on
+runtimepromptswithrichcontextinformationtohelpprovide this dataset, we find that all 25 different attack execution
+contextual integrity. In our design, the context is defined at paths have been successfully distinguished with the context
+inter-procedurecontrolanddataflowlevels,andcanbeflexibly information correctness manually confirmed.
+tuned to support different context granularity in order to best
+For performance evaluation, we build a dynamic testing
+balance security and usability. ContexIoT is designed to be
+framework based on the device simulator provided by the
+backward compatible, and thus can be directly adopted by
+SmartThings IDE. Using this framework, we dynamically
+currentIoTplatformstoprovidemoreeffectiveaccesscontrol.
+inject virtual device events and are able to trigger all the 916
+Atahighlevel,ContexIoTdesignisbasedontheobserva- eventhandlinglogicin283SmartApps.Fromtheperformance
+tion that a permission granted by the user is expected to allow measurement results, we find that the SmartApp patching
+thetriggeredappfunctionalityonlyunderthatparticularusage logic only introduces 67.1 ms additional delay on average,
+context. We abstract the usage context of an app functionality which is negligible in practice since the end-to-end latency is
+asaprogrampath,andthusdefinethecontextastheexecution dominated by the network latency between the SmartThings
+flow of the code at runtime, including how the functionality is cloud backend and the physical device. We also evaluate the
+triggered and what data is flowing along the execution path. frequency of prompts, and find that the average possible life-
+Thisdefinitionfallsintothetrigger-actionbasedprogramming time of permission request prompts is only 3.5 times for each
+model of IoT apps [62], so that when the user is prompted, SmartApp on average, which is far below the threshold that is
+the context can be naturally represented as the triggering considered to risk user habituation or annoyance [67], [64].
+sequence of real-world physical events. To help the user make
+To summarize, our contributions are three-fold:
+a more informed decision, we use taint analysis to track the
+runtime data on the execution path and label the data source • To understand the design requirements for a context-
+when presenting the context information to the user, e.g., based permission system on IoT platforms, we per-
+showing whether the data to be sent out is the user password form the first extensive study of possible attacks on
+or just the battery level. We compare ContexIoT context appified IoT platforms by reproducing reported IoT
+definition with existing context-based security approaches for attacks and constructing new IoT attacks based on
+smartphoneplatforms,andfindthatourfine-graineddefinition smartphone malware classes. We categorize these at-
+atinter-proceduralcontrolanddataflowlevelscansuccessfully tacksbasedonthelifecycleandadversarytechniques,
+identify stealthy attack paths that can evade other systems, and build the first taxonomized IoT attack app dataset
+showing better visibility than previous design. with25SmartApps,eachrepresentingauniqueattack
+class.
+We built a prototype of ContexIoT on the Samsung Smart-
+Things platform, which at the time of writing has the largest • WedesignandimplementContexIoT,acontext-based
+number of supported device types and IoT apps (called Smar- permission system for appified IoT platforms that
+tApps) among all the IoT platforms [35]. To support existing supports fine-grained context identification and rich
+SmartApps without changing the closed-source SmartThings contextinformationpromptingatruntimetohelppro-
+2vide contextual integrity. To distinguish fine-grained SmartThings Cloud Backend External
+context, ContexIoT defines context as execution paths System
+Groovy Sandbox Groovy Sandbox !e.g., IFTTT)
+at inter-procedure control and data flow levels, which Permission
+is shown to be more comprehensive than previous SmartApp (C Sa yp sa tb ei mlity) SmartDevice
+designsforsmartphoneplatforms.Tohelpusersmake
+more informed decisions, ContexIoT also labels the Control
+data source of the runtime data using taint analy- ZWave, WiFi, ZigBee SmartThings
+SmartThings Hub Mobile App
+sis. To provide backward compatibility, ContexIoT
+contributes an app-patching mechanism that converts
+Fig. 1: SmartThings architecture overview
+existing IoT apps to ContexIoT-compatible apps.
+• WeprototypeContexIoTontheSamsungSmartThings
+platform,andevaluateitonourIoTattackappdataset
+al. proposed to enrich permission dialogs with more detailed
+for system effectiveness with over 283 existing Smar-
+privacy-related information to help users make more effective
+tApps for system performance. For the attack app
+decision[44].Incomparison,ContexIoTtargetsanorthogonal
+dataset, we find that all attack execution paths have
+goal, i.e., enabling effective identification of fine-grained con-
+been successfully distinguished with correct context
+text for security sensitive actions. Leveraging the rich context
+information annotated. The performance evaluation
+information collected in ContexIoT, these approaches can be
+results indicate that ContexIoT app patching adds
+combined with ContexIoT to improve usability.
+nearly negligible delay, and the permission request
+frequencyisfarbelowthethresholdthatisconsidered 2)IoT Security: The IoT security research is centered
+to risk user habituation or annoyance. around three themes: Devices, Protocols and Platforms. In
+the IoT device scope, many Telnet-capable IoT devices are
+II. RELATEDWORKANDBACKGROUND reported to be vulnerable due to weak/default password or
+unprotecteddebugginginterfaces[69].Uretal.identifiedprob-
+In this section, we cover previous work on permission-
+lems in the access control of the Philips Hue lighting system
+based access access control and IoT security, and necessary
+and the Kwikset door lock that fails to enable essential use
+background for Samsung SmartThings platform.
+cases [61]. Ronen et al. demonstrated extended functionality
+attacks on smart lights that can leak information and causing
+A. Related Work seizures using strobed light [57].
+1)Permission-based Access Control: The permission- On the protocol level, researchers demonstrated flaws in
+based access control plays an important role in the security the ZigBee and ZWave protocol implementations of IoT de-
+of appified platforms, and has received a lot of attention vices [37]. More recently, the misusing of some protocols
+by the security research community [33], [21], [50], [67]. in some IoT specific scenarios has been reported to cause
+Acar et al. pointed out that the current concept of permission security and safety problems [40]. For example, using the
+granting mechanism has failed in practice, and proposed a BLE (Bluetooth Low Energy) range as the proof to verify
+clean break to seek for permission revolutions [19]. Backes et physical proximity is considered insecure in the auto-unlock
+al.advocatescontextualintegrityasthedesirednormforfuture usage scenario. In our work, we extensively survey these IoT
+permission systems design based on a rigorous user study on attacks, and explore the feasibility of migrating them to the
+Android platform [64]. Roesner et al. introduced User-Driven appified IoT platform.
+Access Control where the user is kept involved with access
+On the IoT platform level, recent work discovered a series
+controldecisionsincase-by-casebasisbyusingaccesscontrol
+of security-critical design flaws such as the coarse-grained
+gadgers[56].Rahmatietal.introducedtheconceptofcontext-
+permission definition on the SmartThings platform [35]. To
+specific access control [54] in Android where app Activities
+limit the usage of sensitive data, Fernandes et al. proposed
+are used to distinguish different user contexts. Compared to
+the FlowFence framework [36] that supports flow policy rules
+theseprevioussystemsforthesmartphoneplatforms,thispaper
+for IoT apps. Our work is similarly motivated by the secu-
+aimstoprovidecontextualintegritytotheIoTplatforms,which
+rity problems in the appified IoT platforms. However, unlike
+faces several IoT specific challenges, e.g., it is more difficult
+FlowFence, our approach does not require additional devel-
+toinvolveusersinthecontext.Also,thecontextinContexIoT
+oper effort and is backward compatible. Moreover, ContexIoT
+is defined at both control and data flow levels, which is more
+allowsusercontrolincaseswhereaparticulardataflowmight
+fine-grained. We compare our context definition with those in
+be allowed in one scenario, but should be blocked in another.
+thesepreviousworklaterin§V,anditshowsthatourdefinition
+is more comprehensive and can defeat attacks that can evade
+these previous design. B. Background
+Anotherlineofresearchfocusesonimprovingtheusability In this paper, we focus on the Samsung SmartThings plat-
+of the permission system. Felt et al. introduced a set of form, which uses a popular cloud-backed architecture design
+guidelinesonwhenandhowtorequestpermissions[34],which as shown in Figure 1. Other popular IoT platforms such as
+can instruct the design of default security policies. Wijesekera Apple’s HomeKit and Google’s Weave/Brillo also use such
+et al. suggested the systems to learn about their users’ privacy design, and the differences only lie in the communication
+preferencesandonlyconfrontuserswithconsentdialogswhen protocols used in the wireless hop. As shown later in §V,
+a permission request is unexpected for the user [64]. Keley et ContexIoT also leverages such cloud-backed architecture, and
+3thus is generally applicable to these popular IoT platforms Mirai attack[9]) are not in our scope; Securing the platform
+today. by reducing its attack surface is orthogonal to our research
+(e.g., [22]).
+AsshowninFigure1,theSmartThingsecosystemconsists
+of three major components: a hub, a SmartThings cloud Goal and problem scope. The goal of ContexIoT is
+backend, and a smartphone Companion App. The IoT apps to raise the bar for the aforementioned app-level attacks
+in the SmartThings platform are called SmartApps, which are by providing context integrity support. To achieve the goal,
+written in Groovy using the Web based IDE provided by ContexIoT aims to enable a user to validate two important
+SmartThings. These SmartApps are not running on the IoT properties when a sensitive action is triggered at runtime:
+devices. Instead, they are executed by the SmartThings cloud (1) When: whether the sensitive action is triggered at the
+platform within a sandboxed environment. The sandbox is user-desired conditions, and (2) What: whether the sensitive
+an implementation of a Groovy source code transformation action matches the user-intended action. Runtime data content
+that only allows whitelisted method calls to succeed in the validationandprotectionarealsoinourscope,sincetoperform
+SmartApp, and thus disables some object-oriented language effective access control, the user needs to understand what the
+features in Groovy such as creating classes. The SmartApp data is being accessed or about to be sent.
+can choose to expose web service endpoints to respond to
+Since we target app-level attacks, attacks not exploiting
+HTTP requests from external application, which is protected
+app-level vulnerabilities are out of our scope. For example,
+by OAuth-based authentication. Note that SmartApps support
+attacks using stolen external service security tokens due to the
+dynamicmethodinvocation(usingtheGStringfeature),and
+weak protection of these external services [35] are considered
+thus similar to the reflection feature in some programming
+as a separate problem, and should be taken care of by the
+languagessuchasJava,amethodcanbeinvokedbyproviding
+provider of each service integrated with SmartThings. Also,
+its name as a string parameter. In later sections, we detail the
+the denial-of-service (DoS) behavior of “ignoring the func-
+security problems caused by this dynamic feature and how
+tionality” [57] is not in our scope. For instance, a malicious
+ContexIoT addresses it.
+break-inalertappthatclaimstonotifytheuserwhenitdetects
+The cloud backend also runs the SmartDevices, which are a break-in may ignore the event instead of sending alerts. In
+software wrappers for physical devices in the user’s home. this paper, we target attacks with explicit code-level malicious
+A SmartApp and a SmartDevice communicate in two ways logic, which can cause more severe damage such as privilege
+(1) The SmartApp invokes operations on the SmartDevices escalation and sensitive data theft compared to DoS.
+via method call (e.g., to lock the door), (2) The SmartApp
+subscribes to events that the SmartDevices generates (e.g., IV. ATTACKTAXONOMY
+smoke detected). The communication between a SmartApp
+To better understand the security and privacy issues asso-
+and the functionality of a SmartDevice are controlled by the
+ciated with the current appified IoT platforms, we performed
+permissionmodel,whichiscalledthecapabilitysystemofthe
+an extensive survey of attacks reported on both IoT devices
+SmartThings platform.
+and the smartphone platforms, and studied the feasibility of
+The current capability model of the SmartThings platform their migration to the SmartThings platform. For all attacks
+only provides coarse-grained binding between SmartApps and that are applicable, we constructed misbehaving SmartApps
+SmartDevices. Capability defines a set of commands and thatachievesimilarmaliciousfunctionalitytoguideourdesign
+attributes that devices can support, and SmartApps state the and evaluate the effectiveness of our system.
+capabilitiestheyneed.Basedonthat,usersbindSmartDevices
+to SmartApps at the app installation time. Recent work has A. Reported IoT Attacks
+uncovered several security problems with the permission/ca-
+Similartotheearlystagesofanyemergingtechnology,the
+pability system of the SmartThings platform such as overpriv-
+priority of most vendors are functionalities and faster time-to-
+ilege [35]. In this paper, we design and implement ContexIoT,
+market of their products, while security and privacy have not
+a context-based permission system for appified IoT platforms
+receivedmuchattention.ThesecurityofIoTplatformsarenot
+to address these problems.
+hypotheticalconcernsasanumberofrealattackshavealready
+beenreported.Forexample,IoTdevicesbeingcompromisedto
+III. THREATMODELANDPROBLEMSCOPE use as bots to launch DDoS attack [69], the misusing of BLE
+range to confirm physical proximity are leveraged by attacker
+Threat model. In this paper, we consider app-level IoT
+to unlock your vehicle and door [40], [38]. Table I lists the
+attacks on the appified IoT platforms which attempt to access
+reported attack instances we collected from sources including
+IoT users’ sensitive data or execute privileged functionality.
+both academic papers and news articles. We categorize them
+Theattackercanlaunchtheattackthrougheither(1)malware,
+into three classes based on the problem area.
+in which the malicious logic is embedded at the IoT app
+install time, or (2) vulnerable apps, which contain design or 1)Vulnerable Authentication: Authentication plays an im-
+implementation flaws that can be exploited by a co-located portantroleinthewholelifecycleofIoTdevices,andvulnera-
+malicious IoT app or a remote network attacker to escalate bleauthenticationisspottedinmanycriticalproceduresofIoT
+its privilege and cause damages such as unauthorized device devices. For example, a vulnerable device-pairing mechanism
+control and sensitive data theft. In this paper, we assume the may allow attacker to take full control of the device. Due to
+platform itself to be trustworthy and uncompromised, thus the lack of displaying functionality in many IoT devices, a
+some recent IoT attacks exploting the unprocted management managementconsoleistypicallyprovidedusingprotocolssuch
+interfaces of IoT devices to compromise the hardware (e.g., as Telnet, HTTP and SSH, which can suffer from problems
+4TABLE I: A taxonomy of reported IoT attacks and their applicability to the SmartThings platform
+Problemarea Attackdescription Platform Attackvectors References ApplicabletoST?
+Backdoorpincodeinjec- SmartThings StealingOAuthtokens;InjectcommandintoWeb [35] (cid:88)
+Vulnerable tion ServiceSmartApp
+authentication Get remote shell of de- Telnet-capable IoT Weak/defaultpassword;Credentialincludedinthe [53],[69],[12] N/A
+vice devices image;Unprotecteddebugginginterface
+Leaking information / Smart connected Unsecureddevicepairingprocedure [57] (cid:88)
+creating seizures using LEDs
+strobedlight
+Impersonate device to Bonjour-supported Unable to handle name collision in the local [24] N/A
+stealdata IoTdevices network
+Door lock pin code SmartThings Overprivilege due to the SmartApp-SmartDevice [35] (cid:88)
+snooping coarse-binding
+Malicious Disablingvacationmode SmartThings MisusinglogicofabenignSmartApptodoevent [35] (cid:88)
+app/firmware spoofing
+Fakealarm SmartThings Controlling device without gaining appropriate [35] (cid:88)
+capability
+Surreptitious Sony surveillance Installed with malware in the device retailing [17] (cid:88)
+surveillance camera process
+Spyware Barcodescanner Preloadedwithmaliciousfirmware [5] (cid:88)
+Problematic Undesiredunlocking BLESmartlocks MisusingBLErangetoconfirmthephysicalprox- [40] (cid:88)
+usage imityofuser
+scenario BLErelayunlocking BLESmartlocks MisusingBLErangetoconfirmphysicalproxim- [40],[38] (cid:88)
+ityofuser;BLEReplayattack
+Lockaccessrevocation/ DGClock Failingtoensurestateconsistencybetweendevice [40] (cid:88)
+loggingevasion andserver
+suchasweakordefaultpassword.Wefindthatbesidegaining lifecycle below. We discussed the possibility of each malware
+a remote shell on the devices, many attacks can be easily classestobeappifiedonSmartThingsplatforms,andconstruct
+implemented as malicious SmartApps and distributed in the real malicious SmartApps for demonstration and evaluation
+platform. For example, a malicious smart light control app purposes if applicable.
+can perform similar malicious activities as described in [57]
+1)Installation.: The most common technique seen in mo-
+to use luminance as side channel to inform thieves near the
+bile malware samples to distribute themselves is to repackage
+housethattheownerisnotathome,orcreatingseizuresusing
+their malicious app logic into commodity apps that claim
+strobed lights.
+normalfunctionality.Thisattackvenueisclearlyapplicableto
+2)Malicious App/Firmware: Even before the emerging of IoTmalware.Moreover,wefindthattheappupdateprocedure,
+appified IoT platforms, malicious preloaded application or which is reported to have been leveraged by mobile malware
+firmware have already been reported [17], [5]. Functionalities to carry out their malicious payload is also vulnerable in the
+of these malicious app/firmware can be easily migrated to SmartThings platform. SmartThings makes it very convenient
+SmartThings platform, as it opens a broad range of device for SmartApp developers to deploy their updates, by automat-
+capabilities to 3rd party developers. For example, one of our icallyupdatingthecloudinstancesoftheSmartAppforallthe
+constructed malicious SmartApp show how an attacker can user.Inthismode,theattackercandisguisethemaliciouslogic
+surreptitiously spy on the daily life of house owner if the user oftheirappsbynotpiggybackingtheentiremaliciouspayload
+installed the malware disguised as normal surveillance camera into the original app, but slowly introducing it through future
+app. In addition, some attacks that has already been reported updates. In addition, drive-by download can also be easily
+as feasible on SmartThings platform [35], such as snooping adopted by attacker to entice users to download the malware
+the door lock pin code, are also included, and used to guide app.
+our system design.
+2)Activation: Malicious logic can potentially be triggered
+3)Problematic Usage Scenario: Another category of IoT by various events. We categorize these events into three cate-
+attacks exploits the misusing of technology in some IoT gories: (1) Remote command (e.g., incoming SMS), (2) User
+specific usage scenarios. For example, using the presence of events (e.g., user click), and (3) System events. The trigger-
+user’s device in the BLE range as indicator of user’s presence action programming model of IoT provides similar flexibility
+atthedoorisconsideredproblematic,sinceitmayundesirably for attacker to embed their malicious app logic into any of
+unlock all the doors of the house due to the long range of the three types of events. Specifically, some IoT events are
+BLE. We found that such problems can also be reproduced in veryinformativeandmayleaksensitivedatatountrustedapps
+SmartThings using the capability granted to the SmartApps. that don’t have essential capability. For instance, the mode
+change(home/away/night)eventsarebroadcastedsystem-wide
+B. Migrated from The Smartphone Platforms and an malicious app that doesn’t have the access to any
+sensing devices can know when the house owner is leaving
+Security requirements of appified IoT platforms and the
+by receiving the broadcast, and facilitating potential break-in.
+smartphone platforms share many similarities, including the
+definition of access to resources, and privilege separation. We 3)Adversary Technique: Two basic principles that guide
+surveyedthemobilemalwareecosystem,andcategorizedthem the design of malware are to (1) carry out the malicious
+basedonthedifferenttechniquestheyusedin4aspectsoftheir payload as fully as possible under the system constraints
+5TABLE II: A taxonomy of smartphone malware classes and their applicability to the SmartThings platform
+Categoryanddescriptions References ApplicabletoST?
+Repackaging: Maliciouslogicareenclosedintohigh-profileappstotrickusertodownload [27],[74],[26],[42] (cid:88)
+Installation Appupdate: Maliciouspayloadsaredownloadedduringtheappupdateprocessfordisguisingpurpose [66],[74] (cid:88)
+Drive-byDownload:Enticingusertodownloadthe“interesting”or“feature-rich”apps [74] (cid:88)
+Remotecommand: Attackercontrolledremoteinput,e.g.,incomingSMS [74],[39] (cid:88)
+Activation Userevents: Eventtriggeredbytheuser,e.g.,buttonclick [39] (cid:88)
+Systemevents: Eventgeneratedbythesystem,e.g.,bootcompleteevent [74],[46] (cid:88)
+Abusingpermission: maliciousapplogicabusestheprivilegegrantedtotheapp [39],[31],[51] (cid:88)
+Exploitingweaknessofgeneralsystemdesign:genericsystemmechanismssuchasIPC [63],[23] (cid:88)
+Exploitingweaknessofplatformspecificfeatures:techniquesspecifictoplatform,e.g.,nativecode [19],[20],[49],[47] (cid:88)
+Adversary Exploitingsystemvulnerability: securityflawsandbugsinthesysteme.g.,rootexploits [59],[71],[43],[65],[18] N/A
+technique Shadowpayload: disguisemaliciouspayloadusingobfuscationorencryptiontechniques [74],[55] (cid:88)
+Sidechannel: carryoutmaliciouspayloadusingcovertchannel [32],[70],[72],[29] (cid:88)
+Remotecontrol: Takingcontrolofuser’sdevicewithC&Cservers [74],[46] (cid:88)
+Spyware: Aimingtogatherinformationfromthevictimswithouttheirknowledge [39],[31],[51],[72],[48] (cid:88)
+Malicious
+Adware: Downloadinganddisplayingunwantedadsontheuser’sdevice [58],[46],[42] (cid:88)
+payload
+Ransomware: InstalledcovertlytoDoSthedeviceanddemandsaransompaymenttorestoreit [45],[43] (cid:88)
+Privilegeescalation: Exploitingabugordesignflawofthesystemtogainelevatedaccess [59],[65],[73],[47] N/A
+to achieve maximum benefit; (2) evade detection to prolong and II, 25 of them are in the scope of our research and are
+their life-time. Guided by these principles various adversary the attacks that our proposed system is designed to defeat.
+techniques are used that we categorize into 6 classes shown Using these 25 categories, we implemented 25 malicious
+in Table II. Except exploiting system vulnerability, such as apps corresponding to each of the category on SmartThings
+root exploits which is orthogonal to our research, techniques platform, and evaluated our system against them in §VII. We
+in all other 5 categories can be applied to the appified provide all of malware samples developed in this project on
+IoT platforms. For example, the permission mechanism of our website [11] to benefit future research. Below, we will
+commodity platforms offers “all or nothing”, meaning that provide more detail about three instances of the proof-of-
+once the permission is granted, the privilege can be used for concept attacks we have implemented. We will refer to these
+any purpose. This allows malicious app logic to abuse the three attacks in later sections to show how our design and
+trustedgrantedtothedeclaredbenignfunctionalityofthesame implementation choices defeat these attacks.
+app. Such overprivilege are common in SmartThings platform
+Surveillance disabling attack (Listing 1) repackages its
+whereaAutoLockSmartAppalsohasthecapabilitytounlock
+malicious payload in an home monitoring app, and abuse the
+the door anytime [35]. Another interesting evasion technique
+switch control capability granted to this app to turn off the
+is to use IPC between malicious apps to carry out malicious
+surveillance camera when it detects that the owner has left to
+payload.andwedemonstrateonSmartThingsthatevenIPCis
+facilitate potential break-in. It also leverages the vulnerability
+notsupportedbytheplatform,maliciousSmartAppswithleast
+in the event system of SmartThings to subscribe on the mode
+privilege can collaborate to leak sensitive data such as door
+change events without explicitly requiring any capability.
+lock pin code through the device status as side-channel [35].
+In addition, weaknesses in platform specific features can also Pin code snooping attack (Listing 2) uses a battery
+be leveraged by IoT malware. For example, the GString monitorSmartApptodisguiseitsmaliciousintentatthesource
+support of the Groovy language enables attacker to modify code level, and is first proposed in the recent work [35]. The
+the control flow of the app at runtime, which can be used to app subscribes on the battery report of the lock, and sends
+evade all static analysis based malware detection systems. the battery data to remote client for visualization purpose.
+However,itwon’trevealitsmaliciouspayloaduntilthevictim
+4)Malicious Payload.: Existing smartphone malware can
+sets up a new pin code. Due to the overprivilege issue of
+be largely characterized by their carried payloads. We par-
+the SmartThings platform, the app subscribing on the battery
+tition these payloads into five different categories: remote
+reportcanalsoreceivethecodeReporteventwhenpincode
+control,spyware,adware,ransomware, and privilege escalation.
+is updated, and user can distinguish the benign and malicious
+Among them, privilege escalation leverages the vulnerabilities
+behaviors only based on the runtime value.
+of the system, and is out of the scope of our work. Remote
+control and spyware are two common types of payload on Remote control attack (Listing 3) leverages the Groovy
+the smartphone platforms and can be easily adopted by IoT dynamic method invocation and the asynchronous execution
+malware. Adware is a type of app that downloads and display flowtodisguiseitsmaliciouspayload.Itpullstheattackserver
+unwanted ads to the user. There are many channels including everyday for new malicious command and stores them in the
+push notification and SMS in IoT platforms that can be global variables shared by all event handlers. A separated
+leveraged by adware to spread ads. Ransomware is an emerg- process that is scheduled to run every 5 minutes invokes
+ing threat to modern systems, and we demonstrate examples the malicious command stored in the global variables using
+showing that IoT malware can also demand ransom payment GString, which allows attacker to potentially control all of
+insituationswheretheeffectcausedbytheransomwarecannot the devices associated with this app.
+be easily reverted (e.g., when the user is on vacation).
+Listing 1: Code snippet of surveillance disabling attack
+Among all the 29 categories of attacks shown in Table I
+6input "switch", "capability.switch", title: we extract the context definitions from a list of representative
+1
+"The switch your camera is controlled by" related work and categorize them into 5 classes:
+// subscribe the mode change event
+2
+subscribe(location,"mode",handler) UID/GID. For app-level access control mechanisms, the
+3
+context used to make permission granting decision is the
+4
+def handler(evt){ identify of the app, i.e., the UID/GID from the system per-
+5
+//turn switch off if the owner has left spective.MandatoryAccessControl(MAC)andDiscretionary
+6
+7 if(evt.value == "Away"){ Access Control (DAC) systems on the smartphone platforms
+8 switch.off() areseveralexamplesthatusethiscontextdefinition[25],[60],
+}
+9 [31],buttheyarenotabletodistinguishattackandbenignapp
+}
+10 logic within the same app.
+UI Activity. Runtime access control systems on mobile
+Listing 2: Code snippet of pin code snooping attack platforms put user in the context of an app’s UI activity to
+make permission granting decisions [56], [67], [33], [31]. The
+input "lock","capability.battery", title:
+1 problem of using UI indicators alone is that it cannot restrict
+"The device you want to have its battery
+monitored" howtheappusesthesensitivedata.Inaddition,sincetheUIis
+// subscribe the battery report from the lock generally not available in the IoT apps due to the design goal
+2
+subscribe(lock,"battery",handler) of minimum user involvement, it cannot be integrated into the
+3
+contextdefinitionofpermissionsystemsontheIoTplatforms.
+4
+def handler(evt){
+5 Control flow. The events that trigger the execution of the
+//transmit battery data to graphing webservice
+6
+httpPost (url, evt.jsonValue) payload, and the conditional statements (e.g., environmental
+7
+} attributes controlling the execution of payloads) consist of the
+8
+control flow data in the definition of context. The control
+flow context of a sink is useful to distinguish attack and
+Listing 3: Code snippet of remote control attack benign execution paths. For example, a door unlock()
+action triggered by a remote command is more suspicious
+//Subscribe on the sunset event
+1 than that triggered by entering the correct pin code. However,
+subscribe(location,"sunset",dispatcher)
+2 not all malicious behaviors can be distinguished using control
+//Schedule the handler to be executed every 5
+3
+minutes flow context alone, the data floating on the execution paths
+4 schedule("0 5 * * * ?", handler) at runtime is also necessary for making proper permission
+granting decisions in certain scenarios.
+5
+def dispatcher(){
+6 Runtimevalue.Inourattacksurvey,wefindthatthesame
+httpGet(url){
+7
+//Query attack server for command and store control-flow path can be used either for benign purpose or
+8
+them in global variables carryingoutattackpayloaddependingontheruntimevalueof
+resp-> the variables that are related to the security sensitive behavior
+9
+state.method = resp.data[’method’] of the app. As shown in the pin code snooping attack (Listing
+10
+11 state.flag = true 2),thecontrolflowpathsofreceivingthebatteryreportandpin
+12 } codeupdatereportarethesame,anditdependsontheruntime
+}
+13 value to distinguish them. However, using runtime value to
+def handler(){
+14 checkcontextualintegritycausesusabilityproblemssinceeven
+//Execute the command if it’s updated
+15 a tiny change in the data results in different context, and
+if(state.flag == true){
+16 user can be overwhelmed with the large number of decisions
+"$state.method"()
+17
+state.flag = false to make. Moreover, presenting raw runtime data may not
+18
+} necessarily inform the user about the whether the data is
+19
+} sensitive or not, especially when the malware uses shadow
+20
+payload technique shown in Table II to conceal the content.
+Data flow. The data dependency information in the data
+V. CONTEXIOTDESIGN flow context is critical to communicate the context to the
+user. Integrating it into the context definition mitigates the
+Guided by the attack survey and taxonomy, we present the
+problems mentioned above by (1) reducing the number of
+contextdefinitioninContexIoTbyidentifyingasetofinforma-
+different context by merging the runtime data that come from
+tion that is essential to distinguish the attack and benign logic
+the same data origin, and (2) tagging the data dependency
+in an app at runtime. To better clarify our context definition,
+information to the runtime values to help user make more
+we perform a comparison between ContexIoT and previous
+informed permission granting decision based on the property
+context-based approaches that aim at detecting malicious app
+of data being sent out.
+logic or enforcing policies.
+As shown, besides the UI activity that is generally not
+available for IoT apps, ContexIoT integrates all the other
+A. Context Definition
+context components and thus has the most comprehensive
+We use the term sink to refer to all the security sensitive definition of context among related work. Later in §V-C,
+actions of the app in later sections. As shown in Table III, we further use evasion attack discussion to show how this
+7TABLE III: Comparison of the context definitions among related work
+Definitionofcontext Decisionmade
+Name Description
+Uid/Gid UIActivity Controlflow Runtimevalue Dataflow incontext?
+ACG[56] User-drivenaccesscontrol (cid:88) (cid:88) (cid:88)
+AppContext*[68] Staticcontext-basedanalysisformalwaredetection (cid:88) (cid:88) (cid:88) -
+AppFence[41] Protectingprivatedatafrombeingexfiltrated (cid:88) (cid:88)
+Aurasium[67] Repackagingapptoattachpolicyenforcementcode (cid:88) (cid:88) (cid:88) (cid:88)
+CRePE[30] Enforcingcontext-basedfine-grainedpolicy (cid:88) (cid:88)
+FlaskDroid[25] Fine-grainedMAConmiddlewareandkernellayer (cid:88) (cid:88)
+SEAndroid[60] FlexibleMACforAndroidapps (cid:88)
+SEACAT[31] IntegratingbothMACandDACinthepolicychecks (cid:88) (cid:88) (cid:88) (cid:88)
+TaintDroid[33] Dynamictainttrackingandanalysissystem (cid:88) (cid:88) (cid:88) (cid:88) (cid:88)
+TriggerScope*[39] Statictrigger-basedanalysisformalwaredetection (cid:88) (cid:88) (cid:88) -
+ContexIoT Providingcontextualintegritytopermissiongranting (cid:88) - (cid:88) (cid:88) (cid:88) (cid:88)
+* Theseworkfocusondetectingmaliciousbehaviorwithstaticanalysis,butnotenforcingaccesscontrolatruntime.However,theirmethodologiesofdistinguishingbenign
+andmaliciousbehaviorarebasedontheirdefinitionsofcontext.
+comprehensive definition can help improve the permission The static analysis first identifies all the potential sinks,
+system effectiveness. which are those secure sensitive behaviors in the app code,
+andconstructsanInter-proceduralControlFlowGraph(ICFG)
+fromtheprogramentrypointstothesinks.Appcodethatisnot
+B. ContexIoT Approach
+onanycontrol-flowpathfromtheentrypointstothesinksdoes
+We next present ContexIoT, our approach that provide not need to be patched with the runtime logging logic since
+contextual integrity to the permission granting process of IoT it won’t affect the behavior of the sensitive action. However,
+apps using the context definition defined in §V-A. As shown some exceptions need to be made for the app logic that may
+in Figure 2, the general design of ContexIoT consists of implicitly affect the sinks, which are detailed in §VI. In addi-
+two major steps: (1) At the app installation time, ContexIoT tion, some context information that are deterministic statically
+patchestheappwithsecurity-focusedlogictocollectessential thatdoesn’tdependonruntimevaluesareprecomputedbythe
+context and separate the execution flow of the security sensi- staticanalysisandannotatedonthestatementsoftheappcode
+tive behaviors into asynchronous procedures: first request the to further reduce runtime computation overhead.
+permission in the current context, and then perform the action
+ContexIoTthenefficientlypatchestheappwiththecontext
+when receiving permission granting response. (2) At runtime,
+collection logic. The general approach is to maintain an
+the cloud-backed permission management service handles the
+environment variable to store the context information for each
+request from the patched apps and prompts to the user with
+application variable that are labeled as related to the program
+the context if necessary. Figure 2 shows an example in which
+sink by the static analysis. The environment variables are
+a malicious home temperature control app is granted with the
+automaticallyupdatedduringtheexecutionoftheappbasedon
+capability to control the window based on the temperature.
+the logic implemented by ContexIoT. And when the sensitive
+However, the attack logic embedded in the app code covertly
+execution is triggered at runtime, a context collection function
+opens the window when it detects the mode of the home is
+gathers the essential information from the environment of
+changed to Sleep, which allows the attacker to break in.
+all the variables along the execution path. And the context
+The ContexIoT patched app puts the open window execution
+information is sent to the backend to request permission for
+on hold and sends the collected context information to the
+executing the sensitive action.
+backend. If previous decision for this context is not found in
+the backend, the permission service prompts user and takes Context usage. Among the different types of information
+the permission granting decision that is made in context. The in our context definition, the control flow information, which
+permission service learns the security preference under this describes the triggering action of the sensitive action, together
+context of the user to prevent unnecessary prompts in the withtheruntimedatashouldbeabletodistinguishthecontext
+future. We introduce how ContexIoT approach collects and of attack execution path and benign execution path. And the
+uses the context as follows. data flow information is used to communicate the context to
+user to better inform the user the security implications.
+Context collection. To overcome the black-box nature of
+thecloud-backedIoTplatform,ContexIoTpatchesthecontext As shown in Figure 2, the backend permission service
+collection logic to the app code, allowing the patched apps maintains an authorized permission-context mapping table for
+to gather essential information of their own running context eachuser.EverytimewhenaContexIoTpatchedappattempts
+without requiring system access. However, precisely tracking to perform a security sensitive action, a permission request
+all the control and data flow attributes of the app requires containing the context information is sent to the backend. The
+addingthelogginglogictoalmosteveryinstructionintheapp cloud-based permission service checks whether the context
+code, which may at least double the computation overhead. has been previously allowed or denied. If not, it prompts
+Toaddressthischallenge,ContexIoTtakesanhybridapproach user with a dialog presenting the permission request and the
+combiningstaticanalysisandruntimeloggingtocollectessen- associatedcontextandaddsanadditionalentrytothemapping
+tial context efficiently – using static analysis results to reduce table to store the user’s decision as security preferences. The
+the overhead of runtime logging. context structure contains the 4 out of 5 context components
+8Original IoT App Logic ContexIoT Patched App Logic ContexIoT Cloud Backend Companion App
+Trigger Temperature HomeMode Temperature HomeMode Context 1 Context 2
+> 100 ºF ==“Sleep” > 100 ºF ==“Sleep”
+Requesting Prompt Context
+permission to user !
+✓
+! Permission
+✓
+Action window.open() window.open() Allow / Deny
+Decision
+Fig. 2: ContexIoT overview with a concrete example showing our context-based access control
+executed, ContexIoT presents users with the data dependency
+TABLE IV: Evasion attacks on context-based security ap-
+information for the sensitive action, which explicitly tells user
+proaches
+thatthemethodabouttobeexecutedcomesfromtheresponse
+Evasionattacks received in a separate procedure.
+Name Asynchronous Controlflow Dynamiccode Policy
+leakage abuse loading abuse Control flow abuse. Access control systems that enforce
+ACG × policies only at the granularity of sinks without tracking how
+AppContext* × the sink is triggered [67], [33] is vulnerable to malware
+AppFence × that abuses control flow to carry out malicious payload.
+Aurasium × For instance, a malicious lock manager app is granted with
+CRePE × the unlock() capability by such sink-based access control
+FlaskDroid ×
+systems the first time it attempts to unlock the door when it
+SEAndroid ×
+detectsthehouseownerisback.Howeveritcanreusethesame
+SEACAT ×
+code snippet that has already been permitted to unlock the
+TaintDroid ×
+TriggerScope* × door upon the remote attacker’s request. In the context design
+*Theseworkfocusondetectingmaliciousbehaviorwithstaticanalysisusing of ContexIoT, the inconsistency of the control flows in these
+context,andarethusvulnerabletodynamiccodeloading. two scenarios are then detected, and the user’s permission are
+required separately.
+described earlier in §V-A. Our definition cannot include the Dynamic code loading. Static analysis based malware
+UI Activity class since it is not available in IoT apps. In the detection approaches [39], [68] can be evaded by dynamic
+implementation, some optimization can be applied to reduce code loading. The GString support of SmartApps allows
+thefrequencyofpromptsbymergingsomecomponents,which malicious payload to be revealed only at runtime. ContexIoT
+is detailed later in §VI. staticallydetectspotentialsinksfordynamiccodeloading,thus
+prevents malicious logic from evading the access control.
+C. ComparisonwithOtherContext-basedSecurityApproaches
+Policyabuse.MACandDACbasedapproaches[25],[60],
+Since our context definition contains the complete inter- [31] grant the access at the application level based on user or
+procedurecontrolanddataflowinformation,itcandistinguish system defined policies. And they are intrinsically vulnerable
+any attack logic in the app code level. To show the effective- to malicious app logic that abuses the trust granted to the app
+ness of this design, we compare our context definition with itself, which is usually seen in repackaged apps. ContexIoT
+other context-based security approaches proposed by previous performs access control on the program path level and can
+work for smartphone platforms. In Table IV, we list a set enforce finer-grained policy to distinguish benign and attack
+of evasion attacks that can bypass those systems but can logic in the same app.
+be defeated by ContexIoT. These evasion attacks fall into 4
+As shown, our fine-grained context definition at inter-
+categories as follows.
+procedure control and data flow levels can successfully defeat
+Asynchronous leakage. Sensitive data can be leaked to these evasion attacks that can bypass other context-based
+remote attacker stealthily, where the accessing and the trans- security approach, showing that such a comprehensive defi-
+ferring of the data are executed asynchronously, using global nition can greatly improve the access control effectiveness in
+variables or other sources to share the data between the two permission systems.
+procedures.TheremotecontrolattackshowninListing3isone
+suchexample.Accesscontrolmechanismswithoutinformation
+VI. IMPLEMENTATION
+flow tracking support [56], [41], [30] can be evaded by mal-
+ware that abuses the granted access to resources and covertly We build the ContexIoT mechanism on the SmartThings
+leak them to the attacker. ContexIoT defeats such attack by platform,whichsupportsyetthelargestnumberofdevicetypes
+integrating data dependency into the context definition. For (204) among all the appified IoT platforms [15]. SmartApps
+the remote control attack, when the malicious payload is are executed in the proprietary Samsung backend and our
+9protected APIs that are used to control or actuate the de-
+Listing4:Codesnippetshowinghowthesurveillancedisabling vice, and other security-critical APIs such as sendSMS()
+attack app is patched with the ContexIoT secure logic and setLocationMode(). As of July 2016, 83 device-
+//Define Web API to get permission response control APIs protected by 67 capabilities are supported
+1
+2 path("/response/:data"){ by SmartThings, and will be recognized as sinks in our
+3 action[POST: "onResponse"] analysis. In addition, we also consider a set of SmartApp
+}
+4 APIs that can be potentially used by attacker to carry
+state.actionQueue = []
+5 out malicious payload. For example, malware can use the
+subscribe (location, "mode", handler)
+6 setLocationMode() to disarm the house by changing the
+def handler(evt){
+7 mode to “Home”, use httpPost to leak sensitive data, and
+8
+if(evt.value == "Away"){
+usesendNotificationToContacts()tosendphishing
+9
+//Pseudo function that collects context messages to the victim’s contacts. We therefore collected 36
+10
+def context = collect_context() such APIs and added them to the sink API set.
+11
+//Enqueue the sensitive app logic
+12
+state.actionQueue << 1)StaticAnalysis: TomodelthelifecycleoftheSmartApp
+13
+[device:"switch",command:"on()"] andcomputestheminimumsetofappcodethatcanpotentially
+def id = state.actionQueue.length affect the behavior of the sink, ContexIoT builds an ICFG
+14
+//Request permission with the context for the SmartApp. The ICFG is constructed using the AST
+15
+16 httpPost(url,"[’$id,$context]") transformation support of Groovy language [6], which allows
+17 } the static analysis to be performed directly on the Abstract
+}
+18 Syntax Tree (AST) generated during the compiling process.
+def onResponse(){
+19 Specifically, In the programming model of SmartApp, the
+def id = params.data.id
+20 app is not continuously running, app logic is embedded in
+def permission = params.data.response
+21 different event handlers that are triggered by the events they
+if(permission == "Allow"){
+22
+//Dequeue the sensitive execution have subscribed on. We adapt our design to the trigger-action
+23
+action = state.actionQueue[id-1] based programming model of SmartApps, and models all the
+24
+//Execute the sink using dynamic code loading program entry points that can potentially be triggered by
+25
+if(’switch’==$action[’device’]){ runtime events. In general, ContexIoT doesn’t patch the app
+26
+27 switch."$action[’command’]"() code that are not in the ICFG from the program entry points
+28 } to the sinks. However, one exception is that it will patch all
+}
+29 thestatementsthatmodifythevalueofglobalvariables,which
+...
+30 are shared among executions, since they will also determine
+}
+31 the behavior of the sinks. The remote control attack shown in
+Listing 3 is one example.
+The static analysis of ContexIoT further reduces the run-
+prototype of ContexIoT automatically patches the app before time overhead by precomputing the intra-procedural control-
+they are submitted for execution. The patched security logic flow context for program statements, which doesn’t contain
+communicatesthecontextinformationcollectedatappruntime dynamic method invocation (GString) in their control-flow
+to our own backend permission management server when paths. Similar to reflection, the dynamic method invocation
+security-sensitive behavior is triggered. We detail the key supportofGroovycanmodifythecontrol-flowatruntime.The
+componentsoftheapppatchingmechanismofContexIoTand dynamic features will be handled using runtime logging, how-
+the end-to-end implementation. ever, except that, the intra-procedure control-flow information
+for all the other statements are deterministic statically, and
+ContexIoT annotates these statements with the precomputed
+A. SmartApp Patching Implementation
+context. Based on the call trace collected at runtime, the
+Recall that our context definition in §V, which contains complete control-flow context for a certain sink is obtained
+control and data flow attributes and also runtime values. bycomposingtheannotatedintra-proceduralcontextofallthe
+ContexIoT enables the patched SmartApp to collect these statements along the method invocation chain.
+context information at runtime by adding the logging logic to
+2)Runtime Logging: Excluding the intra-procedure
+the instruction set of the original app. To reduce the runtime
+control-flow context that is already been computed and
+computationoverheadofmaintainingthecontextforthewhole
+annotated statically, there remain four major types of
+program, ContexIoT also employs a static analysis approach
+information that are required to be collected at runtime, in
+to (1) Identify a subset of the app code that require runtime
+ordertocompletethecontextdefinition.(1)Methodinvocation
+logging to track the sensitive execution, and (2) Precompute
+trace is logged by adding a variable for each method in the
+somecontextinformationthatisdeterministicstatically.Based
+app to keep track of its calling function. Every method call
+on the annotations done by the static analysis, ContexIoT
+expression will set the variable of the callee function with the
+efficiently adds instructions to log the context attributes only
+calling function’s signature. Once a sink is triggered, the call
+for the subset of app code that is related to the sensitive
+trace can be extracted by tracing back the method signatures
+behaviors of the untrusted app.
+stored in these variables. (2) Dynamic method invocation
+We define the sinks of SmartApps as the security- is captured by using a variable to track the value of each
+sensitive behaviors of the app, which contain both capability- GString, which can only be determined at runtime. For
+10example in the remote control attack shown in Listing 3, first requests the permission with the collected context, and
+when the sensitive execution in the handler is triggered thenresumestheexecutionuponpermissiongrantingresponse.
+through dynamic method invocation, the patched SmartApp Listing 4 shows the code snippet of the surveillance disabling
+will gather the device and the method name and put them into attack logic being patched by the ContexIoT. The original
+the context. (3) Runtime data can be directly obtained from sink (switch.off()) is modified to the secure logic of
+the variables without adding new instructions to track them. enqueuing the action for future reference, and sending the
+When a sink is reached at runtime, the context collection collected context to permission server. ContexIoT patches
+logic gathers the current value of all the variables that the the app with a Web API interface to receive the permission
+sink statement is control-dependent on, and use them as the response in an separate process to overcome the restrictions
+runtime data in our context definition. (4) Data dependency is of SmartThings on the execution time of each code block.
+critical to communicate the context with the user as described On receiving the response from the server, the onResponse
+in §V, and we design and implement a dynamic taint analysis handler retrieves the information of the sink from the queue
+framework to track the data dependency information of andexecuteit,iftheserverallowstheexecutioninthiscontext.
+sink-related variables. The performance overhead of adding such secure logic is
+evaluated in §VII.
+The dynamic taint analysis of ContexIoT maintains a taint
+environment foreachvariableinthesubsetofappcodeoutput
+by the static analysis. Each program variable v is associated B. End-to-End Implementation.
+with a taint environment γ :v →T, where T is a set of taint
+WesetuptheContexIoTcloudbackendserviceonacloud
+values{t |i=1,...,k}.Eachtaintvaluet isassociatedwitha
+i i instanceinGoogleAppEngine,whichstorestheprevioususer
+variablev ,meaningthatv isdatadependentonvariablev .In
+i i permissiongrantingdecisions.Ifnopreviousdecisionisfound,
+our design, variables in the taint environment gamma include
+itpromptstheuserusingGoogleCloudMessagingthroughthe
+local,global,andfunctionreturnvariables,andaremaintained
+ContexIoT companion app to display the context and learn
+as JSON objects in our implementation. Specifically, in the
+the user’s decision. The basic approach for the permission
+SmartThings programming language, the only global variable
+service to distinguish two context is to compare the values
+is the state object, which allows developer to store data
+of all the context attributes. However in our implementation,
+into different fields of the object and shares the data across
+differences in the runtime value may be ignored under certain
+executions.Andourtaintlogicisdesignedtobefield-sensitive
+circumstances.ThedatafloatinginbetweenSmartDevicesand
+to precisely track the data dependency relationship of all the
+SmartApps are usually in the format of key-value pair (KVP),
+global variables in different fields of state.
+and in our threat model, we trust the SmartDevices to provide
+ThetaintpropagationofContexIoTfollowsthegenericap- the authentic KVP, where the key reflects the real property
+proach[28]andhandlessomeGroovy-specificoperationssuch of the data. Thus the runtime value are compared by their
+as the array insertion operation (<<), closure, and also the keysinourimplementation,andweusethepincodesnooping
+libraryfunctionsofSmartThings.Wemanuallysummarizedall attack (Listing 2) to show that this design choice reduces
+the 85 SmartThings APIs available as of June 2016 in a file, the prompt frequency, while maintains the effectiveness. The
+whichspecifieshowthetaintvaluesarepropagatedthroughthe malicious battery app subscribes on the device reports, and if
+function variables to the return value. We also considered the the KVP of two battery reports are presented in the context
+sideeffectwhenmodelingtheselibraryfunctions,whichisthe as [”battery level”:99] and [battery level”:95], they will
+potentialimpactthefunctionshaveontheglobalvariables.For be considered as the same; However, if a pin code update
+example, once the changeLocationMode() function sets report is sent out, the KVP in the context, which looks like
+the global variable Mode, it will affect all the variables that [”code” : 9998], will be distinguished from previous paths,
+depends on it. Our analysis handles such case by updating the and prompted to user separately.
+taint environments for the corresponding variables when such
+Figure 3 shows screenshots of the presented context infor-
+function calls are executed.
+mation for a malware adapted from a real SmartApp called
+Inaddition,ContexIoTalsoconsidersimplicitflows,where AutoLockDoor [4]. The legitimate functionality of this app is
+the taint value is in the conditional statement that the sink is to automatically lock the door after a certain period of time,
+control dependent on. The implicit flow helps capture data which is set by the user. In addition it checks the contact
+dependency that is not directly propagated by assignments, sensor of the door before issuing the lock() command to
+andenablesthedetectionofinformationleakagethroughside- ensure that the door can be properly closed. Figure 3a shows
+channel. For instance, a malicious app we have constructed thepermissiondialogforthislegitimateexecutionpath,which
+uses the light luminance as side-channel to send sensitive is consistent with the app description. However, this malware
+information such as the home occupancy and the lock status also includes a backdoor, which allows the attacker to unlock
+to attacker nearby, which will not be detected by explicit the door remotely via network commands when the user is
+data flow analysis, but can be captured by implicit flow. We away. As shown in Figure 3b, since this malicious logic is
+label each taint value with 2 boolean values E and I in its distinguishableinthecontrolanddataflowlevel,thisbackdoor
+taint environment, for taint value coming from explicit flows logic is revealed clearly in the displayed context information.
+(E = true) or implicit flows (I = true). When merging two
+It is important to note that this is only a proof-of-concept
+taint values with different labels E ,I and E ,I , the merged
+1 1 2 2 context presentation which dumps everything in the context
+taint value’s label is (E ||E ) and (I ||I ).
+1 2 1 2 structuretothedialog.Sinceourcontextdefinitioncontainsthe
+3)Secure logic patching: ContexIoT separates the exe- complete inter-procedure control and data flow information,
+cution flow of the sink into two asynchronous procedures: futureIoTplatformswhichadopttheContexIoTapproachcan
+111
+0.8
+0.6
+0.4
+0.2
+0
+0 5 10 15 20 25 30
+(a) Legitimate logic: Automati- (b) Backdoor logic: Unlock the
+cally lock the door after a speci- doorwhenaremotecommandis
+fied period of time received from the network
+Fig. 3: Screenshots showing the benign and attack context in
+the malicious AutoLockDoor app
+flexibly tune the context granularity, e.g., by shortening the
+length of recorded control flow or merging current context
+components, and also design better context presentation to
+meet their usability requirements.
+VII. EVALUATION
+In this section, we evaluate our prototype implementation
+of ContexIoT in (1) Effectiveness of secure logic patching;
+(2) Permission request frequency, which is important for the
+effectiveness of runtime permission system in practice [64],
+[19]; (3) Runtime performance overhead of the additional
+patching logic.
+A. Effectiveness of Secure Logic Patching
+To evaluate the secure logic patching mechanism, we use
+ContexIoT to patch the 25 SmartApps we constructed, each
+representing a unique class of malware or an vulnerable app
+based on our IoT attack taxonomy in §IV. The SmartThings
+IDEprovidesasimulatorthatcanmodelthebehaviorofnative
+SmartThings devices without requiring a physical device [16].
+Unfortunately, 3 of the attacks in our taxonomy involve 3rd
+party devices, for example a camera with advanced features
+used in the surreptitious surveillance attack [10], and thus
+cannotbedynamicallytested.Thus,wetestoursystemagainst
+22 attacks in the runtime, and only manually examine the
+patched SmartApp code for the remaining 3 apps.
+For effectiveness evaluation, we first check whether all the
+potentialsinksintheseSmartAppsarepatchedwiththesecure
+logic,andfindthatContexIoTaccuratelyidentifiesandpatches
+all72potentialsinksincludingdangeroususageofGString.
+Next, we evaluate whether the attack execution paths in these
+FDC
+Number of prompts
+Fig. 4: CDF of the estimated life-time permission request
+promptsfor283commoditySmartAppspatchedbyContexIoT
+SmartApps can be distinguished from the remaining benign
+paths in the runtime. By triggering all the program paths of
+the 22 attack execution paths, we confirm that all of them
+canbesuccessfullyrecognizedwithoutanyambiguity,andthe
+other 3 attacks can also be identified based on the statically
+computed intra-procedural context information. Overall, these
+results show that our secure logic patching can accurately
+identify sinks and logging essential context to distinguish
+attacks execution paths.
+B. Permission Request Frequency
+Experimental setup. To measure permission request fre-
+quency, we dynamically trigger the execution paths in a set
+of SmartApps using the SmartThings IDE simulator. In the
+experiment,weuse283SmartAppsoutofthe502commodity
+SmartApps we collected since the rest of them can not be
+simulatedduetolimitedphysicaldevicesupportinthecurrent
+simulator. To automate the test, we leverage the trigger-action
+programming model of SmartApp, i.e., app logics are all
+triggeredbyexternalevents,togenerateinputs.Leveragingthe
+events generation support in the SmartThings IDE, we build
+anautomaticSmartAppdynamictestingframeworkusingweb
+automationtechniquethatcangenerateinputtoSmartAppsand
+efficiently trigger different event handling logic.
+Using our dynamic testing framework, we measure the
+life-time permission request number for each SmartApp by
+triggering all possible execution paths in the app. This is an
+upper bound estimation for a home user in practice, since
+typically a user only use a subset of all features in an app.
+For each SmartApp, we use the fuzz testing approach to
+randomly generate all types of external events in different
+triggering order to ensure good code coverage. Once a sink is
+triggered, we log the permission requests, and automatically
+grants permission to avoid double counting. The test stops
+only if no prompts are generated after 50 consecutive random
+events.AsshowninFigure4,theaveragelife-timepermission
+requestnumberamongthe283SmartAppsareonly3.5,which
+is far below the threshold that is considered to risk user
+habituation or annoyance [67], [64].
+C. Runtime Performance
+In this section, we measure the performance overhead on
+the event handling latency introduced by the secure logic
+123000
+2500
+2000
+1500
+1000
+500
+0
+283 SmartApps average Lock Manager app SMS Alert app
+)sm(
+ycnetal
+gnireggirt
+tneve
+dne-ot-dnE
+VIII. USAGEDISCUSSION
+Sink execution
+Permission request
+Computation Acar et al. suggests to take both users and developers
+out of the loop as a potential solution to the permission
+comprehension problem [19]. Their proposed approach for Running on Running on Physical Device
+Virtual Device achievingthisistoenabletheautomaticgenerationofsecurity
+Patched
+policies.Webelievethattherichcontextdefinitionandflexible
+designofContexIoTbenefitsinnovationsinthisdirection.For
+example, one potential approach can be to provide recom-
+Patched mended context-based security settings to users for different
+apps, and the recommended settings come from the security
+preferences that are learned by ContexIoT from a group of
+expert users using the ContexIoT-patched apps.
+Patched
+Anotherpossibleapproachthattakeshumanoutoftheloop
+is automatic generation of policy based on the app logic and
+its interactions with user. For example, the SmartApp has a
+Fig. 5: Breakdown of the end-to-end event trigger latency setup procedure during the app installation, which requires
+with and without ContexIoT patching on virtual and physical user to set some parameters that will guide the automation
+devices of the SmartApp (e.g., automatically locks the door when it
+has been opened for 2 minutes). Using the data-dependency
+tracking support of ContexIoT, the security logic can mon-
+itor how the app uses the user input. If it detects that the
+patching in ContexIoT. The end-to-end latency for an event events corresponding to the unmodified user input triggers
+execution can be broken down into 2 parts: (1) computation the user’s desired action at the runtime, the execution can be
+latency, which is the time taken in executing the app code, (2) automaticallyallowedsinceitconformswiththeuserspecified
+sink execution latency, which is the time taken in communica- routine.NaturalLanguageProcessing(NLP)techniquemaybe
+tion between the SmartThings cloud backend and the physical required to infer the user desired action. We leave it as future
+device.InContexIoT,thesecurelogicpatchingaddslatencyto work to explore these extended usages of the ContexIoT.
+the computation part since additional instructions are added to
+the SmartApp used for tracking the control and data flows. At IX. CONCLUSION
+the same time, it also adds permission request latency, which
+is taken in communicating with the ContexIoT cloud backend In this paper, we design and prototype ContexIoT, a
+for permission granting. In this evaluation, we only measure context-based permission system for appified IoT platforms,
+thelatencyaddedbytheContexIoTsystemitself,andthusthe whichcansupportidentificationoffine-grainedcontextdefined
+decision making time taken for a user is not considered. at inter-procedure control and data flow levels, and runtime
+prompts with rich context information to help users perform
+Using our dynamic testing framework, we inject events to effective access control. By comparing our context definition
+trigger all the 916 event handling logic in the 283 SmartApps, with those in previous context-based permission systems, we
+and the measurement results are shown in Figure 5. Overall, shows that our definition is more comprehensive and can
+we observe 67.1 ms (26.7%) additional latency on average defeat attacks that can evade these previous designs. Based
+when running those patched SmartApps on virtual devices. on the extensive survey of existing and potential attacks on
+In addition, we find that the end-to-end latency is dominated the appified IoT platform, we demonstrate that ContexIoT can
+by the sink execution latency, which is at least one magnitude effectively distinguish all attack context in the tested apps.
+higherthantheadditionallatencyfromContexIoTsecurelogic Dynamic testing on 283 commodity SmartApps shows that
+patching.Thus,webelievethattheperformanceoverheadfrom ContexIoT introduces negligible performance overhead and
+ContexIoT is negligible in real world scenarios. has a low prompt frequency which is far below the threshold
+that is considered to risk user habituation or annoyance.
+Besides testing on virtual devices, we also evaluate the
+performance overhead for two events using physical devices:
+ACKNOWLEDGEMENTS
+(1) Locking a Schlage Z-Wave lock [14] using a commodity
+lock manager SmartApp, and (2) Sending SMS to the user’s We thank the anonymous reviewers for their valuable
+phone from a SMS alert SmartApp once it detects motion feedback on our work. This research was supported in part by
+sensor event. We trigger both events 50 times, and as also the National Science Foundation under grants CNS-1318306,
+shown in Figure 5, the patched logic added only 9.6% and CNS-1526455,CNS-1345226,andCNS-1318722aswellasby
+4.5% delay on average. The breakdown of the end-to-end the Office of Naval Research under grant N00014-14-1-0440.
+latency shows that compared with running on the virtual
+device, the time it takes to execute the command on physical
+REFERENCES
+deviceissignificantlylonger,whichislikelyduetothelatency
+introduced by the wireless communication between hub and [1] Android5.0,Lollipop.
+https://www.android.com/versions/lollipop-5-0/.
+the device. Thus, the overhead of ContexIoT introduced in
+[2] Android6.0,Marshmallow.
+the computation and permission request procedures becomes
+https://www.android.com/versions/marshmallow-6-0/.
+negligible in the physical device settings. [3] AppleHomeKit. https://developer.apple.com/homekit/.
+13[4] AudoLockDoorSmartApp. https://github.com/smartthings-users/ [29] Q.A.Chen,Z.Qian,andZ.M.Mao. Peekingintoyourappwithout
+smartapp.auto-lock-door/blob/master/auto-lock-door.smartapp.groovy. actuallyseeingit:Uistateinferenceandnovelandroidattacks. In
+[5] China-MadeHandheldBarcodeScannersShipwithSpyware. 23rdUSENIXSecuritySymposium(USENIXSecurity14),2014.
+http://www.tomsguide.com/us/chinese-barcode-scanner-spyware, [30] M.Conti,V.T.N.Nguyen,andB.Crispo. Crepe:Context-related
+news-19157.html. policyenforcementforandroid. InInternationalConferenceon
+[6] Compile-timeMetaprogramming. InformationSecurity,pages331–345.Springer,2010.
+http://groovy-lang.org/metaprogramming.html. [31] S.Demetriou,X.-y.Zhou,M.Naveed,Y.Lee,K.Yuan,X.Wang,and
+[7] GoogleWeaveProject. https://developers.google.com/weave/. C.A.Gunter. What’sinyourdongleandbankaccount?mandatory
+[8] iOS9. http://www.apple.com/ios/. anddiscretionaryprotectionofandroidexternalresources. InNDSS,
+[9] MiraiAttacks. https://securityledger.com/2016/11/ 2015.
+report-millions-and-millions-of-devices-vulnerable-in-latest-mirai-attacks/. [32] W.Diao,X.Liu,Z.Li,andK.Zhang. Nopardonfortheinterruption:
+[10] NestCamIndoor. https://nest.com/camera/meet-nest-cam/. Newinferenceattacksonandroidthroughinterrupttiminganalysis. In
+[11] OurProjectWebsite. 2016IEEESymposiumonSecurityandPrivacy.IEEE,2016.
+https://sites.google.com/site/iotcontextualintegrity/home. [33] W.Enck,P.Gilbert,S.Han,V.Tendulkar,B.-G.Chun,L.P.Cox,
+[12] ResearchersexploitZigBeesecurityflawsthatcompromisesecurityof J.Jung,P.McDaniel,andA.N.Sheth. Taintdroid:an
+smarthomes. http://www.networkworld.com/article/2969402/ information-flowtrackingsystemforrealtimeprivacymonitoringon
+microsoft-subnet/researchers-exploit-zigbee-security- smartphones. ACMTOCS,32(2):5,2014.
+flaws-that-compromise-security-of-smart-homes.html. [34] A.P.Felt,S.Egelman,M.Finifter,D.Akhawe,D.Wagner,etal.
+[13] SamsungSmartThings. https://www.smartthings.com. Howtoaskforpermission. InHotSec,2012.
+[14] SchlageZ-WaveLock. http://www.schlage.com/en/home/products/ [35] E.Fernandes,J.Jung,andA.Prakash. SecurityAnalysisofEmerging
+products-connected-devices.html. SmartHomeApplications. InProceedingsofthe37thIEEE
+[15] SmartThingsCompatibleProducts. SymposiumonSecurityandPrivacy,May2016.
+https://www.smartthings.com/compatible-products. [36] E.Fernandes,J.Paupore,A.Rahmati,D.Simionato,M.Conti,and
+[16] SmartThingsSimulator. http://docs.smartthings.com/en/latest/ A.Prakash. FlowFence:PracticalDataProtectionforEmergingIoT
+device-type-developers-guide/simulator-metadata.html. ApplicationFrameworks. InProceedingsofthe25thUSENIXSecurity
+[17] SurveillancecamerassoldonAmazoninfectedwithmalware. Symposium,2016.
+http://www.zdnet.com/article/amazon-surveillance-cameras- [37] B.FouladiandS.Ghanoun. Honey,imhome!!-hackingz-wavehome
+infected-with-malware/. automationsystems. BlackHat,2013.
+[18] Y.Aafer,N.Zhang,Z.Zhang,X.Zhang,K.Chen,X.Wang, [38] A.Francillon,B.Danev,andS.Capkun. Relayattacksonpassive
+X.Zhou,W.Du,andM.Grace. Harehuntinginthewildandroid:A keylessentryandstartsystemsinmoderncars. InNDSS,2011.
+studyonthethreatofhangingattributereferences. InProceedingsof [39] Y.Fratantonio,A.Bianchi,W.Robertson,E.Kirda,C.Kruegel,and
+the22ndACMSIGSACConferenceonComputerand G.Vigna. Triggerscope:Towardsdetectinglogicbombsinandroid
+CommunicationsSecurity,pages1248–1259.ACM,2015. applications. In2016IEEESymposiumonSecurityandPrivacy,2016.
+[19] Y.Acar,M.Backes,S.Bugiel,S.Fahl,P.McDaniel,andM.Smith. [40] G.Ho,D.Leung,P.Mishra,A.Hosseini,D.Song,andD.Wagner.
+Sok:Lessonslearnedfromandroidsecurityresearchforappified Smartlocks:Lessonsforsecuringcommodityinternetofthings
+softwareplatforms. In2016IEEESymposiumonSecurityand devices. InProceedingsofthe11thACMonAsiaConferenceon
+Privacy,2016. ComputerandCommunicationsSecurity,pages461–472.ACM,2016.
+[20] V.Afonso,A.Bianchi,Y.Fratantonio,A.Doupe´,M.Polino, [41] P.Hornyack,S.Han,J.Jung,S.Schechter,andD.Wetherall. These
+P.deGeus,C.Kruegel,andG.Vigna. Goingnative:Usinga aren’tthedroidsyou’relookingfor:retrofittingandroidtoprotectdata
+large-scaleanalysisofandroidappstocreateapracticalnative-code fromimperiousapplications. InProceedingsofthe18thACM
+sandboxingpolicy. InProceedingsoftheAnnualSymposiumon conferenceonComputerandcommunicationssecurity,2011.
+NetworkandDistributedSystemSecurity(NDSS),2016. [42] W.Hu,D.Octeau,P.D.McDaniel,andP.Liu. Duet:libraryintegrity
+[21] K.W.Y.Au,Y.F.Zhou,Z.Huang,andD.Lie. Pscout:analyzingthe verificationforandroidapplications. InProceedingsofthe2014ACM
+androidpermissionspecification. InProceedingsofthe2012ACM conferenceonSecurityandprivacyinwireless&mobilenetworks,
+conferenceonComputerandcommunicationssecurity,pages pages141–152.ACM,2014.
+217–228.ACM,2012. [43] H.Huang,S.Zhu,K.Chen,andP.Liu. Fromsystemservices
+[22] S.Babar,A.Stango,N.Prasad,J.Sen,andR.Prasad. Proposed freezingtosystemservershutdowninandroid:Allyouneedisaloop
+embeddedsecurityframeworkforinternetofthings(iot). InWireless inanapp. InProceedingsofthe22ndACMSIGSACConferenceon
+Communication,VehicularTechnology,InformationTheoryand ComputerandCommunicationsSecurity.ACM,2015.
+Aerospace&ElectronicSystemsTechnology(WirelessVITAE),2011 [44] P.G.Kelley,L.F.Cranor,andN.Sadeh. Privacyaspartoftheapp
+2ndInternationalConferenceon,pages1–5.IEEE,2011. decision-makingprocess. InProceedingsoftheSIGCHIConference
+[23] M.Backes,S.Bugiel,E.Derr,P.McDaniel,D.Octeau,and onHumanFactorsinComputingSystems.ACM,2013.
+S.Weisgerber. Ondemystifyingtheandroidapplicationframework: [45] A.Kharraz,S.Arshad,C.Mulliner,W.Robertson,andE.Kirda.
+Re-visitingandroidpermissionspecificationanalysis. In25thUSENIX Unveil:Alarge-scale,automatedapproachtodetectingransomware.
+SecuritySymposium(USENIXSecurity16).USENIXAssociation, [46] T.Li,X.Zhou,L.Xing,Y.Lee,M.Naveed,X.Wang,andX.Han.
+2016. Mayheminthepushclouds:Understandingandmitigatingsecurity
+[24] X.Bai,L.Xing,N.Zhang,X.Wang,X.Liao,T.Li,andS.-M.Hu. hazardsinmobilepush-messagingservices. InProceedingsofthe
+Stayingsecureandunprepared:Understandingandmitigatingthe 2014ACMSIGSACConferenceonComputerandCommunications
+securityrisksofapplezeroconf. 2016. Security,pages978–989.ACM,2014.
+[25] S.Bugiel,S.Heuser,andA.-R.Sadeghi. Flexibleandfine-grained [47] C.-C.Lin,H.Li,X.-y.Zhou,andX.Wang. Screenmilker:Howto
+mandatoryaccesscontrolonandroidfordiversesecurityandprivacy milkyourandroidscreenforsecrets. InNDSS,2014.
+policies. InPresentedaspartofthe22ndUSENIXSecurity [48] W.Meng,R.Ding,S.P.Chung,S.Han,andW.Lee. Thepriceof
+Symposium(USENIXSecurity13),pages131–146,2013. free:Privacyleakageinpersonalizedmobilein-appads. 2016.
+[26] K.Chen,P.Wang,Y.Lee,X.Wang,N.Zhang,H.Huang,W.Zou, [49] Y.Nan,M.Yang,Z.Yang,S.Zhou,G.Gu,andX.Wang. Uipicker:
+andP.Liu. Findingunknownmalicein10seconds:Massvettingfor User-inputprivacyidentificationinmobileapplications. In24th
+newthreatsatthegoogle-playscale. In24thUSENIXSecurity USENIXSecuritySymposium(USENIXSecurity15),2015.
+Symposium(USENIXSecurity15),pages659–674,2015. [50] M.Nauman,S.Khan,andX.Zhang. Apex:extendingandroid
+[27] K.Chen,X.Wang,Y.Chen,P.Wang,Y.Lee,X.Wang,B.Ma, permissionmodelandenforcementwithuser-definedruntime
+A.Wang,Y.Zhang,andW.Zou. Followingdevilsfootprints: constraints. InProceedingsofthe5thACMSymposiumon
+Cross-platformanalysisofpotentiallyharmfullibrariesonandroidand Information,ComputerandCommunicationsSecurity,2010.
+ios. In2016IEEESymposiumonSecurityandPrivacy,2016. [51] M.Naveed,X.-y.Zhou,S.Demetriou,X.Wang,andC.A.Gunter.
+[28] Q.A.Chen,Z.Qian,Y.J.Jia,Y.Shao,andZ.M.Mao. Static Insidejob:Understandingandmitigatingthethreatofexternaldevice
+detectionofpacketinjectionvulnerabilities:Acaseforidentifying mis-bindingonandroid. InNDSS,2014.
+attacker-controlledimplicitinformationleaks. InProceedingsofthe [52] H.Nissenbaum. Privacyascontextualintegrity. Wash.L.Rev.,
+22ndACMSIGSACConferenceonComputerandCommunications 79:119,2004.
+Security,pages388–400.ACM,2015.
+14[53] Y.M.P.Pa,S.Suzuki,K.Yoshioka,T.Matsumoto,T.Kasama,and Security15),pages499–514,2015.
+C.Rossow. Iotpot:analysingtheriseofiotcompromises. In9th [65] L.Xing,X.Bai,T.Li,X.Wang,K.Chen,X.Liao,S.-M.Hu,and
+USENIXWorkshoponOffensiveTechnologies(WOOT15),2015. X.Han. Crackingappisolationonapple:Unauthorizedcross-app
+[54] A.RahmatiandH.V.Madhyastha. Context-specificaccesscontrol: resourceaccessonmacos. InProceedingsofthe22ndACMSIGSAC
+Conformingpermissionswithuserexpectations. InProceedingsofthe ConferenceonComputerandCommunicationsSecurity,2015.
+5thAnnualACMCCSWorkshoponSecurityandPrivacyin [66] L.Xing,X.Pan,R.Wang,K.Yuan,andX.Wang. Upgradingyour
+SmartphonesandMobileDevices,SPSM’15,2015. android,elevatingmymalware:Privilegeescalationthroughmobileos
+[55] S.Rasthofer,S.Arzt,M.Miltenberger,andE.Bodden. Harvesting updating. In2014IEEESymposiumonSecurityandPrivacy,2014.
+runtimevaluesinandroidapplicationsthatfeatureanti-analysis [67] R.Xu,H.Sa¨ıdi,andR.Anderson. Aurasium:Practicalpolicy
+techniques. InProceedingsoftheAnnualSymposiumonNetworkand enforcementforandroidapplications. InPresentedaspartofthe21st
+DistributedSystemSecurity(NDSS),2016. USENIXSecuritySymposium(USENIXSecurity12),2012.
+[56] F.Roesner,T.Kohno,A.Moshchuk,B.Parno,H.J.Wang,and [68] W.Yang,X.Xiao,B.Andow,S.Li,T.Xie,andW.Enck. Appcontext:
+C.Cowan. User-drivenaccesscontrol:Rethinkingpermissiongranting Differentiatingmaliciousandbenignmobileappbehaviorsusing
+inmodernoperatingsystems. In2012IEEESymposiumonSecurity context. In2015IEEE/ACM37thIEEEInternationalConferenceon
+andPrivacy,pages224–238.IEEE,2012. SoftwareEngineering,volume1,pages303–313.IEEE,2015.
+[57] E.RonenandA.Shamir. Extendedfunctionalityattacksoniot [69] T.Yu,V.Sekar,S.Seshan,Y.Agarwal,andC.Xu. Handlinga
+devices:Thecaseofsmartlights. In2016IEEEEuropeanSymposium trillion(unfixable)flawsonabilliondevices:Rethinkingnetwork
+onSecurityandPrivacy(EuroS&P),pages3–12.IEEE,2016. securityfortheinternet-of-things. InProceedingsofthe14thACM
+[58] J.Seo,D.Kim,D.Cho,T.Kim,andI.Shin. Flexdroid:Enforcing WorkshoponHotTopicsinNetworks,page5.ACM,2015.
+in-appprivilegeseparationinandroid. 2016. [70] N.Zhang,K.Yuan,M.Naveed,X.Zhou,andX.Wang. Leaveme
+[59] Y.Shao,J.Ott,Q.A.Chen,Z.Qian,andZ.M.Mao. Kratos: alone:App-levelprotectionagainstruntimeinformationgatheringon
+Discoveringinconsistentsecuritypolicyenforcementintheandroid android. In2015IEEESymposiumonSecurityandPrivacy,pages
+framework. InProc.23rdAnnualNetworkandDistributedSystem 915–930.IEEE,2015.
+SecuritySymposium(NDSS16).ISOC,2016. [71] X.Zhang,K.Ying,Y.Aafer,Z.Qiu,andW.Du. Lifeafterapp
+[60] S.SmalleyandR.Craig. Securityenhanced(se)android:Bringing uninstallation:Arethedatastillalive?dataresidueattacksonandroid.
+flexiblemactoandroid. InNDSS,volume310,pages20–38,2013. InProceedingsoftheNetworkandDistributedSystemSecurity
+[61] B.Ur,J.Jung,andS.Schechter. Thecurrentstateofaccesscontrol Symposium(NDSS),SanDiego,California,USA,2016.
+forsmartdevicesinhomes. InWorkshoponHomeUsablePrivacy [72] X.Zhou,S.Demetriou,D.He,M.Naveed,X.Pan,X.Wang,C.A.
+andSecurity(HUPS),2013. Gunter,andK.Nahrstedt. Identity,location,diseaseandmore:
+[62] B.Ur,E.McManus,M.PakYongHo,andM.L.Littman. Practical Inferringyoursecretsfromandroidpublicresources. InProceedings
+trigger-actionprogramminginthesmarthome. InProceedingsofthe ofthe2013ACMSIGSACconferenceonComputer&
+SIGCHIConferenceonHumanFactorsinComputingSystems,2014. communicationssecurity,pages1017–1028.ACM,2013.
+[63] R.Wang,L.Xing,X.Wang,andS.Chen. Unauthorizedorigin [73] X.Zhou,Y.Lee,N.Zhang,M.Naveed,andX.Wang. Theperilof
+crossingonmobileplatforms:Threatsandmitigation. InProceedings fragmentation:Securityhazardsinandroiddevicedriver
+ofthe2013ACMSIGSACconferenceonComputer& customizations. In2014IEEESymposiumonSecurityandPrivacy,
+communicationssecurity,pages635–646.ACM,2013. pages409–423.IEEE,2014.
+[64] P.Wijesekera,A.Baokar,A.Hosseini,S.Egelman,D.Wagner,and [74] Y.ZhouandX.Jiang. Dissectingandroidmalware:Characterization
+K.Beznosov. Androidpermissionsremystified:Afieldstudyon andevolution. In2012IEEESymposiumonSecurityandPrivacy,
+contextualintegrity. In24thUSENIXSecuritySymposium(USENIX pages95–109.IEEE,2012.
+15

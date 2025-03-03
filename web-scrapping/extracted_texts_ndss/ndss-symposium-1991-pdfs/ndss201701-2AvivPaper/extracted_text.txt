@@ -1,0 +1,1393 @@
+ObliviSync: Practical Oblivious
+File Backup and Synchronization
+Adam J. Aviv, Seung Geol Choi, Travis Mayberry, Daniel S. Roche
+United States Naval Academy
+{aviv,choi,mayberry,roche}@usna.edu
+Abstract—Oblivious RAM (ORAM) protocols are powerful whether the patient had imaging tests done based on how
+techniquesthathideaclient’sdataaswellasaccesspatternsfrom largethefileisthatisupdated.Moreover,theymightlearnfor
+untrusted service providers. We present an oblivious cloud stor- instance that a patient has cancer after seeing an oncologist
+age system, ObliviSync, that specifically targets one of the most update their records. This type of inference, and more, can be
+widely-used personal cloud storage paradigms: synchronization
+donedespitethefactthattherecordsthemselvesareencrypted
+and backup services, popular examples of which are Dropbox,
+because the access pattern to the storage is not hidden.
+iCloud Drive, and Google Drive. This setting provides a unique
+opportunitybecausetheaboveprivacypropertiescanbeachieved Unfortunately, in order to achieve this obliviousness
+with a simpler form of ORAM called write-only ORAM, which ORAMsoftenrequireasubstantialamountofshufflingduring
+allows for dramatically increased efficiency compared to related every access, so much so that even relatively recent ORAM
+work. Our solution is asymptotically optimal and practically
+constructions could induce a several-thousand-fold overhead
+efficient, with a small constant overhead of approximately 4x
+on communication [22], [18]. Even Path ORAM [23], one of
+compared with non-private file storage, depending only on the
+themostefficientORAMconstructionstodate,hasapractical
+total data size and parameters chosen according to the usage
+overhead of 60-80x on moderately sized databases compared
+rate, and not on the number or size of individual files. Our
+constructionalsooffersprotectionagainsttiming-channelattacks, to non-private storage.
+which has not been previously considered in ORAM protocols.
+The setting: personal cloud storage. Our setting consists
+We built and evaluated a full implementation of ObliviSync
+of an untrusted cloud provider and one or more clients which
+that supports multiple simultaneous read-only clients and a
+backupdatatothecloudprovider.Iftherearemultipleclients,
+single concurrent read/write client whose edits automatically
+and seamlessly propagate to the readers. We show that our the cloud provider propagates changes made by one client
+system functions under high work loads, with realistic file size to all other clients, so that they each have the same version
+distributions, and with small additional latency (as compared to of the filesystem. We emphasize that although we may use
+a baseline encrypted file system) when paired with Dropbox as “Dropbox” as a shorthand for the scenario we are addressing,
+the synchronization service. our solution is not specific to Dropbox and will work with
+any similar system. This setting is particularly interesting for
+I. INTRODUCTION a number of reasons:
+ORAM: security and efficiency. ORAMisaprotocolwhich
+1) It is one of the most popular consumer cloud services
+allows a client to access files (commonly abstracted as N
+used today, and is often colloquially synonymous with
+fixed-length blocks of data) stored on an untrusted server in
+the term “cloud.” Dropbox alone has over 500 million
+such a way that the server learns neither the contents of files
+users [12].
+nor the access patterns of which files were accessed at which
+2) The interface for Dropbox and similar storage providers
+time(s).Thisistraditionallyaccomplishedbydoingsometype
+is“agnostic,”inthatitwillallowyoutostoreanydataas
+of shuffling on the data in addition to reading/writing the
+longasyouputitinthedesignatedsynchronizationdirec-
+chosen block. This shuffling ensures that the server cannot
+tory. This allows for one solution that works seamlessly
+correlate logical blocks based on their storage locations.
+with all providers.
+ORAM is a powerful tool that solves a critical problem in 3) Synchronization and backup services do not require that
+cloudsecurity.Considerahospitalwhichusescloudstorageto the ORAM hide a user’s read accesses, only the writes.
+backup their patient records. Even if the records are properly Thisisbecause(bydefault)everyclientstoresacomplete
+encrypted,anuntrustedserverthatobserveswhichpatientfiles local copy of their data, which is synchronized and
+are modified will learn sensitive medical information about backed up via communication of changes to/from the
+those patients. They will certainly learn that the patient has cloud provider.
+visited the hospital recently, but also may learn things like
+Our goal. In this paper, we present an efficient solution for
+oblivious storage on a personal cloud synchronization/backup
+This paper is authored by an employee(s) of the United States Government and providersuchas(butnotlimitedto)DropboxorGoogleDrive.
+is in the public domain. Non-exclusive copying or redistribution is allowed,
+provided that the article citation is given and the authors and agency are clearly Write-only ORAM. The third aspect of our setting above
+identified as its source. (i.e., we don’t need to hide read accesses) is crucial to the
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA efficiencyofoursystem.Eachclientalreadyhasacopyofthe
+Internet Society, ISBN 1-891562-46-0
+database,sowhentheyreadfromittheydonotneedtointeract
+http://dx.doi.org/10.14722/ndss.2017.23188
+withthecloudprovideratall.Ifaclientwritestothedatabase,the changes are automatically propagated to the other clients The batching aspect of our construction also allows us to
+withnorequestsnecessaryontheirpart.Therefore,theORAM protect against timing-channel attacks (where the precise time
+protocol only needs to hide the write accesses done by the ofanaccessleaksinformationaboutit),whicharenotusually
+clients and not the reads. This is important because [8] have considered in ORAM protocols.
+shown that write-only ORAM can be achieved with optimal
+Summary of our contribution. To summarize, our contribu-
+asymptotic communication overhead of O(1). In practice,
+tions in this paper include:
+write-only ORAM requires only a small constant overhead of
+3-6x compared to much higher overheads for fully-functional
+1) A complete ORAM system designed for maximum ef-
+ORAM schemes, which asymptotically are Ω(logN).
+ficiency and usability when deployed on a synchroniza-
+Note that Dropbox (and other cloud providers) do have tion/backup service like Dropbox.
+client software that allows retrieval of only individual files 2) A FUSE implementation of these contributions, incorpo-
+or directories, for instance the Google Drive web interface. rating variable size files as well as important filesystem
+However, to achieve privacy in those settings with partial syn- functionalityintoORAMincludingtheabilitytostorefile
+chronization would require the full functionality of Oblivious names, resize files and more.
+RAMthathidesbothreadsandwrites.Weinsteadspecifically 3) A proof of strong security from an untrusted cloud
+target the full-synchronization setting for two reasons: provider, even considering the timing side-channel.
+4) Theoreticalevaluationshowingthatthethroughputofour
+1) It is the default behavior for the desktop clients of schemerequiresonly4xbandwidthoverheadcomparedto
+Dropbox, Google Drive, OneDrive, and others, making thatofunencryptedandnon-privatestorage,regardlessof
+it a widely used, practical scenario. the underlying file size distribution1 . We also show that
+2) Read-write ORAMs are subject to a well-known lower our scheme has very high storage utilization, requiring
+bound of Ω(NlogN)[15]. We aim to show that in a only 1.5-2.0x storage cost overhead in practice.
+synchronization setting substantially better performance 5) An empirical evaluation of the system that shows that
+can be achieved that rivals the performance of insecure ObliviSync performs better than the theoretic results for
+storage. both throughput and latency, and ObliviSync functions
+with limited overheads and delays when working with
+Providing cloud-layer transparency. One of the most note- Dropbox as the cloud synchronization service.
+worthy aspects of Dropbox-like services is their ease of use.
+Any user can download and install the requisite software, at
+II. EFFICIENTOBLIVIOUSNESSFORDROPBOX
+whichpointtheyhaveafolderontheirsystemthat“magically”
+synchronizes between all their machines, with no additional A. Overview of Write-only ORAM
+setup or interaction from the user. In order to preserve this
+We start by describing the write-only ORAM of [8], as it
+feature as much as possible, our system implements a FUSE
+informs our construction.
+filesystemthatmountsontopoftheshareddirectory,providing
+a new virtual frontend directory where the user can put their The setting. To store N blocks in a write-only ORAM, the
+files to have them privately stored on the cloud. The FUSE server holds an array of 2N encrypted blocks. Initially, the
+module uses the original shared directory as a backend by N blocks of data are shuffled and stored in random locations
+storing blocks as individual files. We stress that substantial in the 2N-length array, such that half of the blocks in the
+work is needed to add support for filesystem features such as array are “empty”. However, every block is encrypted with an
+filenames and sizes, since the storage of ORAMs is tradition- IND-CPA encryption scheme so the server cannot learn which
+ally modeled as only a flat array of N fixed-length blocks blocks are empty and which are not. The client stores a local
+indexed by the numbers [0,N). dictionary(orsometimescalledapositionmap)whichmapsa
+logicaladdressintherange(0,N]tothelocationintheserver
+Supportingvariable-sizefiles. Whenaddressingthepersonal
+array where it is currently stored, in the range (0,2N]. Using
+cloud setting, a crucial aspect that must be dealt with is the
+this dictionary, the client can find and read any block in the
+variablesizesofthefilesstoredinsuchasystem.Traditionally,
+storage that it needs, but the server will not know the location
+ORAMs are modeled as storage devices on N fixed-length
+of any individual block.
+blocks of data, with the security guarantee being that any two
+access patterns of the same length are indistinguishable from Read and write operations. Since by definition a write-only
+each other. In reality, files stored on Dropbox are of varying ORAM does not need to hide reads, they are performed triv-
+(sometimes unique) lengths. This means that a boilerplate iallybyreadingthelocaldictionaryandthenthecorresponding
+ORAMprotocolwillactuallynotprovideobliviousnessinsuch block from the ORAM. Write operations, however, require
+a setting because the file size, in multiples of the block size, additional work. When the client wishes to write a block to
+will be leaked to the server for every access. When file sizes the ORAM, it chooses k random locations in the array out of
+are relatively unique, knowing the size will enable the server 2N, where k is a constant parameter. With high probability,
+to deduce which individual file is being accessed, or at least at least one out of these k locations will be empty, and the
+substantially reduce the number of possibilities. Therefore our
+solution additionally includes a mechanism for dynamically 1Thebandwidthisactuallysetdirectlyaccordingtothesystemparameters.
+batching together variable-length files to hide their size from Ifitistoohigh,“dummy”writeoperationsareperformedtohidetheaccess
+pattern.Oursystemworksaslongasthebandwidthissetto4xhigherthan
+the server. Furthermore, our solution is efficient as we prove
+theactualamountofdatawritten.Ofcourse,theusermaysettheparameters
+its cost scales linearly with the total size (and not number)
+poorlyduetonotknowingtheirusageinadvance,inwhichcasethebandwidth
+of files being written, regardless of the file size distribution. maybehigherduetotherequireddummywrites.SeeSectionII-B.
+2new block is written into that location while re-encrypting the Read/Write Client
+other k−1 locations to hide which block was changed. After
+Local Storage Backend User Facing Frontend
+writing the block, the client also updates their dictionary to
+file
+indicate that the block now resides in its new location. The
+block file
+old location for this block is implicitly marked empty because block file
+block no entry in the dictionary now points to it. block file
+Achieving obliviousness. Since every write operation sees Cloud Synchronized Folder
+the client accessing k randomly chosen blocks in the ORAM, Write
+independent of the logical address of the block that is being
+written, it cannot reveal any information about the client’s Cloud Service
+access pattern. The only situation that can cause the client Reads
+torevealsomethingisifthek chosenlocationsdonotcontain
+Read Client
+anyfreeblocks,andithasnowheretowritethenewone.Since
+everyblockhas1/2probabilityofbeingempty,thechancethat
+there are no free blocks will be 2−k, so k can be set to the
+security parameter λ to give a negligible chance of failure.
+Efficiency with stash on the client. However, setting k =λ
+actuallydoesnotresultinO(1)overhead;sinceλ>logN,the
+overhead is Ω(logN). On average, the client finds k/2 empty
+blocksduringasinglewrite,manymorethanareneeded.Ifthe
+client instead stores a buffer of blocks that it wants to write,
+and writes as many blocks from the buffer as he finds empty
+blocks, k can be set much more aggressively. It is shown in
+[8] that k =3 is sufficient to guarantee with high probability
+thatthestashwillneverexceedO(logN).Thismakesthefinal
+overheadforwrite-onlyORAM3xthatofnon-privatestorage.
+Maintaining the dictionary file. Thefinalimportantdetailis
+that the dictionary file requires O(NlogN) bits of storage,
+which might be too large for the client to store locally.
+Fortunately it is relatively simple to store this dictionary
+recursively in another ORAM [8], [23]. For some block and
+databases sizes, however, it might be quite reasonable for the
+client to store the entire dictionary itself. Jumping ahead, in
+our system, the client locally stores the dictionary file (called
+the filetable) as an important metadata structure of the entire
+file system, in order to keep track of the actual position of
+each file block. See the detailed discussion in Section IV-A.
+B. Overview of Our System
+The setting. Our ObliviSync system uses the idea of write-
+only ORAM on top of any file backup or synchronization tool
+in order to give multiple clients simultaneous updated access
+to the same virtual filesystem, without revealing anything at
+all to the cloud service that is performing the synchronization
+itself, even if the cloud service is corrupted to become an
+honest-but-curious adverary. Write-only ORAM is ideal for
+this setting because each client stores an entire copy of the
+data,sothatonlythechanges(writeoperations)arerevealedto
+the synchronization service and thus only the write operations
+need to be performed obliviously.
+Improvements over write-only ORAM. Compared to the
+previous write-only ORAM construction [8], we make signif-
+icant advances and improvements to fit this emergent applica-
+tion space:
+• Usability: Users interact with the system as though it is
+a normal system folder. All the encryption and synchro-
+nization happens automatically and unobtrusively.
+• Flexibility: We support a real filesystem and use innova-
+tive methods to handle variable-sized files and changing
+ObliviSync
+- RW
+FUSE
+ObliviSync
+- RO
+FUSE
+Fig.1. DiagramforObliviSync
+client roles (read/write vs. read-only) to support multiple
+users.
+• Strong obliviousness:Thedesignofoursystemnotonly
+provides obliviousness in the traditional sense, but also
+protects against timing channel attacks. It also conceals
+thetotalnumberofwriteoperations,astrongerguarantee
+than previous ORAM protocols.
+• Performance:Oursystemwellmatchestheneedsofreal
+filesystemsandmatchestheservicesprovidedbycurrent
+cloud synchronization providers. It can also be tuned to
+differentsettingsbasedonthedesiredcommunicationrate
+and delay in synchronization.
+Basic architecture. The high-level design of ObliviSync is
+presented in Figure 1. There are two types of clients in our
+system: a read/write client (ObliviSync-RW) and a read-only
+client (ObliviSync-RO). At any given time, there can be any
+number of ObliviSync-RO’s active as well as zero or one
+ObliviSync-RW clients.Wenotethatagivendevicemaywork
+as a read-only client in one period of time and as a write-
+only client in other periods of time.2 Both clients consist of
+an actual backend folder as well as a virtual frontend folder,
+with a FUSE client running in the background to seamlessly
+translate the encrypted data in the backend to the user’s view
+in the frontend virtual filesystem.
+Werelyonexistingcloudsynchronizationtoolstokeepall
+clients’ backend directories fully synchronized. This directory
+consists of encrypted files that are treated as generic storage
+blocks,andembeddedwithinthesestorageblocksisafilesys-
+tem structure loosely based on i-node style file systems which
+allowsforvariable-sizedfilestobesplitandpackedintofixed-
+size units. Using a shared private key (which could be derived
+from a password) the job of both clients ObliviSync-RO and
+ObliviSync-RW is to decrypt and efficiently fetch data from
+theseencryptedfilesinordertoserveordinaryreadoperations
+from the client operating in the frontend directory.
+The ObliviSync-RW client, which will be the only client
+abletochangethebackendfiles,hasadditionalresponsibilities:
+(1) to maintain the file system encoding embedded within
+the blocks, and (2) to perform updates to the blocks in an
+obliviousmannerusingourefficientmodificationofthewrite-
+only ORAM described in the previous subsection.
+2Howtomakesurethatonlyonewrite-onlyclientoperatesatagiventime
+is out the scope, and in this paper, we will simply assume the existence of
+theproceduretoenforceit.
+3User transparency with FUSE mount. From the user’s per- Forsimplicity,weonlyconsiderthesefivecoreoperations.
+spective, however, the interaction with the frontend directory Otherstandardfilesystemoperationscanbeimplementedusing
+occurs as if interacting with any files on the host system. This these core functionalities.
+is possible because we also implemented a FUSE mount (file
+Obliviousness and more. The original write-only ORAM
+system in user space) interface which displays the embedded
+definition in [8] requires indistinguishability between any two
+file system within the backend blocks to the user as if it
+write accesses with same data sizes. However, the definition
+were any other file system mount. Under the covers, though,
+doesnotconsiderthetimeatwhichwriteoperationstakeplace.
+the ObliviSync-RO or ObliviSync-RW clients are using the
+Here, we put forward a stronger security notion for the file
+backenddirectoryfilesinordertoservealldatarequestsbythe
+system that additionally hides both the data length and the
+client,andtheObliviSync-RWclientisadditionallymonitoring
+time of non-read operations.
+for file changes/creations in the FUSE mount and propagating
+those changes to the backend. For example, we want to make sure all the following
+operation sequences are indistinguishable:
+Strong obliviousness through buffered writes. In order
+to maintain obliviousness, these updates are not immediately • no write operations at all
+writtentothebackendfilesystembytheObliviSync-RWclient. • write(file1,1,5) and write(file2,3,3) at time 3, and
+Instead,theprocessmaintainsabufferofwritesthatarestaged write(file1,6,9) at time 5
+to be committed. At regular timed intervals, random blocks • write(file2,1,20) at time 5
+from the backend are loaded, repacked with as much data
+from the buffer as possible, and then re-encrypted and written For this purpose, we first define (L,t)-fsequences. Here,
+back to the backend folder. From there, the user’s chosen file the parameter L is the maximum number of bytes that may
+synchronizationorbackupservicewilldoitsworktopropagate be modified, and t is the latest time that is allowed. For
+the changes to any read-only clients. Moreover, even when example,theabovesequencesareall(20,5)-fsequences,since
+there are no updates in the buffer, the client pushes dummy all sequences write at most 20 bytes data in total and have the
+updates by rewriting the chosen blocks with random data. In last write before or at time 5.
+this way, as the number of blocks written at each step is
+Definition1((L,t)-fsequence). Asequenceofnon-readoper-
+fixed, and these writes (either real or dummy) occur at regular
+ations for a block filesystem is a (L,t)-fsequence if the total
+timed intervals, an adversary operating at the network layer is
+number of bytes to be modified in the filesystem metadata and
+unable to determine anything about the file contents or access
+filedataisatmostL,andthelastoperationtakesplacebefore
+patterns. Without dummy updates, for example, the adversary
+or at time t.
+can make a reasonable guess about the size of the files that
+the client writes; continuted updates without pause is likely
+Our goal is to achieve an efficient block filesystem con-
+to indicate that the client is writing a large file. Note that
+structionsuchthatanytwo(L,t)-fsequencesareindistinguish-
+in some cases, revealing whether a client stores large files
+able.
+(e.g., movies) may be sensitive. Further details on all of these
+components can be found in Section IV. The full source code Definition 2 (Write-only strong obliviousness). Let L and t
+of our implementation is available on GitHub [14]. be the parameters for fsequences. A block filesystem is write-
+only strongly-oblivious with running time T, if for any two
+(L,t)-fsequences P and P , it holds that:
+0 1
+III. SECURITYDEFINITIONS
+• The filesystem finishes all the tasks in each fsequence
+A. Write-only Oblivious Synchronization
+within time T with probability 1 − neg(λ), where is λ
+is the security parameter.
+Block-based filesystem. Our system has more capabilities
+than a standard ORAM, including support for additional • TheaccesspatternofP iscomputationallyindistinguish-
+0
+filesystemoperations,sowerequireamodifiedsecuritydefini- able to that of P .
+1
+tionwhichwepresenthere.Wefirstformallydefinethesyntax
+of a block-based filesystem with block size B.
+IV. SYSTEMDETAILS
+• create(filename): create a new (empty) file. As described previously, the basic design of ObliviSync
+• delete(filename): remove a file from the system. is presented in Figure 1. In this section we highlight the
+• resize(filename,size): change the size of a file. The size implementation details further. In particular, we describe the
+is given in bytes, and can be greater or smaller than the implementation components focusing on interesting design
+current size. challenges and user settings that can be used to tune the
+• write(filename,offset,length): write data to the identified performance.
+file according to the offset and length arguments. The
+offset is a block offset. Unless the offset refers to the last
+A. Filesystem Description
+block in the file, length must be a multiple of B.
+• read(filename,offset,length) → data: read data from the First,wedescribethedataorganizationofthebackendfiles
+identified file according to the offset and length argu- thatformthestoragemechanismsfortheencryptedfilesystem.
+ments. Again, offset is a block offset, and length must be We note that our filesystem is specifically tailored for the
+a multiple of the block size B unless the read includes ObliviSync use case, and this design is what leads to our
+the last offset. practical performance gains.
+4Frontend thefile-entry)inoursystemaresimilartopositionmapentries
+(resp., the position map) in traditional ORAMs. The main
+file X x 1 x 2 x 3 x 4 difference is that in order to treat multiple front-end files, our
+system maintains a filetable containing multiple file-entries.
+file Y y 1 y 2 y 3
+The file-entries in the filetable are indexed by file-ids. As
+filesupdate,thefile-idremainsconstant;however,basedonthe
+Backend oblivious writing procedure, the file fragments may be placed
+block-id=0 block-id=2 in different backend blocks, so the block-ids may change
+x 2 x 1 y 1 x 4 y 3 accordingly.
+x 3 y 2 Filetable B-tree. The filetable mapping file-ids to file-entries
+is implemented as a B-tree, with node size B proportional to
+block-id=1
+file 0 file 1 file 2 file 3 file 4 file 5 thesizeofbackendblocks.Ingeneral,theheightofthisB-tree
+is O(log n), where n is the number of files stored. As we
+B
+Fig. 2. An example of two front-end files stored in the backend files. The will see in Section IV-G, for typical scenarios the block size
+frontendfileX(resp.fileY)consistsof4(resp.3)fragmentswherethelast is sufficiently large so that the B-tree height can be at most 1
+fragment is smaller than the block size. Each fragment is stored in a block. (i.e., the tree consists of the root node and its children), and
+Each backend file contains exactly two blocks. Backend blocks are indexed
+we will assume this case for the remainder.
+byblock-ids,startingwith0.Forexample,thetwoblocksinfile0hasblock-
+ids 0 and 1, respectively, and the block-ids of the blocks where fragments Theleafnodesareaddedandstoredalongsideordinaryfiles
+x1,x2,x3,x4arelocatedare4,2,3,8respectively.Notethesmallfragments
+in blocks. There are two important differences from regular
+x4 andy3 arelocatedinthesameblockwithblock-id8.
+files, however: leaf nodes are always exactly the size of one
+fullblock,andtheyareindexed(withintherootnode)bytheir
+Files, fragments, blocks, block-ids. The user of an block-id directly. This way, leaf nodes have neither a file-id
+ObliviSync client is creating, writing, reading, and deleting nor a file-entry.
+logical files in the frontend filesystem via the FUSE mount.
+Directory files. As is typical in most filesystems, file paths
+The ObliviSync client, to store user files, will break down the
+are grouped into directories (i.e., folders), and each directory
+files into one or more fragments, and these fragments are then
+contains the pathnames and file-ids of its contents. Observe
+stored within various encrypted blocks in the backend.
+that the directory file only changes when a file within it is
+created or destroyed, since file-ids are persistent between file
+Blocks are stored in the backend directory in block pairs
+modifications. Directory files are treated just like any other
+of exactly two files each. (Note each block pair resides within
+file, with the special exception that the root directory file is
+a single file in the backend directory, but we avoid the use of
+always assigned file-id 0.
+theword“file”whenpossibletodisambiguatefromthelogical
+frontend files, and instead refer to these as “block pairs”.) We
+explain why we chose to combine exactly two blocks in each B. Design Choices for Performance Optimization
+pairlaterwhendiscussingperformanceoptimization.Notethat
+File-entry cache. To avoid frequent writes to the B-tree
+it is only these encrypted block pairs in the backend directory
+leaves,wemaintainasmallcacheofrecentfile-idtofile-entry
+which are seen (and transferred) by the cloud synchronization
+mappings. Like the root node of the filetable B-tree, the size
+service.
+of this cache is proportional to the backend block size.
+While each block has the same size, files stored in the When the cache grows too large, the entries that belong
+frontend can have arbitrary sizes. A file fragment can be in the most common leaf node among all cache entries are
+smaller than a block size, but not larger. In particular, each removedandwrittentothatleafnode.Thisallowsforefficient
+file will consist of an ordered list of fragments, only the last batching of leaf node updates and guarantees a significant
+of which may have size smaller than that of a full block. fractionofthecacheisclearedwheneveraleafnodeiswritten.
+While files are indicated by pathnames as in any normal In fact, if the block size is large enough relative to the
+filesystem, backend blocks are indexed by numeric block-ids, number of files, the cache alone is sufficient to store all file-
+withnumberingsuchthatthetwoblocksthatmakeupablock entries, and the B-tree effectively has height 0 with no leaf
+pair are readily identified. See Figure 2 for a simple example. nodes.
+Filetable, file-entries, file-ids. Since a single frontend file Superblock. Observe that every time any file is changed, its
+consists of a series of fragments (or a single fragment if the file-entry must be updated in the cache, which possibly also
+file is small) where each fragment is stored within a block, causes a leaf node to be written, which in turn (due to the
+ObliviSync needs to keep track of the backend blocks that oblivious shuffling of block-ids on writes) requires the root
+each file uses so that it may support file create/update/delete node of the filetable to be re-written as well.
+operations effectively.
+Since the root node of the filetable B-tree and the file-
+For this purpose, ObliviSync maintains a filetable, consist- entry cache are both changed on nearly every operation, these
+ing of file-entries. Each frontend file is one-to-one mapped are stored specially in a single designated backend block pair
+to a file-entry, which maintains some file metadata and a list called the superblock that is written on every operation and
+of block-ids in order to refer to the blocks that contain the neverchangeslocation.Becausethisfileiswritteneverytime,
+frontend file’s fragments, in order. In a sense, block-ids (resp., it is not necessary to shuffle its location obliviously.
+5The superblock also contains a small (fixed) amount of first needs to obtain the block-id list of the file’s fragments to
+metadata for the filesystem parameters such as the block size then decrypt the associated blocks and read the content. This
+andtotalnumberofbackendblockpairs.Asmentionedabove, is accomplished in the following steps:
+the size of both the B-tree root node and the file-entry cache
+are set proportionally to the backend block size, so that the 1) Decrypt and read the superblock.
+superblockintotalhasafixedsizecorrespondingtooneblock 2) Check in the file-entry cache. If found, return the corre-
+pair; our implementation stores this always in backend file 0. sponding block-id list.
+3) If not found in the cache, search in the filetable via the
+Split block: a block with small fragments. At the block B-tree root (part of the superblock) to find the block-id
+level, there can be two types of blocks: a full block where the of the appropriate leaf node in the B-tree.
+fragmentstoredwithinisaslargeastheblocksizeandinhabits 4) Decrypt and read the leaf node to find the file-entry for
+the entirety of the block, or a split block where multiple thefileinquestion,andreturnthecorrespondingblock-id
+fragments smaller than the block size are stored within the list and associated metadata.
+sameblock.Whenalargefileisstoredasaseriesoffragments,
+we maintain that all fragments except possibly for the last Once the block-id list has been loaded, the desired bytes of
+fragment are stored in full blocks. That is, there will be at the file are loaded by computing the block-id offset according
+most one split-block fragment per file. to the block size, loading and decrypting the block specified
+by that block-id, and extracting the data in the block.
+Introducing split blocks allows the system to use the
+backend storage more efficiently. For example, without using Giventhefile-id,itcanbeseenfromthedescriptionabove
+split blocks, 100 small fragments from 100 frontend files will that a single read operation in ObliviSync-RO for a single
+consume 100 backend blocks, but by placing multiple small fragment requires loading and decrypting at most 3 blocks
+fragments into a single split block, we can reduce the number from the backend: (1) the superblock, (2) a B-tree leaf node
+of blocks consumed. (if not found in file-entry cache), and (3) the block containing
+the data. In practice, we can cache recently accessed blocks
+Lookingupthedatainafullblockisstraightforward:given
+(most notably, the superblock) for a short period in order to
+the block-id value, ObliviSync fetches the given block and
+speed up subsequent lookups.
+decrypts its contents. In addition to the actual data, we also
+store the file-id of the file within the block itself as metadata.
+This will facilitate an easy check for whether a given block D. Read/Write Client
+has become stale, as we will see shortly.
+The read/write client ObliviSync-RW encompasses the
+For a split block, however, the system also needs to know same functionality as ObliviSync-RO for lookups with the
+the location of the desired fragment within the block. The added ability to create, modify, and delete files.
+information is stored within the block itself in the block table
+Pending writes buffer. The additional data structure stored
+which maps file-ids to offsets. With the size of the file from
+in ObliviSync-RW to facilitate these write operations is the
+the filetable, it is straightforward to retrieve the relevant data.
+pendingwritesbufferofrecent,un-committedchanges.Specif-
+A full block can then be simply defined as a block without
+ically, this buffer stores a list of (file-id,fragment,timestamp)
+a block table, and the leading bit of each block is used to
+tuples.WhentheObliviSync-RW encountersawrite(orcreate
+identify whether the block is full or split.
+or delete) operation, the operation is performed by adding to
+Twoblocksinabackendfile. Allbackendblocksaregrouped the buffer. For modified files that are larger than a block size,
+intopairsoftwoconsecutiveblockswhereeachpairofblocks only the fragments of the file that need updating are placed
+resides within a single backend file. Importantly, we relax in the buffer, while for smaller files, the entire file may reside
+slightly the indexing requirements so that small fragments are in the buffer. During reads, the system first checks the buffer
+allowedtoresideineitherblockwithoutchangingtheirblock- to see if the file-id is present and otherwise proceeds with the
+id. This tiny block-id mismatch is easily addressed by looking same read process as in the ObliviSync-RO description above.
+up both blocks in the corresponding backend file. Themainmotivationofthebufferistoallowobliviouswriting
+withoutcompromisingusability.Theusershouldnotbeaware
+Furthermore,aswewillseeinthesyncoperationdescribed
+of the delay between when a write to a file occurs and when
+later,bothblocksinagivenpairarerandomlyselectedtobere-
+the corresponding data is actually synced to the cloud service
+packed and rewritten at the same time. This additional degree
+provider.Thefunctionofthebufferissimilartothatof“stash”
+of freedom for small fragments is crucial for bounding the
+in normal ORAM constructions.
+worst-case performance of the system.
+Interestingly, we note that the buffer also provides consid-
+erableperformancebenefits,byactingasacacheforrecently-
+C. Read-Only Client
+used elements. Sincethe buffer contents arestored in memory
+A read-only client (ObliviSync-RO) with access to the un-encrypted, reading file fragments from the buffer is faster
+sharedprivatekeyisabletoviewthecontentsofanydirectory than decrypting and reading data from the backend storage.
+or file in the frontend filesystem by reading (and decrypting) Thebufferservesadualpurposeinbothenablingobliviousness
+blocksfromthebackend,butcannotcreate,destroy,ormodify and increasing practical efficiency.
+any file’s contents.
+Syncing: gradual and periodic clearing of the buffer. The
+Toperformareadoperationforanyfile,giventhefile-idof buffer within ObliviSync-RW must not grow indefinitely. In
+that file (obtained via the directory entry), the ObliviSync-RO our system, the buffer size is kept low through the use of
+6Action Buffer Backend ObliviSync-RWview ObliviSync-ROview
+0.(initial) {} {f 1,f 2,f 3} [f 1,f 2,f 3] [f 1,f 2,f 3]
+1.Twoblocksupdated {f 2(cid:48),f 3(cid:48)} {f 1,f 2,f 3} [f 1,f 2(cid:48),f 3(cid:48)] [f 1,f 2,f 3]
+2.Oneblocksynced {f 2(cid:48)} {f 1,f 2,f 3,f 3(cid:48)} [f 1,f 2(cid:48),f 3(cid:48)] [f 1,f 2,f 3]
+3.Bothblockssynced {} {f 1,f 2,f 3,f 3(cid:48),f 2(cid:48)} [f 1,f 2(cid:48),f 3(cid:48)] [f 1,f 2(cid:48),f 3(cid:48)]
+4.Staledataremoved {} {f 1,f 3(cid:48),f 2(cid:48)} [f 1,f 2(cid:48),f 3(cid:48)] [f 1,f 2(cid:48),f 3(cid:48)]
+Fig.3. Exampleoforderingandconsistencyinupdatingtwoofthreefragmentsofasinglefile.UseoftheshadowfiletableensuresthattheObliviSync-RO
+viewisnotupdateduntilallfragmentsaresyncedtothebackend.
+a periodic sync operations wherein the buffer’s contents are the backend. Now say an ObliviSync-RW client updates the
+encrypted and stored in backend blocks. last two fragments to f(cid:48) and f(cid:48). It may be the case that, for
+2 3
+example, f(cid:48) is removed from the buffer into some backend
+Each sync operation is similar to a single write procedure 3
+block before f(cid:48) is. (This could easily happen because f(cid:48) is a
+in write-only ORAM, but instead of being triggered on each 2 3
+smallfragmentthatcanbestoredwithinasplitblock,whereas
+write operation, the sync operation happens on a fixed timer
+f(cid:48) is a full block.) At this point, the shadow filetable will still
+basis. We call the time between subsequent sync operations 2
+storethelocationoff andnotf(cid:48),sothatanyObliviSync-RO
+an epoch and define this parameter as the drip time of the 3 3
+clients have a consistent view of the file. It is only after all
+ObliviSync-RW.
+fragments of f are removed from the buffer that the filetable
+Also, similar to the write-only ORAM, there will be a is updated accordingly.
+fixed set of backend files that are chosen randomly on each
+One consequence is that there may be some duplicate
+sync operation epoch. The number of such backend files that
+versions of the same fragment stored in the backend simulta-
+are rewritten and re-encrypted is defined as the drip rate.
+neously,withneitherbeingstale(asinf andf(cid:48) afterstep2in
+Throughout,letkdenotethedriprate.Wediscusstheseparam- 3 3
+Figure3).Thisaddsasmallstorageoverheadtothesystem,but
+etersfurtherandtheirimpactonperformanceinSectionIV-G.
+thebenefitisthatbothtypesofclientshaveaclean,consistent
+Overall, each sync operation proceeds as follows:
+(though possibly temporarily outdated) view of the filesystem.
+1) Choose k backend block pairs randomly to rewrite and Notethat,evenintheworstcase,nonon-stalefragmentisever
+decrypt them. duplicated more than once in the backend.
+2) Determine which blocks in the chosen backend files are
+stale, i.e., containing stale fragments.
+E. Detailed Description of Buffer Syncing
+3) Re-pack the empty or stale blocks, clearing fragments
+from the pending writes buffer as much as possible. Step 1: Choosing which blocks to rewrite. Asinwrite-only
+4) Re-encrypt the chosen backend block pairs. ORAM, k random backend files are chosen to be rewritten at
+every sync operation with the following differences:
+The detailed sync operation is described in the next section.
+• Eachbackendfilecontainsapairofblocks,whichimplies
+Consistency and ordering. In order to avoid inconsistency,
+that k random pairs of blocks are to be rewritten.
+busy wait, or race conditions, the order of operations for the
+• In addition, the backend file containing the superblock is
+syncprocedureisveryimportant.Foreachfilefragmentthatis
+always rewritten.
+successfully cleared from the buffer into the randomly-chosen
+blocks, there are three changes that must occur:
+Choosing pairs of blocks together is crucial, since as we
+1) The data for the block is physically written to the back- have mentioned above, small fragments are free to move
+end. between either block in a pair without changing their block-
+2) The fragment is removed from the buffer. ids.Inaddition,thesuperblockmustberewrittenoneachsync
+3) The filetable is updated with the new block-id for that because it contains the filetable which may change whenever
+fragment. other content is rewritten to the backend.
+It is very important that these three changes occur in Step 2: Determining staleness. Once the blocks to be
+that order, so that there is no temporary inconsistency in the rewrittenarerandomlyselectedanddecrypted,thenexttaskis
+filesystem. Moreover, the ObliviSync-RW must wait until all to inspect the fragments within the blocks to determine which
+fragments of a file have been synced before updating the file- are “stale” and can be overwritten.
+entry for that file; otherwise there could be inconsistencies in
+Tracking fragment freshness is vital to the system because
+any ObliviSync-RO clients.
+of the design of write-only ORAM. As random blocks are
+Theconsistencyisenforcedinpartbytheuseofashadow written at each stage, modified fragments are written to new
+filetable,whichmaintainsthelistofoldblock-idsforanyfiles blocks, and the file-entry is updated accordingly, but the stale
+that are currently in the buffer. As long as some fragment of data fragment is not rewritten and will persist in the old
+a file is in the buffer, the entry in the filetable that gets stored block because that old block may not have been selected
+with the superblock (and therefore, the version visible to any in this current sync procedure. Efficiently identifying which
+read-onlyclientmounts),isthemostrecentcompletely-synced fragments are stale becomes crucial to clearing the buffer.
+version).
+A natural, but flawed, solution to tracking stale fragments
+An example is depicted in Figure 3. Say file f consists is to maintain a bit in each block to mark which fragments
+of three fragments [f ,f ,f ], all currently fully synced to are fresh or stale. This solution cannot be achieved for the
+1 2 3
+7same reason that stale data cannot be immediately deleted — full-blockfragment,or(c)partiallyfilledwithsomesmallfrag-
+updatingblocksthatarenotselectedinthesyncprocedureare ments. The block re-packing first considers any directory file
+not possible. fragmentsinthebuffer,followedbyanyregularfilefragments,
+each in FIFO order. (Giving priority status to directory files
+Instead, recall from the block design that each block
+is important to maintain low latency, as discussed in the next
+also stores the file-id for each fragment. To identify a stale
+section.) The synchronization process then proceeds the same
+fragment, the sync procedure looks up each fragment’s file-id
+for all fragments in the buffer: for each fragment, it tries to
+to get its block-id list. If the current block’s identifier is not
+pack it into the randomly-selected blocks as follows:
+in the block-id list, then that fragment must be stale.
+• If it is a full-block fragment, it is placed in the first
+Step 3: Re-packing the blocks. Then next step after identi-
+available empty block (case (a)), if any remain.
+fying blocks and fragments within those blocks that are stale
+• Ifitisasmallfragment,itisplacedifpossibleinthefirst
+(orempty)istore-packtheblockwiththenon-stalefragments
+available split block (case (c)) where there is sufficient
+residing within the block and fragments from the buffer.
+room.
+One important aspect to consider when re-packing the • If it is a small fragment but it cannot fit in any existing
+blocks is to address the fragmentation problem, that is, to splitblock,thenthefirstavailableemptyblock(case(a)),
+reduce the number of blocks that small fragments use so if any, is initialized as a new split block containing just
+that there remain a sufficient number of blocks for full-block that fragment.
+fragments.
+In this way, every buffer fragment is considered for re-
+A na¨ıve approach would be to evict all the non-stale frag- packinginorderofage,butnotallmayactuallybere-packed.
+ments from the selected blocks and consider all the fragments Those that are re-packed will be removed from the buffer and
+in the buffer and the evicted fragments to re-pack the selected their filetable entries will be updated according to the chosen
+blocks with the least amount of internal fragmentation. While block’s block-id.
+this would be a reasonable protocol for some file systems to
+A key observation that will be important in our runtime
+reducefragmentation,thiswouldrequire(potentially)changing
+proof later is that after re-packing, either (1) the buffer is
+allofthefile-entries(inparticular,theblock-idlist)forallfrag-
+completelycleared,or(2)allthechosenblocksarenonempty.
+ments within the selected blocks. That would be problematic
+because it is precisely these old entries which are likely not Step 4: Re-encrypting the chosen backend files. After
+to be in the file-entry cache, and therefore doing this protocol the re-packing is complete, the sync procedure re-encrypts
+wouldrequirepotentiallychangingmanyfiletableB-treenodes the superblock (which always goes at index 0), as well as
+at each step, something that should be avoided as writes are all the re-packed blocks, and stages them for writing back to
+expensive. backend files. The actual writing is done all at once, on the
+timer, immediately before the next sync operations, so as not
+Instead, we take a different approach in order to address
+to reveal how long each sync procedure took to complete.
+the fragmentation problem and minimize the block-id updates
+for the non-stale fragments at the same time. Our approach
+has two stages: the placement of non-stale fragments and then F. Frontend FUSE Mounts
+clearing the fragments in the buffer.
+The FUSE (file system in user space) mounts are the
+Placement of non-stale fragments. We use the following rule primary entry point for all user applications. FUSE enables
+when addressing the existing non-stale fragments. the capture of system calls associated with I/O, and for those
+calls to be handled by an identified process. The result is
+Non-stale full-block fragments stay as they are, but that a generic file system mount is presented to the user,
+non-stale small fragments may move to the other but all accesses to that file system are handled by either the
+block in the same backend file. ObliviSync-RW or ObliviSync-RO client that is running in the
+background.
+Recall that blocks are paired in order and share a single
+backend file, and so this flexibility enables small fragments The key operations that are captured by the FUSE mount
+to be re-packed across two blocks to reduce fragmentation andtranslatedintoObliviSync-RW orObliviSync-ROcallsare
+without having to update the block-id value. Further, this as follows:
+solution also avoids a “full-block starvation” issue in which
+• create(filename):createanew(empty)fileinthesystem
+all blocks contained just a small split-block fragment. After
+in two steps. First a new file-id is chosen, and the
+re-packing, the small fragments in each block pair may be
+corresponding file-entry is added to the filetable. Then
+combined into a single split block, leaving the other block
+that file-id is also stored within the parent directory file.
+in the pair empty and ready to store full block fragments
+• delete(filename): remove a file from the system by
+from the buffer. In other words, the re-pack procedure ensures
+removing it from the current directory file and removing
+that existing full-block fragments do not move, but existing
+the associated file-entry from the filetable.
+small-block fragments are packed efficiently within one of the
+• read(filename,offset,length) → data : read data
+blocks in a pair to leave (potentially) more fully empty blocks
+fromtheidentifiedfilebylookingupitsfile-idinthecur-
+available to be rewritten.
+rentdirectoryandrequestingthebackendObliviSync-RW
+Pushing fresh fragments. At this point, the randomly-chosen or ObliviSync-RO to perform a read operation over the
+blocks are each either: (a) empty, (b) filled with an existing appropriate blocks.
+8• write(filename,offset,length):writedatatotheiden- Frontendfiles. Thenextparameternisnotreallyaparameter
+tified file by looking up its file-id in the current directory persebutratheralimitation,asourconstructionrequiresn≤
+and then adding the corresponding fragment(s) to the B2 in order to ensure the filetable’s B-tree has height at most
+ObliviSync-RW’s buffer for eventual syncing. 1. For B = 222, this means the user is “limited” to roughly
+• resize(filename,size) : change the size of a file by 16 trillion files.
+looking up its file-entry in the current directory and
+Drip time and drip rate. The drip time and drip rate are
+changing the associated metadata. This may also add or
+important parameters for the buffer syncing. The drip time is
+removeentriesfromthecorrespondingblock-idlistifthe
+thelengthoftheepoch,i.e.,thetimebetweentwoconsecutive
+given size represents a change in the number of blocks
+syncs to the backend. The drip rate refers to how many block
+forthatfile.Anyaddedblockswillhavenegativeblock-id
+pairs are randomly selected for rewriting on each epoch.
+values to indicate that the data is not yet available.
+These two parameters provide a trade-off between latency
+Of course, there are more system calls for files than these,
+and throughput. Given a fixed bandwidth limitation of, say, x
+such as open() or stat() that are implemented within
+bytespersecond,(k+1)Bbyteswillbewritteneverytseconds
+the FUSE mount, but these functions succinctly encompass
+for k randomly chosen backend files and the superblock, so
+all major operations between the frontend FUSE mount and
+that we must have (k+1)B/t ≤ x. Increasing the drip time
+backend file system maintenance.
+anddripratewillincreaselatency(thedelaybetweenawritein
+As noted before, the FUSE mount also maintains the file the ObliviSync-RW appearing to ObliviSync-RO clients), but
+system’s directory structure whose main purpose is to link file itwillincreasethroughputastheconstantoverheadofsyncing
+names to their file-id values, as well as store other expected the superblock happens less frequently.
+file statistics. The directory files are themselves treated just
+We will consider in our experimentation section (see Sec-
+like any other file, except that (1) the root directory always
+tion VI) the throughput, latency, and buffer size of the system
+has file-id 0 so it can be found on a fresh (re-)mount, and (2)
+under various drip rate and drip time choices. Our experiment
+directory files are given priority when syncing to the backend.
+indicates that for most uses, the smallest possible drip time
+For a file to become available to the user, it must both be t that allows a drip rate of k ≥ 3 files per epoch should be
+present in the backend and have an entry in the directory file. chosen.
+Withoutprioritizationofdirectoryfiles,itmaybethecasethat
+some file is available without the directory entry update, thus
+delaying access to the user. Conversely, the opposite can also
+V. ANALYSIS
+be true: the directory entry shows a file that is not completely A. Time to write all files
+synchronized. Fortunately, this situation is easy to detect upon
+open() and an IO-error can be returned which should be In this subsection we will prove the main Theorem 1 that
+handled already by application making the system call. showstherelationshipbetweenthenumberofsyncoperations,
+the drip rate, and the size of the buffer. Recall from the
+The FUSE module is aware of some backend settings to
+preceding subsection the parameters B (block pair size), N
+improve performance, notably the block size. When a file is
+(numberofbackendblockpairs),andk(driprate).Specifically,
+modified, it is tracked by the FUSE module, but for large
+we will show that, with high probability, a buffer with size s
+files, with knowledge of the block size, the FUSE module is completely cleared and synced to the backend after O(cid:0) s (cid:1)
+can identify which full fragments of that file are modified Bk
+sync operations. This is optimal up to constant factors, since
+and which remain unchanged. Only the fragments with actual
+only Bk bytes are actually written during each sync.
+changesareinsertedintothebuffertobere-packedandsynced
+to the backend. Theorem1. ForarunningObliviSync-RWclientwithparam-
+eters B,N,k as above, let m be the total size (in bytes) of
+G. Key parameter settings all non-stale data currently stored in the backend, and let s
+be the total size (in bytes) of pending write operations in the
+The tunable parameters for a ObliviSync implementation
+buffer, and suppose that m+s≤NB/4.
+consist of:
+Then the expected number of sync operations until the
+• B: the size of each backend file (i.e., block pair)
+buffer is entirely cleared is at most 4s/(Bk).
+• N: the total number of backend files
+• n: the total number of frontend files (i.e., logical files) Moreover, the probability that the buffer is not entirely
+• t: the drip time cleared after at least 48s + 18r sync operations is at most
+Bk
+• k: the drip rate exp(−r).
+Backend files. The first two parameters B and N depend
+Before giving the proof, let us summarize what the this
+on the backend cloud service. A typical example of such
+theorem means specifically.
+parameters can be taken from the popular Dropbox service,
+which optimally handles data in files of size 4MB, so that First, the condition m + s ≤ NB/4 means that the
+B = 222 [11], and the maximal total storage for a paid guarantees hold only when at most 25% of the total backend
+“Dropbox Pro” account is 1TB, meaning N =218 files would capacity is utilized. For example, if using Dropbox with 1TB
+bethelimit.Notethat,asourconstructionalwayswritesblocks of available storage, the user should store at most 250GB
+inpairs,eachblockpairisstoredinasinglefileandtheblock of files in the frontend filesystem in order to guarantee the
+size in ObliviSync will be B/2. performance specified in Theorem 1.
+9Second,asmentionedalready,theexpectednumberofsync From above, a sync is guaranteed to be productive when-
+operations is optimal (up to constant factors), as the total ever Y ≤ 3kB (because the total size after the sync will be at
+8
+amount of data written in the frontend cannot possibly exceed least kB). We also know from above that E[Y] = kB. Using
+2 4
+the amount of data being written to the backend. the Markov inequality, we have
+In the number of syncs 48s/(Bk)+18r required to clear
+thebufferwithhighprobability,onecanthinkoftheparameter (cid:20) (cid:21) (cid:20) (cid:21)
+3kB 3kB kB/4 1
+r as the number of “extra” sync operations required to be Pr Y ≤ =1−Pr Y > ≥1− = .
+8 8 3kB/8 3
+very sure that the buffer is cleared. In practice, r will be
+set proportionally to the security parameter. A benefit of our
+Thatis,eachsyncisproductivewithprobabilityatleast 1.
+construction compared to many other ORAM schemes is that 3
+theperformancedegradationintermsofthesecurityparameter Next, define a random variable X to be the number of
+is additive and not multiplicative. Put another way, if it takes productivesyncsamongaseriesofT =48s/(Bk)+18r sync
+1 extra minute of syncing, after all operations are complete, operations. Importantly, if X ≥8s/(Bk), then the buffer will
+in order to ensure high security, that extra minute is fixed be cleared at the end of T syncs.
+regardless of how long the ObliviSync-RW has been running
+or how much total data has been written. We see that X is the sum of T i.i.d. Bernoulli trials, each
+with probability p = 1. Therefore the Hoeffding bound from
+Finally,akeyobservationofthistheoremisthatitdoesnot [16] tells us that, for a3 ny (cid:15)>0,
+depend on the distribution of file sizes stored in the frontend
+filesystem, or their access patterns, but only the total size of Pr(cid:2) X <(cid:0)1 −(cid:15)(cid:1) T(cid:3) ≤exp(−2(cid:15)2T).
+3
+data being stored. The performance guarantees of our system
+Setting (cid:15) = 1 works to bound the probability that X <
+therefore allow arbitrary workloads by the user, provided they 8s/(Bk), since6 8s < 1(cid:0)48s +18r(cid:1) for any r >0. The theo-
+can tolerate a constant-factor increase in the backend storage rem follows fromBk exp(6 −2B (cid:15)2k T)=exp(cid:0) − 1 ·(cid:0)48s +18r(cid:1)(cid:1) <
+size. 18 Bk
+exp(−r).
+We now proceed with the proof of Theorem 1.
+Proof: There are N blocks of backend storage. Each B. Security
+stores some combination of at most two split blocks and full Theorem 2. Let λ be the security parameter. Consider
+blocks. Full blocks have size B each, and split blocks contain ObliviSync-RW with parameters B,N,k as above, and with
+2
+multiple fragments summing to size at most B each. drip time t. For any L and t as fsequence parameters,
+2
+ObliviSync-RW is strongly-secure write-only filesystem with
+Suppose some sync operation occurs (selecting k block
+running time T =t+ 48Lt +18λt.
+pairs from the backend, removing stale data and re-packing Bk
+withnewfragmentsfromthebuffer),andafterwardsthebuffer
+Proof: We need to show the following:
+is still not empty. Then it must be that case that the k block
+pairs that were written are at least half filled, i.e., their total
+• ObliviSync-RW finishesalltasksineachsequencewithin
+size is now at least kB. The reason is, if any block pair had
+2 time T with probability 1−neg(λ).
+size less than B, then it could have fit something more (either • For any two (L,t)-fsequences P and P , both access
+2 0 1
+afullblockorafragment)fromthebuffer.Butsincethebuffer patterns are computationally indistinguishable from each
+was not emptied, there were no entirely empty blocks among other.
+the k block pairs.
+The first condition is achieved according to Theorem 1,
+Furthermore, because m < NB while the buffer is not
+4 since one sync operation occurs every t seconds.
+empty, the expected size of a single, randomly-chosen pair of
+blocksislessthan B.Bylinearityofexpectation,theexpected It is left to show that the second condition also holds.
+4
+size of k randomly selected block pairs is less than kB. Obliviousness mostly follows from the original write-only
+4
+ORAM security. To achieve strong obliviousness, we stress
+Combining the conclusions from the preceding paragraphs
+that ObliviSync-RW always writes encrypted data in k files at
+we see that, on any sync operation that does not empty the
+the backend chosen independently and uniformly at random.
+buffercompletely,thekrandomlyselectedblockpairsgofrom
+In particular:
+expectedsizelessthan kB,toguaranteedsizegreaterthan kB.
+4 2
+This means the expected decrease in buffer size in each sync • If there is too much data to be synchronized, the remain-
+is at least kB. Starting with s bytes in the buffer, the expected ingdataissafelystoredinthetemporarybuffersothatthe
+4
+number of syncs is therefore less than s = 4s. data will be eventually synchronized. Theorem 1 makes
+kB/4 Bk
+sure this must happen with overwhelming probability.
+Now we extend this argument to get a tail bound on the
+• If there is too little (or even no) data to be synchronized,
+probabilitythatthebufferisnotemptiedafterT =48s/(Bk)+
+the system generates what amounts to dummy traffic (re-
+18r sync operations, for some r ≥0.
+packingthek chosenblockpairswiththesamedatathey
+Call a sync operation productive if it results in either stored before).
+the buffer being cleared entirely, or the size of the buffer
+Therefore, the second condition is also satisfied.
+decreasing by at least kB. And define Y to be a random
+8
+variable for the total size of the k randomly-selected blocks There is an important assumption in both theorems above,
+for a single operation. namely that the client is actually able to execute the sync
+10operation with the given drip rate k within each epoch with ����
+drip time t. If the parameters k and t are set too aggressively, ����
+it may be the case that the sync operation takes longer than
+����
+t seconds to complete, and this fact would be noticed by the
+cloudserverorindeedanynetworkobserver.Whiletheleakage ����
+in such cases is relatively minor (an indication that, perhaps, ����
+theclient’ssystemloadishigherthannormal),itisnonetheless
+����
+important for security to ensure t and k are set appropriately
+to avoid this situation of a sync operation “blowing through”
+����
+the epoch. ����
+��
+�� ���� ���� ���� ���� ���� ���� ���� ���� ����
+VI. EXPERIMENTS
+We fully implemented ObliviSync using python3 and
+fusepy [2], and the source code of our implementation is
+available on GitHub as well as a video demonstration [14]
+and a Dockerfile for quick setup and testing.
+To evaluate ObliviSync, we performed a series of experi-
+mentstotestitsperformanceattheextremes.Inparticular,we
+are interested in the following properties:
+• Throughput with fixed-size files: If the user of ObliviSync
+weretoinsertalargenumberoffilesallatonce,thebuffer
+will immediately be filled to hold all the insertions. How
+long does it take (in number of epochs) for each of the
+files to sync to the read end?
+• Throughput with variable-size files: If the users were to
+insert a large number of variable size files all at once,
+instead of fixed-sized ones, how does the throughput
+change? This experiment will verify Theorem 1, which
+states that the performance of our system depends on the
+totalnumberofbytes(insteadofthetotalnumberoffiles)
+in the pending write buffer.
+• Latency: If the user of ObliviSync-RW were to insert a
+largenumberoffilesoneatatime,howlongdoesittake
+foreachofthefilestoappeartoadifferentObliviSync-RO
+user?
+• The size of pending writes buffer: We also investigate
+howmuch spacethe pendingwrites bufferuses whilethe
+system is working under different loads with realistic file
+sizes. Recall the pending writes buffer works similarly as
+the stash in the write-only ORAM, and it is important
+that this buffer does not grow too large.
+• Functionality with Dropbox backend: Finally, we per-
+formed throughput and latency experiments with Drop-
+box as the backend storage mechanism for ObliviSync,
+and compare its performance to that of EncFS [13] on
+Dropbox. EncFS is a per-file encrypted file system tool
+that provides no obliviousness.
+A. Throughput with Fixed-size Files
+We first consider the throughput in our system. In partic-
+ular, we are interested in the performance as it relates to the
+availability of backend blocks.
+To limit the factors in these experiments, we use the
+following parameters:
+• N =1024;weused1024backendfiles(i.e.,blockpairs).
+�����������
+���
+��� ���
+����
+������������
+Fig.4. Throughputfordifferentdriprates.Weused1024backendfiles,each
+with1MB,andattemptedtoinsert920frontendfilesallatonce,whereeach
+frontendfileisalso1MB.Theresultsarethemeanofthreeruns.Withdrip
+rate3(thesolidlinefork=3),ittakesabout120epochsonaveragetosync
+25%ofthefrontendfiles.Inaddition,thegraphshowsthesituationshiftsas
+thebackendfilesbecomemorefullanditbecomeshardertoclearthebuffer.
+• n = 920; we attempted to insert 920 frontend files (or
+90% full).
+• B = 1 MB; each backend file is 1MB in size.
+Inourexperiments,eachfrontendfileis1MBandthusfills
+uptwofullblocks(includinganymetadata).Thereisalsotwo
+additional block pairs in the system for the superblock and
+the directory entry. Overall, the entire backend storage for the
+system was N ·B = 1GB.
+In the throughput experiment, we established an empty
+ObliviSync-RW and attached an ObliviSync-RO to the back-
+end. We then wrote 920 two-block size files all at once to the
+ObliviSync-RW FUSE mounted frontend. We then manually
+called the synchronize operation that performs the oblivious
+writing to the backend. By monitoring the ObliviSync-RO
+FUSE mounted frontend, we can measure how many epochs
+are required to fully synchronize all the files.
+Bandwidthoverhead:2xuntil25%oftheload. InFigure4,
+wegraphthenumberofepochs(i.e.,thenumberoftimedsync
+operations) it takes for that percentage of files to synchronize
+and appear at the read-end. We conducted the experiments
+for different drip rates (k), i.e., the number of backend files
+randomly selected at each epoch for writing. The results
+presented are the average of three runs for drip rates set to
+3, 6, 9, and 12.
+As one interesting data point, the graph shows that with
+drip rate 3 (the solid line for k = 3), it takes about ∼ 120
+epochs on average to sync 25% of the frontend files. Note
+that the number of bytes that would be transferred to the
+cloud storage during 120 epochs is 120·(k +1)·B = 480
+MB, and 25% of the frontend files amounts to 250 MB.
+So, the experiment shows that the system needs only 2x
+bandwidthoverhead,whenthefront-endfilesoccupiesatmost
+25% of the total cloud storage, with the parameters chosen
+in this experiment. This is better performance than what is
+showninThoerem1,whichprovablyguarantees4xbandwidth
+overhead.
+Linear costs until 33% of the load. Looking closely at the
+graph, particularly k = 3 trend-line, there are two regimes:
+linear and super-linear synchronization. In the linear regime
+11����
+����
+���
+���
+���
+���
+���
+���
+���
+���
+���
+��
+�� ����� ���� ����� ���� �����
+�����������
+��
+��������������
+�����������
+��
+��
+��
+��
+��
+�� ���� ���� ���� ���� ���� ���� ���� ���� ����
+������������
+Fig. 5. Comparing throughput of inserting realistic workload of variable
+sizes files to the same sized insert of fixed size files. The experiment were
+performed with parameters N = 1024,B = 1MB,k = 3. In the set of
+fixed-size files, each frontend file is 1 MB. There are 4,179 files in the set
+of variable-size files. Both set is 250 MB in total. For both sets, the system
+takesabout100epochstosyncthe250MBoffrontenddata.
+there are enough empty blocks that on each epoch, progress
+is very likely to be made by clearing files from the buffer
+and writing new blocks to the backend. In the super-linear
+regime, however, there are no longer enough empty blocks
+to reliably clear fragments from the buffer. For k = 3, this
+regime seems to take over around 40%∼60%, and the trend-
+line’s slope begins to increase dramatically. This is because
+each additional block written further exacerbates the problem,
+soittakesanincreasingamountoftimetofindthenextempty
+block to clear the buffer further.
+The inflection point, between linear and super-linear, is
+particularly interesting. Apparent immediately is the fact that
+the inflection point is well beyond the 25% theoretic bound;
+even for a drip rate of k = 3, it manages to get at least 1/3
+full before super-linear tendencies take over. Further, notice
+thatforhigherdriprates,theinflectionpointoccursforhigher
+percentage of fullness for the backend. This is to be expected;
+ifyouareselectingmoreblocksperepoch,youaremorelikely
+to find an empty block to clear the buffer. But we hasten to
+point out that there is a trade-off in practice here.
+B. Throughput with Variable-size Files
+As mentioned above, an important performance property
+of ObliviSync is that the rate of synchronization is dependent
+on the total number of bytes in the pending write buffer and
+the fullness of the backend blocks: it does not depend on the
+sizes of the individual files.
+To show this property clearly, we performed a similar
+throughput experiment as described previously, i.e., with N =
+1024, B =1MB, and k =3, except we inserted variable size
+files that are drawn from realistic file distributions [10], [25]:
+• The variable size files, in total, were 0.25GB, the same
+size as the fixed size files.
+• The files contained 4,179 files, much larger than 250 for
+the case of fixed-size files.
+• Interestingly, one of the variable size files was signifi-
+cantly larger, 144MB, roughly the length of a short, TV-
+episode video.
+����������
+���
+���
+���
+����
+����������
+Fig. 6. Latency for different drip rates. The experiment were performed
+with parameters N = 1024,B = 1MB. The drip rates k varies with k =
+3,6,9,12. The 920 frontend files, each with 1 MB, were written one after
+another. For example, the point (0.7, 2) of the solid line with k =3 means
+thatonce700fileshavebeenwritten,ittookabout2epochstosyncthe701st
+file.
+As in the prior throughput experiment, we connected an
+ObliviSync-RWandObliviSync-ROtoasharedbackenddirec-
+tory.WeloadedthefilesetcompletelyintotheObliviSync-RW,
+and then counted how many epochs it takes for the data to
+appear in the ObliviSync-RO FUSE file.
+Good performance for variable-size files. The primary
+result is presented in Figure 5. The two trend-lines are nearly
+identical, and in fact, after three runs, the average number of
+epochs needed to synchronize the two file loads is the same,
+100 epochs. This clearly shows that our systems is dependent
+on the total number of bytes to synchronize and not the size
+of the individual files.
+C. Latency
+In this experiment, we are interested in the latency of
+our system. As before, we performed the experiment with
+N = 1024 and B = 1MB, and we had ObliviSync-RW
+and ObliviSync-RO clients with a shared backend, writing to
+ObliviSync-RW FUSE mount and measuring synchronization
+rate to the ObliviSync-RO FUSE mount. To measure latency,
+we only add one frontend file at a time. For example, the
+second frontend file gets written right after the first frontend
+file is completely synced. We measured how long it took for
+each file to synchronize in terms of the number of manual
+synchronizations (or epochs) required. Again, we varied the
+drip rate.
+About1epochtosync,evenforhighfillrates. Theresultsin
+Figure6aretheaverageofthreerunsineachdriprate.Again,
+there are two general regimes to the graph, a linear one and a
+super-linear one, and the transitions between them are, again,
+better than our theoretic 25% bound. First, for lower fill rates,
+the time to complete a single file synchronization is roughly
+one epoch.
+Athigherfillrates,itstartstotakemoreepochs,onaverage,
+to sync a single file; however, even for the most conservative
+k = 3, it only takes at most 5 epochs even for very high
+fill rates. For more aggressive drip rates, k = 9,12 the
+impact of higher filler rates is diminished, still only requiring
+about 2 epochs to synchronize a single file. This is to be
+12expected as selecting more backend files for writing increased ��
+the likelihood of finding space to clear the buffer. ����
+����
+����
+D. The Size of Pending Writes Buffer
+����
+In this experiment, we investigate how much space the ����
+pending writes buffer requires while the system is working. ����
+To do so, we consider more realistic file sizes and file write ����
+patterns under high thrashing rates, contrary to most of the ����
+previous experiments where each frontend file has two full- ����
+block fragments. ��
+��� ��� ��� ��� ��� ��� ��� ���
+We inserted frontend files of varied size based on known
+file size distributions such that the backend was filled to 20%,
+50%, or 75%. The file sizes were based on prior published
+work in measuring file size distributions. In particular, we
+followed a lognormal distribution, which has been shown to
+closely match real file sizes [10], fit with data from a large-
+scale study of file sizes used in a university setting [25]. The
+same distribution was used in the variable file size experiment
+previously.
+Wealsogeneratedaseriesofwritestothesefilessuchthat,
+on average, 1MB of data was updated on each write. This
+could occur within a single file or across multiple files. We
+selected which file to thrash based on distributions of actual
+write operations in the same study [25], used to generate the
+original file sizes. Roughly, this distribution gives a stronger
+preference to rewriting smaller files. We did not write exactly
+1MBofdataineachbatch,butratherkepttheaverageofeach
+batch size as close to 1MB as possible in accordance with the
+experimental write size distribution. In particular, there were
+batches were a file larger than 1MB was written. As before,
+we used N = 1024 and B = 1MB. We used the drip rate
+k = 3 to show the most conservative setting of ObliviSync.
+We averaged the results of three independent runs.
+Reasonable buffer size: at most 2 MB. The primary result
+is presented in Figure 7 where we measure the number of
+bytes in the buffer on each synchronization. In the graph,
+the point (x,y) means for y fraction of observed execution
+time, the size of the buffer was greater than x. For example,
+when the backend is filled with 20% (the solid line), only for
+0.2 fraction of the observed execution time, the buffer size is
+roughly greater than 218 bytes. In addition, the buffer size is
+always larger than 215, and the buffer never grows larger than
+about 2 MB, which corresponds to only 4 blocks.
+Clearly,asthefillrateincreases,theamountofuncommit-
+teddatainthebufferincreases;however,therelationshipisnot
+strictly linear. For example, with 20% full and 50% full, we
+see only a small difference in the buffer size for this extreme
+thrashing rate. The synchronization is able to keep up with
+the high thrashing rate for two main reasons: first, on each
+synchronization, it is generally able to clear something out of
+the buffer; and second, some writes occur on the same files
+and on small files (as would be the case in a real file system),
+which allows these writes to occur on cached copies in the
+buffer and the smaller files to packed together efficiently into
+blocks, even partially full ones.
+At a fill rate of 75%, however, there is a noticeable
+performance degradation. Because most of the blocks selected
+at each epoch are either full or do not have enough space, due
+��������������������������������
+��������
+�������� ��������
+�������������������
+Fig. 7. Buffer size under realistic file distributions. The experiment was
+performed with parameters N =1024,B =1MB,k =3. The point (x,y)
+means for y fraction of observed execution time, the size of the buffer was
+greaterthanx.Forexample,whenthebackendisfilledwith20%(thesolid
+line with 20% full), only for 0.2 fraction of the entire execution time, the
+buffer size is roughly greater than 218 bytes. In addition, the buffer size is
+alwayslargerthan215.
+to fragmentation, the buffer cannot always be cleared at a rate
+sufficient to keep up with incoming writes. Thus, the size of
+the buffer doubles in comparison with the other workloads.
+E. Measurements on Dropbox
+Here,wemeasuretheperformanceof ObliviSynconareal
+cloud synchronization service, namely Dropbox.
+Weperformedbothalatencyandthroughputmeasurement,
+just as before, using 1MB backend files, but this time the
+backend directory was stored within a Dropbox synchronized
+folder with measurements taken across two computers on our
+institution’snetworkthathadaccesstothesynchronizedfolder.
+In these experiments, we used a drip rate of k = 3 and
+a drip time t = 10 seconds. We experimented with lower
+drip times, but found that due to rate limiting of the Dropbox
+daemon on the synchronized folders, a longer drip time is
+required in order to to ensure that we do not blow through
+the epoch boundary.
+In both the latency and throughout experiments described
+below, we established a dropbox connection on two com-
+puters on our institution’s network. We designated one com-
+puter as the writer and one the reader. On the writer,
+it ran ObliviSync-RW and ObliviSync-RO, on a shared
+backend folder stored within the Dropbox synchronization
+folder. The writer computer measured the amount of time
+it took for the ObliviSync-RW to synchronize to the local
+ObliviSync-RO mount. Meanwhile, the reader computer ran a
+ObliviSync-RO mount only and monitored the file systems for
+the appearance of synchronized files. The difference between
+the ObliviSync-RO mount on the write computer and the
+ObliviSync-ROmountonthereadcomputeristhepropagation
+delay imposed by Dropbox. Additionally, as we do not have
+insightintohowtheDropboxdaemonchoosestosynchronize,
+it is also possible that other factors are coming into play, such
+as taking incremental snapshots of deleted files.
+Baseline: EncFS. Additionally, we wish to provide a base-
+line comparison of the overhead of ObliviSync, and so we
+performed similar experiments using EncFS [13] as the data
+13����
+����
+����
+����
+����
+����
+����
+����
+��
+�� ����� ����� ����� ����� ���� ����� ����� ����� ����� ����
+���������������������������
+���
+������������������
+����������������
+� �� �� �� �� �� �� �� ��� ���� ��
+�
+���
+���
+���
+���
+���
+��
+��
+�� ����� ����� ����� ����� ���� ����� ����� ����� ����� ����
+������������
+Fig.8. Throughputofwriting0.25GBof1MBfilesallatonceforObliviSync
+andEncFSonDropboxsynchronizedbackendbetweentwomachinesrunning
+on the same network. We used a drip time of 10 seconds for ObliviSync
+(t=10)andadriprateof3(k=3)foraconservativeestimate.
+protection mechanism. Much like ObliviSync, EncFS using a
+FUSE mount to display an encrypted file system that is stored
+in a backend folder, but EncFS provides no oblivious protec-
+tion. Instead files are simply stored individually encrypted, so
+the total number of files is revealed as well as their sizes and
+full access patterns.
+Throughput over Dropbox. The throughput measurement
+occurred much like as described earlier in the section. For
+both EncFS and ObliviSync, we inserted a large number of
+files, namely 20% full or ∼200MB, and then we measured
+howlongittakesforthebuffertoclearandallfilestobecome
+available.Likebefore,weusedareadandwritecomputer,and
+wemeasuredthedifferenceinthelocalandremotepropagation
+delays of file synchronization. The primary result is presented
+in Figure 8.
+For EncFS on the write computer, the propogation delay
+for all the files is nominal with files appearing nearly imme-
+diately. On the read computer, there is a propagation delay
+associated with Dropbox remote synchronization, and all files
+areaccessiblewithin100seconds.ForObliviSynconthewrite
+computer,weseeaverysimilarthroughputtrend-lineasinthe
+prior experiments. In total, it takes just under 800 seconds (or
+80epochs)forallthefilestosynchronize.Interestingly,onthe
+read computer, the propagation delay is relatively small, with
+respect to the overall delay, and files are accessible within
+an additional epoch or two. In total, these results clearly
+demonstrate that ObliviSync is functional and efficient to use
+over cloud synchronization services like Dropbox.
+Latency over Dropbox. Figure 9 shows the primary result
+of running ObliviSync and EncFS using Dropbox as the cloud
+synchronization service. The EncFS write line is nearly 0 (s)
+as immediately upon writing the file it becomes available to
+write computer. However on the read computer, it takes a
+littleunder5secondsforthesynchronizationwithDropboxto
+complete for the same file to be accessible. This measurement
+forms a baseline of performance for the rate of DropBox
+synchronization without ObliviSync.
+ForObliviSync,onthewritecomputer,weseeanexpected
+performance metric of just under 10 seconds for each file to
+bevisibletothereadmount.Thereasonitisunder10seconds
+and not exactly 10 seconds, as the setting of the drip time, is
+���������������������������
+�����������������
+�����������������
+�������������
+������������
+����������
+Fig. 9. Latency of writing 1MB files one at a time for ObliviSync and
+EncFSonDropboxsynchronizedbackendbetweentwomachinesrunningon
+thesamenetwork.Weusedadriptimeof10secondsforObliviSync(t=10)
+andadriprateof3(k=3)foraconservativeestimate.Thevariationsinthe
+trendlinesarelikelyduetojiggerinthenetwork.
+thatawriteoccurringbetweenepochtimerswilltakelessthan
+an epoch to sync. The propagation rate to the read computer
+takes a similar time as that of EncFS (∼ 5 seconds); however,
+there is higher variance as more files need to be transferred
+by the Dropbox service per epoch (namely 4=k+1 with the
+superblock). Still, this added variance is within 3x in terms of
+epochs: it takes at most 30 seconds for a file to sync (or 3
+epochs of waiting), which is very reasonable considering the
+built-in overhead of the system.
+VII. RELATEDWORK
+ORAM. ORAM protects the access pattern from an observer
+such that it is impossible to determine which operation is
+occurring, and on which item. The seminal work on the topic
+is by Goldreich and Ostrovsky [15], and since then, many
+works have focused on improving efficiency of ORAM in
+both the space, time, and communication cost complexities
+(for example [22], [18], [23], [17], [19] just to name a few;
+see the references therein). Blass et al. introduced write-only
+ORAMs [8]. In a write-only ORAM, any two write accesses
+are indistinguishable, and they achieved a write-only ORAM
+with optimal O(1) communication complexity and only poly-
+logarithmic user memory. Based on their work, we construct
+a write-only ORAM that additionally supports variable-size
+dataandhidesthewhenthedataitemsaremodified.Wepoint
+out also that variable-sized blocks in traditional read/write
+ORAMswerealsoconsideredrecentlyby[21],butwithhigher
+overhead than what can be achieved in the write-only setting.
+Protecting against timing side-channels. Side-channel at-
+tacks that use network traffic analysis in order to learn private
+informationhavebeenconsideredincontextsotherthansecure
+cloudstorage.Proposedsystemsforlocationtracking[20]and
+system logging [9] use buffering and random or structured
+delays to protect against such attacks in a similar way to our
+work.
+Personal cloud storage. A personal cloud storage offers
+automatic backup, file synchronization, sharing and remote
+accessibility across a multitude of devices and operating sys-
+tems.AmongthepopularpersonalcloudstoragesareDropbox,
+GoogleDrive,Box,andOneDrive.However,privacyofcloud
+data is a growing concern, and to address this issue, many
+14personal cloud services with better privacy appeared. Among [2] fusepy. https://github.com/terencehonles/fusepy.
+the notable services are SpiderOak [5], Tresorit [6], Viivo [7], [3] Panbox. http://www.sirrix.de/content/pages/Panbox.htm.
+BoxCryptor[1],Sookas[4],PanBox[3],andOmniShare[24]. [4] Sookasa. https://www.sookasa.com/.
+All the solutions achieve better privacy by encrypting the file
+[5] Spideroak. https://spideroak.com/.
+data using encryption keys created by the client. We stress
+[6] Tresorit. https://www.tresorit.com/.
+thathowevertherehasbeennoattempttoachievethestronger
+[7] Viivo. https://www.viivo.com/.
+privacy guarantee of obliviousness.
+[8] Erik-OliverBlass,TravisMayberry,GuevaraNoubir,andKaanOnarli-
+VIII. CONCLUSION oglu. Towardrobusthiddenvolumesusingwrite-onlyobliviousRAM.
+InGail-JoonAhn,MotiYung,andNinghuiLi,editors,ACMCCS14,
+In this paper, we report our design, implementation, and pages203–214.ACMPress,November2014.
+evaluation of ObliviSync, which provides oblivious synchro- [9] KevinD.Bowers,CatherineHart,AriJuels,andNikosTriandopoulos.
+nization and backup for the cloud environment. Based on the PillarBox:Combatingnext-generationmalwarewithfastforward-secure
+logging. In Proceedings of the 17th International Symposium on
+key observation that for many cloud backup systems, such as
+ResearchinAttacks,IntrusionsandDefenses:(RAID2014),pages46–
+Dropbox,onlythewritestofilesarerevealedtocloudprovider 67,Gothenburg,Sweden,2014.
+while reads occur locally, we built upon write-only ORAM [10] A.B.Downey. Thestructuralcauseoffilesizedistributions. InMod-
+principles such that we can perform oblivious synchronization eling, Analysis and Simulation of Computer and Telecommunication
+and backup while also incorporating protection against timing Systems,2001.Proceedings.NinthInternationalSymposiumon,pages
+channel attacks. When the drip-rate and drip time parameters 361–370,2001.
+are set properly according to the usage pattern, this overhead [11] Idilio Drago, Marco Mellia, Maurizio M. Munafo, Anna Sperotto,
+RaminSadre,andAikoPras. InsideDropbox:Understandingpersonal
+is just 4x both in theory and in practice.
+cloud storage services. In Proceedings of the 2012 ACM Conference
+We also consider practicality and usability. ObliviSync is on Internet Measurement Conference, IMC ’12, pages 481–494, New
+York,NY,USA,2012.ACM.
+designed to seamlessly integrate with existing cloud services,
+[12] Dropbox, Inc. Celebrating half a billion users, 2016.
+by storing encrypted blocks in a normal directory as its
+https://blogs.dropbox.com/dropbox/2016/03/500-million/.
+backend. The backend can then be stored within any cloud
+[13] EncFS. https://vgough.github.io/encfs/.
+based synchronization folder, such as a user’s Dropbox folder.
+[14] ObliviSyncgithubrepository. https://github.com/oblivisync/oblivisync.
+Tobestoredwithinthebackendencryptedblocks,wedesigned
+[15] Oded Goldreich and Rafail Ostrovsky. Software protection and simu-
+a specialized block-based file system that can handle variable
+lationonobliviousRAMs. J.ACM,43(3):431–473,1996.
+size files. The file system is presented to the user in a
+[16] Wassily Hoeffding. Probability inequalities for sums of bounded
+natural way via a frontend FUSE mount such that the user- randomvariables. J.Amer.Statist.Assoc.,58:13–30,1963.
+facing interface is simply a folder, similar to other cloud [17] JonathanL.DautrichJr.,EmilStefanov,andElaineShi. BurstORAM:
+synchronization services. Any modifications in the frontend minimizing ORAM response times for bursty access patterns. In
+FUSEmountaretransparentlyandautomaticallysynchronized Proceedingsofthe23rdUSENIXSecuritySymposium,pages749–764,
+2014.
+tothebackendwithoutleakinganythingabouttheactualwrites
+that have occurred. [18] Eyal Kushilevitz, Steve Lu, and Rafail Ostrovsky. On the (in)security
+of hash-based oblivious RAM and a new balancing scheme. In Pro-
+In evaluating our system, we can prove that the perfor- ceedingsofthetwenty-thirdannualACM-SIAMsymposiumonDiscrete
+Algorithms,pages143–156.SIAM,2012.
+mance guarantees hold when 25% of the capacity of the
+backend is used, and our experimental results find that, with [19] Tarik Moataz, Travis Mayberry, and Erik-Oliver Blass. Constant
+communicationORAMwithsmallblocksize. InACMCCS15,pages
+realisticworkloads,muchhighercapacitiescaninfactbetoler-
+862–873.ACMPress,2015.
+atedwhilemaintainingveryreasonableefficiency.Importantly,
+[20] Thomas Ristenpart, Gabriel Maganis, Arvind Krishnamurthy, and Ta-
+ObliviSync can be tuned to the desired application based on dayoshi Kohno. Privacy-preserving location tracking of lost or stolen
+modifyingthedriprateanddriptimetomeettheapplication’s devices: Cryptographic techniques and replacing trusted third parties
+latency and throughput needs. with DHTs. In Proceedings of the 17th USENIX Security Symposium
+(SECURITY2008),pages275–290,Berkeley,CA,USA,2008.
+Although ObliviSync works well in practice already, there [21] Daniel S. Roche, Adam J. Aviv, and Seung Geol Choi. A practical
+arestillinterestinganddifficultopenproblemsinthisdomain. obliviousmapdatastructurewithsecuredeletionandhistoryindepen-
+While we have optimized the efficiency for the client, cloud dence. In2016IEEESymposiumonSecurityandPrivacy,May2016.
+service providers may be hesitant to encourage systems such [22] ElaineShi,T.-H.HubertChan,EmilStefanov,andMingfeiLi. Obliv-
+ious RAM with o((logn)3) worst-case cost. In Dong Hoon Lee and
+as ObliviSync because they will eliminate the possibility of
+Xiaoyun Wang, editors, ASIACRYPT 2011, volume 7073 of LNCS,
+deduplication between users, where common files are stored
+pages197–214.Springer,December2011.
+only once by the service provider. Furthermore, as our system
+[23] Emil Stefanov, Marten van Dijk, Elaine Shi, Christopher W. Fletcher,
+only allows one ObliviSync-RW client at any given time, an Ling Ren, Xiangyao Yu, and Srinivas Devadas. Path ORAM: an
+important use-case of collaborative editing is not permitted extremely simple oblivious RAM protocol. In Ahmad-Reza Sadeghi,
+here.Itmaybenecessarytoovercomechallengessuchasthese VirgilD.Gligor,andMotiYung,editors,ACMCCS13,pages299–310.
+ACMPress,November2013.
+in order to bring oblivious cloud storage into mainstream use.
+[24] Sandeep Tamrakar, Long Nguyen Hoang, Praveen Kumar Pendyala,
+Acknowledgments:Thisworkwassupportedinpartinpartby
+Andrew Paverd, N. Asokan, and Ahmad-Reza Sadeghi. OmniShare:
+ONR awards N0001416WX01489 and N0001416WX01645, Securely accessing encrypted cloud storage from multiple authorized
+and NSF award #1618269, #1406177, and #1319994. We devices. CoRR,abs/1511.02119,2015.
+wouldalsoliketothankBlairMasonforhisearlycontribution. [25] Andrew S. Tanenbaum, Jorrit N. Herder, and Herbert Bos. File size
+distribution on UNIX systems: Then and now. SIGOPS Oper. Syst.
+Rev.,40(1):100–104,January2006.
+REFERENCES
+[1] Boxcrpytor. https://www.boxcryptor.com/en.
+15

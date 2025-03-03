@@ -1,0 +1,1161 @@
+M : Uncovering Class Hierarchies
+ARX
+in C++ Programs
+Andre Pawlowski∗, Moritz Contag∗, Victor van der Veen†, Chris Ouwehand†,
+Thorsten Holz∗, Herbert Bos†, Elias Athanasopoulos‡, and Cristiano Giuffrida†
+∗ Horst Go¨rtz Institut for IT-Security (HGI) † Computer Science Institute ‡ Computer Science Department
+Ruhr-Universita¨t Bochum, Germany Vrije Universiteit Amsterdam, University of Cyprus, Cyprus
+{andre.pawlowski,moritz.contag,thorsten.holz}@rub.de {vvdveen,herbertb,giuffrida}@cs.vu.nl, eliasathan@cs.ucy.ac.cy
+{chris.ouwehand}@vu.nl
+Abstract—Reverse engineering of binary executables is a advantageofsoftwarevulnerabilities.IncontrasttoC,C++,the
+difficult task which gets more involved by the way compilers choice for implementing a huge industrial software base [25],
+translate high-level concepts used in paradigms such as object- contains an additional source of indirect branches. While C
+orientedprogrammingintonativecode,asitisthecaseforC++. programs need to resolve the target of a branch when, say, a
+Such code is harder to grasp than, e.g., traditional procedural
+function returns or a function pointer is used, C++ programs
+code, since it is generally more verbose and adds complexity
+also need to support dynamic dispatching of virtual calls.
+through features such as polymorphism or inheritance. Hence, a
+Since virtual objects support several methods from different
+deep understanding of interactions between instantiated objects,
+classes in their hierarchy, most compilers implement dynamic
+their corresponding classes, and the connection between classes
+would vastly reduce the time it takes an analyst to understand dispatchingofvirtualcallsusingindirectbranches.Inpractice,
+the application. The growth in complexity in contemporary C++ C++programsarethusfullofindirectcalls,andmostofthese
+applications only amplifies the effect. canbeinfluencednotjustbyoverflow-typevulnerabilities,but
+also by temporal bugs (i.e., use-after-free vulnerabilities).
+In this paper, we introduce Marx, an analysis framework
+to reconstruct class hierarchies of C++ programs and resolve
+This plethora of indirect calls makes analyzing C++ bina-
+virtual callsites. We have evaluated the results on a diverse set
+riesveryimportant,sincemanyexploitstargetexclusivelyC++
+of large, real-world applications. Our experimental results show
+programs, but also significantly hard. For instance, according
+that our approach achieves a high precision (93.2% of the hier-
+archies reconstructed accurately for Node.js, 88.4% for MySQL to a recent study [29], most libraries linked to Firefox contain
+Server) while keeping analysis times practical. Furthermore, we almost 7% of indirect calls over direct calls and about 40% of
+show that, despite any imprecision in the analysis, the derived themarevirtualcalls.Suchindirectcontrol-flowtransfersrank
+information can be reliably used in classic software security amongthegreatestchallengesforeventhemostbasicanalysis
+hardening applications without breaking programs. We showcase steps,suchastherecoveryofthecontrolflowgraph(CFG)[9],
+this property for two applications built on top of the output of [24]. Resolving the targets of indirect calls and jumps in
+our framework: vtable protection and type-safe object reuse. This
+a binary is difficult. At the binary level, we have no way
+demonstrates that, in addition to traditional reverse engineering
+to directly learn class hierarchy information in the program.
+applications, Marx can aid in implementing concrete, valuable
+While we know that every virtual function call indexes a
+tools e.g., in the domain of exploit mitigations.
+virtual function table (so called vtable), we neither know the
+I. INTRODUCTION vtables’ exact locations, nor their relationships to each other.
+Reverseengineeringsuchcodefromagivenbinaryexecutable
+Software exploitation has significantly increased in com- is therefore a very challenging task in practice.
+plexity and sophistication in recent years. Despite many at-
+tempts to harden applications, exploitation of vulnerabilities Albeit challenging, vtable reconstruction directly from
+is still possible, especially for large and complex C/C++ binaries can be useful in several domains. First, the class
+programs, where attackers can leverage a rich environment of hierarchy helps the analysis of C++ legacy or closed code.
+dynamically computed jumps. The targets of these branches Second, since vtables are commonly abused by exploits, secu-
+are resolved only at runtime, and therefore they can be influ- rity analysts can explore incidents affecting C++ applications
+enced for introducing new malicious control flows by taking when source code is not available. Finally, many defenses
+that harden C++ binaries can leverage the class hierarchy
+informationfordeliveringsoundprotectionofprogramsinthe
+Permission to freely reproduce all or part of this paper for noncommercial absence of source code. Current state-of-the-art binary-only
+purposes is granted provided that copies bear this notice and the full citation
+protection approaches use weaker characteristics typical for
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author C++ applications to protect virtual callsites, such as allowing
+(for reproduction of an entire paper only), and the author’s employer if the all existing classes at a virtual callsite [21], or enforcing that
+paper was prepared within the scope of employment. the pointer to the vtable resides in read-only memory [13].
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+This stems from a lack of precision and scalability of current
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23096 class hierarchy reconstruction approaches [12], [17], [18].Thismeansthat,ifwecansuccessfullyrecovertheclasshi- executables that do not embed RTTI information,
+erarchy from a binary, we can improve state-of-the-art binary- and are produced with arbitrary compiler flags. Marx
+level defenses that can benefit from such information. For in- isfreelyavailableathttps://github.com/RUB-SysSec/
+stance,wecanensurethatvirtualfunctioncallsconformtothe Marx.
+classhierarchy,andthereforeprovidestrongguaranteesagainst 2) We evaluate Marx with more than 80 MiB of binary
+attempts to hijack the control flow of the program (so called code and we show that vtables can be reconstructed
+vtable hijacking attacks). Another example is to ensure that from binaries with high precision. As an example,
+objects of different type classes are allocated from different Marx can accurately reconstruct 93.2% of the hier-
+memorypoolstopreventthereuseofmemoryinatype-unsafe archies for Node.js and 88.4% of the hierarchies for
+manner—acommonsourceofuse-after-freeexploits.Forboth MySQL Server.
+these example applications, extracting the class hierarchy of 3) We develop two security applications for binaries
+the binary program is important. Notice that this is only a based on class hierarchies exported by Marx: vtable
+set of mitigations that rely on C++ semantics, although an protection and type-safe object reuse. Our applica-
+important one given that prior work argued that C++ binary- tions show it is possible to tolerate imprecise in-
+level defenses have trouble stopping control-flow hijacking formation when building sound binary-level defense
+attacks due to the lack of class hierarchy information [23]. solutions by trading off on performance and security.
+In this paper, we consider the problem of reconstructing
+class relations directly from binaries. Our approach does not II. TECHNICALBACKGROUND
+rely on embedded RTTI information (metadata emitted by
+Given that Marx is applied to C++ binaries for extracting
+the compiler for resolving class information at runtime, often
+the class hierarchy, some basic knowledge of C++ internals
+stripped),doesnotrelyonparticularcompilerflags,andworks
+is required for understanding the mechanics of our analysis.
+on industrial software. Since reconstructing class relations
+Therefore, we discuss in this section some fundamental C++
+is a hard problem by itself and information concerning the
+concepts and how they are implemented in modern compilers.
+direction of the relation is not available in binaries, we only
+focus on reconstructing class hierarchies as a set and ignore
+A. Object-oriented Programming
+the direction of inheritance. Our system, Marx, can accurately
+reconstruct 93.2% of the hierarchies for Node.js and 88.4% of C++ is an object-oriented programming (OOP) language
+the hierarchies for MySQL Server. Overall, we have success- which compiles to native code. In OOP, classes are data types
+fully applied Marx to more than 80 MiB of binary code to used to instantiate concrete objects. On the latter, one can
+demonstrate the practicality of our implementation. call functions (also called member functions or methods) as
+Marx is a valuable framework for the reverse engineering defined by the class an object was instantiated from. Apart
+from functions, classes can also define attributes and hence
+community, however, as we have already mentioned, secu-
+couple code (via functions) and data (via attributes) together.
+rity applications can leverage class relations for protecting
+binaries. The information provided by the analysis allows us OOPallowsclassestoinheritfunctionsandattributesfrom
+to implement stronger binary-level defenses using type-based
+other classes. This defines a relation. The class providing
+invariants. To showcase the practicality of Marx, we develop
+functions and attributes to another class is commonly called
+two binary-level defenses on top of it. The first application is the base class in that relation, whereas the class inheriting
+a vtable protection system to prevent virtual calls to methods these is called the derived class. This concept leads to what is
+that do not belong to the class hierarchy and mitigate vtable calledaclasshierarchy:Everyclassisrelatedtoeitherzeroor
+hijacking attacks. The second application is a custom heap
+multiplebasesaswellaszeroormultiplederivedclasses.Class
+allocator to support type-safe object reuse, by placing newly
+hierarchies can be depicted as a directed graph in which the
+allocated objects in memory pools based on their type.
+inheritance relation is given by the direction (base or derived
+Bothsecurityapplicationsusetheclasshierarchyrecovered class). If a class inherits from multiple base classes, this is
+from a binary. We demonstrate that, even when the extracted
+referredtoasmultipleinheritance;otherwise,itiscalledsingle
+classhierarchyisimperfect,ourdefensescanimprovesecurity
+inheritance.
+at reasonable performance and without breaking programs. To
+Classes may add several modifiers to their functions. One
+compensate for the imprecision of the analysis, our vtable of the most important throughout this paper is the virtual
+protectionsolutiontreatsinvariantviolationsasanomaliesand
+modifier. If this modifier is used on a function, a derived
+triggers more heavyweight checks on a slow path (trading
+class is free to override said function and provide its own
+off on performance). Our type-safe object reuse solution, in
+implementation. This concept is called polymorphism, where
+turn, can gracefully tolerate type-to-pool mapping mismatches
+asinglefunctioninvocationmaybehavedifferently,depending
+(trading off on security). In short, we show that it is possible
+on the context in which it is called. More concretely, the
+to build fully conservative binary-level defense solutions on
+programmer can call a virtual function on either an object
+top of imprecise information, exposing new interesting and
+of the base or any derived classes. Depending on the type
+previously unexplored tradeoffs.
+of the object, the appropriate implementation of the function
+Contributions.Insummary,thecontributionsofthispaper is called. This, in turn, allows programmers to work on the
+are as follows: most general class and vastly simplify their code. In cases
+wherethecompilercannotdeterminestaticallyonwhichobject
+1) We design and implement Marx, a framework for the function is to be invoked, the selection of the appropriate
+reconstructing class hierarchies directly from binary implementation is made at runtime. Furthermore, abstract
+2Fig.1. Examplehierarchylayoutshownatahigh-levelina)andb)showsitslayoutinnativecode.ClassCinheritsattributesandfunctionsofbothclassA
+andB.Further,classCoverridesfuncA2andfuncB1andprovidesitsownimplementation,C::funcA2andC::funcB1.
+base classes represent an edge case: They provide several C. Virtual Function Dispatch
+virtual functions, but no implementation on their own (pure
+As opposed to regular functions (which are implemented
+virtual functions). This forces the deriving class to implement
+usingdirectcalls),virtualfunctioncallsrequireaspecifictype
+functionsconformingtothedeclarationthebaseclassprovides.
+ofcallsite(virtualcallsite,orvcall).Theyhandletheselection
+Figure 1 a) depicts an exemplary relation of three classes ofthepropervirtualfunctiondependingontheobjectonwhich
+A, B, and C. Class C inherits the functions from classes A the function is invoked using the object’s vtable.
+and B, i.e., one may call the functions funcA1, funcA2, Consider a virtual callsite invoking funcA2 on an object
+funcB1, funcB2 on an object of class C, in addition to of either class A or C. Independent of the class the object
+the functions class C provides itself. The same is true for the
+at the callsite is instantiated from, in this case, one merely
+attributes; hence, class C allocates space for attributes varA, has to call whatever function is referenced at offset 0x08 in
+varB,andvarC.Further,CoverridesfuncA2andfuncB1,
+the object’s vtable. As seen in Figure 1 b), this offset either
+i.e., it specifies a more fitting implementation for its class. points to A::funcA2 or C::funcA2 and always calls the
+correct implementation for the given object. Note that this
+Inordertocreateanobjectofaspecificclass,theoperator
+offsethastobethesameacrossallrelatedvtables.Inthiscase,
+new can be used, amongst others. It allocates space for the
+this constraint applies for vtable A and C, as classes A and
+object (whose size is mostly determined by its attributes) and
+C are the only candidates when invoking function funcA2.
+calls a designated initialization function that initializes the
+This mechanism effectively implements polymorphism at the
+object’s attributes with meaningful values. This function is
+binary level. In the following, we will refer to the pointer to
+called a constructor. Similarly, a destructor releases further
+the current object as thisptr.
+resources the constructor requested previously, and is usually
+invoked through the operator delete. The compiler emits code that directly implements this
+mechanism.Ateachvcall,thethisptrtotheobjectisalsosetas
+In the following, we explain how the aforementioned
+animplicitargument(meaningtheargumentisnotspecifically
+concepts are implemented on the binary level.
+set in the source code). Depending on the calling convention,
+thethisptr iseitherstoredinaspecificregisteroronthestack.
+In the Itanium C++ ABI on x86-64, a vcall always has the
+B. Virtual Function Tables
+following structure:
+On the binary level, polymorphism is implemented with
+mov RDI, thisptr
+the help of what is called a virtual function table (vtable for
+call [vtblptr + x]
+short). It contains the addresses of all virtual functions a class
+provides. Each object of such a class contains a pointer to the
+The thisptr is stored in the RDI register as the first
+correspondingvtable.Inthefollowing,werefertothispointer
+as vtblptr. argument and the vtblptr is used to select the correct virtual
+table. The value x denotes the offset into the selected vtable
+In the Itanium C++ ABI [3], two metadata fields in the in order to branch to the correct function. Note that it may be
+vtable are specified: Runtime Type Identification (RTTI) and zero or omitted if the first function of the vtable is targeted.
+Offset-to-Top.TheRTTI fieldholdsapointertoadatastructure
+in which metadata about the class resides, i.e., the name of D. Multiple Inheritance
+the class and its base classes. Even though this information
+In addition to single inheritance, C++ supports multiple
+is useful for type reconstruction, it may not be available
+inheritance. This allows a class to have multiple base classes
+in compiled binaries. It only has to be included if, e.g.,
+from which it inherits functions and attributes. In the example
+dynamic_cast or type_info is used, which requires
+giveninFigure1,classCusesmultipleinheritanceandderives
+precise type information at runtime. The Offset-to-Top field
+from class A and B.
+holds an offset that is required when implementing multiple
+inheritance. To this end, it is used to adjust an object pointer, Consideringthewayvirtualcallsaredispatched,itbecomes
+as discussed in a later section. apparent that vtables are inherited as well. Given that the
+3dispatching mechanism targets certain offsets in the vtable,
+the order of the functions must be preserved throughout the
+hierarchy. Conceptually, for multiple base classes, multiple
+vtables have to be inherited.
+In the given example, class C has a copy of the vtable of
+classAwithamodifiedentry(pointertofunctionC::funcA2
+instead of A::funcA2) and appends pointers to its own
+Fig.2. StructureofanItaniumC++ABIvtable.Thevtablepointerreferenced
+implementations of virtual functions to it. Further, a modified inthecodepointstooffset0,wherethetableoffunctionpointersstarts.The
+copy of the vtable of class B is added as a sub-vtable twometadatafields(RTTIandOffset-to-Top)precedesaidtable.
+of class C. In this sub-vtable, only the function entries of
+overridden virtual functions have changed. These entries have
+been replaced by a pointer to special functions called thunks. 1) Vtable Extraction. Distinct patterns that are typical
+If a class derives from only one base class, both vtables can for vtables in the code are searched and information
+be merged without conflicts – the current class simply uses about the vtables is extracted.
+higher offsets when accessing its part of the vtable. In case 2) StaticAnalysis.Giventhattheseheuristicsmightlead
+of multiple inheritance, however, sub-vtables have to be used. to an overestimation, a static analysis of the code is
+When accessing an object of class C as an instance of class conducted which searches for usages of the vtables
+B, the thisptr has to be increased by 0x10. Hence, the layout found in the previous step.
+matches the one expected by vcalls of class B. Thunks are
+used to call back into virtual functions belonging to class C. In the following, we focus on the Itanium C++ ABI [3].
+However,westressthatthepresentedmethodologyisapplica-
+In the given example, funcB1 was overwritten by class bletootherABIsaswell,suchastheARM[6]ortheMicrosoft
+C. At the position of the entry of funcB1 in the sub-vtable, C++ ABI [14].
+the pointer to the thunk, thunk to C::funcB1, has been
+written. When executing this thunk, the thisptr is modified to
+pointtothebeginningoftheobjectCandinvokesfuncB1of A. Vtable Extraction
+class C. This ensures that the function uses the correct offsets
+Virtual function tables in a binary are the key element
+into the object, i.e., the thisptr points to the start of object C.
+to our analysis. By extracting usages of vtables, one easily
+The Offset-to-Top field of the sub-vtables holds the value finds points in the program where objects are either created
+that has to be added to the thisptr to reach the beginning (constructors) or destroyed (destructors). This, in turn, yields
+of the object. In our example, the Offset-to-Top holds the valuable information about the relation of different classes.
+value -0x10. When the sub-vtable of object C is used, the Hence,onecanviewvtablesasroughlyanalogoustoacertain
+thisptr points to offset 0x10 of the object (the vtblptr of class and relation of vtables as corresponding to certain class
+the sub-vtable). When adding the value of the Offset-to-Top hierarchies.
+field, the thisptr points to the beginning of object C. More
+Our analysis applies multiple heuristics in order to locate
+details on multiple inheritance can be found in the C++ ABI
+vtables in a binary (H-1 to H-6), as we discuss in the
+documentation [3].
+following. A rough, albeit simple, estimate can be used to
+restrict the search space to specific sections: As vtables are
+E. Object Creation and Destruction
+fullyspecifiedatcompiletime,theycanbeplacedinread-only
+As mentioned in Section II-A, constructors are used for sections (heuristic H-1). Therefore, only those sections that
+initializing the memory area previously allocated to hold a typically hold vtables, such as .rodata, .data.rel.ro,
+specific object. Additionally to any initialization performed and .data.rel.ro.local, are analyzed.
+by the programmer (such as setting default values for object
+Figure 2 shows the typical structure of an Itanium C++
+attributes), the compiler adds statements to set an object’s
+ABI vtable. A vtable consists of three different parts: the
+vtablepointer(s).Incaseofinheritance,constructorsarecalled
+Offset-to-Top field, the RTTI pointer, and multiple function
+top-down, i.e., the base class constructor is executed prior to
+entries. Each type has different properties which can be used
+the constructor of the derived class.
+to distinguish between them. Also, their order is fixed, which
+Analogous principles apply to the destructor of a class. makes it possible to search for a series of consecutive patterns
+However, destructors are invoked in reverse order (bottom-up, in a memory range, e.g., a specific section.
+invoking the most specific destructor first).
+As seen in the figure, the vtblptr references the beginning
+of the function entries. Usually, this reference will be used in
+III. ANALYSISAPPROACH
+a constructor or destructor. However, we note that the other
+Given a binary executable, we aim at extracting the C++ fields are usually not referenced at all (heuristic H-2).
+class hierarchies as accurately as possible. To this end, we
+Offset-to-Topisusedtoimplementmultipleinheritancefor
+extract distinct properties that result from the way a C++
+objects and encodes the offset from the sub-object to the base
+compiler implements the aforementioned high-level concepts
+object.Itisamandatoryfieldandalwayscontains0ifmultiple
+on the binary level. In the following, we describe the design
+inheritance is unused. Our approach checks the sanity of this
+of our approach that is implemented in a tool called Marx.
+entry by only allowing values in the range from -0xFFFFFF
+Generally speaking, our analysis is divided into two steps: to 0xFFFFFF as proposed by Prakash et al. [21]. In addition,
+4the value cannot be a relocation entry and these checks ensures that the inherited attributes of class A are initialized
+constitute heuristic H-3. beforetheconstructorofclassCaccessesthem.Consequently,
+the vtblptr of the base class A is written into the new objects
+RTTI holds a pointer to further type information for the
+before the derived constructor writes the vtblptr of class C as
+class. Since this field is optional, the entry is either a pointer
+shown in Figure 3. This also holds for multiple inheritance.
+or0.Iftheentryis,infact,apointertodata,ithastopointto
+In the given example, class C also inherits from class B.
+non-executable memory (heuristic H-4). Since the vtable can
+Hence, the constructor of class B is also executed before the
+be part of a shared library, this entry can also be a relocation
+constructor of class C. In this case, however, the vtblptr of
+entry.
+class B is overwritten by the vtblptr to the sub-vtable of class
+Function entries hold a pointer to the virtual functions the C.
+class provides. Hence, an entry either points to the .text,
+In contrast, during object deletion, the destructor of class
+.plt, or the .extern section of the binary, or it is a
+C is executed before the destructor of class A, i.e., invocation
+relocation entry. One of these properties has to be satisfied
+follows a bottom-up approach. Therefore, the vtblptr of class
+such that the analysis deems the function pointer to be valid
+C is overwritten by the vtblptr of class A. This also holds in
+(heuristic H-5).
+the case of multiple inheritance for the sub-vtable of class C
+Inrarecases,thecompilersetsthefirstfewfunctionentries and vtblptr of class B, analogously. We can leverage this and
+of the vtable to 0. This can happen for multiple inheritance detectthedependencyoftwoclassesbytrackingifonevtblptr
+constructs inheriting from abstract classes. To cope with these in an object is overwritten by another vtblptr. Remember that
+edge cases, our approach allows the first two function entries classesareroughlyanalogoustotheirvtableforourapproach.
+of the vtable to be 0. This number was empirically found to
+Naturally,thisalsomeansthatwehavetotrackthecreation
+be sufficient (relaxing heuristic H-6).
+of a potential object by monitoring the new operators of
+Finally, we can determine the beginning of a vtable by the memory allocator. By correctly identifying constructors
+searching three consecutive words in memory that fulfill the and destructors, our approach would also be able to make a
+propertiesoutlinedabove.Further,thelengthofthevtablecan statement about the direction of the inheritance, i.e., detect
+be estimated by checking the subsequent function entries for which class is the base and which the deriving class. In its
+validity. current implementation, however, our approach reconstructs
+the class hierarchy as a plain set.
+To sum up, the heuristics we employ are:
+Due to compiler optimizations, constructors are often in-
+H-1 Vtables have to lie in read-only sections. lined next to the memory allocation of the object in the
+H-2 In a candidate vtable, only the beginning of the same function. The same concept is applied to destructors,
+function entries is referenced from the code. analogously.Whileourapproachdoesnotidentifyconstructors
+H-3 Offset-to-Top lies within a well-defined range and it and destructors directly, it detects the characteristic pattern
+is no relocation entry. of vtblptr overwrites. As a result, we are able to detect
+H-4 RTTI either points into a data section or is 0. overwrites for which a concrete classification as constructor
+H-5 A function entry points into a code section or is a or destructor is more involved. More precisely, our overwrite
+relocation entry. analysis is performed on statically calculated paths through
+H-6 (relaxing) The first two function entries may be 0. multiplefunctions,asdiscussedinSectionIV.Thus,weavoid
+having problems with function inlining as opposed to other
+Note that the heuristics to find these patterns can lead
+approaches such as the one presented by Jin et al. [17].
+to an overestimation of extracted vtables. Nevertheless, this
+does not impact the subsequent analysis notably since only 2)Vtable Function Entries: Classes in the same hierarchy
+existing vtables are referenced in the code (cf. heuristic H-2). share attributes and a subset of virtual functions. Also, a class
+We note that only in rare cases an overestimated vtable can thatinheritsvirtualfunctionsfromanotherclassdoesnothave
+result in an overestimated hierarchy. On the other hand, only tooverwriteit.Asaresult,thevtablesofbothclasses,baseand
+anunderestimationofvtableswouldlowertheprecisionofthe derived, may contain multiple entries that point to the same
+analysis, which is unlikely for the presented approach. function as in the other classes’ vtable. In order to work in
+polymorphic constructs, this function entry has to be at the
+same position in the vtables.
+B. Static Analysis
+Hence, we can employ a heuristic that checks if multiple
+Now that we obtained a possibly overestimated set of
+vtables share the same function entry at the same position.
+vtable candidates, the second phase of our approach statically
+If they do, we consider them as related. Obviously, specific
+analyzes their relation based on indicators found in the binary
+entries like a 0 entry or the pure virtual function have to
+code. Eventually, it yields distinct sets of vtables that are part
+be excluded from this heuristic. Note that, similar to the
+of a class hierarchy. In the following, we discuss the various
+overwriteanalysisinitscurrentform,nodirectioninformation
+indicators the approach uses.
+isincluded.Naturally,ifthecompilerplacesthesamefunction
+1)Overwrite Analysis: In Section II-E, we discussed how entryatthesamepositioninunrelatedvtablesduetooptimiza-
+during object creation, the constructor writes the vtblptr into tion passes, our analysis would find them to be related. This
+the object. Further, when class C inherits from class A, as would lead to an overestimation of the found class hierarchy.
+depicted in Figure 1, the constructor of class A is executed However,theevaluationresultsinSectionVI-Ashowthatthis
+before the constructor of class C (top-down approach). This case can be neglected in practice.
+5Fig.3. Orderofvtblptr overwritesduringthecreationofanobjectofclassC.ThecontrolflowoftheexecutionofConstructor Cisdepictedasdotted
+lines.
+3)Inter-Procedural Data Flow: We perform our analysis
+on paths through multiple functions. Even if analysis within a
+function is well defined, special attention has to be paid to the
+point where function boundaries are traversed.
+a)Forward Edge: Virtual functions are usually only
+called via an indirect call instruction. As these are dispatched
+dynamically based on a concrete object, the list of potential
+call targets is not easily retrieved statically. As the overwrite
+analysis analyzes paths through multiple functions, indirect
+Fig.4. AsimplifiedversionofthefunctionGetSortComparisonObject
+callsites pose a roadblock and may prevent the analysis from
+from the FileZilla FTP client. Depending on the given argument, it creates
+followingthecalltarget.Consequently,vtablerelationsthatare
+a new object of different classes and returns it. Without considering the
+established beyond this point will be missed by the analysis. backward edge, no statement about the classes referenced in this function
+We say it lacks context, as no potential object at the callsite canbemade.
+is known with which the callsite could be resolved.
+In order to tackle this problem, the static analysis tries to
+resolvetheindirectcallinstructionwiththehelpofthecontext
+(essential a memory state) it built up on the current path. If
+the argument of an indirect call instruction is known, i.e., it
+dereferences a known vtblptr, we resolve the target function
+and continue the analysis in the newly discovered function on
+the path while keeping the current context.
+As an additional side effect of resolving the branch targets
+at a vcall in the current analysis run, we know which vtable is
+usedforit.Sinceinpolymorphicconstructsonlyclasseswithin
+the same hierarchy are allowed, a vcall can only be used by
+objects of dependent classes. Hence, if during the analysis the
+samevcallisusedbyobjectscontainingdifferentvtables,these
+vtables are related (i.e., the objects are from the same class
+hierarchy).However,noinformationaboutthedirectionofthe Fig. 5. A class hierarchy that is connected via a shared library. Classes G
+inheritance of the classes is obtained. andJbothinheritfromclassesbelongingtothesamehierarchyinadifferent
+module. This fact is only observable when taking module boundaries into
+b)Backward Edge: In addition to passing known con- account.
+text on to the beginning of a more deeply nested function, the
+analysis also has to take return values of a callee back to its
+callerintoaccount.Sincedifferentpathsthroughthecalleecan not possible to find the relation of these classes based on
+result in multiple different return values, we generalize them information of the forward edge alone.
+into a set of return values, which is effectively the union of
+4)Inter-Modular Data Flow: Applications are commonly
+the individual return values on each path. Then, if the return
+dividedintomultiplemodules(alsoknownaslibraries),where
+value is used in a point where more context is required, such
+eachmoduleperformsaspecifictask.OnLinux,thesemodules
+as a vcall, the information provided all possible return values
+are implemented using shared objects, which already include
+can be used to, e.g., resolve an indirect callsite.
+the notion that common functionality can be reused by dif-
+Consider the example given in Figure 4, which was en- ferent applications. Obviously, modules can depend on each
+countered in the FileZilla FTP client. This function returns a other.Specifically,inC++,itispossibletointeractwithclasses
+different object depending on the given argument. The classes exported by a shared object. Such relations would be hidden
+that are used to create the object (namely, X, Y, and Z) are from our analysis when analyzing single modules only due
+part of the same hierarchy. Without tracking the possible to missing context. To counter this, we support inter-modular
+return values of this function into a vcall of the caller, it is analyses.
+6ConsidertheexampledepictedinFigure5.Theapplication arriving at g. If f constructs an object and g overwrites its
+itselfcontainstwoclasshierarchiesthatappeartobeunrelated vtable, this information would be missed by analyzing g out
+when looking at the main module. However, when taking the of context. This aspect is discussed further below.
+application’s shared library into account, it becomes apparent
+On the other hand, it helps to consider the context a
+that the two hierarchies are, indeed, related. Both hierarchies
+function inherently lies in. For example, g may be a virtual
+in the main module derive from a class of the very same hier-
+function. This, in turn, means that it belongs to (at least)
+archy in the shared library. Isolated analysis of the individual
+one vtable. Hence, our analysis can be provided with some
+modules would not have yielded the same result.
+initial context: a thisptr exists and the object’s vtblptr can be
+Ourapproachanalyzessharedlibrariesfirstandcreatesdata initialized to point to the vtable g lies in. For example, for the
+flow summaries of the return values and vtblptr overwrites x86-64 Itanium C++ ABI, any occurrence of [rdi + 0] is
+in their respective modules. If a function in a shared library then known to resolve to the current vtblptr.
+is called during the analysis phase, the aforementioned sum-
+Thisenablestheanalysistohandleoperationsontheobject
+maries are added to the current context accordingly. This way,
+itselfnowthatthetargetobjectisknown(vtblptroverwritesor
+we can also consider all class hierarchy connections that are
+vcalls). Further, if g belongs to multiple vtables, g is analyzed
+outside of the currently analyzed module.
+in just as many contexts.
+IV. IMPLEMENTATION
+B. Path Creation and Convergence
+Based on the concepts presented in Section III, we im-
+The previous section already hinted on where possible
+plemented an analysis framework called Marx in C++ for
+paths through the binary start—at any known function. How-
+Linux x86-64 binaries. Note that even though only Linux
+ever, care has to be taken that a path ends at a point where
+x86-64 binaries are supported as of now, the implementation
+all relations have been picked up by our analysis and no
+can be easily extended to support more architectures. This is
+superfluous calculations are performed by further following
+supported by the fact that we use VEX-IR from the Valgrind
+the path. A na¨ıve approach would be to simply analyze all
+project [5] as our intermediate language.
+possible paths at the given starting point. Yet, this leads to
+In the following, we describe the implementation of Marx, what is called the path explosion problem, as the number of
+discusschallengesweencountered,andexplainhowwesolved paths easily exceeds a feasible amount for non-trivial CFGs.
+them.Tofosterresearchonthistopic,thesourcecodeofMarx
+Marx decides which paths through a function are worth
+is freely available at https://github.com/RUB-SysSec/Marx.
+analyzing by following a heuristic: on each basic block in the
+The first step of our analysis, vtable extraction, is per- CFG, a predicate is run which decides whether the block is
+formed on an IDA database using scripting facilities provided consideredinteresting.Weconsiderthoseblocksasinteresting
+by IDAPython [2]. In addition to the candidate vtables identi- thatcontainoneormoreofthefollowingcases:(i)anindirect
+fied via the heuristics H1 – H6 described in Section III-A, the call(i.e.,apossiblevcall),(ii)a(direct)calltoanewoperator,
+control-flow graph (CFG) of all known functions is extracted or(iii)aninstructionoperatingonavtblptr.Withthisheuristic,
+as well, which is used in the subsequent static analysis step. we attempt to visit only those blocks that add to the overall
+context we are interested in.
+The static analysis is mostly driven by a data tracking
+enginewhichupdatesthecontextcollecteduponapaththrough Wethencomputepathsthattrytovisitasmanyinteresting
+the binary, as discussed in Section III-B. Said context is basicblocksaspossiblebeforereachinganexitblock.Inorder
+used to track assignments of vtables to new objects and their to avoid a high computational complexity, a threshold t is
+overwrites in constructors and destructors. In its current state, introduced.Ifafunctioncontainsmorethantinterestingbasic
+the engine implements basic 64-bit VEX instructions, as this blocks, paths are generated that guarantee to visit at least one
+is already sufficient for our needs. The constructs we want to interesting block, but no attempts are made to maximize this
+identify hardly involve any complex calculations and with our number. Empirically, we found a threshold of 20 interesting
+focus on real-world applicability, we have to weigh up Marx’ basicblockstobesufficientforourpurposes.Bytryingtovisit
+precision against its performance. multiple interesting basic blocks on a path within a function,
+overwrites in the very same function are more likely to be
+A. Starting Points and Context Sensitivity detected.Thisis,forexample,thecaseforinlinedconstructors:
+one block may allocate memory, whereas another writes the
+Marx starts its analysis for each function in the target
+object’s vtable.
+program separately, i.e., each function serves as starting point
+for at least one path. In order to obtain reasonable results for Loops are only traversed once, i.e., paths are guaranteed
+a specific path, however, enough context has to be known in to visit every basic block at most once. Empirically, we did
+which the function is executed. Otherwise, relations may be not encounter cases where loop unrolling would have yielded
+missed and the current traversal would not add to the overall better results in terms of object creation coverage.
+results of the analysis.
+Up to now, we only considered paths within a certain
+There are multiple ways to ensure that the analysis visits function. However, such a path may contain calls to other
+a function g with a reasonable amount of context. For one, if functions. As already stated in the previous section, the call
+g lies deeper within a path, it is reasonable that its caller f depthofa pathimpactstheamountof contextavailabletoour
+already adds vital information to the context. By starting an analysis, which, in turn, strongly impacts its results. Still, it is
+analysis path at f, the context added by it is available when also an important factor to ensure that the analysis terminates
+7inareasonableamountoftimeand,onceagain,illustrateshow these approaches may still leave enough wiggle room for
+one has to weigh up performance and accuracy. Empirically, attackers to launch devastating attacks [11], [19], [23].
+wedeterminedthatamaximumcalldepthof2issufficientfor
+With the reconstructed class hierarchies, we can extend
+analyzing large real-world applications. Note that, depending
+existing binary-level CFI solutions with a vtable protection.
+on time andresources available to an analyst,higher precision
+Our goal is to increase CFI guarantees for C++ applications
+can be achieved by increasing this number.
+by expanding state-of-the-art defenses with a mechanism to
+enforce correct class hierarchies for indirect branches. On
+C. Virtual Callsite Identification
+that account, we extract the index into the vtable for each
+Even though the information collected in these steps is identified vcall that is used to determine the function entry
+already helpful for an analyst, we further refine the result and (as explained in Section II-C). With the help of the class
+trytodistinguishvcallsfromotherindirectcallconstructsand hierarchy, we are then able to generate a function type for
+only resolve target sets for the former. To detect a vcall, Marx all virtual functions at this position in the class hierarchy.
+searches for the virtual function dispatch structure described In our example shown in Figure 1, functions A::funcA1,
+in Section II-C. As this structure applies to both vcalls and B::funcB1, and thunk to C::funcB1 would get the
+other types of indirect calls (e.g., function pointers), we same function type. Obviously, targeting A::funcA1 is not
+implemented two modes to resolve the targets: conservative allowed at vcalls that are used to branch to B::funcB1
+and non-conservative mode. and thunk to C::funcB1, indicating an overestimation
+of our approach. However, the achieved precision of the call
+In conservative mode, an indirect call is only identified
+target set is a vast improvement in comparison to existing
+as vcall if the thisptr holds a known object and a vtable is
+binary-only vtable protection approaches and it remains to be
+involved when computing the target address. This ensures that
+shown that this small overestimation can be exploited by an
+the analysis has an exact state for the thisptr.
+adversary [29].
+In non-conservative mode, an indirect call is considered to
+Ideally, the vtable protection would merely insert a label
+beavcallsimplyifthevtableisinvolvedinthecomputationof
+check before each vcall that verifies whether the target is
+thetargetaddress,i.e.,wedroptherequirementthatthethisptr
+of the same function type as the virtual callsite. Since our
+has to be valid. Due to missing context during the analysis
+static analysis is in certain cases not able to precisely assign
+(i.e., call depth is depleted), memory locations might not be
+a hierarchy to each vcall, however, we apply two additional
+identified as objects and therefore the thisptr check can fail.
+techniques:
+Thenon-conservativemodeallowstheanalysistoresolvemore
+vcallssincerequirementsarerelaxed.However,overestimation
+• Dynamic Analysis. To increase coverage, we run the
+canleadtoahigherfalsepositiverate.Thedifferencebetween
+binary in a controlled environment with trusted input
+both modes is further evaluated in Section VI-B.
+(e.g.,byrunningunittests).Duringdynamicanalysis,
+we inspect whether (i) executed indirect calls exhibit
+V. APPLICATIONS characteristics of a vcall, (ii) hierarchies used at the
+same vcall are merged together, and (iii) detected
+Beyondapplicationsintheareaofreverseengineering,the
+vcalls are in fact vcalls.
+results of the reconstructed class hierarchies can also be used
+to significantly improve defenses that mitigate attacks against • Slow Path. Since our analysis may still miss key
+C++ applications. In this section, we present two protection information about callsites (e.g., class hierarchy re-
+approaches build on top of the analysis results provided by lations, leading to false positives), our extension can
+Marx:vtableprotectionandtype-safeobjectreuse.Inpractice, enter a slow path when a function type check failed
+aC++applicationcanbeanalyzedbyMarxbeforedeployment (treatingthefailureasananomalyratherthanbreaking
+and then set up with the wanted protection. the program). This slow path can be used to further
+investigate the branch and to decide if it is allowed or
+A. VTable Protection for Binaries not.
+VTable protection and, more generally, Control-Flow In-
+Moreover, as we are only interested in protecting C++
+tegrity (CFI) [7] is a promising way to stop advanced code-
+semantics, our static analysis filters callsites that are definitely
+reuse attacks. In its ideal form, it limits an attacker by
+not vcalls.
+enforcing that each indirect branch can only target valid—
+as intended by the programmer—code paths. Unfortunately, We implemented a binary-only vtable protection on Linux
+practicalCFIimplementationssufferfromprecisionlosswhen for x86-64, using a similar binary run-time instrumentation
+determining the set of valid targets for each branch [11], [19], model as proposed by Van der Veen et al. [28]: we use
+[23]. Naturally, this also goes for CFI implementations that Dyninst[10]tomoveallfunctionstoaprotectedshadowcode
+only protect virtual callsites [15]. Since it is even harder to region and prepend them with a two-byte function type value,
+recover class hierarchies of an application without access to asobtained fromour staticanalysis. Next,we instrumenteach
+its source code, current state-of-the-art binary-level defenses vcall with a short sequence of instructions. These instructions
+rely on weak characteristics to narrow down the set of call check whether the target’s function type matches that of the
+targets[23].Examplesincludelookingonlyatargumentcount vcall. If not, it enters our slow path, which we implemented
+information [28], enforcing that the vtblptr has to point to by using the PathArmor open source CFI framework [27].
+read-only memory [13], or allowing all existing vtables at a Note that we did not implement our own user-space JIT
+vcall[21].Despitedrasticallyreducingthesetofvalidtargets, verifier, but rather let the kernel module sleep for 10 ms
+8whenever a new path is found. This is to carefully mimic type-basedallocationswhenvirtualobjectsareinstantiatedand
+the behavior of the original PathArmor’s implementation with toresolvetheactualallocationtypebasedontheavailableclass
+an over-approximation of the average values (Table 3 from hierarchy. The type resolution works as follows. We start by
+the PathArmor paper [27]). We also remark that we adopted preprocessing the analysis of Marx to construct triples of the
+PathArmor’s context-sensitive CFI approach to demonstrate form (location, size, type). Here, location is
+the feasibility of our protection strategy similar to other theaddressofthecall-siteofnew,sizethesizegiventonew,
+efforts [20], but our system can incorporate any other solution and type is a unique identifier. Moreover, the type identifier
+to operate heavyweight security checks on the slow path. (or type tag) is generated by assigning a distinct value to each
+uniqueclasshierarchyfoundbyMarx.Atruntime,weloadthe
+filecontainingthesetriplesandstoretheminahashtable.This
+B. Type-safe Object Reuse
+hashtable uses the tuple (location, size) as key and
+Typically a process reuses freed memory for new alloca- the type as value. The shared library overrides the new and
+tions blindly. Attackers can abuse this mechanism by exploit- new[] operators, so we can infer the type information before
+ing use-after-free vulnerabilities, where a malicious object is dispatching to our typed allocation function in tcmalloc.
+carefully placed in memory that was previously occupied and Notethatsomeallocationsmaybemissed.Westressherethat
+(dangling) pointers still point to it. Type-safe memory alloca- ourintentionistoshowcaseaprototypebasedontheexported
+tors such as Cling [8] aim at reducing this risk by preventing class hierarchy and not a mature defense. In a real setting, the
+memory chunks of different types from being allocated in the binary should be rewritten [10] by adding the resolution code
+same location. Essentially, type-safe memory (and in our case to all callsites that construct virtual objects—eliminating the
+object) reuse maintains pools (i.e., memory regions) that are need for any run-time type inference instrumentation.
+used for allocating only a particular type of object. Newly
+For each occurring allocation, the size of the allocation is
+allocated objects are placed only in their own typed pool, and
+used as the key and the location is computed using the return
+objects with different types cannot share a common memory
+address. With this information, the type tag is retrieved from
+location in the lifetime of the process. Assuming the class
+the hashtable and passed to the modified allocator function,
+hierarchy of a C++ program is known, types can be defined
+whichmaintainsapoolperallocatedtype.Whennotypeexists
+based on class relations. As a result, we can reduce the attack
+fortheparticularlocationandsizecombination,avalueofzero
+surfacebyforcingpointersofsimilartypedobjectstooverlap.
+isreturned.Theallocatorusesthisvaluetochooseafastpath,
+UnlikeCling[8],wefocusonlyontype-safeC++objectreuse,
+where no typed memory pools are used.
+with object types derived from the recovered class hierarchy.
+On the other hand, Cling is C++ agnostic in principle and
+VI. EVALUATION
+the class hierarchy as reconstructed by Marx can significantly
+improveitinhandlingC++allocations.Thebenefitistoreduce In this section, we evaluate Marx and its applications in
+thenumberoftypedpools(andmemoryusage)andalsoavoid terms of performance and accuracy. Unless stated otherwise,
+expensive instrumentation to derive the run-time type (Cling alltestcasesarecompiledusingGCC4.8.5.Ourtestcasesin-
+reliesoncallstackhashesratherthanofflinetypeinformation). clude a variety of real-world applications and shared libraries.
+Consequently, no alterations to the compiler options specified
+To demonstrate this concept, we built a type-safe object by a test case have been made, i.e., each program is compiled
+reuse system based on the class hierarchy exported by Marx. with the compiler flags intended by the authors. We evaluated
+Our system consists of two parts: an allocator with type- our class hierarchy reconstruction and virtual callsite target
+safe object reuse support and a library to instrument object resolution on Ubuntu 14.04 LTS running on an Intel Core i7-
+allocations.Theallocatorenhancestcmallocwithfunctions
+2600 CPU with 16GB of RAM.
+that leverage type information to place new objects in type-
+based pools. The evaluation testbed for our binary vtable protection
+and type-safe object reuse implementations is a system with
+Specifically, in tcmalloc, pools are subdivided in align- an Intel Core i7-6700K CPU @ 4.00GHz and 16GB of
+ment pools. For performance reasons, tcmalloc keeps track RAM,runningUbuntu14.04LTSwithLinuxkernel4.2.0and
+of thread-local pools and one central pool. When a thread- transparent huge paging disabled.
+local pool reaches a predefined limit of free pages, it transfers
+some of the free pages to the central pool. Merging pools can A. Class Hierarchy Reconstruction
+be an issue for typed allocations since different types can end
+The main goal of our framework is to provide an analyst
+up in the same pool. Notice that new typed allocations must
+with accurate information about the class hierarchies. Hence,
+be aligned with past ones. When the allocation size does not
+we evaluated the precision of Marx by comparing the analysis
+divide the page size, it is possible that an object overlaps two
+resultswiththeclasshierarchiesoftheapplicationasreported
+pages. If this is the case and at least one of the two pages
+bythecompiler.Morespecifically,thegroundtruthisobtained
+with the overlapping object are given back to the central pool,
+by parsing the RTTI of the target application. Remember
+we can not guarantee that following allocations are correctly
+that our analysis reconstructs an individual class hierarchy as
+aligned. Therefore, we do not give any memory back from
+a set and does not contain information about the direction
+typedpoolsifthealignmentsizeclassdoesnotdividethesize
+of inheritance. Hence, the ground truth is also extracted as
+of a page.
+a set. Table I shows the accuracy of our class hierarchy
+Finally, our type-safe object reuse application contains a reconstruction for various real-world applications and shared
+shared library that instruments all allocations at runtime. The libraries. Sizes in the table are given in MiB and are taken
+sharedlibraryispreloadedwiththeprotectedbinarytotrigger from the stripped binaries without debug information.
+9TABLEI. RESULTSOFTHECLASSHIERARCHYRECONSTRUCTIONANALYSIS.sizeGIVESTHESIZEOFTHESTRIPPEDBINARYINMIB.#GTAND#
+analysisGIVETHENUMBEROFHIERARCHIESINTHEGROUNDTRUTHANDFOUNDDURINGTHEANALYSIS,RESPECTIVELY.#matchingGIVESTHENUMBER
+OFHIERARCHIESTHATARECORRECTLYRECONSTRUCTED.#overestimatedAND#underestimatedGIVETHENUMBEROFRECONSTRUCTEDHIERARCHIES
+THATAREOVERESTIMATEDANDUNDERESTIMATED,RESPECTIVELY.#notfoundGIVESTHENUMBEROFHIERARCHIESTHATWERENOTFOUNDDURING
+THEANALYSIS.#notexistingGIVESTHENUMBEROFHIERARCHIESTHATWEREFOUNDDURINGTHEANALYSISBUTDONOTEXISTINTHEGROUNDTRUTH.
+timeneededGIVESTHETIMETHATTHESTATICANALYSISNEEDSTOCOMPLETE.
+Program size(MiB) #GT #analysis #matching #overestimated #underestimated #notfound #notexisting timeneeded(hh:mm:ss)
+VboxManage5.0.24 0.97 33 45 32 – 1 – 9 0:06:12
+MySQLServer5.7.11 23.91 78 117 69 1 7 1 – 11:36:17
+MongoDB3.2.4 27.72 158 253 137 – 8 13 63 1:08:41
+Node.js5.10.1 15.18 59 84 55 2 2 – 14 0:33:16
+FileZilla3.13.1(GCC4.9) 4.42 21 9 3 6 4 8 1 1:19:59
+VboxRT.so5.0.24 2.27 3 3 2 – – 1 1 0:00:02
+VboxXPCOM.so5.0.24 1.06 8 14 3 – 2 3 1 0:00:05
+libFLAC++.so6.3.0 0.10 3 3 3 – – – – 0:00:01
+libebml.so1.3.3 0.14 2 2 2 – – – – 0:00:01
+libmatroska.so1.4.4 0.65 2 2 2 – – – – 0:00:17
+libmusicbrainz5cc.so5.1.0 0.56 3 2 1 – 1 1 – 0:00:01
+libstdc++.so6.0.18 0.93 5 24 2 – 2 1 – 0:00:01
+libwx baseu-3.1.so3.1.0 2.55 33 26 26 – – 7 – 0:00:47
+libwx baseu net-3.1.so3.1.0 0.29 5 7 4 – 1 – – 0:00:01
+libwx gtk2u adv-3.1.so3.1.0 1.94 20 23 17 1 1 1 – 0:00:21
+libwx gtk2u aui-3.1.so3.1.0 0.59 7 7 5 1 1 – – 0:00:01
+libwx gtk2u core-3.1.so3.1.0 5.92 41 46 31 6 2 2 1 0:01:17
+libwx gtk2u html-3.1.so3.1.0 0.79 5 9 2 2 1 – – 0:00:06
+libwx gtk2u xrc-3.1.so3.1.0 1.06 4 4 2 1 1 – – 0:00:03
+Overall, we observe that Marx is capable of precisely to reconstruct 137 out of 158 hierarchies correctly. Only
+recoveringtheinformationabouttheclasshierarchiesformany 8 hierarchies were underestimated and 13 were not found
+types of applications. We find that the results are better for during the analysis. Most of these missing hierarchies are
+applications than for shared libraries. For applications, the connectedviaanabstractclasswhichwasnotreferencedinthe
+analysisprocesswasabletocorrectlyreconstruct84.8%ofthe binary code (most likely due to compiler optimizations) and
+hierarchiesonaverage.Only6.3%areunderestimatedandalso hence not found during the analysis. For the largest shared
+6.3%ofthehierarchieswerenotfound.Forsharedlibraries,on library,libwx gtk2u core-3.1.so,31hierarchieswerecorrectly
+average,72.3%ofthehierarchieswerecorrectlyreconstructed, reconstructed. 2 hierarchies were underestimated and only 2
+while 8.5% of the hierarchies were underestimated and 11.3% were not found during the analysis.
+were not found. Consequently, we conclude that Marx is
+The application FileZilla had to be compiled with GCC
+able to recover most of the class hierarchies of the target
+4.9 since it requires support for C++14, which is not available
+binariescompletelyandthereforeprovideshelpfulinformation
+for GCC 4.8. It has the worst results of all test cases, as
+forananalyst.Thedifferencebetweenapplicationsandshared
+only 3 out of 21 hierarchies were reconstructed correctly. 6
+libraries results stem from the fact that the analysis of a
+hierarchieswereoverestimatedduringreconstruction,4under-
+shared object misses a lot of context (cf. Section IV-A).
+estimated, and 8 not found at all. A manual evaluation of the
+Shared objects are not written to be executed as a standalone
+underestimated and missing hierarchies yields two reasons for
+application. Hence, most functions are not called from within
+these results: First, most of these hierarchies are connected
+the shared object, but only from an application, using the
+via classes for which no vtable has been emitted by the
+interface exposed by the library.
+compiler, which is why Marx cannot leverage them. This is
+This is also evident when looking at the time needed due to optimization passes that remove these vtables from
+to analyze an application in comparison to a shared library. the binary. A detailed discussion is given in Section VII.
+Almostallofthetestedsharedlibrariesareanalyzedinundera Second, FileZilla makes heavy use of the wxWidgets library
+minute.Thefunctionsofapplicationsaremoreconnectedwith (i.e., the shared objects with libwx prefix in Table I). Some
+eachotherthroughcalls.SinceMarxfollowstheseconnections underestimated hierarchies are connected via vtables from
+and analyzes the called functions within the current context, it these shared objects. Despite Marx’s inter-modular data flow
+needs more time to analyze the whole application. In contrast, ability,itwasnotabletofindaconnectionbetweenallclasses
+sharedlibrariestendtoprovidearather“flat”functionalityand of the underestimated hierarchy with the external ones. A
+do not have so many connected functions. Hence, analyzing manualinvestigationrevealedthatnotallclasses(despitetheir
+them is faster. connection to an external class according to RTTI) execute a
+library function that overwrites the vtblptr—presumably due
+TheapplicationwiththebestresultsisVboxManage.Marx
+to compiler optimizations.
+underestimated only one hierarchy and correctly reconstructed
+the remaining 32. However, Marx also found 9 hierarchies
+that do not exist in the application. Note that non-existing B. Virtual Callsite Targets
+hierarchies are most likely not used in code constructs such
+Withstaticanalysis,itishardtodeterminethetargetfunc-
+as vcalls or object creation at a new operator. Hence, in
+tion of an indirect call. As noted earlier, for binaries compiled
+applicationssuchasvtableprotectionortype-safeobjectreuse
+from C++ code, virtual functions are mostly implemented
+such overestimations have no effect and do not influence the
+using indirect call instructions. To assist a reverse engineer,
+results.
+our static analysis hence attempts to resolve the target set of a
+For the largest application, MongoDB, Marx was able vcall as accurately as possible. To evaluate the correctness of
+10TABLEII. RESULTSOFTHEVIRTUALCALLSITERESOLUTION.#GTAND#analysisGIVETHENUMBEROFVIRTUALCALLSITESINTHEGROUNDTRUTH
+ANDTHEFRAMEWORK’SRESULTS,RESPECTIVELY.#correctGIVESTHENUMBEROFVIRTUALCALLSITESIDENTIFIEDCORRECTLY.identifiedGIVESTHE
+VALUEINPERCENTOFHOWMANYVIRTUALCALLSITESOFTHEGROUNDTRUTHAREIDENTIFIED.#resolvedGIVESTHENUMBEROFRESOLVEDVIRTUAL
+CALLSITETARGETSFORTHENON-CONSERVATIVEANDCONSERVATIVEMODE(THELATTERINPARENTHESES).#matchingGIVESTHENUMBEROF
+RESOLVEDTARGETSWHICHMATCHCOMPLETELYWITHTHEGROUNDTRUTH.#overestimatedAND#underestimatedGIVETHENUMBEROFTARGETSETS
+THATAREOVERESTIMATEDANDUNDERESTIMATED,RESPECTIVELY.#notexistingGIVESTHENUMBEROFVIRTUALCALLLSITESRESOLVEDTHATDONOT
+EXISTINTHEGROUNDTRUTH.
+FindingVirtualCallsites ResolvingVirtualCallsites
+Program #GT #analysis #correct identified #resolved #matching #overestimated #underestimated #notexisting
+VboxManage (cid:55) (cid:55) (cid:55) (cid:55) (cid:55) (cid:55) (cid:55) (cid:55) (cid:55)
+MySQLServer (cid:55) (cid:55) (cid:55) (cid:55) (cid:55) (cid:55) (cid:55) (cid:55) (cid:55)
+MongoDB 14357 13369 12607 87.8% 736(589) 159(91) 550(471) 27(27) 0(0)
+Node.js 4925 5591 4879 99.0% 798(754) 166(142) 629(611) 1(0) 2(1)
+FileZilla 2779 2544 2495 89.7% 226(210) 3(3) 56(48) 167(159) 0(0)
+the analysis, we utilize the VTV (Virtual Table Verification) C. VTable Protection
+GCC pass [26] to generate the ground truth. VTV collects
+We focus the performance evaluation of our vtable protec-
+class information at compile time and emits code that verifies
+tion implementation on two popular Linux C++ servers and
+each virtual call before (potentially) executing it. Verification
+the seven C++ applications found in SPEC. Specifically, we
+is performed by checking the object’s vtable against a set of
+evaluated our binary vtable protection with a cross-platform
+allowed vtables. In essence, this performs a check against a
+runtimeenvironmentforserver-sidewebapplications(Node.js
+specific class hierarchy. For our ground truth, we extract said
+5.10.1,staticallycompiledwithGoogle’sv8JavaScriptengine)
+information and try to match it to the vcall it guards. As test
+andadatabaseserver(MySQL5.7.11).TobenchmarkNode.js,
+cases, we evaluated the applications used in Section VI-A.
+we configured the Apache benchmark [1] to issue 250,000
+Unfortunately, we were unable to compile the applications
+requests with 10 concurrent connections and 10 requests per
+MySQLServerandVBoxManagewithVTV.Morespecifically,
+connection for the default page. To benchmark MySQL, we
+thecompilercrashedduringthecompilationofMySQLServer
+configured the Sysbench OLTP benchmark [4] to issue 10,000
+and for VBoxManage we were not able to pass the configure
+transactions using a read-write workload.
+script.
+We evaluated our vtable protection instrumentation using
+Table II shows the results of the vcall target resolution.
+the analysis results from Marx. To determine the impact
+Rememberthatnon-conservativemodedidnotrequirevalidity
+on runtime performance, we measured the time to complete
+of the thisptr, but only a dependency on the vtblptr when
+the execution of the benchmarks and compared against the
+calculating the target address. As evident from the table, non-
+baseline—i.e., the original version of the benchmark with no
+conservative mode is able to resolve more vcalls during the
+binary instrumentation applied. Table III details our results.
+analysis. Furthermore, the false positive rate did not increase
+significantly. Asshowninthetable,itisevident,consideringthemassive
+number of executed virtual calls, that our vtable protection
+For the application Node.js, only 2 vcalls were wrongly performs surprisingly well—10.8% runtime overhead across
+detected in non-conservative mode, whereas only 1 was not all the tested applications (geometric mean). Interestingly,
+found in conservative mode. In turn, the non-conservative there seems to be no direct correlation between the number
+mode finds 43 vcalls more compared to conservative mode. of executed virtual calls and the resulting overhead. SPEC
+All in all, for Node.js, the analysis was able to identify 4,879 binaries astar and povray, for example, both execute over
+vcalls correctly, which are 99.0% of all virtual callsites. 4.5 billion virtual calls—all resolved using Marx’s analysis
+results—but yield fairly different runtime overheads: 3% for
+TheworstresultswereachievedforFileZilla.Theanalysis
+astar, vs 10% for povray, a delta that might be caused
+was only able to resolve 3 vcalls correctly and most of the re-
+by CPU caching behavior. We believe that these results are
+mainingresolvedvcallswereunderestimated.Thisresultsfrom
+encouraging:theydemonstratethatenforcingvtableprotection
+therelativelypoorresultsduringclasshierarchyreconstruction
+(or CFI) over likely (rather than precise) invariants by using a
+in comparison to the other applications. Due to missing and
+slow path for second-stage verification is feasible in practice.
+underestimated hierarchies, Marx underestimates the targets
+of most of the resolved vcalls. However, 2,495 vcalls were
+D. Type-safe Object Reuse
+identified correctly, which are 89.7% of all virtual callsites.
+To evaluate our type-safe object reuse application, imple-
+Overall, Marx is able to support an analyst by providing
+mentedontopofMarx,weranexperimentsonthesamesetof
+him with potential target addresses for vcalls. Depending on
+applications described in Section VI-C. Table IV presents our
+the precision of the class hierarchy reconstruction, the set of
+results. The first two columns contain the number of unique
+target addresses might be underestimated. However, most of
+new (including new[]) callsites and types found by Marx’s
+the target sets are overestimated such that the analyst does not
+analysis. Next, we present the number of unique types caught
+miss branches during the analysis. On average, 90.5% of all
+byourlibrary,followedbythenumberoftimesmalloc,new
+virtual callsites were identified by Marx during the analysis.
+and new[] were called (either typed or untyped) during the
+While the results of the call target resolution are helpful for
+benchmark. Finally, we show the overhead from our library.
+a reverse engineer, more comprehensive target sets can be
+obtained by combining our static approach with a dynamic We observe a slight speedup for astar, povray and soplex.
+profiling phase (such as in Section V-A). AscanbeobservedfromTableIV,thelattertwoarenotheavy
+11TABLEIII. EVALUATIONRESULTSFOROURBINARYVTABLEPROTECTIONIMPLEMENTATION.FOREACHBINARY,THETABLESHOWS(I)Binary
+InstrumentationDETAILS,DEPICTINGTHENUMBEROFINSTRUMENTEDvcalls,WRITTENlabelsANDmovedFUNCTIONS;(II)RuntimeStatistics,LISTINGTHE
+NUMBEROFvcallsexecutedATRUNTIME,THENUMBEROFVCALLSFORWHICHAMATCHINGTYPEWASFOUNDATTHETARGETFUNCTION(fastpath),THE
+NUMBEROFTIMESTHEslowpathWASENTERED,ANDTHENUMBEROFuniquePATHSTHATREQUIREJITVERIFICATION;AND(III)NormalizedRuntime,
+LISTINGOURVTABLEPROTECTIONRUNTIMEOVERHEADWITHOUTVERIFICATION(hashingonly)ANDWITHASYNTHETICVERIFICATIONTIMEOUTOF
+10MSPERUNIQUEPATH(+verification).
+BinaryInstrumentation RuntimeStatistics NormalizedRuntime
+Program #vcalls #labels #moved #vcallsexecuted #fastpath #slowpath #unique hashingonly +verification
+MySQL 10,864 8,421 28,971 106,330,186 105,035,488 1,294,698 9 1.145 1.155
+Node.js 5,905 5,917 26,751 31,491,929 31,491,918 11 6 1.263 1.265
+astar 1 1 96 4,595,981,552 4,595,981,552 0 – 1.031 1.031
+dealII 1,434 1,428 7,217 96,751,718 96,751,718 0 – 1.012 1.012
+namd 2 3 102 2,016 2,016 0 – 0.999 0.999
+omnetpp 706 725 1,949 2,061,547,468 2,061,206,142 341,326 361 1.067 1.083
+povray 109 111 1,622 4,704,273,295 4,704,273,295 0 – 1.103 1.103
+soplex 497 498 873 1,772,890 1,155,673 617,217 661 1.016 1.086
+xalancbmk 9,303 9,340 12,808 8,306,798,756 8,306,260,183 538,573 111 1.264 1.272
+geomean 342 350 2,318 91,018,910 86,672,172 0 67 1.096 1.108
+TABLEIV. EVALUATIONRESULTSFOROURTYPE-SAFEOBJECTREUSEIMPLEMENTATION.FOREACHBINARY,THETABLESHOWS(I)MarxStatistics,
+DEPICTINGTHENUMBEROFEXTRACTEDNEWCALLSANDTHENUMBEROFDIFFERENTTYPES;(II)RuntimeStatistics,LISTINGTHENUMBEROFUSED
+TYPES,CALLSTOMALLOC,NEW,ANDTHENEW-ARRAYOPERATORDURINGEXECUTION,AND(III)NormalizedRuntime.
+MarxStatistics RuntimeStatistics NormalizedRuntime
+Program #new #types #types #malloc #new #new[] overhead
+MySQL 1,017 47 16 2,705,675 82,225 13 1.009
+Node.js 4,675 38 14 7,685,562 12,228,927 9,093,605 1.022
+astar 11 0 0 1,008,577 108,037 8 0.999
+dealII 1,632 11 5 48 144,642,689 6,616,448 1.016
+namd 584 2 1 2 2 1,320 0.999
+omnetpp 717 9 1 45,950,697 0 221,218,929 1.028
+povray 54 7 6 2,414,075 83 176 0.995
+soplex 20 6 2 3,718 3 4 0.997
+xalancbmk 2,051 167 46 6,854 135,148,541 158 1.046
+geomean 350 6 2 56,309 6,032 3,888 1.012
+users of the new and new[] operators, and although astar binary level. Inherently, Marx is dependent on vtables (and
+performs many calls to new, we detected no types during its references to them) emitted by the compiler. Especially for
+execution. This is caused by the fact that astar does not rely abstract base classes, however, such relations may not be
+on many C++ features [16]: Marx recovered one vtable which revealed by certain vtable usage patterns; the information is
+is never written into a heap object in the program. Thus, the simply missing from the binary and we cannot recover this
+new operator is never used with a type. information. This increases the observable gap between the
+formal class hierarchy as set up by the programmer and the
+Our results for the real-world applications Node.js and
+results obtained by Marx, based on artifacts found in the
+MySQLaremuchmorerealisticcomparedtotheSPECbench-
+(optimized) binary itself.
+marks: our type-safe object reuse implementation captures a
+significantfractionoftheC++typesasreconstructedbyMarx. Such a case was encountered during the evaluation of
+AlthoughbothapplicationsheavilydependonC++objects,the FileZilla. A compiler optimization removed vtables of ab-
+overhead imposed by the type-safe object reuse application stract classes from the binary which were the base classes
+is low. For example, in Node.js, we recorded more than 21 of complete hierarchies. As a result, the overwrite analysis
+millionnewobjects,whileitsnormalizedruntimeis2.2%.We failed to join the smaller hierarchies. Since the vtables did
+think that these results are encouraging: type-safe object reuse not have other characteristics that allows our approach to find
+provides significant security invariants, while our experiments a connection (e.g., via heuristics discussed previously), the
+report a performance overhead of less than 5% (geometric reconstructedhierarchieswereeithernotcompleteornotfound
+mean). at all. Hence, the quality of our results depends on the size of
+the gap between the formal and the actual class hierarchy as
+VII. DISCUSSION encoded in the binary.
+In the following, we discuss the effects of compiler opti- Other than this, we did not encounter any application-
+mizationsonouranalysisandreviewseveralwaystooptimize specific idiom that affect the accuracy of our results.
+our prototype implementation.
+A. Compiler Optimizations and Lost Information B. Improving Analysis Contexts
+Even though all of our evaluation results are encouraging, Since our static analysis approach focuses on real-world
+we note that the biggest limitations of our approach are due applications,wehadtoweighupprecisionagainstperformance
+to compiler optimizations and a loss of information on the to be able to scale to complex binaries. Hence, we introduced
+12limiting factors such as the call depth restriction and char- mechanisms which are able to perform better when provided
+acteristics that we deem as interesting in a basic block. One with RTTI. Notably, this would be an easy way to incorporate
+problem that may arise with these restrictions is that we may our results in potentially closed-source applications which
+miss important information during our analysis. Consider, for would not require modifications to the programs themselves.
+example,afunctionf whichyieldsvaluableinformationfor However,sinceMarxisnotabletorecovertheclasshierarchies
+imp
+ouranalysis,butiscalledfromafixedcallsite.Inthefollowing, with full precision in the general case, the applications have
+wecallsuchafunctionanimportantfunction.Whenourstatic to be able to cope with a certain amount of imprecision.
+analysis processes the function’s caller and the basic block
+Furthermore,RTTIholdsinformationabouttheinheritance
+that calls f is not considered interesting, it is highly likely
+imp direction. More specifically, it only contains a pointer to the
+that no path is generated which ends up in f . Hence, our
+imp RTTI of parent classes. Currently, our analysis approach is
+analysismissescontextthatwouldbeprovidedbythefunction
+not able to extract the direction of the inheritance. Therefore,
+and its results loose precision.
+the recovered RTTI would contain all classes that are in the
+A na¨ıve approach to tackle this problem is to consider same hierarchy and therefore overestimate it. Still, we note
+all call instructions as interesting during the path generation that extraction of the inheritance direction can be added in the
+(i.e., follow every call). This, however, does not scale to real- future.
+worldapplicationsduetothepathexplosionproblem.Abetter
+solution is to mark those basic blocks with call instructions as E. Improving VTable Protection
+interesting that eventually reach important functions. In other
+As shown in Section VI-C, the results of Marx can be
+words, we recognize importance of functions as a transitive
+usedforabinary-onlyCFIimplementationfocusingonvcalls.
+function which, in turn, impacts the importance of its callers.
+However, even with a dynamic profiling phase to improve
+However, Marx analyzes the functions on a on-demand the results of our static analysis, the slow path of our imple-
+basis and does not know if the target of a call instruction mentation is still required by some applications, which leads
+is important for the analysis process (i.e., it only takes infor- to a relatively high performance overhead. In order to tackle
+mation local to the current function into account). In order to this problem, the implementation can be extended to use the
+addglobalinformationabouttheimportanceofafunctioninto technique proposed by Prakash et al. [21]. If our analysis
+Marx’ decision process, we propose to add a preliminary pre- cannot assign a reconstructed class hierarchy to a given vcall,
+processing step. In essence, we build a static call graph which the CFI implementation can allow all functions at the same
+allows to propagate information about important basic blocks offset in any known vtable. This way, the implementation
+up to its callers. During path generation, this can affect the would have two different protection granularities: For vcalls
+decision whether or not to follow an (otherwise uninteresting) with an assigned class hierarchy, the set of allowed functions
+call. Additionally, this call graph can be enriched at analysis lies within the class hierarchy. For vcalls without an assigned
+timetoincludetargetsetsresolvedatavcall.Further,itallows class hierarchy, the set of allowed functions lies within the
+to dynamically adjust the call depth. known vtables. Hence, the verification at a vcall without an
+assigned class hierarchy can also be implemented using a
+C. Improving Shared Library Results simple label check.
+As shown in Section VI-A, the class hierarchy reconstruc-
+VIII. RELATEDWORK
+tion of shared libraries is not as precise as for applications.
+This is due to the fact that shared libraries are written to be We now review related work on the reconstruction of
+used from other applications or shared libraries. Hence, most C++ class hierarchies and discuss how Marx advances the
+functions in a shared library are not called from within the field. Most similar to our static analysis approach is the
+very same module. As a result, Marx has to analyze these work conducted by Jin et al. [17]. Their approach, called
+functionswithoutanycontextgivenbythecaller(e.g.,avcall objdigger, uses symbolic execution and inter-procedural data
+is using an object that is provided by the caller). This missing flow analysis to discover objects of classes, their attributes,
+information leads to a lower precision in reconstructing the andmethods.However,theirapproachdoesnotreconstructthe
+class hierarchy and fewer vcalls are found. One way to tackle classhierarchyandonlytheideastorecoveritaredescribedin
+this problem is to analyze the shared library in combination thepaper(whicharesimilartoourvtblptr overwriteanalysis).
+with an application that is using it. Once a function inside Furthermore, the evaluation is only done on small test cases
+a shared library is called from the application, the analysis with up to 10 classes instead of complex binaries.
+frameworkhasacontextthatmighthelpimprovingtheresults.
+The approach presented by Fokin et al. [12] focuses on
+However,thisdoesnotnecessarilycoverallexportedfunctions
+reconstructing the class hierarchies of C++ programs. Their
+of the shared library. Also, an analyst might not always have
+approach recovers the vtables in memory and analyzes them
+an application at hand that is using the shared library that he
+and their corresponding constructors. However, they focus on
+has to analyze.
+analyzingthestructureofthevtablesizeandtheusageofpure
+virtualfunctionstorecoverthedirectionoftheinheritance.The
+D. Reconstructing RTTI data-flowthroughtheprogramisnotconsideredintheirwork,
+leading to a certain imprecision.
+Aninterestingapplicationoftheclasshierarchyreconstruc-
+tionresultsisthesubsequentreconstructionofRTTIassociated Katzetal.[18]proposedanapproachtosupportananalyst
+with vtables. This information can, in turn, be leveraged by thatreverseengineersC++binariesbasedonmachinelearning.
+other applications, such as analysis programs or protection Their approach outputs a probability that indicates what class
+13is used at a given vcall. This is done by using sequences usage) and also avoid expensive instrumentation for deriving
+of instructions that can be assigned to a specific class as a the run-time type. In a similar fashion, VTPin [22], a vtable
+training set. The trained model is then used to estimate other hijacking protection for binaries, which is currenlty class-
+vcalls and the used class, with the goal of giving the analyst a agnostic, could potentially leverage the extracted hierarchies
+hintwherethecontrol-flowmightgonext.Unfortunately,their forincreasingtheaccuracyincollectingpinnedvtablepointers.
+approach ignores polymorphism and is only able to provide
+one possible branch target. Additionally, their evaluation was IX. CONCLUSION
+done on small applications (largest one has a size of around
+1MB) on a machine with 64 CPUs that took several hours. In this paper, we presented a practical and efficient ap-
+Therefore, their approach is not able to support an analyst on proachtoreconstructC++classhierarchiesfromagivenbinary
+reverse engineering real-world C++ applications. application. Our static analysis follows data flow and tracks
+objectsthroughmultiplepathsthroughthetargetbinarywhilst
+The binary analysis framework angr is presented by taking C++ characteristics into account. Hence, we recognize
+Shoshitaishvili et al. [24]. Their work focuses on re- artifacts resulting from the way compilers implement high-
+implementing existing techniques for vulnerability identifica- level features such as polymorphism and use them to recover
+tioninordertocomparethemwitheachother.Theintroduced information about the relation of classes in the binary.
+framework has a modular design and provides the possibility
+to be extended with new analysis techniques. The presented We presented the design and implementation of a tool
+algorithms of our approach could also be implemented with called Marx capable of performing the outlined approach
+angr instead of writing an own framework. However, angr and evaluated it on several large, real-world applications.
+is written in Python and due to its performance, it is likely The results are promising: On average, 84.6% of the class
+not efficient for large real-world binaries such as Node.js or hierarchies of applications and 73.3% of the class hierarchies
+MySQL Server. of shared libraries were precisely reconstructed. The informa-
+tion provided by our analysis can then be used to resolve
+Prakash et al. [21] presented vfGuard, a binary-only in- the sets of potential target functions of virtual callsites and
+direct call protection mechanism for C++ binaries. Their ap- helps an analyst following control flow even across previously
+proach tries to protect vcalls by creating a whitelist with valid unresolvable indirect calls.
+calll targets. If the target address is not within the whitelist,
+Furthermore, we present two applications built atop of
+an attack is assumed and the execution is terminated. The
+the analysis results: an improved vtable protection mechanism
+whitelist is determined by the offset into the vtable that is
+for binary executables, verifying the integrity of control flow,
+usedbythevcall.However,theydonottrytorecovertheclass
+and type-safe object reuse, which enhances type-safe memory
+hierarchies because of its difficulty and just allow any vtable
+allocators. We demonstrate that, even in cases where the
+at a vcall (with some additional filtering). T-VIP, proposed
+extractedclasshierarchyisreconstructedimperfectly,practical
+by Gawlik et al. [13], is also a binary-only approach to
+defenses that improve security while maintaining a reasonable
+protectvirtualcallsitesfromvtablehijackingattacks.However,
+performance level can be developed based on our results. To
+they do not recover C++ specific structures such as vtables,
+compensate for the imprecision of the analysis, our vtable
+but reduce the virtual callsite characteristics to two heuristic
+protection treats violations as anomalies and triggers more
+policies. The first policy restricts the vtblptr to point to read-
+heavyweight checks on a slow path (trading off on perfor-
+onlymemoryatavcall.Thesecondpolicychecksifarandom
+mance). On the other hand, our type-safe object reuse solu-
+function pointer in the vtable points to memory that is not
+tion can gracefully tolerate type-to-pool mapping mismatches
+writable. Both policies narrow down the ability of an attacker
+(trading off on security). In short, we show that it is possible
+to inject a crafted vtable. However, more advanced code-reuse
+to build fully conservative binary-level defense solutions on
+attackssuchasproposedbySchusteretal.[23]arenotaffected
+top of imprecise information, exposing new interesting and
+by these policies. Gawlik et al. also proposed a third policy
+previously unexplored tradeoffs.
+to check if the used vtable resides in an allowed set built
+with the help of the class hierarchy. However, they did not Since we believe that our analysis framework Marx pro-
+implement this idea because previous existing work did not vides promising results in the analysis of large, real-world
+show a practicable recovery of class hierarchies for real-world applications and hence represents a building block for future
+programs. research, we make it available for the research community.
+Most similar to our presented application of a type-safe
+object reuse is Cling, a work presented by Akritidis [8]. Cling ACKNOWLEDGEMENTS
+is a type-safe memory allocator used to mitigate use-after-free
+We would like to thank the anonymous reviewers for
+attacks.Itmodifiestheheapallocationprocesstoprovidetypes
+their comments. This work was supported by the European
+for each memory allocation that is made in the application.
+Commission through project H2020 ICT-32-2014 (SHARCS)
+Cling uses the address of the allocation site and size as a type
+under Grant Agreement No. 644571, ERC Starting Grant No.
+for its pools. Hence, a use-after-free bug only grants access
+640110 (BASTION), and by the Netherlands Organization for
+to the remaining data of the same object type. In contrast,
+Scientific Research through grants NWO 639.023.309 VICI
+our presented application builds types on the base of the
+(Dowsing) and NWO CSI-DHS 628.001.021.
+reconstructed class hierarchies. Since Cling is C++ agnostic
+in principle, the class hierarchy as reconstructed by Marx
+can significantly improve it in handling C++ allocations. The
+REFERENCES
+benefit is to reduce the number of typed pools (and memory [1] Apachebenchmark. http://httpd.apache.org/docs/2.0/programs/ab.html.
+14[2] IDAPython. https://github.com/idapython. [27] V. van der Veen, D. Andriesse, E. Go¨ktas¸, B. Gras, L. Sambuc,
+[3] ItaniumC++ABI. https://mentorembedded.github.io/cxx-abi/abi.html. A. Slowinska, H. Bos, and C. Giuffrida. Practical Context-Sensitive
+CFI. InACMConferenceonComputerandCommunicationsSecurity
+[4] SysBench. http://sysbench.sourceforge.net.
+(CCS),2015.
+[5] Valgrind. http://www.valgrind.org/. [28] V. van der Veen, E. Go¨ktas, M. Contag, A. Pawlowski, X. Chen,
+[6] C++ ABI for the ARM Architecture. http://infocenter.arm.com/help/ S. Rawat, H. Bos, T. Holz, E. Athanasopoulos, and C. Giuffrida. A
+topic/com.arm.doc.ihi0041e/IHI0041E cppabi.pdf,2015. Tough call: Mitigating Advanced Code-Reuse Attacks At The Binary
+[7] M. Abadi, M. Budiu, U. Erlingsson, and J. Ligatti. Control-Flow Level. InIEEESymposiumonSecurityandPrivacy(S&P),2016.
+Integrity. In ACM Conference on Computer and Communications [29] C.Zhang,S.A.Carr,T.Li,Y.Ding,C.Song,M.Payer,andD.Song.
+Security(CCS),2005. VTrust: Regaining Trust on Virtual Calls. In Symposium on Network
+[8] P.Akritidis.Cling:AMemoryAllocatortoMitigateDanglingPointers.
+andDistributedSystemSecurity(NDSS),2016.
+InUSENIXSecuritySymposium,2010.
+[9] D. Andriesse, X. Chen, V. van der Veen, A. Slowinska, and H. Bos.
+AnIn-DepthAnalysisofDisassemblyonFull-Scalex86/x64Binaries.
+InUSENIXSecuritySymposium,2016.
+[10] A.R.BernatandB.P.Miller.Anywhere,Any-TimeBinaryInstrumen-
+tation. In ACM SIGPLAN-SIGSOFT Workshop on Program Analysis
+forSoftwareToolsandEngineering(PASTE),2011.
+[11] S.J.Crane,S.Volckaert,F.Schuster,C.Liebchen,P.Larsen,L.Davi,
+A.-R.Sadeghi,T.Holz,B.DeSutter,andM.Franz. It’saTRaP:Table
+RandomizationandProtectionagainstFunction-ReuseAttacks.InACM
+ConferenceonComputerandCommunicationsSecurity(CCS),2015.
+[12] A.Fokin,K.Troshina,andA.Chernov. ReconstructionofClassHier-
+archiesforDecompilationofC++Programs. InEuropeanConference
+onSoftwareMaintenanceandReengineering(CSMR),2010.
+[13] R. Gawlik and T. Holz. Towards Automated Integrity Protection of
+C++VirtualFunctionTablesinBinaryPrograms. InAnnualComputer
+SecurityApplicationsConference(ACSAC).
+[14] J. Gray. C++: Under the Hood. http://www.openrce.org/articles/files/
+jangrayhood.pdf,1994.
+[15] I. Haller, E. Go¨ktas¸, E. Athanasopoulos, G. Portokalidis, and H. Bos.
+Shrinkwrap:VTableprotectionwithoutlooseends.InAnnualComputer
+SecurityApplicationsConference(ACSAC),2015.
+[16] C.IsenandL.John. OntheObjectOrientednessofC++programsin
+SPECCPU2006. InSPECBenchmarkWorkshop.Citeseer,2008.
+[17] W. Jin, C. Cohen, J. Gennari, C. Hines, S. Chaki, A. Gurfinkel,
+J.Havrilla,andP.Narasimhan.RecoveringC++ObjectsFromBinaries
+Using Inter-Procedural Data-Flow Analysis. In ACM SIGPLAN Pro-
+gramProtectionandReverseEngineeringWorkshop(PPREW),2014.
+[18] O.Katz,R.El-Yaniv,andE.Yahav.EstimatingTypesinBinariesusing
+PredictiveModeling. ACMSymposiumonPrinciplesofProgramming
+Languages(POPL),2016.
+[19] J. Lettner, B. Kollenda, A. Homescu, P. Larsen, F. Schuster, L. Davi,
+A.-R. Sadeghi, T. Holz, and M. Franz. Subversive-C: Abusing and
+Protecting Dynamic Message Dispatch. In USENIX Annual Technical
+Conference,2016.
+[20] Y. Liu, T. Zhou, K. Chen, H. Chen, and Y. Xia. Thwarting Memory
+Disclosure with Efficient Hypervisor-enforced Intra-domain Isolation.
+InACMConferenceonComputerandCommunicationsSecurity(CCS),
+2015.
+[21] A.Prakash,X.Hu,andH.Yin. vfGuard:StrictProtectionforVirtual
+FunctionCallsinCOTSC++Binaries. InSymposiumonNetworkand
+DistributedSystemSecurity(NDSS),2015.
+[22] P. Sarbinowski, V. P. Kemerlis, C. Giuffrida, and E. Athanasopoulos.
+VTPin:PracticalVTableHijackingProtectionforBinaries. InAnnual
+ComputerSecurityApplicationsConference(ACSAC),2016.
+[23] F. Schuster, T. Tendyck, C. Liebchen, L. Davi, A.-R. Sadeghi, and
+T. Holz. Counterfeit Object-oriented Programming: On the Difficulty
+of Preventing Code Reuse Attacks in C++ Applications. In IEEE
+SymposiumonSecurityandPrivacy(S&P),2015.
+[24] Y. Shoshitaishvili, R. Wang, C. Salls, N. Stephens, M. Polino,
+A.Dutcher,J.Grosen,S.Feng,C.Hauser,C.Kruegel,andG.Vigna.
+(State of) The Art of War: Offensive Techniques in Binary Analysis.
+InIEEESymposiumonSecurityandPrivacy(S&P),2016.
+[25] B. Stroustrup. C++ Applications. http://www.stroustrup.com/
+applications.html.
+[26] C. Tice, T. Roeder, P. Collingbourne, S. Checkoway, U´. Erlingsson,
+L. Lozano, and G. Pike. Enforcing Forward-Edge Control-Flow In-
+tegrityinGCC&LLVM. InUSENIXSecuritySymposium,2014.
+15

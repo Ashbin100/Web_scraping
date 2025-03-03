@@ -1,0 +1,757 @@
+Accountability and Control of Process Creation
+in Metasystems (cid:0)
+MartyHumphrey,FrederickKnabe,AdamFerrari,andAndrewGrimshaw
+DepartmentofComputerScience
+UniversityofVirginia
+Charlottesville,VA 22903-2442
+humphrey@cs.virginia.edu
+Abstract
+The distinguishing feature of a metasystem is middle-
+ware that facilitates viewing a collection of large, dis-
+tributed, heterogeneous resources as a single virtual ma-
+chine,whereeachuserofthemetasystemisidentifiedbya
+unique metasystem-level identity. The physical resources
+of the metasystem can exist in multiple administrative
+domains, each with different local security requirements
+and authentication mechanisms (e.g., Kerberos, public-
+key). The problem this paper addresses is how to map
+the metasystems-level identity to an appropriate account
+on each local physical machine for the purposes of pro-
+cess creation, such that the access control and authen-
+tication policies of each local machine are not violated.
+This mapping must ensure the integrity of the local ma-
+chines,mustensuretheintegrityof themetasystemuser’s
+data, andmustnot unnecessarilyburdeneitherthe meta-
+systemusers,themetasystemsystemadministrator,orthe
+local machine system administrators. Specific examples
+aredrawnfromexperiencesgainedduringthedeployment
+of the Legion metasystem. For example, Legion configu-
+rations for local sites with different access control mech-
+anismssuchasstandardUNIXmechanismsandKerberos
+are compared. Through analysis of these configurations,
+theinherentsecuritytrade-offsineachdesignarederived.
+Theseresultshavepracticalimportancetocurrentandfu-
+turemetasystemusers andto sitesconsideringanyfuture
+inclusionoflocalresourcesinaglobalvirtualcomputer.
+(cid:1)
+1 Introduction
+Theemergingwidespreadintroductionanduseofgiga-
+bitwideareaandlocalareanetworkshavethepotentialto
+transformthewaypeoplecompute,andmoreimportantly
+thewaytheyinteractandcollaboratewithoneanother.The
+increaseinbandwidthwillenabletheconstructionofwide
+areavirtualcomputerscalledmetasystemsormetacomput-
+ers(seeFigure1).Thechallengeintheconstructionofthe
+metasystemlayeristoprovidetheillusionofasinglevir-
+tualmachinefromresourcesthatmayconsistofthousands
+of heterogeneous processors, storage systems, databases,
+legacy codes, and user objects, all distributed over wide-
+area networks spanning multiple administrative domains.
+Thephysicalmachinesthatasitechoosestoparticipatein
+a metasystem are generally still available for use by the
+site’s localusers, so it is importantthat the metasystem’s
+impactonlocalusersbeminimal.
+A key challenge of the metasystem is to provide a se-
+cureenvironmentforbothresourceownersandusers. Se-
+curityservicesprovidedbythemetacomputersoftwarein-
+frastructureare not unliketraditional servicesrequired in
+uniprocessor operating systems. Users must authenticate
+themselvestothe“system”. Usersmustnotbeallowedto
+accessarbitrary resources. Loggingmechanismsmustbe
+usedtoholdusersaccountableandtotrackintruders.
+However,asolutiontothemetacomputersecurityprob-
+lemrequiressignificantadditionsovertheuniprocessorse-
+curitysolution[5],particularlybecausethemachinesthat
+comprise the metacomputer may not be administered by
+a single policy-making entity. A single metasystem can
+spanmultipleorganizations,butonlyifeachindividualor-
+This work was funded by DARPA contract N66001-96-C-8527, ganization’srequirementswithrespecttoresourcesowned
+DOE contract Sandia LD-9977, DOE contract Lawrence Livermore by that organization are satisfied. The metasystem must
+B506727,andGrummancontract9720373-02.
+be made to accommodate local policy, over which the
+metasystemdesignershavelittle ornoinfluence. Thatis,
+metasystem developers cannot mandate underlying secu-
+ritypolicyormechanism;thechallengeistoadheretoandMetasystem
+Host/OS 1,1 Host/OS 2,1 Host/OS n,1
+Administrative Administrative Administrative
+Domain 1 Domain 2 Domain n
+Figure1.GeneralMetasystemArchitecture
+support local security policies while creating an easy-to- willbeavailabletolegitimateusers. Similarly,localsites
+useandsecureenvironmentforendusers. willchoosetoparticipateinametasystem,butcontingent
+Thus, in a metacomputing environment, the security onassurancesthattheirlocalsecuritypolicieswillnotbe
+problemcanbedividedintotwomainconcerns: violated.
+The specific requirement of a metasystem that this pa-
+1. Protecting the metacomputer’s high-level resources,
+peraddressesisthatthemetasystemmustonlycreatepro-
+services, and users from each other and from possi-
+cesses for users that have been authenticated and are au-
+blycorruptedunderlyingresources(withinthemeta-
+thorized to use the particular underlying resources. For
+systemlayerinFigure1)
+example, a site’s security requirements could range from
+notrestrictive(allowinganymetasystemusertocreatepro-
+2. Preservingthesecuritypoliciesoftheunderlyingre-
+cesses, even if the particular metasystem user does not
+sourcesthatformthefoundationofthemetacomputer
+have an account on the computers at the site) to very
+andminimizingtheirvulnerabilitytoattacksfromthe
+restrictive (allowing only those users who have personal
+metacomputerlevel(theverticalarrowsinFigure1)
+accounts on the machines on their site, and only after
+For example, restricting who is able to configure a Kerberos authentication). Note that in all cases, only
+metacomputer-wide scheduling service would fall in the users who have authenticated themselves to the metasys-
+firstcategory—itssolutionrequiresmetacomputer-specific temlayerareallowedtocreateprocesses. Achallengein
+definitions of identity, authorization, and access control. themetasystemistoefficientlyselectthoseresourcesthat
+Meanwhile, enforcing a policy that permits only those supportoneormoreoftheuser’sauthenticationcertificates
+metacomputer users who have local accounts to run jobs or credentials, and then securely present the appropriate
+on a given host falls in the second category, and it might certificatesor credentialswith minimal (if any) direct in-
+requirea means to map between metacomputeridentities teractionwiththeuser.
+and local identities. Satisfyingthis second concern is vi- Tocreateaprocessononeofthephysicalmachinesthat
+tallyimportant,becausethetypicalphysicalmachinethat comprise the metasystem, the unique metasystem iden-
+in part comprises the metacomputer appears identical to titymustbe mappedto an appropriateaccounton the se-
+other local machines to the local users (its participation lectedphysicalmachine.Thismappingmustbespecificto
+inthemetacomputershouldbecompletelyhiddentonon- theauthenticationrequirementsofthelocalmachine,must
+metacomputerusers). onlybeperformedforthosephysicalmachinesuponwhich
+Inametasystem,arbitraryusersmustnotbeallowedto the metasystem user is allowed to create processes (a lo-
+allocate resources on arbitrary machines. In contrast, al- calsystemmayonlybeaccessiblebyasubsetofallusers
+lowingthisisanalogoustoalocalsysadmingrantinganac- of the metasystem), and mustbe securelyconfiguredand
+counttoanypersonwithoutanevaluationofwhattheper- performed(anon-privilegeduserisnotallowedtospecify
+sonmightdoonthe machineifanaccountwere granted! thismapping). Inaddition,itisourbeliefthatthesuccess
+Sysadminsrarelyallowthisinordertoprotecttheintegrity ofametasystemgreatlydependsonitseaseofusebyend-
+ofthedataontheirmachinesandtoensurethatresources users,sotheimpactonthemetasystemusermustbekepttoaminimum.
+(cid:2)
+However,theremustbeabalancebetweenthe end-userapplicationsbutabovetheoperatingsystem(thus,
+user’sdesiretoonlyhavetobeinteractivelyauthenticated theLegioninfrastructureitselfisnotprivilegedcode). Le-
+once for the entire metasystem versus a system adminis- gionprovidesprocessmanagement,inter-processcommu-
+trator requiring a particularform of strong authentication nication, persistent storage, a single unified file system,
+that is unique to her site. In other words, the user does andsecurityservices.LegionsupportsPVM,MPI,C,For-
+notwanttohavetomanagepotentiallydozensofSecurID tran,aparallelC++,JavaandtheCORBAIDL.Legioncan
+cards, smart cards, and passwords, while the system ad- select resources for use by applications and securely co-
+ministratorof agovernmentsupercomputercertainlywill ordinatelarge-scaleapplicationexecution,eliminatingthe
+not accept a one-size-fits-all approach for authentication needfortheend-usertoexplicitlylogontoeachmachine,
+in the metasystem that places the authentication require- FTPfiles, createprocesses,createtemporaryfiles, etc. A
+ments of a university computer on the same level as her project of Legion’s size and scope is faced with numer-
+morestrategicresources. oustechnicalchallenges,allrelatedtomanagingthepoten-
+Thecontributionofthispaperisthatitrevealshowthis tiallyhugenumberofunderlyingheterogeneoushardware
+metacomputing problem manifests itself and is solved in andsoftwareplatforms.
+the context of Legion, which is a object-based metasys- IntheLegionsystem,hostobjectsrepresentprocessing
+temprojectdiscussedinSection2. ItpresentstheLegion resources.WhenaLegionobjectisinstantiated,itisaHost
+solution to three site-specific requirements to authentica- Objectthatactuallycreatesaprocesstocontainthenewly
+tionandauthorizationforthepurposesofprocesscreation. activatedobject. The Host Objectthus controlsaccess to
+In the first scenario, the site requires standard UNIX ac- itsprocessingresourceandcanenforcelocalpolicies,e.g.,
+cesscontrol(similartomostUNIXinstallationsatuniver- ensuring that a user does not consume more processing
+sities).Inthenexttwoscenarios,thesitesrequireKerberos timethanallotted. VaultobjectsinLegionrepresentstable
+authenticationbut differin their specific security policies storage availablewithinthe system for containing Object
+regarding process creation after Kerberos authentication. Persistent Representations (OPRs). Just as Host Objects
+ThemechanismbywhichtomapLegionidentitytolocal are the managers of active Legion objects, Vault Objects
+account is discussed for each scenario. The “level of se- are the managers of inert Legion objects. For example,
+curity”ascomparedtoeaseofuseofeachscenarioisdis- Vaultsarethepointofaccesscontroltostorageresources,
+cussedin termsof the likelihoodand ramificationsof the andcanenforcepoliciessuchasfilesystemallocations.
+compromise of user credentials. The importance of this ThesecuritymodelforLegiondifferssignificantlyfrom
+workisthatitdescribesthesolutiontoreal-worldsecurity that of conventional systems. A Legion “system” is re-
+problems that exist as a result of users who increasingly allyafederationofresourcesfrommultipleadministrative
+create programsthat requiretransparent, secure access to domains, each with its own separately evaluated and en-
+multiple, distributed, heterogeneous resources. Sites are forcedsecuritypolicies.Assuch,thereisnocentralkernel
+eagertodeploytheLegionmetasystemsoftware,butonly or trusted code base that can monitor and control all in-
+afterreceivingassurancesthattheirlocalsecuritypolicies teractions between users and resources. Nor is there the
+aresatisfied. Withoutsolutionssuchasthesedescribedin concept of a superuser—noone person or entity controls
+thispaper,Legioncannotbedeployedonalarge-scaleba- alloftheresourcesinaLegionsystem.
+sis. Whilethereisnosinglesuperuser,inpracticethereare
+The organizationof this paper is as follows. Section 2 a few privileged users who control access to the core re-
+presents the Legion mechanisms for security that are in- sources such as vaults and hosts. These privileged users
+dependent of any underlying host system. This section establish trust relationships between themselves, and use
+coversidentity,authentication,authorization,andaccount- these trust relationships upon which to control access to
+ability. Section3describeshowprocessesarestartedand theirrespectiveresources. Forexample,assumethatthere
+controlled,andhowfilesarewritten,onasystemthatem- aretwosetsofresources,controlledbytwoseparateprivi-
+ploysstandardUNIXaccess control. Section4 describes legedusers,andthatthereareestablished,non-overlapping
+twoconfigurationsinwhichLegionintegrateswithaKer- sets of users of these resources. One of these privileged
+berizedhost. Section5 describesprojectsthatarerelated usersmayagreetolettheother’ssetofusershaveaccess
+tothiswork. Section6containstheconclusions. toherresources,aslongasareciprocalrelationshipisalso
+established. Itisasubjectoffutureresearchtodetermine
+2 SecurityprovidedbyLegionmechanisms to what degree this privilege can be dispersed amongst a
+largergroupofprivilegedusers(withdecreasingprivilege)
+Legion[7,8]isanobject-basedmetasystemwithagoal andstillremainanoperationalmetasystem.
+ofsupportingmillionsofobjectsspreadacrossthousands The purpose of this section is to provide a discussion
+of machines. Legionexecutesasmiddleware—belowtheofLegionsecuritymechanismsthatisindependentofthe callwouldbeacripplingperformancehit.
+underlying security mechanisms and policies of the host The intermediate solution between these approaches is
+systems.Thematerialinthissectionispresentedprimarily to issue credentials (also known as X509v3 certificates
+to establish the context for the remaining sections. For withexplicitauthorizationsorX9.57attributecertificates)
+moredetailsregardingthesemechanisms,see[5]. toobjects.Acredentialisalistofrightsgrantedbythecre-
+dential’smaker,presumablytheuser. Theycanbepassed
+2.1 Identity throughcallchains. Whenanobjectrequestsaresource,it
+presentsthecredentialtogainaccess.Theresourcechecks
+Identityisfundamentaltohigher-levelsecurityservices
+therightsinthecredentialandwhothemakeris,anduses
+suchasaccesscontrol.EveryLegionobjectisidentifiedby
+thatinformationindecidingtograntaccess.Therearetwo
+aunique,multi-field,location-independentLegionObject
+maintypesofcredentialsinLegion:delegatedcredentials
+Identifier, or LOID. One of the LOID fields contains se-
+and bearer credentials. A delegated credential specifies
+curityinformationsuchasanX.509certificate[3]ormore
+exactly who is granted the listed rights, whereas simple
+simplyjustanRSApublickey.TheX.509certificateinthe
+possession of a bearer credential grants the rights listed
+LOIDisnotan X9.57attributecertificate[16], but rather
+withinit. ALegioncredentialspecifiestheperiodthecre-
+an ID certificate (also referred to as a public-key certifi-
+dential is valid, who is allowedto use the credential, and
+cate[4]),andpairsapublickeywithaperson’sname,or-
+the rights—which methods may be called on which spe-
+ganization,identificationofthepublickeyalgorithm,and
+cific objects or class of objects. The credential also in-
+otherinformation. Acertificatemaybesignedbyacerti-
+cludes the identity of its maker, who digitally signs the
+ficationauthority(CA)thatvouchesfortheassociationof
+completecredential.
+thekeywiththeidentifyinginformation.Tocoverthecase
+wherearecipientdoesn’trecognizetheCA,theCA’sown
+2.2 Accesscontrol
+certificatecanbechainedontothecertificate,allowingthe
+CA’s CA to be the basis of authority. The user’s X.509 EachLegionobjectisresponsibleforenforcingitsown
+IDcertificateispropagatedwithrequestsandmethodcalls accesscontrolpolicy.Thegeneralmodelforaccesscontrol
+made directlyor indirectlyon behalfof the user. The in- is that access is only available through methodcalls, and
+formationinthecertificateisusedwhenmakingentriesto thateachmethodcallreceivedatanobjectpassesthrough
+access logs. While it is sufficient to use only the LOID, a MayI layer before being serviced (see Figure 2). MayI
+at timesit is easierto simply includethisinformationdi- decideswhethertograntaccessaccordingtowhateverpol-
+rectlyinthelogs,withoutrequiringamappingfromLOID icy it implements. If access is denied, the object will re-
+touseridentificationsuchasname,organization,etc. spond with an appropriate security exception, which the
+In a distributed object system such as Legion, the user callercanhandleanywayitseesfit.
+typically accesses resources indirectly, and objects need MayI can be implemented in multiple ways. The triv-
+to be able to perform actions on his behalf. One way in ial MayI layer just allows all access. Most objects, how-
+whichtoallowintermediateobjectstorequestserviceson ever, use the Legion-provideddefault MayI implementa-
+behalfof an originatingobject is to givethe intermediate tion, whichessentiallydefines, onaper-methodbasis, an
+objectsacopyoftheprivatekeyoftheoriginatingobject, allowlistandadenylist.IfaLOIDisonbothlists,access
+thusprovidingnecessaryauthenticationinformation. This isdenied. TheentriesinthelistsaretheLOIDsofcallers
+approachisclearlyinsecure,asintermediateobjectscould that are granted or denied the right to call the particular
+thenmaliciouslyoriginateoperationsonfalsebehalfofthe method. Default allow and deny lists can be specified to
+originatingobject. An alternativeapproachis to havein- covermethodsthatdon’thavetheirownentries.
+termediateobjectscallbacktotheuserorhistrustedproxy By default, an object is created with an ACL that is a
+whentheyreceiveaccessrequestsintheuser’sname.This function of the class of the object and gives read access
+stepputscontrolbackintheuser’shands. Therearesev- to theworld andwriteaccessto the owner. Forexample,
+eral drawbacks to this approach, though. First, the fine- all methods that involve “reading” are allowed to be ex-
+grain control afforded by authorization callbacks may be ecuted by users that have authenticated to the particular
+mostly illusory. It can be very difficult to craft policies Legionsystem. Theowneroftheobjectisfreetodynami-
+for a user proxy (or even the real user himself!) that are callymodifyanyallowlistoranydenylistforanymethod
+muchmorethan“grantallrequests”—toomuchcontextual – including the method that is executed to modify these
+andsemanticinformationisgenerallymissingfromthere- lists! Usually, these lists are modifiedthrough the use of
+quest. Beyondthisbarrier,callbacksareexpensiveanddo aGUI.Currently,theuseofastandardizedaccesscontrol
+notscalewell. InLegion,afterall,everyobjectrepresents languagesuchasGAA[13]isbeinginvestigated.
+a resourceofsome type, and acallback oneverymethod When a method call is received, the credentials it car-B
+B.foo()
+Ok
+A MayI? foo()
+No!
+Figure2.LegionImplementationofAccessControl
+riesarecheckedbyMayIandcomparedagainsttheaccess completemessagescontainingargumentsorreturnvalues,
+controllists. Forexample,in thecaseof adelegatedcre- evenwithoutholdinganycredentials.Thecomputationtag
+dential,thecallermusthaveincludedproofofhisidentity istreatedasasharedsecret,andisnevertransmittedinthe
+inthecallsothatMayIcanconfirmthatthecredentialap- clearunless“nosecurity”modeisselected.
+plies. Multiplecredentialscanbecarriedinacall;check- The security layer does not provide mutual authentica-
+ingcontinuesuntiloneprovidesaccess. tion. The sender can be assured of the identity of the re-
+cipient,becauseonlythedesiredrecipientcanreadtheen-
+2.3 CommunicationbetweenLegionobjects cryptedpartsofthemessage.Therecipientusuallydoesn’t
+carewhotheactualsenderis;itsdecisionsarebasedsolely
+A method call from one Legion object to another can
+on the credentials and the X.509 ID certificate(s) that ar-
+consistofmultipleLegionmessages.BecauseLegionsup-
+rivedinthemessage.
+portsdataflow-basedmethodinvocation,thevariousargu-
+ments of a method call may flow into the target as mes-
+3 Legion integration with standard UNIX
+sagesfromseveraldifferentobjects. Amessagefromone
+accesscontrol
+Legion object to another Legionobject may be sent with
+no security, in private mode, or in protected mode. In
+Theprevioussectiondescribedobjectinteractionsatthe
+bothprivateandprotectedmodes,certainkeyelementsof
+logical level of the metasystem in Figure 1—specifically,
+a message (e.g., any containedcredentials) are encrypted
+howone Legionobjectcan authenticatewithanother Le-
+withthepublickeyoftherecipientLegionobject. Inpri-
+gion object and exchange secure communication. How-
+vatemodethebodyofthemessageisencrypted,whereas
+ever, Legion objects must physically exist on a host that
+in protected mode only a Message Authentication Code
+ispartofthemetasystem. Thissectiondescribeshowthe
+(MAC)isgeneratedtoprovideanintegrityguarantee. To
+metasystemidentity is mapped to a physicalaccount and
+enablefastercomputations,protectedmodeisthedefault,
+anobject isinstantiatedon ahostthatrequiresonlystan-
+although the user can easily change this. Unless private
+dardUNIXaccesscontrol.
+modeis alreadyon, protectedmodeis selectedautomati-
+Our general strategy for isolating Legion objects from
+callyifamessagecontainscredentials.Themodeselected
+oneanotheristoruntheminseparateaccountsonthehost
+forusebyanoriginatingobjectisappliedforallmessages
+system.Theaccountsthatcanbeusedforthispurposefall
+indirectlygeneratedasaresultoftheoriginatingmessage.
+intotwocategories:
+Forexample,ausercanselectprivatemodewhencalling
+an object. The calls that the object makes on behalf of
+the user will also use private mode, and so on down the
+line. Currently, encryption is based on the RSA toolkit
+(RSAREF2.0).
+In addition to protecting credentials, both protected
+mode and private mode encrypt a computation tag con-
+tained in every Legion message, a random number token
+that is generated for each method call. All the messages
+thatmakeupagivenmethodcallcontainthesamecompu-
+tationtag. Thetagisusedtoassembleincomingmessages
+frommultipleobjectsintoasinglemethodcallandtoiden-
+tifythereturnvalueforacallmadeearlier. Ifanattacker
+knowsthecomputationtagforamethodcall,hecanforge
+(cid:3)
+ForthoseLegionuserswhohappentohaveaccounts
+on the system, objects can run on their normal user
+accounts.
+(cid:3) For other users, there is a pool of generic accounts
+thatareassignedforLegionuse.
+The generic accounts usually have minimal permissions.
+ThelocalHostObjectandVaultObjectalsohavetheirown
+accounts.
+Theuseofgenericaccountsisappropriateforthosesites
+thatrequirethatone user be isolatedfromanother on the
+underlying host machine (e.g., different UNIX accounts)but
+(cid:4)
+donotrequirestrict,persistentmappingfrommetasys- ure 3. In this example, Object 12, which is executingon
+temIDtolocalaccount.Inthesesituations,accountability Fred’s account on some machine in the metasystem, and
+isthroughloggingLegionuserX.509IDcertificates. The hasaccesstoFred’sLegioncredentials,wantstocreatean
+more “tightly controlled” metasystems will probably not objectonthehostElmer.virginia.edu.Todothis,Object12
+make use of generic accounts, if only because policy of- askstheHostObjectexecutingonElmertostartaprocess
+ten mandates that no person can make use of a resource forthenewobject.First,theHostObjectconfirmsthatOb-
+withoutfirstfilingtheappropriateaccountapplications. ject12isactingonFred’sbehalfbylookingatthecreden-
+ObjectcreationrequestsarriveattheHostObjectasnor- tialscontainedintherequest. Then,theHostObjectmaps
+malmethodinvocations,andcanthusbecontrolledusing arequestbyFredtoagenericaccount(Legion-generic-1)
+the standard Legion access control mechanism for meth- onElmer.virginia.eduthathasbeenestablishedatthetime
+ods. For each request, the host checks the credentials that Legion was installed on Elmer.virginia.edu. Finally,
+againsttheuserLOIDsandgroupsthatareallowedtocre- the HostObjectasks the PCDto spawn anewprocess as
+ateobjectsonit. Ifeverythingisacceptable,itnextselects Legion-generic-1forthenewobject.
+anaccountforthenewobjecttorunin;dependingonthe AsthePCDstartstheobjectrunning,thehostlogsanau-
+credentials in the creation request and its local configu- dittrail using the X.509 ID certificatefor the user whose
+ration, it may choose a local user account or one of the credentialsaccompanied the request. The audit trail pro-
+genericaccounts. The accountsare subjectto scheduling videsessentialinformationifthenewobjectmisuseslocal
+and resource control just like CPU time, memory usage, resources. If the object has exceeded its use of local re-
+and so on; an object’s lease on an account, especially a sources, thehost can requestthatthe PCDkillitdirectly.
+genericaccount,isusuallylimited. Whenanobjectlosesorrelinquishesitsuseofanaccount,
+All Legion objects are associated with some persistent theHostObjectusesthePCDtochangetheownershipof
+storage,typicallyintheformofadirectoryinthelocalfile its persistent state back to the Vault Object. If the object
+system managed by the Object Vault. Before starting an isreactivatedlateronadifferentaccount,ownershipofthe
+actualprocessforthenewobjectintheallocatedaccount, statecanbechangedtotheappropriatelocaluser-id.After
+thehostneedstochangetheownershipoftheobject’sdi- anaccountisreclaimed,thePCDterminatesallprocesses
+rectoryfromthevaultuser-idtothenewlyallocateduser- runningonitandgenerallycleansitup.
+id. Thelocationofthedirectorythatwillcontainthenew
+object’spersistentstateispassedtothehostaspartofthe SecurityAnalysis. Inacceptingthisapproach,asysad-
+activation request (this location was obtained through a min at a local site is trusting the Legion software to le-
+method on the local vault performed by the object’s cre- gitimately map Legion identities to local accounts (if the
+ator,likelyitsclass). Ownershipofthisdirectorymustbe PCDisconfiguredtomaptonon-genericlocalaccounts).
+changed both to protect the object’s state from access by If the Legion credentials for a particular user are stolen,
+otherobjects(whichwillrununderdifferentuser-ids),and theriskto the systemislesswhenconfiguredforgeneric
+tomakethestateaccessibletothenewobject. accountsthanwithnon-genericaccounts(bytheirnature,
+Finally, the hostneedsto spawnthe actualprocessthat whenauserisfinishedwithagenericaccount,nopersis-
+will execute the object on the appropriate account. To tentstate remains). A negativeaspect of this approach is
+carryoutthisstep,andtochangeownershipoftheobject’s that a site must install the PCD as privileged code, cre-
+persistentstate,thehostrequiresaccesstosomeprivileged ating a potential point of attack for intruders. However,
+operations. However,the hostdoes notexecutewithroot this code has been vetted by numerous experts, increas-
+permissions. Access to these required privileged opera- ing the confidence on the part of local site regarding the
+tions is encapsulated in a process control daemon (PCD) safetyof this code. Of course, if the LegionHost Object
+that executes on the host, providing services to the Host account(“Legion-Account”inFigure3)iscracked,thein-
+Objectinacontrolledfashion. ThePCDisasmall,easily trudercancreateprocessesundertheaccountsofanylocal
+vettedprogramthatrunswithrootpermissions. Itiscon- Legionusers.
+figuredonly to allowaccess by the host account. Two of
+its key functionsare to permit changingdirectory owner-
+Overall. The PCD-based implementation is sufficient
+shipandtocreatenewprocessesonadesignatedaccount.
+for many local system administrators. Legion authenti-
+ThePCDlimitstheaccountsforwhichthiscanbedoneto
+cation is used to determine who gains access to local re-
+asetconfiguredbythelocalsystemadministrator.Theset
+sources, and the resources made available are also con-
+includes the generic Legion accounts and potentially the
+strained to those usable from a limited set of accounts.
+accountsoflocalLegionusers.
+Detailed logging provides accountability. The safety of
+AsimplifiedexampleofthisoperationisshowninFig-
+credentialsis a chief design goal in the security architec-2 Authenticate
+1 CreateObject(.)
+Object 12 Host Object: Elmer Map "Fred" to
+3
+"Legion-Account" "Legion-generic-1"
+"Fred"
+4
+Change ownership to
+Spawn process as
+5
+"Legion-generic-1"
+"Legion-generic-1"
+PCD: Elmer
+Elmer.virginia.edu
+Figure3.ObjectCreationonaStandardUNIXAccessControlHost
+ture and mechanisms of Legion. An alternative, simple puter is being constructed. There are only two machines
+approach is to have all Legion objects execute under the involved: Khost, which is the Kerberized Host machine,
+“Legion-Account” account. In general, we have found andNKhost,whichisamachinethatdoesnotrequireKer-
+that sysadmins do not like this approach because of lim- berosauthentication(instead,itusesonlypassword-based
+ited accountability—as far as they see, only one account authentication). Additionally,itisusefultodefinethefol-
+“doesanything”withregardtoLegion.We(theLegionde- lowingentities:
+signers)donotadvocatethisapproach,becauseitdoesnot
+L-creds credentials that are necessary to function in the
+provide the necessary isolation, as all files and processes
+Legion virtual computer; these credentials reflect a
+are owned by one oner id (meaning that one Legion user
+metasystemuser’sidentity
+can use UNIX mechanismsto destroy or subvert another
+Legionuseronthesamehost). K-creds Kerberos credentials; obtained via Kerberos
+kiniteitherexplicitlyorimplicitly
+4 LegionintegrationwithaKerberizedhost
+L-admin aparticularmetasystemuserwithsomeadmin-
+Increased security concerns have caused many sites to istrative duties for the metasystem; Note that the
+switch from standard UNIX access control to the use of “L-admin”identity means nothing directly on either
+Kerberos[11]. Kerberosis a trusted third-partyauthenti- Khost or NKhost (it must be mapped onto an ac-
+cation, in whichusersandservicesregistertheirkeys. In count on each machine); by definition, L-admin has
+this paper, familiarity with the basic Kerberos protocols L-creds; in order to authenticate to the metasystem
+are assumed. Legion has been integrated with a Kerber- layer,theL-adminusermusthavefirstauthenticated
+ized host, and is discussed in this paper, because certain to the underlyingphysicalmachine: if L-adminfirst
+siteshavewanted to runLegionand mandatedthe useof logged into Khost, then the user associated with L-
+Kerberos. adminhasK-credsaswell.
+Itisimportanttounderstandthatthe“KerberizedHost”
+Legion-Khost an account on Khost that is used solely
+in this section refers to a host that is executing the MIT
+for executing processes related to the metasystem;
+source code distribution[9]. This paper does not discuss
+“Legion-Khost” is not an identity recognized at the
+effortstointegrateKerberosdirectlywithpublickeycryp-
+metasystemlevel(“Legion-Khost”hasK-credsasso-
+tography [14], because this paper focuses on integration
+ciatedwithitbutdoesnotautomaticallyhaveL-creds
+withwidely-deployedKerberossystems.Similarly,theuse
+associatedwithit)
+ofProxiableticketsinKerberosisnotdiscussed,because
+their usage is not widely supported. While its support is Alice-KL a person who has an account on Khost and
+not directly discussed, muchof the discussionis applica- wishes to participate in Legion virtual machine ex-
+bletoAFS. ecuting on Khost; has K-creds; has L-creds; has an
+In this section, assume that a simple Legion metacom- accountonNKhostBob-L
+(cid:5)
+a person who has an “account” on the Legion
+virtual machine but no account on Khost; has L-
+creds; does not have K-creds; has a UNIX account
+onNKhost
+4.1 Kerberosbackground: .k5loginand.k5users
+InKerberos,thereisthecapabilitytoallowoneprincipal
+tograntaccesstoanotherprincipal(aftertheotherprinci-
+pal has authenticated). The file .k5login allows one user
+tounconditionallygrantanotherusertheabilitytospawn
+processes as the first user. For example, if (cid:6) Bob/.k5login
+contained ”Jim”, user Jim could “ksu Bob” and have a
+running shell whereas new processes are tagged as being
+owned by Bob. Note that in this case, Jim does not ac-
+quireBob’scredentials;rather,inthiscase,Jim,executing
+as UID Bob, has a copy of the Kerberos credentials Jim
+hadimmediatelypriortoexecutingksu. .k5usersismore
+restrictive than .k5login; .k5users lets Bob allow Jim to
+executeonlycertainbinariesasBob,forinstance“/bin/ls”.
+Theentryin (cid:6)
+beyond the scope of this paper, that uses .k5users
+instead of .k5login in order to reduce the scope of
+attackiftheLegion-Khostiscompromised.However,
+this approach is substantially more complicated to
+implementandanalyze.
+IfAlice-KL’sK-credsarestolen (i.e.,eitherbysomeac-
+tivityirrespectiveofLegion,orifAlice-KLgivesher
+K-creds to a Legion “con-artist” object), then only
+Alice-KL’saccountiscompromised. Inthiscase,an
+attackercanreplacelegitimateAlice-KLservicewith
+corruptedservice,thustrickingBob-LifBob-Lwants
+tousetheservice. However,thescopeofthisattack
+may include several machines, as Kerberos creden-
+tials are typically valid at a potentially large set of
+machines.
+IfAlice-KL’sL-credsarestolen Alice-KL’s account is
+compromised because the Host Object can be asked
+tostartjobsonheraccount.
+Bob/.k5usersinthiscaseis“Jim/bin/ls”. In
+IfL-admin’sL-credsarestolen an attacker can effec-
+this case, Jim cannot execute a shell as Bob; Jim could
+tively shut down the Host Object but not break se-
+only“ksuBob-e/bin/ls”.
+curity.Note:adminhasnospecialprivilegeswithre-
+4.2 Kerberossolution#1: k5login gardtotheHostObject,beyondbeingabletochange
+theACLsontheHostObject.
+AsimplesolutiontoallowausersuchasAlice-KLwith
+an account on Khost to access the metasystem is to add
+Overall. The fact that Alice-KL can start a process on
+“Legion-Khost”toher.k5loginfile.Thisapproachallows
+the Khost without directly obtaining and presenting K-
+Legion-Khosttoexecute“binary1”asAlice-KLbyinvok-
+credsisbothpositiveandnegative: TheuseoftheLegion
+ing“ksuAlice-KL-efull-path-to-binary1”. ForAlice-KL
+virtual machine by Alice-KL is easier and perhaps more
+to start a process on Khost, essentially the same steps as
+securebecauseshedoesnotneedtodirectlyacquireKer-
+in Figure 3 are taken. The difference in this situation is
+beroscredentials. ApotentialproblemisthattheLegion-
+that the PCD does not exist, as the Host Object can cre-
+KhosthasunlimitedaccesstotheKhostaccountofAlice-
+ateprocessesdirectlyasAlice-KLviainvocationsofksu.
+KL. For this reason, Alice-KL and/or the sysadmins of
+Inthisconfiguration,Legionmechanismswillensurethat
+KhostmightrequirethatAlice-KLgetaseparateaccount
+Bob-L will not be able to start new processes on Khost.
+on Khost for use with the Legion virtual machine. For
+However, Bob-L will be able to use services (processes)
+many installations, this approach is sufficient, satisfying
+ofAlice-KL,butonlyif Alice-KLhasconfiguredLegion
+the requirement of Kerberos authentication before use of
+authorizationmechanismstoletBob-L.
+thephysicalresources(theauthenticationinthiscaseisby
+the Legion-Khost principal). Security is providedby the
+SecurityAnalysis. Theanalysisconsistsofanumberof
+Legionmechanismsbased onL-credsthathavetimeouts,
+cases:
+recoverymechanisms,andpotentiallyveryspecificscope
+IftheLegion-Khostaccountiscompromised (i.e., an andprivilege.Itisalsoveryeasytoimplement.
+attacker obtains Legion-Khost Kerberos credential
+4.3 Kerberossolution#2: KProxyobject
+cache, or breaks into the Host Object and, for
+example,causesthe HostObjectto executeabinary
+In general, a problem of the k5login approach is that
+that allows the credential cache to be read), then
+a user must grant unlimited access to her account by the
+all Legion users on Khost, even if they have never
+Legion-Khostprincipal. A second problem is that a user
+used Legion, have been compromised. The attacker
+such as Alice-KL (or more precisely a person imperson-
+cannot get their K-creds, but can start processes on
+atingAlice-KL)doesnothavetoauthenticatetotheKDC
+theiraccounts1. Thereisavariationofthisapproach,
+of the Khost Kerberos realm in order to use the physical
+1TheattackercangettheirK-credsiftheuserisloggedin.resources.
+(cid:7)
+Asecondapproacheliminatestheseproblems, Why can’t the Legion user obtain K-creds for a par-
+butatthecostofsimplicity. ticular computation before starting the computation, thus
+The essential component of the design is a Legion eliminating the need for the KProxy object? Legion is
+KProxyObjectforeachuser.ThisKProxyObjectsecurely an object-based system in which the necessary function-
+holdstheLegionuser’sKerberoscredentials. TheKProxy ality to start and coordinate large-scalecomputation may
+ObjectforuserFredexecutesunderFred’sUIDonama- be spread across hundred or thousands of objects. When
+chineuponwhichFredhasanaccount. WheneveraHost a user originates computation, the user has no idea on
+Objectanywhereinthemetasystemwantstocreateanob- whatmachines processesultimatelywill be started either
+ject on Fred’s behalf on its associated physical machine, directlyorindirectlyonbehalfofthisuserrequest.Forex-
+the Host Object performs a call back to the KProxy Ob- ample,theusermayattemptto“rundiscreet-simulation-1
+jectforFredtoobtainavalidticketforthatparticularhost. 1000 times”. At this point, the user has no idea (he may
+Fred’sKProxyObjectwillonlyissueFred’sKerberoscre- not care) which machines are then selected by scheduler
+dentials if Fred’s valid Legion credentials are presented objects. Thus, when the user originates computation, he
+in the request (more generally, the access control mech- cannot obtain tickets (which are tied to IP addresses) for
+anisms of Fred’s KProxy Object can be configured to is- allofthemachinesonwhichprocesseswillbestarted.Our
+sueFred’sKerberoscredentialstoanyobjectthatpresents approachusesacallbackto theKProxyobjectto get the
+validcredentialsonbehalfofanyuserwithwhomFredhas appropriateticketforeachmachine.
+previousestablishedatrustrelationship).TheHostObject A second, related note is that the user may not be
+createsthenewobjectviaacalltoksu,withoutrequiring present(i.e,loggedontoamachineintheKerberosrealm)
+theuseofthe.k5loginfile. whentheLegionsoftwareattemptstospawnprocesseson
+Note that all communication of secret information is his behalf. For example, assume that the user starts a
+either done via Kerberos mechanisms (DES) or Legion long-running activity on one machine, and then logs off.
+mechanisms(RSAREF).Cross-realmauthenticationisim- TheLegionsoftwaremightthenneed to spawnaprocess
+mediatelyandtransparentlysupportedinthisdesign:kinit on another machine (if, for example, the computation is
+onlyhastobeperformedonceforeachgroupofKerberos pipelined, where each element of the pipeline is a suffi-
+realms that support cross-realm authentication with each ciently long computation). Again, we need a call back
+other. The Legion KProxy object will automatically ob- to something (the KProxy object in our approach) in or-
+tain Ticket Granting Tickets (TGTs) for the other realms der to obtain the necessary ticket. One approach might
+basedontheexistenceofavalidTGTforagivenhost. be to somehowget a ticket from the process that already
+The steps that Alice-KL must take in order to create exists that is performing the active part of the pipelined
+her KProxy object are shown in Figure 4. First, Alice- computation(because the credentialscache is present for
+KL obtain her K-creds from machine NKhost (this can this process, and presumably it contains a TGT). This is
+also be performed on Khost, although it doesn’t have to essentiallytheapproachoftheKProxyobject.
+be). By default, these K-creds are tied to the IP ad- Thekeylimitationthatthisapproachovercomesisthat
+dressofNKhost. OnNKhost,Alice-KLthenexecutesle- aprocesscanonlybestartedonKhostasuserAlice-KLif
+gion create kproxy,whichaskstheHostObjectonKhost Alice-KLhaspreviouslyauthenticatedherselftotheKDC
+tocreateaninstanceofKProxy classonKhost. Aspartof oftheKerberosrealm. Inaddition,atanypoint,Alice-KL
+this(notshown),Alice-KLinteractswiththeKDCtoob- cancontrolthecreationofprocessesunderheraccountby
+tainaticketthatisusablefromKhost. TheseK-credsare eitherlimitingthelifetimeoftheticketheldbyherKProxy
+thenusedbytheHostObjectinaninvocationofksutoac- Object,oreliminateherKProxyobjectcompletely. How-
+tually create the KProxyobject that will holdAlice-KL’s ever,itisstillthecasethattheLegionusermusttrustthe
+K-creds. ThisKProxyobjectwillexecuteonthismachine Legionsoftwaretocreateprocessesonlythatsheintended.
+under Alice-KL’s account. Note that neither Alice-KL’s
+.k5login nor .k5users contains an entry that directly al- SecurityAnalysis. Theanalysisconsistsofanumberof
+lowsLegion-Khosttoexecutethisksu;instead,ksuisin- cases:
+vokedwithanexplicitcopyofAlice-KL’sK-creds. Now,
+anytimeinthefuturethattheHostObjectonKhostwants IftheLegion-Khostaccountiscompromised If Alice-
+to create an object on Alice-KL’s behalf, it interacts with KLusesthesubvertedKhost,theHostObjectcanuse
+this KProxy object to obtain a valid ticket for use in the her L-creds to obtain the K-creds from the KProxy.
+ksuinvocation.Additionally,anyHostObjectintherealm The K-creds can then be misused by the Host Ob-
+willinteractwithAlice-KL’sKProxyobjectwhencreating ject,forexample,tospawnarbitraryprocessesunder
+objects. Alice-KL’s user id (such as “rm *”). Note that un-
+like the k5login approach, where a subverted KhostHost Object: Khost
+2a legion_create_kproxy
+"Legion-Khost"
+3 ksu
+KProxy Object:
+K-creds valid
+Alice-KL
+1 Obtain K-creds
+2b on Khost
+"Alice-KL"
+Khost
+NKhost
+Figure4.ObjectCreationonKerberos-ControlledHost
+Legion account can immediately abuse all local Le- 5 Relatedwork
+gion user accounts, this approach limits the attacker
+There are several projects being conducted to support
+to misusing the accounts of users currently starting
+inter-operability between a particular security infrastruc-
+objectsontheKhost. Thisallowsintrusiondetection
+ture and Kerberos, for example supporting a single login
+asanapproachforlimitingthedamagecausedbyan
+for NetWare and Kerberos [1]. This project has similar
+attacker.
+goals to Legion’s integration with Kerberos—in particu-
+IfAlice-KL’sK-credsarestolen If the K-creds are lar,nochangestoKerberosandnoreductioninsecurityin
+stolen in some activity irrespective of the metasys- eithersecurityrealmduetothesinglelogin. Asignificant
+tem, the same ramifications exist as the k5login differencebetweentheLegionprojectandtheseprojectsis
+approach. If Alice-KL’s K-creds are stolen by thatLegionattemptstobuildsecuritymechanismsthecan
+attacking her KProxy object, the duration of the be viewed as being on top of underlying security mech-
+compromiseislimitedbythedirectorindirectscope anisms of host systems, whereas these projects generally
+oftheK-credsheldbytheKProxyobject,whichcan attempttosupportsinglesign-onofco-existingrealms. In
+becontrolledbyAlice-KL. a metasystem, it cannot be expected that every realm or
+administrative domain directly acknowledge and support
+IfAlice-KL’sL-credsarestolen Thesameramifications eachother’sexistence.
+asthek5loginapproach. MinskyandUngureanuaddresstheneedofunifyinghet-
+erogeneoussecuritypoliciesin distributedsystemsbyin-
+Ifadmin’sL-credsarestolen Thesameramificationsas
+troducingaformalismthatdescribesvarioussecuritypoli-
+thek5loginapproach.
+cies[10].Aunifiedmechanismisusedtoenforcethesecu-
+rityschemes. Thisworkisimportantforthe construction
+Overall. Thisapproachtradesoffsomeadditionalcom-
+and analysis of security policies in metasystems, in that
+plexity in terms of the systems structure and some extra
+themetasystemmechanismmustsupportawidevarietyof
+effortonthepartofusers(whoperiodicallyneedtoupload
+local policies. However, in metasystems, the approach is
+refreshedKerberoscredentialsto theirrespectiveKProxy
+thatthelocalsitescanhavewhateversecuritypolicythey
+object)foranaddedmeasureofattackcontainment. This
+want,anditisverylikelythatitwillnotbespecifiedfor-
+approachmeetsthe requirementthattheuser activelyau-
+mally. Requiringeverylocalsiteto specify theirsecurity
+thenticate through the Kerberos mechanism before using
+policiesinasingleformalismisdifficultifnotimpossible,
+the local resources (unlike Kerberos k5login approach).
+severelyimpedingametasystem’sdeployment.
+Thisapproachincursaddedoverheadduetothecall-backs
+Yialelis and Sloman describe a security framework for
+totheKProxyobject;however,thesecall-backsonlyoccur
+object-based distributed systems [17]. This project is re-
+atthetimeofobjectcreation,sotheimpactshouldnotbe
+latedtotheworkinLegion,becauseitattemptstoallowthe
+significant.Notethat,asopposedtothekrloginapproach,
+developmentofsecuredistributedapplicationsonoperat-
+the duration and scope of an attacker’s compromise is in
+ingsystemswithvaryingdegreesofsecuritymechanisms
+generallimited by the K-creds beingheld by the KProxy
+built in. While this work is similar to the Legion mech-
+objects,whichcanbeeasilycontrolled.
+anisms described in Section 2, the work of Yialelis and
+SlomanisCORBA-basedanddoesnotaddressthegeneralmetasystems
+(cid:8)
+requirements, such as hardwareheterogene- level of the metasystem, specifically with regard to pro-
+ityandmultipleadministrativedomains. cesscreation.Itwasshownhowametasystemidentitycan
+Globus[6] is anothermetasystemresearchproject,and be securely mapped to a physical account both for stan-
+assuch is addressingmanyof the sameissuesas Legion. dardUNIX access controlandfor Kerberos-basedaccess
+In many instances, convergent evolution has led to simi- control. Inthefuture,otherauthenticationsystemswillbe
+lar solutionstotheseproblems. Forexample,Globushas integrated with current Legion authentication support. A
+asmall,easily-verifiedmodulecalledtheGatekeeperthat particularsystemthatiscurrentlybeingdevelopedisinte-
+runsasrootandisresponsibleforremoteprocessmanage- grationwithSSL/TLSviaOpenSSL[12].
+ment,inmuchthesamemannerasthePCD.Themanner Onapracticallevel,theseapproachesareimportantbe-
+inwhichGlobusintegrateswithKerberosisthroughuseof causetheyareinactiveuseatvariouslocalsiteswithinde-
+the Generic Security Services API (GSS-API [15]). The ployedLegionnetworks. Manytimes,asingleconcurrent
+level of granularity of the GSS-API and the Legion ob- computationcanconsistofmanyprocessesspreadacross
+jectmodel arefundamentallydifferent: In GSS-API,two hoststhatrequiredifferentauthenticationandaccesscon-
+applications such as FTP and FTPD establish a security trol. Therefore, the security implications of each are of
+contextandthencommunicatebasedonthesecuritycon- great interest to system administrators and users at such
+text.InLegion,objectsaresignificantlymorefine-grained sites. Onamoregenerallevel,thesedesignsdemonstrate
+thanapplicationssuchasFTPandFTPD—theoverheadto thedegreetowhichtheLegionarchitecturecanaccommo-
+establish contexts establishing and deleting security con- dateandadapttosite-localrequirements.
+textsforeachpairofcommunicatingobjectsisintuitively The Legion system is currently widely deployed, in-
+tooexpensive,asthenumberofobject-objectcommunica- corporating diverse resources at Supercomputing Cen-
+tionsispotentiallyquitelargeinthelifeofacomputation. ters, Labs, and Universities. For more information
+CRISIS [2] is the security architecture for the WebOS about the current status of the Legion system, see
+projectatUCBerkeley.TheWebOSprovidesmanyofthe http://legion.virginia.edu. The power of the environment
+samehigh-levelservicesasLegion. WebOSisfundamen- increaseswiththescaleandscopeofthesystem. Wecon-
+tally different than Legion in that while WebOS focuses tinue to actively integrate new sites into Legion. A nat-
+on system-level support for building and running wide- ural part of the evolution requires us to adapt the Legion
+areaapplications,Legion’sgoalsaretoprovideanobject- security architecture to newsite-local policies and mech-
+based programming model suitable for such a wide-area anisms. The work presented here describes our current
+application. Theprinciplegoalsof CRISISare similarto dominant site configurations. In the future we expect to
+thegoalsofthesecurityarchitectureinLegion: tousere- seethissetexpandasLegiondeploymentincreases.
+dundancytoreducethelikelihoodofsystemcompromise,
+cachewheneverpossibletoimproveperformance,support References
+fine-grainedcontroloverdelegatedrights,makeextensive
+use of logging, support local autonomy, and to make the [1] William A. Adamson, Jim Rees, and Peter Honey-
+designassimpleaspossible.Adifferencebetweenthetwo man.Joiningsecurityrealms:AsingleloginforNet-
+systemsisaresultofLegion’ssupportforautonomywhich WareandKerberos. InFifthUSENIXSecuritySym-
+is not a focus of WebOS: Legion supports dynamically- posium,June1995.
+configured local security mechanisms, and CRISIS sup-
+[2] E. Belani, A. Vahdat, T. Anderson, and M. Dahlin.
+ports uniform mechanism across all of the nodes of the
+CRISIS: A wide area security architecture. In Sev-
+wide-areasystem(althoughpolicywithineach nodemay
+enthUSENIXSecuritySymposium,January1998.
+beseparatelydefined).
+[3] ITU-T RecommendationX.509 (1997 E). Informa-
+6 Conclusions tiontechnology-opensystemsinterconnection-the
+directory:Authenticationframework.
+While a goal of a metasystem can be to provide an
+abstraction of a single virtual machine from large, dis- [4] C. Ellison, B. Frantz, B. Lampson, R. Rivest,
+tributed, heterogeneous resources, ultimately a metasys- B.Thomas, andT. Ylonen. SPKIcertificate theory.
+temcomputationiscomprisedofactivitiesonphysicalma- RFC2693,September1999.
+chinesatdifferentsiteswithdifferentgoals. Theseactiv-
+[5] Adam Ferrari, Frederick Knabe, Marty Humphrey,
+ities include process creation, file creation and modifica-
+SteveChapin,andAndrewGrimshaw. Aflexiblese-
+tion, “native” IPC mechanisms, “native” schedulers such
+curity system for metacomputing environments. In
+asCodineandLoadLeveler,etc. Thispaperdescribedthe
+7th International Conference on High Performance
+issuesinvolvedin supportingthe notionof identityat theComputing and Networking Europe (HPCN Europe
+99),pages370–380,April1999.
+[6] IanFoster,CarlKesselman,GeneTsudik,andSteven
+Tuecke. A security architecture for computational
+grids. In Fifth ACM Conference on Computers and
+CommunicationsSecurity,November1998.
+[7] AndrewS. Grimshaw, Adam Ferrari, Frederick Kn-
+abe, and Marty Humphrey. Wide-area comput-
+ing: Resource sharing on a large scale. Computer,
+32(5):29–37,May1999.
+[8] AndrewS.GrimshawandWilliamA.Wulf. TheLe-
+gion vision of a worldwide virtual computer. Com-
+municationsoftheACM,40(1):39–45,January1997.
+[9] Massachusetts Institute of Technology Ker-
+beros Team. Kerberos 5 Release 1.0.6.
+http://web.mit.edu/kerberos/www/.
+[10] NaftalyH.MinskyandVictoriaUngureanu. Unified
+support for heterogeneous security policies in dis-
+tributedsystems. InSeventhUSENIXSecuritySym-
+posium,January1998.
+[11] B. Clifford Neuman and Theodore Ts’o. Ker-
+beros: An authentication service for computer net-
+works. IEEECommunicationsMagazine,32(9):33–
+38,September1994.
+[12] OpenSSL Project. OpenSSL 0.9.4.
+http://www.openssl.org.
+[13] Tatyana Ryutovand Clifford Neuman. Accesscon-
+trolframeworkfordistributedapplications. Internet-
+draft, draft-ietf-cat-acc-cntrl-frmw-02, expires Jan
+2000.
+[14] M.A. Sirbuand J.C.-I.Chuang. Distributedauthen-
+tication in Kerberos using public key cryptography.
+In1997SymposiumonNetworkandDistributedSys-
+temsSecurity(SNDSS’97),February1997.
+[15] J. Wray. Generic security service application pro-
+graminterface,version2. RFC2078,January1997.
+[16] ANSIX9.57-199x. Publickeycryptographyforthe
+financial services industry: Certificate management
+(workingdraft).
+[17] N. Yialelis and M. Sloman. A security frame-
+worksupportingdomain-basedaccesscontrolindis-
+tributed systems. In 1996 Symposium on Net-
+workandDistributedSystemsSecurity(SNDSS’96),
+February1996.

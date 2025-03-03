@@ -1,0 +1,1561 @@
+HisTorε: Differentially Private and Robust
+Statistics Collection for Tor
+Akshaya Mani Micah Sherr
+Georgetown University Georgetown University
+am3227@georgetown.edu msherr@cs.georgetown.edu
+Abstract—A large volume of existing research attempts to These characteristics include: (1) dynamics—Tor is a
+understand who uses Tor and how the network is used (and highly dynamic network that is known to be affected by
+misused). However, conducting measurements on the live Tor world events. For example, uprisings in undemocratic nations
+network, if done improperly, can endanger the security and tend to be followed by more advanced attempts to block
+anonymity of the millions of users who depend on the network
+Tor from within those countries [31]. Entire countries are
+to enhance their online privacy. Indeed, several existing mea-
+periodically blocked and then allowed to access the network.
+surement studies of Tor have been heavily criticized for unsafe
+Comprehensive statistics gathering efforts must consider both
+research practices.
+short-term and more longitudinal trends; (2) privacy—Tor is
+Tor needs privacy-preserving methods of gathering statistics. designed to protect the privacy of its users. Experiments that
+The recently proposed PrivEx system demonstrates how data capture users’ communications are thus antithetical to the
+can be safely collected on Tor using techniques from differential goals of the anonymity network and can potentially endanger
+privacy. However, as we demonstrate in this paper, the integrity
+users who depend on the network to hide their identities;
+of the statistics reported by PrivEx is brittle under realistic
+(3) integrity—unlike the Internet, the core of Tor’s network is
+deployment conditions. An adversary who operates even a single
+operated by volunteers. It is far easier to operate a malicious
+relayinthevolunteer-operatedanonymitynetworkcanarbitrar-
+Tor relay than a core Internet router, and hence measurement
+ily influence the result of PrivEx queries. We argue that a safe
+andusefuldatacollectionmechanismmustprovidebothprivacy studies should consider a threat model in which the adversary
+and integrity protections. attempts to manipulate measurements to further its goals;
+and (4) security—similarly, a privacy-preserving measurement
+This paper presents HisTor(cid:15), a privacy-preserving statistics
+system should not provide a new attack surface for disrupting
+collectionschemebasedon((cid:15),δ)-differentialprivacythatisrobust
+or otherwise manipulating Tor.
+against adversarial manipulation. We formalize the security
+guarantees of HisTor(cid:15) and show using historical data from the Wepositthattheabovechallengescontributetothelackof
+Tor Project that HisTor(cid:15) provides useful data collection and understanding of actual Tor users. We know surprisingly little
+reporting with low bandwidth and processing overheads. about who uses the network, what they are using it for, and
+howtheyareusingit.Wediscussthelackofinformationabout
+how people are using Tor in more detail in the next section.
+I. INTRODUCTION
+While our lack of knowledge about how Tor is used in
+Tor [9] is an anonymity network composed of approx-
+practicemayatfirstblushsignalastrengthofTor(thatis,that
+imately 6000 volunteer-operated relays with an estimated
+it successfully conceals its users’ behavior), it also limits our
+1.75 million daily users [31]. Like the Internet, it is both a
+ability to analyze the actual privacy properties of the network.
+production network with live users and a research platform
+For example, attempts to empirically measure the anonymity
+on which researchers experiment with new protocols and
+offered by the Tor network are predicated on maintaining
+implementations.1UnliketheInternet,however,Torhasseveral
+accuratemodelsofrealTorusers’behavior[2,14,17,19,33].
+characteristics that make it a particularly unfriendly platform
+To date, these models have been largely best guesses.
+for conducting (ethical) empirical studies:
+The core contribution of this paper is the introduction
+1This dual-use is sometimes the source of conflict. To “minimize privacy of HisTor(cid:15), a differential privacy scheme for Tor that is
+risks while fostering a better understanding of the Tor network and its scalable, incurs low overheads, preserves users’ privacy, and
+users”,theTorProjectrecentlyestablishedaTorResearchSafetyBoard[32] provides strong integrity guarantees2. The goal of HisTor(cid:15) is
+that maintains guidelines and offers feedback to researchers concerning the
+toprovideresearcherswithaplatformforconductingaccurate
+potentialrisksofexperimentingontheliveTorNetwork.
+measurementstudiesonTorwithoutendangeringthenetwork’s
+users and while incurring only low overheads.
+Permission to freely reproduce all or part of this paper for noncommercial
+purposes is granted provided that copies bear this notice and the full citation Importantly, HisTor(cid:15) is not the first differentially private
+on the first page. Reproduction for commercial purposes is strictly prohibited statistics gathering scheme for Tor. Elahi et al. [15] recently
+without the prior written consent of the Internet Society, the first-named author proposed a differential privacy solution for Tor called PrivEx.
+(for reproduction of an entire paper only), and the author’s employer if the
+PrivEx has significantly raised the bar for safe Tor measure-
+paper was prepared within the scope of employment.
+ments. Indeed, the Tor Research Safety Board cites PrivEx
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23411
+2HisTor(cid:15)
+ispronouncedas“history.”as an example of exciting research towards conducting safe network through exit relays, which establish TCP connections
+measurements on the live network [32]. totheintendeddestination.AlongtheTorcircuit,cryptography
+helpsconcealtheactualsenderandreceiver—relaysknowonly
+A key distinguishing feature of HisTor(cid:15) is its robustness
+the previous and next hop along the anonymous path.
+to manipulation. PrivEx raises the bar on Tor experimentation
+by providing privacy. We show, however, that PrivEx is not Torisdesignedtoberobustagainstanon-globaladversary,
+immune to manipulation. In particular, we demonstrate that a meaning that it provides protections against an adversary who
+maliciousrelayoperatorcandrivetheaggregatestatisticbeing cannot view all traffic on the network. It is known to be
+calculated towards an arbitrary value of its choosing. While vulnerable against traffic correlation attacks [20] in which an
+such an attack may be outside of the threat model envisioned adversary can observe an anonymous connection as it enters
+by Elahi et al., the attack points to the need for statistics and leaves the anonymity network. Here, using timing and
+gathering mechanisms that are both privacy-preserving and flow analysis, the adversary can correlate the ingress and
+resilient to manipulation. egress traffic and determine that they belong to the same
+traffic stream, thus de-anonymizing both endpoints of the
+HisTor(cid:15)’s robustness is mostly achieved by forgoing gen-
+communication.
+eral counting queries (as supported by PrivEx) in favor of
+supporting only binning queries. Although we support more Our current understanding of Tor’s usage is limited.
+general binning, a useful example of the type of queries The information we do have about Tor’s real-world usage
+that HisTor(cid:15) supports is a histogram. In HisTor(cid:15), each data is unfortunately incomplete, outdated, and sometimes even
+contributor(forexample,exitrelays)mustcontributeeither“0” contradictory.
+or “1” to the total count in a bin. For instance, an analyst can
+query HisTor(cid:15) to provide a histogram that shows the number The study by McCoy et al. [24] is perhaps the earliest
+attempt at understanding how Tor is used, but its findings are
+of connections observed by the different guard relays, or the
+now almost a decade old and reflect a historical Tor network
+number of connections to Hidden Service Rendezvous Points
+that had one fifth of the relays and fewer than half of the
+as observed by relays, etc. To provide robustness guarantees,
+HisTor(cid:15) uses Goldwasser-Micali (GM) encryption [16] to number of daily users as the network does today [31]. More
+importantly, the surreptitious capturing and analysis of real
+ensure that encrypted values are either treated as 0 or 1,
+users’ anonymized traffic flows is now viewed as ethically
+restricting the influence of a malicious relay. Put another
+ambiguous and even potentially harmful; indeed, the work
+way, all relays (malicious or not) are strictly bounded in
+is sometimes cited as being an exemplar of unsafe security
+their influence over the total aggregate. In the sections that
+research [30].
+follow, we demonstrate both analytically and empirically that
+HisTor(cid:15)’s binning strategy supports a wide range of queries The ongoing debate [28] between supporters of the Tor
+useful for Tor researchers while enforcing strong integrity networkandtheCloudFareCDNfurtherhighlightsthelackof
+guaranteesandimposinglowcommunicationandcomputation a clear understanding of how Tor is used. Briefly, CloudFare
+overheads. forced Tor users to complete user-unfriendly CAPTCHAs
+HisTor(cid:15) also provides resistance to so called “compulsion before accessing any of the vast number of CloudFare’s
+hosted sites. The CTO of CloudFare cited the large portion
+attacks” in which a relay operator is compelled to release
+of attack traffic originating from Tor exit relays as the prin-
+informationtoa(potentiallytotalitarian)government.Statistics
+ciple motivation of the CAPTCHAs. The Tor Project publicly
+gathering requires, obviously, gathering statistics, which itself
+responded [27] by questioning the accuracy of CloudFare’s
+poses a privacy risk since these statistics would not otherwise
+measurements,andpointedtoareportbyAkamai[1]showing
+be collected. For example, Tor does not currently log client
+that Tor traffic had a similar proportion of attack traffic as the
+connections to guards; queries which ask for a histogram of
+regular (non-anonymized) Internet.
+the number of guard connections thus may impose additional
+privacyrisks.WedesignHisTor(cid:15)tomitigatesuchrisksthrough
+Similarly, researchers have published measurement studies
+the use of encrypted data structures we call oblivious bin that show that an enormous percentage of connections to Tor
+counters.Simplyput,weuseefficientcryptographictechniques Hidden Services go to hidden service sites that serve child
+anddatastructurestomaintaincountersthattherelayoperators pornography [4]. This is again disputed by the maintainers of
+cannot read on their own. the Tor Project [23].
+Background on differential privacy. Differential pri-
+II. BACKGROUND
+vacy[10]seekstominimizetheprivacyriskofparticipatingin
+adatabasewhilemaximizingtheaccuracyofstatisticalqueries
+Tor. Tor is a network of volunteer-operated routers that
+against that database. Although several notions of differential
+enhancesprivacybyseparatingnetworkidentityfromnetwork
+privacy exist, this paper considers ((cid:15),δ)-differential privacy as
+location [9]. The Tor client proxies a user’s TCP connections
+introducedbyDworketal.[11]:acomputationF gives((cid:15),δ)-
+throughaseriesofrandomlyselectedrelays,whichcollectively
+differential privacy if, for all data sets D and D that differ
+form a circuit. Several TCP connections may be multiplexed 1 2
+on only one row, and all S ⊆Range(F),
+overthesamecircuit.Thefirsthoponthiscircuit—theingress
+point to the Tor network—is usually a Tor guard relay, a Tor
+Pr[F(D )∈S]≤exp((cid:15))×Pr[F(D )∈S]+δ
+1 2
+relay that is relatively stable and is deemed to have sufficient
+bandwidthforthetask.Asanotableexception,trafficmayalso Crucially,differentialprivacy’sformalguaranteesareaboutthe
+enter the Tor network through bridge nodes, which are similar propertiesofthedatabasemechanismratherthanthecomputa-
+to guards but are not publicly advertised. Traffic exits the Tor tional capabilities or auxiliary knowledge of the adversary. In
+2practice,differentialprivacyisachievedbyaddingnoisetothe 1050
+result of some aggregate query. The parameter (cid:15) controls the
+tradeoffbetweenprivacyandutility:alarger(cid:15)providesweaker 900
+privacy but more accurate results. The inclusion of δ relaxes
+the more rigid notion of (cid:15)-differential privacy and allows for
+750
+more practical implementations.
+In this paper, we adopt the distributed ((cid:15),δ)-differential 600
+privacy scheme of Chen et al. [6]. In their work, an analyst
+poses a question to a fixed set of c clients. Each client 450
+c contributes a bit vector3 v = {v ,...,v }, encrypted
+i i i,1 i,q
+using Goldwasser-Micali (GM) bit cryptosystem [16] with the
+300
+analyst’s public key. GM encryption enforces the property
+that ciphertext can only encode 0 or 1. To provide privacy,
+150
+a proxy adds in n encrypted random noise vectors, where n is
+calculated as
+64ln(2/δ) 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+n=(cid:98) (cid:99)+1 (1)
+(cid:15)2 Website No.
+The GM-encrypted c + n client and noise vectors are then
+shuffled by the proxy and returned to the analyst. The analyst
+uses its private key to decrypt the bit vectors. Letting d be
+i,j
+the jth element of vector i (where 1≤i≤c+n), the analyst
+obtains the (noised) aggregate result a as
+j
+c+n
+(cid:88) n
+a = d − (2)
+j j,k 2
+k=1
+for all 1≤j ≤q (the number of elements in a bit vector) [6].
+In the work by Chen et al. [6], the authors set δ <1/c in
+Eq.1.However,Dworketal.[13]provethatsuchavalueofδ
+is very dangerous, as it permits compromising the privacy of
+“just a few” number of clients. Therefore, we set δ to a much
+lower value, typically on the order of 10−6/c.
+Also, we use (cid:15) = 1 for our experiments, unless otherwise
+noted. We note that this offers more privacy than the experi-
+mental setting ((cid:15)=5) used by Chen et al. [6].
+III. MANIPULATINGPRIVEX
+PrivEx [15] is the first system for private data collection
+ontheliveTornetwork.Ithas(justifiably)garneredsignificant
+attention from the privacy-enhancing technologies community
+and has been promoted as an example of a technology that
+enables safe data collection on Tor [32].
+In comparison with HisTor(cid:15), which we introduce in the
+next section, PrivEx has a similar system model, but differs
+in that relays individually contribute their own noise. This
+has the advantage that malicious proxies cannot break privacy
+guarantees by not following the protocol. However, PrivEx
+makesimplicittrustassumptionsthatallowanymaliciousrelay
+to manipulate the results of a differentially private query.
+Briefly, Elahi et al. introduce two PrivEx variants for
+privatecollectionoftrafficstatisticsonTor.Inboththeirsecret-
+sharinganddistributeddecryptionschemes,aninvariantisthat
+relays contribute their own individual value, and the system
+computes the sum of those values. That is, PrivEx supports
+summation queries. Importantly, there is no protection against
+an attack on the integrity of the statistics. This enables a
+3Weuseaboldtypefacetorepresentvectors.
+snoitcennoC
+tneilC
+fo
+.oN
+Actual
+Noised
+Fig.1. Thenumberofclientconnections(y-axis)for15differentwebsites
+(x-axis)asactuallyoccurred(“Actual”)andasreportedbyPrivEx(“Noised”).
+Asinglemaliciousrelayfalselyreportsthatitobserved1000connectionsto
+website#2.
+maliciouscontributor(e.g.,arelay)tosubmitanarbitraryvalue
+that can significantly impact the aggregate result.4
+Todemonstratethistypeofmanipulation,wemadeatrivial
+modification to the PrivEx source code (as provided by Elahi
+etal.[15])toincludeasinglemaliciousrelay.Consistentwith
+their work, we consider a query that aggregates the number of
+visitsdestinedto15particularwebsites.Suchaquerycouldbe
+usefultoanswerthequestion:whichwebsitesaremostpopular
+among Tor users? In our experiment, we use the same default
+parametersasisincludedinthePrivExsourcecode.However,
+we modify the behavior of a single relay to falsely claim that
+it has observed 1000 visits to website #2.
+Figure 1 shows the result of this manipulation. The actual
+distributionofwebsitevisitsisshowninred,andindicatesthat
+website#6is,byfar,themostpopularsitevisitedviaTor.The
+noised distribution as reported by PrivEx, shown in patterned
+blue, paints a different picture: according to the results of the
+query,website#2appearstosimilarlybepopularamongstTor
+users.
+The above example is of course one of many possible
+manipulations. More generally, a single malicious relay that
+participates in PrivEx can supply any (false) count to manipu-
+late the aggregated result, anddo so without risking detection.
+Weemphasizethattheabove“attack”fallsentirelyoutside
+ofthethreatmodelconsideredbyElahi et al. [15].Thatis,we
+are not disclosing errors in their design or implementation.
+This paper makes the argument that while PrivEx provides
+strong privacy guarantees, its lack of integrity guarantees is
+problematic for many types of queries that would be useful
+for Tor. Since Tor is a volunteer-operated network, the barrier
+to entry for operating a relay is very small. Indeed, there
+havebeenseveralinstances[34]inwhichrelayoperatorshave
+been found to behave maliciously. While we view PrivEx as
+4Elahi et al. posit that range proofs could potentially be added to PrivEx
+toboundtheimpactofuntruestatistics.However,astheauthorsadmit,such
+techniquesleadtosignificantcomputationandcommunicationoverheads[15].
+3a significant step forward in private data collection, we argue also possible with existing Tor relays, and we do not consider
+in this paper that privacy must be combined with integrity defenses against such behavior here. HisTor(cid:15) ensures that no
+protections to provide a useful statistics gathering service. colluding group of DCs can reveal more information than
+would otherwise be available by pooling their knowledge.
+IV. HISTOR(cid:15)OVERVIEW Malicious DCs may attempt to manipulate query results
+HisTor(cid:15)’s goal is to provide differentially private data by reporting erroneous data, as in §III. If c is the number of
+DCs that participate in a query and f is the fraction of the
+collectionforTorthatisrobustagainstmanipulation.Weintro-
+duce HisTor(cid:15) by describing its participants and system model participating DCs that are malicious, then HisTor(cid:15) guarantees
+that the maximum influence over the aggregate result is ±fc.
+(§IV-A), threat model (§IV-B), query capabilities (§IV-C), and
+This is a direct consequence of applying the ((cid:15),δ)-differential
+operation (§IV-D).
+privacy scheme of Chen et al. [6]: each relay (malicious or
+not) can contribute at most 1 to each element in its supplied
+A. Participants and System Model
+vector. If a DC refuses to participate in a query or submits
+There are three types of participants in HisTor(cid:15): a malformed vector, its bit vector is considered to be all 0s.
+Consequently,maliciousDCscannotdisrupt(i.e.,causedenial-
+Data collectors(DCs)[15]arerelaysthatcollectstatistics of-service) HisTor(cid:15) queries by submitting false or malformed
+that will later be aggregated. Example of DCs and the data
+data.
+that they collect include guard relays that count the number
+of client connections, middle relays that count requests to Tor Malicious mixes may also behave arbitrarily. HisTor(cid:15)
+Hidden Service introduction points, and exit relays that keep provides strong privacy guarantees when (1) no more than
+track of exit bandwidth. Developing a comprehensive list of one of the mixes is malicious and (2) a malicious mix does
+possible queries is beyond the scope of this paper. Our aim not collude with a malicious analyst. HisTor(cid:15) employs secret
+is rather to provide a secure and private statistics gathering sharing techniques to ensure that non-colluding mixes cannot
+technique for Tor that is sufficiently general to be adapted for learn un-noised query results.
+many types of queries. Mixes can attempt to manipulate query results by adding
+As with vanilla Tor, HisTor(cid:15) relies on secure communica- false values, improperly constructing noise vectors, or modi-
+fying or discarding the encrypted vectors it receives from the
+tionviaTLS,andweuseTor’sexistingdirectoryinfrastructure
+DCs.HisTor(cid:15)’sintegrityguaranteesensurethattheanalystcan
+as a trust anchor to locate public keys and authenticate mes-
+detect manipulated query results as long as one of the mixes
+sages.SincerelaysarealreadyheavilyburdenedinTor,weaim
+is honest.
+to keep both the computation and communication overheads
+of HisTor(cid:15) low for the DCs. In HisTor(cid:15), the analyst issues queries and receives noised
+results from the mixes. We consider a malicious analyst that
+The analyst is a party that issues queries to the data
+colludes with other parties to attempt to learn non-noised
+collectors and receives noised query responses. We envision
+answerstoqueries.HisTor(cid:15)achieves((cid:15),δ)-differentialprivacy
+that, at least initially, the analyst will be the maintainers of
+when no more than one mix is malicious and no malicious
+Tor.
+mixcolludeswiththeanalyst.IfamaliciousDCcolludeswith
+Finally,weintroducethreemixesthatarethirdpartiesthat either a mix or the analyst, no information that is not already
+provide the required amount of differentially private noise. available to the malicious DC is revealed.
+Mixes are dedicated servers responsible for enabling HisTor(cid:15)
+External adversaries. HisTor(cid:15)isrobustagainstanexternal
+queries. We assume that all parties can obtain the mixes’
+adversarythatobservesallHisTor(cid:15)-relatedcommunication.All
+public keys, which for example, could be attested to by the
+HisTor(cid:15)exchangesaresecuredbyTLS.Weassumethatpublic
+Tor directory authorities.
+keys can be reliably retrieved—for example, by leveraging
+Also included in the HisTor(cid:15) ecosystem are the Tor users Tor’s existing directory infrastructure—and that all properly
+who use the Tor client software to communicate via Tor, the signed messages can be authenticated.
+destinations that the users are visiting, and the Tor directory
+servers and mirrors. Since HisTor(cid:15) imposes no changes to Wealsoconsideranexternaladversarythatappliespressure
+(e.g., through a subpoena or threat of violence) to an honest
+the normal operations of Tor, we mostly omit discussing
+DC to reveal its individual counters. We argue that papers
+these components unless they are pertinent to the security and
+privacy properties of HisTor(cid:15). (such as this one) that propose collecting information that
+wouldotherwisenotbegatheredbyanonymizingrelayshavea
+responsibilitytoevaluatesuchcompulsionattacks.Wedescribe
+B. Threat Model and (Informal) Security Guarantees
+in §V techniques that limit the amount of information that can
+We consider both internal and external threats to privacy be “handed over” by a pressured honest relay to an adversary.
+and data integrity:
+C. Queries
+Internal adversaries. DCs are volunteer-operated relays
+In HisTor(cid:15), for each query, each DC i contributes a bit
+andcanbemalicious.AmaliciousDCisaByzantineadversary
+vector v of length b, where b is a parameter of the query. For
+that can, for example, disobey HisTor(cid:15) protocols, submit i
+ease of exposition, we refer to each vector position as a bin.
+false statistics, and/or refuse to participate. Malicious DCs
+may also collect and leak sensitive information (e.g., the IP The result of the query is the noised aggregate vector
+addresses of clients or destination addresses); such leakage is described in Eq. 2. Essentially, the query returns a vector of
+4summations(cid:80)c
+v plustheaddednoise.Thedataandnoise aggregate the data that Tor already collects. We have already
+i=1 i
+are shuffled to provide indistinguishability. added hooks for bandwidth and connection counting.
+HisTor(cid:15) supports two types of queries: class queries and Figure 2 shows how queries are processed in HisTor(cid:15).
+histogram queries. DCs maintain three redundant copies of encrypted counters
+(encrypted binary vectors). Each copy is encrypted using the
+Class queries. In a class query, each bin j is assigned a public key of one of the three mixes.
+class label C . For Tor, potentially useful class labels include
+j
+(but are not limited to) protocols/ports seen by exit relays and Attheendoftheepoch,theseencryptedvectorsarefurther
+client version numbers seen by guards. The semantics of class
+obfuscatedbyxor’ingwitharandombinaryvectorR.Xor’ing
+queries allow the analyst to ask for all j ∈ [1,b]: how many with the random vector ensures that mixes cannot learn the
+relays have witnessed the event described by the label C ? plaintext of the DCs’ binary vectors, even after decrypting
+j
+with their private GM key. (Recall that GM is a homomorphic
+The analyst specifies the semantic meaning for each bin. cryptosystemwithrespecttoxor[16].)TheDCssendonecopy
+For example, in the case of reporting which ports have been of its GM-encrypted and xor’d vector to each mix, as shown
+seen by exit relays, the analyst can specify a query such that in Figure 2. Additionally, the DCs communicate secret shares
+the first bin in DCs’ bit vectors indicates whether the exit has of R across the three mixes.
+witnessed http traffic, the second bin indicates whether it has
+Each mix then decrypts the GM encryption, yielding the
+seen ssh traffic, etc. By examining the aggregated and noised
+original binary vectors xor’d with a random vector. Each such
+results, the analyst learns approximately how many exit relays
+vectorisaddedtoamatrix;thatis,thismatrixcontainsthexor-
+have seen the specified traffic types.
+encrypted vectors from the DCs. Mixes then add n randomly
+Histogram queries. Histogram queries allow the analyst generated rows to the vector, where n is computed according
+to learn the distribution of some value, taken over the DCs. to Eq. 1 (where, δ =10−6/c). Finally, the vector is randomly
+As examples, histogram queries can inform the analyst of shuffled columnwise. Both the addition of the n rows of
+the distribution of client connections seen by guards or the noise and the shuffling is performed using cryptographically
+bandwidth seen by exit relays. secure random seeds, which are shared amongst the mixes.
+Consequently, the three mixes add identical noise vectors and
+For histogram queries, each DC maintains an encrypted perform the identical shuffle.
+counter of the relevant statistic (e.g., observed bandwidth).
+Each bin j is assigned an interval [L ,U ) where L ,U ∈Z Finally, the mixes communicate the resultant matrices to
+j j j j
+such that L ≥ U when j > 1. When a bin b = 1, this the analyst as well as the shuffled secret shares of the R
+j j−1 j
+indicates that the encrypted counter is in the range [L ,U ). randomvector.Theanalystthencombinesthesharestoobtain
+j j
+Note that at most one bin belonging to a DC is set to 1; all the shuffled R, and uses it to decrypt both the shuffled data
+other bins are set to 0. (This is unlike a class query; there, and noise records (which are indistinguishable) in the matrix.
+multiple bins/classes can be set to 1.) Toobtaintheaggregate,theanalystthensubtractstheexpected
+noise value according to Eq. 2.
+(cid:80)
+ThevectorsumoverallDCs’binvectors(i.e., v )yields
+i
+thedistributionoftheDCs’counters.Asexplainednext,mixes
+V. OBLIVIOUSCOUNTERS
+add random noise vectors to apply differential privacy to this
+distribution. To mitigate compulsion attacks, HisTor(cid:15) minimizes the
+amount of information that DCs need to maintain through the
+use of oblivious counters. In this section, we assume that the
+D. Operation
+DCsarehonest.AmaliciousDC(relay)neednotuseoblivious
+HisTor(cid:15) operates in loosely synchronized hour-long countersandcantriviallyleaksensitivestatistics,regardlessof
+epochs.Atthebeginningofeachepoch,eachDCzeroesallof whether HisTor(cid:15) is used.
+its bins. As with PrivEx, HisTor(cid:15) ensures that data sets do not
+EachDCmaintainsthreebinaryvectorsoflengthb,where
+carry over between queries; that is, no more than one query
+b is determined by the query. Each binary element of the
+within an epoch can cover a given bin. Extending HisTor(cid:15)
+first binary vector is GM-encrypted using the public key of
+to support differential privacy when data must be continually
+the first mix; the second vector is GM-encrypted using the
+observed [5, 12] is left as an interesting area of future work.
+public key of the second mix, and so on. For ease of notation,
+Currently, as with PrivEx, we enforce independence between
+we focus below on one such GM-encrypted vector which we
+different epochs by zeroing all counters. (We include discus-
+e
+denote as v = (cid:104)E (v ),...,E (v )(cid:105), where E (·) denotes
+sions of the absoluteness of this independence and the effect + 1 + b +
+encryptionusingthepublickeybelongingtothepertinentmix.
+of a privacy budget for differentially private queries in §XI.)
+The scheme is identical for the three encrypted binary vectors
+HisTor(cid:15)’sworkflowbeginswhentheanalystissuesaquery maintained by each DC.
+to the DCs and mixes. Currently, this is manual process
+that requires configuring Tor relays to report the statistic of
+A. Oblivious class counters
+interest (e.g., connection counts, observed bandwidth, etc.).
+We envision that future versions of HisTor(cid:15) will support Class queries allow the analyst to discover how many
+SQL-like semantics to automate this process. Our prototype DCs encountered an event (see §IV-C). Recall that each v
+j
+implementation, described in more detail in §IX, uses Tor’s corresponds to a class label C , which for example could
+j
+existing statistics module and can be easily configured to denote a particular protocol or type of event. When v = 1,
+j
+5Mix 3
+Mix 2
+Mix 1
+DCs
+Mix1 Mix2
+Mix3
+Decrypt Add Noise Shuffle
+DC1:
+DC2: :
+: :
+:
+DCc:
++
+1 2
+:
+:
+n
+esiw-nmuloC Column-wise
+M Mi ix x1 2 Analyst
+Mix3
+Mix1
+Mix2 Mix3
+Aggregate
+Mix1 Mix1 Mix2 Mix2
+Mix3 Mix3
+(cid:15)
+Fig.2. AnoverviewofHisTor queryprocessing.EachmixreceivesanencryptedvectorfromeachDC.Themixesthenaddnoiseandperformacolumn-wise
+shuffle.Theresultingvectorsarethensenttotheanalyst,whointurncancomputetheaggregateresult.
+above scheme trivially achieves resistence to the compulsion
+V1 V2 V3 V4 V5
+attack.
+0 0 0 0 0
+B. Oblivious histogram counters
+In the case of histogram queries, recall that the analyst’s
+1 0 query maps each vector element v j to a range [L j,U j) such
+that L ≥U when j >1. When v is 1, this indicates that
+j j−1 j
+the statistic of interest as measured by the DC is in the range
+0 0 0 0 [L ,U ). Hence, at most one v is set to 1. As a special case,
+j j j
+we set U =∞.
+b
+Let w be the bin width of vector element v ; i.e.,
+j j
+w =U −L .Wedonotrequirethat∀x,y ∈[1,b],w =w ,
+0 0 1 0 0 j j j x y
+but we denote this special case as equal width bins.
+As explained below, our oblivious histogram counter
+Fig.3. Maintaininganobliviousclasscounter.Top:Thecounters(b=5)are scheme requires equal width bins. Since we do not require
+initializedtoGM-encryptionsof0.Middle:Aneventcorrespondingtoclass
+that w = w for all x,y ∈ [1,b]—that is, the histogram
+C3 isobserved,andE+(v3)isreplacedwithE+(1).Bottom:Theresulting x y
+encryptedbinaryvector. query need not use equal width bins—we use an auxiliary
+binary vector with equal width bins, where the bin width
+is set to the greatest common divisor (GCD) of w ,...,w .
+1 b
+e
+we say that the event has been observed by the DC; otherwise More formally, we define ν = (cid:104)E (ν ),...,E (ν )(cid:105), where
++ 1 + β
+v =0 indicates that the event was not witnessed. each element ν covers the range [(j −1)g,jg) and g is the
+j j
+GCD of w ,...,w . As a special case, ν covers the range
+1 b β
+At the beginning of each epoch, each DC zeroes its vector e
+e [(β−1)g,∞).Inpractice,toreducethesizeofν,wecarefully
+v by GM encrypting the bit 0, b times. Since the GM
+choose bin widths such that β < 15000. In the special case
+cryptosystem is a probablistic cryptosystem [16], we have
+that the histogram query species equal width bins, we have
+that ∀x,y ∈ [1,b], x(cid:54)=y ⇒E +(v x)(cid:54)=E +(v y) with high
+that b=β and
+ve =νe
+.
+probability. That is, without knowledge of the corresponding
+private key, GM encryption guarantees that an adversary can- At the beginning of each epoch, each DC initializes its
+? e
+not determine whether v =v when x(cid:54)=y. encrypted vector as ν =(cid:104)E (1),E (0),...,E (0)(cid:105) (all but
+x y + + +
+the first element are encryptions of 0). It also maintains a
+When a DC observes an event corresponding to a class
+counter t, initialized to 0.
+e
+label C , it replaces the value of E (v ) in v with a new GM
+j + j
+encryption of the bit 1. Note that if v was already 1, then When the DC observes the statistic of interest (number of
+j
+the operation effectively replaces the old encryption of 1 with connections, a KB of consumed bandwidth5, etc.), it executes
+a new encryption of 1. This process is depicted in Figure 3. the IncrHistCounter procedure.
+TheIncrHistCounterprocedureworksbyshiftingtheposi-
+Crucially, DCs do not store the plaintext vector elements
+e
+v ,...,v , and instead maintain only the encrypted binary tion of the encrypted 1 in the ν vector whenever the counter
+1 b
+values E (v ),...,E (v ). Since the DCs also do not have
++ 1 + b
+e 5IncrHistCounter can be easily adapted for statistics that increase in
+the private key for decrypting the elements of v, it trivially
+increments greater than 1 (e.g., observed bandwidth). In particular, if k is
+holds that an honest DC that does not know either v or the e
+j theincreaseinthestatistic,thenν isrightshifted(cid:98)(t+k)/g(cid:99)positionsand
+mix’sprivatekeycannotprovidev j toanadversary.Thatis,the tisresetto(t+k)modg.
+6e
+single E (v ) ∈ v. For example, in Figure 4, we have
+Initialization of vector v + k
+E (ν )(cid:55)→E (v ), E (ν )(cid:55)→E (v ), E (ν )(cid:55)→E (v ),
++ 1 + 1 + 2 + 1 + 3 + 2
+E (ν )(cid:55)→E (v ), E (ν )(cid:55)→E (v ), E (ν )(cid:55)→E (v ),
++ 4 + 3 + 5 + 4 + 6 + 4
+0 0 0 0 0 and E +(ν 7)(cid:55)→E +(v 5), where (cid:55)→ signifies the mapping be-
+[0,6) [6,9) [9,12) [12,18) [18,∞) tween νe and ve . Let M(v ,νe ) denote the set of elements of
+k
+w1 = 6 w2 = 3 w3 = 3 w4 = 6 w5 = ∞ νe that map to a given v ∈ve . We can therefore compute
+k
+Initialization of auxiliary vector 𝛎 (cid:77)
+E (v )= E (ν ) (3)
++ k + j
+E+(νj)∈M(vk,νe)
+1 0 0 0 0 0 0 t = 0
+[0,3) [3,6) [6,9) [9,12) [12,15) [15,18) [18,∞) Eq. 3 holds since at most at one element in M(v ,νe ) is 1
+k
+and GM is homomorphic with respect to xor (⊕).
+Invocation of t = 0 t = 1 t = 2 t = 3
+IncrHistCounter()
+Right shift VI. ROBUSTDIFFERENTIALPRIVACY
+In this section, we describe how the DCs, mixes, and
+0 1 0 0 0 0 0 t = 0 analyst interoperate to provide robust differential privacy. We
+[0,3) [3,6) [6,9) [9,12) [12,15) [15,18) [18,∞) explain how each DC tallies the statistic of interest using
+oblivious counters, and present the details of our HisTor(cid:15)
+0 𝛎6 ⊕ 𝛎7 = 0 protocol for aggregating these statistics into a differentially
+private aggregate.
+Mapping to
+vector v Let Mix , Mix , and Mix be the three mixes. Mix is
+1 2 3 1
+referred as the master mix and the other two mixes (Mix and
+1 0 0 0 0 2
+[0,6) [6,9) [9,12) [12,18) [18,∞) Mix 3) are referred to as the slave mixes. All communication
+is assumed to be through secure TLS channels. The process
+of aggregating the individual DC counters is as follows:
+Fig.4. Maintaininganoblivioushistogramcounter.Top:Theanalystdefines
+binwidthsforve .TheGCD(g)is3.Secondfromtop:Theinitializationofνe . Parameter initialization. At the beginning of every epoch,
+Secondfrombottom:Afterthreeobservations(t=3),thebinsinνe areright Mix 1generatesfivecryptographicallysecurerandomseeds:the
+shifted.Bottom:Attheendoftheepoch,thevaluesofνe aremappedtove . common shuffling seed s, the common random vector seeds p
+and q, and the pairwise mix seeds x and x . It transmits
+2 3
+(cid:104)x ,p,q,s(cid:105) to Mix and (cid:104)x ,p,q,s(cid:105) to Mix . Then, Mix
+1 t←t+1 3 2 2 3 2
+generatesacryptographicallysecurerandompairwisemixseed
+2 if t=g // g is GCD and bin width
+x and transmits (cid:104)x (cid:105) to Mix .
+3 then 1 1 3
+4 5 t νem ←p← νe (cid:29)E + 1(ν β−1)⊕E + /( /ν β) Right shift, no wrap Q trau ne sr my iti sn ii tti ta oli tz ha et mio an s. termTh ixe .Ia tn sa ply ecst ifif eo srm thu el pat re ivs aa cyq pu ae rr ay m, ea tn ed r
+6 E +(ν β)←tmp // GM is xor homomorphic
+(cid:15) and, in the case of a histogram query, a set of b bins
+7 E +(ν 1)←E +(0)
+(cid:104)[L ,U ),...,[L ,U )(cid:105). We discuss the practical aspects of
+8 t←0 1 1 b b
+9 end selecting an appropriate value for (cid:15) in §XI.
+Procedure IncrHistCounter
+Query forwarding. The analyst then transmits the query to
+the master mix Mix , which in turn forwards the query to the
+1
+DCs. The master mix maintains a list, L , of the DCs that
+c
+reaches the bin width. Line 6 handles the special “overflow”
+acknowledged the request.
+case: when the last bin is set to a 1, it always retains that 1
+(recallthatthelastbinrepresentstherange[(β−1)g,∞)).An DCstatisticsgatheringandresponse. Foreachquery,each
+example invocation of IncrHistCounter is shown in Figure 4. data collector D collects statistics during the course of the
+epoch using three sets of oblivious counters (see §V). There
+Since an honest DC does not maintain the plaintext values
+is one set of oblivious counters for each of the three mixes.
+of ν ,...,ν and does not know the decryption key, it cannot
+1 β
+reveal which bin contains the 1, even if compelled to do At the conclusion of the epoch, the DC performs the
+so. Importantly, unlike oblivious class counters, oblivious following operations:
+histogramcountersleakinformation—inparticular,thecounter
+t. More formally, we leak (cid:98)log g(cid:99)+1 least significant bits (i) D maintains a series of encrypted oblivious counters
+2(cid:80) e
+o cof mth pe ulsD ioC n’s atm tae ca ksu tar ke ed sv pa lalu ce e, (s( incv ei∈ tv ∈v i [0· ,gL )i )) .+ t, when a v eli em= e(cid:104) nE t+ o( fv vi e,1) i, s.. e. n, cE ry+ p( tev di,b w)(cid:105) itf hor M1 ix≤ ’si≤ GM3,w puh be lr ie ce ka ec yh
+.
+i i
+e Toeasenotation,werefertothenon-encryptedbitvector
+At the end of the epoch, the encrypted values of ν need
+v ,...,v as M.
+e i,1 i,b
+to be mapped back to v. Since the width of the ranges
+(ii) D chooses b-bit random binary vectors R,R ,R ,R ∈
+e 1 2 3 r
+covered by ν are defined by the GCD of the ranges cov- {0,1}b, where ∈ denotes uniformly random selection.
+r
+ered by ve , it holds that each E (ν ) ∈ νe maps to a (iii) D computes R(cid:48) =R⊕R , 1≤i≤3.
++ j i i
+7(iv) D encrypts the bits of R with Mix ’s GM public key Each mix repeats steps (i) and (ii) until all n noisy tuples
+i
+and multiplies them individually with bits of ve i to obtain are generated. Each mix Mix i then arranges the c DC four-
+e tuplesandthennoisyfour-tuples,row-wiseintofourmatrices
+p =(cid:104)p ,...,p (cid:105) for 1≤i≤3.
+i i,1 i,b
+(cid:104)M ,M ,M ,M (cid:105). Let M = (cid:104)M ,M ,M ,M (cid:105),
+(v) Finally, D sends the four-tuple of ciphertext i,1 i,2 i,3 i,4 i i,1 i,2 i,3 i,4
+(cid:104)pe ,R(cid:48),R ,R (cid:105) to Mix , (cid:104)pe ,R ,R(cid:48),R (cid:105) to Mix and 1≤i≤3. The mixes then shuffle the columns of each matrix
+(cid:104)pe1 ,R1 ,R2 ,R3
+(cid:48)(cid:105) to
+Mix1
+.
+2 1 2 3 2 in M
+i
+independently, using common shuffling seed s. This
+3 1 2 3 3 shuffling prevents a DC from being identified, and eliminates
+Note that pe is the GM encryption of the DC response M a potential covert channel. Finally, each Mix i forwards M i to
+i the analyst. The master mix in addition forwards the list L
+xor’ed with R, as GM is a homomorphic encryption scheme. c
+of DCs that had taken part.
+Also, R is computed such that R = R ⊕R(cid:48) = R ⊕R(cid:48) =
+1 1 2 2
+R 3 ⊕ R 3(cid:48). Crucially, each Mix i receives an encrypted copy Aggregate calculation. Upon receiving M i =
+of M ⊕R, but does not have enough information to unmask (cid:104)M ,M ,M ,M (cid:105), 1 ≤ i ≤ 3, the analyst first
+i,1 i,2 i,3 i,4
+(decrypt) M. checks whether the mixes have tampered any DC responses
+by verifying if:
+In summary, during this phase, each DC xor-encrypts its
+oblivious counters with a random value, and transmits that
+ciphertext plus shares of the xor’d random value to each of
+? ?
+the mixes. M 1,1 =M 2,1 =M 3,1 (4)
+?
+Mixnoiseadditionandforwarding. Eachmixonreceiving M 2,2 =M 3,2 (5)
+the four-tuple ciphertext CT = (cid:104)C 1,C 2,C 3,C 4(cid:105) from a DC
+M
+=?
+M (6)
+(seestep(v)above),checksthelegitimacyofC .Alegitimate 1,3 3,3
+1
+?
+GMencryptedvaluemusthaveitsJacobisymbolequalto‘+1’, M =M (7)
+1,4 2,4
+soamixcaneasilyandefficientlydetectmalformedresponses. ? ?
+M ⊕M =M ⊕M =M ⊕M (8)
+If the DC’s response is not legitimate, a mix discards it. 1,2 2,2 2,3 3,3 3,4 1,4
+Otherwise,itdecryptsC usingitsGMprivatekeyandobtains
+1
+the DC response M masked with R. The three mixes then If any of the equalities in Eqs. 4 through 8 does not hold,
+synchronize the list of DCs that have responded. The master the analyst rejects the response. In such a case, attribution can
+mixremovesDCsthatarenotinlistL .Letthetotalnumberof be performed if exactly one of the mixes is malicious—the
+c
+commonDCsthathaverespondedbec.Topreservetheprivacy mix that does not agree on the equalities with the other two
+of the DCs, the mixes collaboratively add n noisy four-tuples, mixes is malicious.
+where n is derived using Eq. 1 (where, δ =10−6/c).
+If the equalities hold, then the analyst computes:
+In order to make a noisy tuple and the DC responses M¯ =M ⊕M ⊕M (9)
+indistinguishable, mixes use an efficient xor encryption: 1,1 1,2 2,2
+Finally for every bin j, 1 ≤ j ≤ b, the analyst computes the
+Mix 1: noisy aggregate a as follows:
+j
+(i) Chooses random b-bit binary strings P using seed p, Q c+n
+usingseedq,R usingpairwisecommonseedx andR a =(cid:88) M¯[k,j]−n/2 (10)
+2 2 3 j
+using pairwise common seed x .
+3 k=1
+(ii) Computes R(cid:48) =P ⊕R ⊕R .
+1 2 3
+VII. PRIVACYANDSECURITYANALYSIS
+Mix 2:
+We next argue that HisTor(cid:15) does not reveal any DC
+(i) Chooses random b-bit binary strings P using seed p, Q statistics to an adversary. We then discuss the privacy guar-
+usingseedq,R usingpairwisecommonseedx andR antees offered by HisTor(cid:15) and evaluate the efficacy of various
+1 1 3
+using pairwise common seed x . potential attacks.
+3
+(ii) Computes R(cid:48) =P ⊕R ⊕R .
+2 1 3
+A. Security Sketches
+Mix 3:
+We argue the security of the protocol in parts: at the DC,
+(i) Chooses random b-bit binary strings P using seed p, Q at the mixes and at the analyst. The communication between
+usingseedq,R usingpairwisecommonseedx andR any two participants (the DCs and the mixes, or the mixes
+1 1 2
+using pairwise common seed x . and the analyst) are through TLS channels and are assumed
+2
+(ii) Computes R(cid:48) =P ⊕R ⊕R . to be secure against eavesdropping. Therefore, we consider
+3 1 2
+the security of the statistics while they are stored on the
+Now, Q is indistinguishable from decrypted C 1, as Q is of participants and not while they are in transit on the network.
+the form M ⊕R for some random M and R = P ⊕R ⊕
+1
+R ⊕R . Note that, each mix exactly knows only two of the
+2 3 Claim 1. Oblivious counters guarantee both confidentiality
+three random vectors R ,R and R . Therefore, each mix
+1 2 3 and integrity of the statistics being collected.
+does not know R and hence, the noise that is being added. In
+e
+other words, mixes add noise, but do not know the values of Proof Sketch. An oblivious counter v is encrypted with a
+the noise that they contribute. mix’s GM public key. By the security of GM encryption, the
+8oblivious counter cannot be decrypted without knowledge of private noise is indistinguishable from a DC response by the
+the mix’s private key. Moreover, a legitimate GM-encrypted way it is generated: A noise vector Q is of the form M ⊕R
+value must have its Jacobi symbol equal to ‘+1’, and hence for some random M, and R = P ⊕ R ⊕ R ⊕ R . Also
+1 2 3
+a counter cannot be malformed by flipping random bits. In the random vectors R(cid:48),R(cid:48) and R(cid:48) are generated such that
+1 2 3
+other words, GM encryption ensures that the values will only R ⊕ R(cid:48) = R ⊕ R(cid:48) = R ⊕ R(cid:48) = R. Therefore, the
+1 1 2 2 3 3
+be decrypted as either a 0 or a 1. analystseesapseudorandompermutationoftheDCresponses
+and differentially private noise in the columns of M¯. By
+Therefore, the only way the counters can be tampered
+the security of pseudorandom permutation, the columns of
+is by encrypting them to random legitimate GM-encrypted M¯ cannot be distinguished from a random permutation with
+values.ThisscenarioisequivalenttoamaliciousDCreporting
+practical effort. Therefore, the analyst cannot learn any DC
+erroneous data. Even in this case, each malicious relay can response from M¯.
+contribute at most 1 to each bin in its counter. The maximum
+influence over the aggregate is therefore bounded by the
+Claim4.Amixcannotlearntheactualaggregatebysubtract-
+number of malicious DCs. Thus, it follows that the oblivious
+ing the noise from the published aggregate.
+counters guarantee both confidentiality and integrity of the
+statistics being collected. ProofSketch.AmixaddsanoisevectorQoftheformM⊕R
+for some random M, and R = P ⊕R ⊕R ⊕R . A mix
+1 2 3
+Claim2.AmixcannotlearnDCstatisticsormanipulatethem exactly knows only two of the three random vectors R ,R ,
+1 2
+without detection. andR .So,amixdoesnotknowRandhencethenoisethatis
+3
+beingadded.Therefore,amixcannotlearntheactualaggregate
+Proof Sketch. Each Mix knows (cid:104)M ⊕R(cid:105) from the DCs. The
+i by subtracting the noise from the published aggregate.
+M ⊕ R is a one-time pad with secret key R, where R is
+a random vector that can be obtained from any of the three
+pairs of random shares: R ⊕R(cid:48), R ⊕R(cid:48) or R ⊕R(cid:48). Here, B. Privacy Analysis
+1 1 2 2 3 3
+each Mix has exactly one random share from each pair—
+i
+R(cid:48),R ,R in case of Mix , R ,R(cid:48),R in case of Mix and Data collector. The DCs can be malicious and report
+R1 ,R2 ,R3 (cid:48) incaseofMix .1 The1 refo2 re,e3 achmixdoesnot2 have “junk”statistics.Themaximumabsolutedistortioninthefinal
+1 2 3 3 aggregate result is bounded by the number of malicious DCs.
+enough information to unmask M and cannot learn any of the
+This bound is much more lenient than PrivEx: the adversary
+DCs’ statistics.
+needs to compromise many DCs to substantially distort the
+A malicious Mix i, 1 ≤ i ≤ 3 can tamper any of the result provided by HisTor(cid:15); in PrivEx, a single malicious
+four-matrices M i,1,M i,2,M i,3 or M i,4 it receives. We use a data collector can significantly influence the aggregate result
+tainting technique to prove that the mixes cannot modify any (see §III).
+of the matrices without detection. We say that a matrix is
+When two or more DCs collude, they learn no more
+taintedwithannon-zeroimpurityifamixmodifiesit.Without
+information by pooling their oblivious counters. This follows
+loss of generality, let us assume that Mix is malicious. Let
+1
+from the guarantees offered by the differential privacy mech-
+W,X,Y, and Z be the non-zero impurities used to taint
+anism [6]. HisTor(cid:15) protects a single honest DC’s statistics
+M ,M ,M , and M , respectively. All matrices from
+1,1 1,2 1,3 1,4
+even when all other DCs are malicious. Also, the statistics
+Mix andMix aretaintedwithzero,asonlyMix isassumed
+2 3 1
+collectedatthehonestDCsarepreservedfromtheactionsofa
+to be malicious. If suppose, Mix can manipulate the matrices
+1
+misbehavingDCsaslongasthesecurityoftheGMencryption
+without detection, then all the equalities in Eq. 4 - 8 hold.
+scheme remains intact.
+Therefore, Eq. 4, 6, 7 and 8 are tainted with W,X,Y, and Z
+as follows:
+Even when a DC colludes with a mix or an analyst, it
+learns no more information than what is already known to it.
+W =0 (11) Mixes. The mixes can be malicious and can report “junk”
+statistics or refuse to add noise. However, as long as at
+Y =0 (12)
+least two of the three mixes are honest, we can identify the
+Z =0 (13)
+malicious mix. Moreover, the malicious mix cannot learn any
+X⊕0=0=0⊕Z (14) DC statistics as shown in §VII-A.
+Evenwhentwonon-colludingmixesaremalicious,wecan
+From Equations 11 through 14, we can conclude that
+stilldetectsuchanattack,butcannotattributeit.Also,ineither
+W =X =Y =Z =0. This is a direct contradiction to our
+of these cases, the mixes do not know the noise added and
+assumption that W,X,Y, and Z are non-zero impurities.
+cannot learn the actual aggregate.
+Therefore, a mix cannot manipulate the DC responses without
+detection. However,whentwoormoremaliciousmixescollude,they
+can trivially learn all DC responses without detection. We
+Claim 3. An analyst cannot learn any DC statistics. discuss this threat in more detail in §XI.
+Proof Sketch. The analyst can compute M¯ from the mixes. Analyst. The analyst cannot learn any DC’s response as
+M¯ contains the DC responses and differentially private noise, shown in §VII-A. However, a malicious mix can share the
+and is shuffled column-wise using a cryptographic random shuffling seed s with the analyst. This allows the analyst to
+seed s that is not known to the analyst. The differentially learn all the DC responses.
+9C. Attack Resilience 1 // w - New Bin Width List
+To complete our security analysis, we consider three types 2 // cur_w - Current Bin Width
+of attacks against HisTor(cid:15): compulsion attacks, denial-of- 3 // max - UB of Last Bin in Previous
+Iteration
+service (DoS) attacks, and correlation attacks.
+4 proc gcdBinWidth(w, cur w, max)
+Compulsion attacks. A DC can be compelled to reveal 5 if !w then
+6 g←cur w // List Empty
+its counters through a legal order or extra-legal compulsion.
+7 else
+HisTor(cid:15) mitigates this threat by encrypting the counters with 8 minw←min(w)
+the mixes’ public key. A DC cannot decrypt its own oblivious 9 g←gcd(minw, cur w)
+counters. 10 if g=1 or g<min(minw, cur w) then
+The adversary can also compel the mixes to decrypt the 11 i←1 √
+12 sqrt← minw+1
+DCs’statistics.However,eachmixreceivestheclientresponse
+13 /* compute greatest factor of minw
+masked with the random vector R, and does not have enough lesser than or equal to cur_w */
+information to unmask it (each mix has either R i or R i(cid:48) for 14 while i≤sqrt do
+1≤i≤3, but not both R i and R i(cid:48)). 15 if minw % i=0 and minw / i≤cur w then
+16 g←minw/i
+Tosuccessfullyconductacompulsionattack,theadversary
+17 break
+would have to first compel the DC to release its oblivious 18 end
+counters,andthenfurthercompelamixtoperformthedecryp- 19 i←i+1
+tion. While such an attack is technically feasible, we imagine 20 end
+that compelling a mix to perform a decryption would garner 21 // g is 1 or auxiliary bins > 15000
+significant attention; as a rough equivalent, this is analogous 22 if i=sqrt+1 or max/g>15000 then
+to compelling a Tor directory authority to release its signing 23 g←minw
+keys. 24 end
+25 end
+The adversary may compel the analyst to release statistics 26 end
+before the analyst aggregates the result. However, this attack 27 return g
+is fruitless since the analyst has only the noised data, with Procedure GCDBinwidth
+differentially private guarantees.
+DoS attacks. A DC can refuse to participate in a query or 1 // g - GCD returned by gcdBinwidth()
+submit a malformed vector. This is easily mitigated by dis- 2 // cur_w - Current Bin Width
+carding the particular DC’s response. Consequently, malicious 3 proc adjustBinWidth(g, cur w)
+DCs cannot cause denial-of-service in a round of HisTor(cid:15). 4 if cur w<g then
+5 cur w←g
+Mixes may also DoS HisTor(cid:15) queries. The availability of 6 else
+the aggregateis guaranteedas long asat leasttwo of thethree 7 // cur_w not a multiple of g
+mixes participate. 8 if cur w % g(cid:54)=0 then
+9 // make cur_w a multiple of g
+Correlationattacks. Anattackercancombinethecollected 10 if (cur w % g)<(g−(cur w % g)) then
+statisticswithsomeauxiliaryinformationsuchasobservations 11 cur w←cur w−(cur w % g)
+of a target user’s network traffic and perform a correlation at- 12 else
+tack.However,thedifferentialprivacymechanism[6]provides 13 cur w←cur w+(g−(cur w % g))
+14 end
+strong privacy guarantees against such a threat.
+15 end
+16 end
+VIII. APRACTICALCONSIDERATION:GUIDEDBINNING 17 return cur w
+Procedure AdjustBinwidth
+Whenposingahistogramquery,ananalystneedstodefine
+the bin widths. Determining useful bin widths for a histogram
+ishighlysubjective,andcanbedifficultiftheanalystdoesnot
+have an intuition as to the overall shape of the histogram. bin widths is achieved for a given query—e.g., the number
+of connections seen by guard relays—this definition tends to
+Here,asamorepracticalcontribution,wepresentasimple hold over time. That is, the guided binning algorithm is most
+algorithm for partially automating this process. Conceptually, useful when issuing a new type of query or when the results
+the algorithm operates by modifying the definition of bin of a query indicate unexpected results.
+widths (that is, by splitting and joining bins) in a sequence of
+epochs until a useful histogram is obtained. Since each epoch We refer to each run of the guided binning algorithm as
+lasts one hour, our goal is to quickly converge on a useful bin an iteration.
+width definition.
+The first iteration takes two parameters as input: b, the
+The analyst runs the guided binning algorithm until it number of bins; and e, the total estimate of the statistics
+gets a “satisfactory” histogram of the noised results. In our (e.g.,totalbandwidth,totalnumberofclientconnections,etc.)
+experiments, we find that we achieve a useful histogram after being collected. Equal width bins are assigned for this first
+three or four epochs. Importantly, once a useful definition of iteration—the lower bound of first bin is set to 0, a bin-width
+10of (cid:98)e/b(cid:99) is used for the first b−1 bins and the upper bound statistics from existing published data sets7. This data is used
+of last bin is set to e. asinputtoourDCinstances,whichthenrunHisTor(cid:15)protocols
+to enable the analyst to obtain (noised) aggregate results.
+If more iterations are needed, the next iteration uses the
+bin width distribution and the noised result of the previous
+A. Queries and Data Sets
+iteration to obtain a more optimal bin width distribution. The
+guided binning algorithm first computes the mean value, k We evaluate HisTor(cid:15) by considering three histogram
+of the noised distribution. Then, in the lexical ordering of queries: the number of client connections as observed by Tor
+bins, starting from bin 1, it splits all bins that have a value guards, the amount of bandwidth used by Tor guards, and the
+r greater than k into (cid:98)r /k(cid:99) bins. The algorithm also merges amount of exit bandwidth used by Tor exit relays. As our
+i i
+all consecutive bins that have a value less than k until their ground truth, we use data from both the Tor Compass and
+combined value does not exceed k. the Tor Metrics Portal.
+Whenabinissplitorwhenbinsaremerged,thealgorithm Number of client connections. For the number of client
+executestheGCDBinwidthprocedure.TheGCDBinwidthpro- connections, each Tor guard acts as a DC. In total, we
+cedure chooses an optimal GCD value g (of the bin widths up instantiate 1839 DCs—the total number of guards reported by
+to that point) such that the total number of auxiliary bins (see the Tor Compass with a non-zero selection probability.
+§V-B) is less than 15000. Then the guided binning algorithm
+We derive our “ground truth” by considering the total
+executes the AdjustBinwidth procedure that makes the current
+number of direct users (T) connecting to Tor as reported by
+new bin width a multiple of the optimal GCD g.
+the Tor Metrics Portal over the period of July 26th through
+The algorithm can be terminated during any iteration in July 30th, 2016. We assign p ·T client connections to each
+i
+which the analyst obtains a “satisfactory” histogram of the guard relay i, where p is the guard selection probability for
+i
+noised results. guard i as reported by the Tor Compass.
+Bandwidth used by guards/exits. Similarly, as our ground
+IX. IMPLEMENTATIONANDEVALUATION
+truth for the bandwidth observed by guards (resp. exits), we
+We constructed an implementation of HisTor(cid:15) in Python considerthetotalguard(resp.exit)bandwidth(B)reportedby
+to verify our protocols’ correctness, assess the utility of the theTorMetricsPortaloverthesamefive-daytimeperiod.Each
+noised aggregates, and measure the system’s overheads. We guard (resp. exit) acts as a DC, and is assigned a bandwidth
+implement GM encryption using the Python libnum library6 cost of (p i ·B), where p i is the selection probability of the
+withamodulussizeof1024bits.OurPRFisbasedonAESin guard (resp. exit). We instantiate 1839 DCs when measuring
+CFB mode, supported by the PyCrypto cryptographic library. guard bandwidth, and 924 DCs in the case of exit bandwidth.
+Mixes perform shuffle operations by applying the Fisher- The latter is the number of exits reported by the Tor Compass
+Yates algorithm, using the AES-based PRF as its source of that have a non-zero selection probability.
+randomness. We do not argue that the above procedures yield perfect
+ground truth. We apply them to derive a gross approximation
+As a system-wide parameter, we set (cid:15) = 1 for all exper-
+ofthedistributionsofclientconnectionsandbandwidthswhich
+iments unless otherwise indicated. We note that this offers
+canthenbeusedtotesttheefficacyofHisTor(cid:15)undernear-real-
+more privacy than the experimental setting ((cid:15) = 5) used by
+world conditions. When deployed, HisTor(cid:15) allows for much
+Chen et al. [6]. For histogram queries, we semi-automate the
+moreaccurateandfine-grainedstatisticsreportingthanoffered
+process of selecting appropriate bin widths using the human-
+by the Tor Metrics Portal.
+guided bin splitting algorithm described in §VIII.
+Experiments were carried out on a 16-core AMD Opteron B. Accuracy
+machine with 32GB of RAM running Linux kernel 3.10.0.
+Our implementation of HisTor(cid:15) is currently single-threaded. Figure 5 shows the returned histograms for the three
+Although HisTor(cid:15)’s computational costs are insignificant (see queries when applied to the Tor datasets. The Figure plots
+the results of the histogram query after three iterations of the
+§IX-D), certain operations are embarrassingly parallel—in
+e guided binning algorithm (see §VIII). Other iterations exhib-
+particular, encrypting and decrypting the elements of the v
+ited similar accuracy (as measured by the difference between
+vectors—and could likely further benefit from parallelization.
+the noised and unnoised distributions), but had arguably less
+We instantiated three HisTor(cid:15) mix instances, one HisTor(cid:15) useful bin definitions.
+analyst instance, and all DCs on our 16-core server. In a real HisTor(cid:15)reportsthe“Noised”valuesshowninFigure5.As
+deployment, these instances would all be distributed. Google
+is clear from the Figure, these noised values closely resemble
+Protocol Buffers [29] were used for serializing messages,
+which were communicated over TLS connections between 7Noteonethicalconsiderations:WeevaluateHisTor(cid:15) usingonlyalready
+HisTor(cid:15) components. We use Python’s default TLS socket published data from the Tor Compass and Tor Metrics Portal. This data,
+wrapperforsecuringcommunication.Allcommunicationtook by its nature, is derived from the activities of human subjects. Because
+the data has already been published and contains no personally-identifiable
+place over the local loopback mechanism (localhost).
+information(PII),IRBapprovalwasnotrequiredbyourinstitution(s).Much
+more importantly, the data itself is carefully collected by the Tor Project in
+OurexperimentsdonotrunactualTorrelayorclientcode.
+a manner that protects the privacy and anonymity of Tor’s users. The Tor
+As explained in more detail next, we derive our unnoised
+CompassandTorMetricsPortalpublishonlyaggregateinformation(e.g.,at
+thegranularityofacountry)thatisunlikelytoexposeinformationaboutany
+6https://github.com/hellman/libnum particularuser.Thispaperadvocatesforevenstrongerprivacyprotections.
+11152
+- 0
+205
+- 252
+357
+- 305
+4001
+- 457
+5521
+- 5001
+6051
+- 6521
+7571
+- 7051
+8002
+- 8571
+9522
+- 9002
+0152
+- 0622
+1672
+- 1152
+2103
+- 2672
+3623
+- 3103
+4153
+- 4623
+5673
+- 5153
+6104
+- 6673
+7624
+- 7104
+8154
+- 8624
+9674
+- 9154
+3997181
+- 0774
+500
+450
+400
+350 300 250 200
+150
+100
+50
+0
+No. of Client Connections
+sdrauG fo .oN
+27.19%
+Actual 24.47% Noised
+21.75%
+19.03% 16.31% 13.59% 10.88%
+8.16%
+5.44%
+2.72%
+0.00%
+sdrauG fo egatnecreP
+1 - 0 3 - 2 4 - 4 6 - 5 8 - 7 9 - 9 11 - 01 31 - 21 41 - 41 61 - 51 71 - 71 91 - 81 12 - 02 22 - 22 42 - 32 62 - 52 72 - 72 92 - 82 13 - 03 955 - 23 21811 - 065
+600
+550
+500
+450 400 350 300 250
+200
+150
+100
+50
+0
+GuardBandwidth (MB)
+sdrauG fo .oN
+32.63%
+Actual 29.91% Noised
+27.19%
+24.47% 21.75% 19.03% 16.31% 13.59%
+10.88%
+8.16%
+5.44%
+2.72%
+0.00%
+sdrauG fo egatnecreP
+911
+- 0
+932
+- 021
+953
+- 042
+974
+- 063
+995
+- 084
+917
+- 006
+938
+- 027
+959
+- 048
+9701
+- 069
+9911
+- 0801
+9131
+- 0021
+9341
+- 0231
+9551
+- 0441
+9761
+- 0651
+9971
+- 0861
+9191
+- 0081
+9302
+- 0291
+8704
+- 0402
+15381
+- 9704
+750437
+- 25381
+450
+400
+350
+300 250 200 150
+100
+50
+0
+ExitBandwidth (KB)
+stixE fo .oN
+48.70%
+Actual Noised 43.29%
+37.88%
+32.47% 27.06% 21.65% 16.23%
+10.82%
+5.41%
+0.00%
+stixE fo egatnecreP
+(cid:15)
+Fig.5. TheaggregatehistogramresultsreturnedbyHisTor whentheanalystissuesaqueryforthenumberofclientconnectionsasobservedbyguards(left),
+theamountofbandwidthusedbyguards(center),andtheamountofbandwidthusedbyexitrelays(right).Alsoshownistheunnoiseddistribution(“Actual”).
+TABLEI. DISTANCESBETWEENTHE“ACTUAL”AND“NOISE”
+DISTRIBUTIONSSHOWNINFIGURE5.
+Distancefunction No.ClientConn GuardBW ExitBW
+R2 0.98466 0.98290 0.96970
+Bhattacharyya 0.01820 0.01179 0.02542
+0.115
+0.092
+0.069
+0.046
+0.023
+0.000 0.2 0.4 0.6 0.8 1.0 1.2 1.4 1.6 1.8 2.0
+ecnatsiD
+ayyrahcattahB
+1.00
+BD
+0.93
+0.86
+0.79
+0.72
+0.65
+2R
+107
+106
+105
+104
+R2 103
+102
+101 10 20 40 80 160 320 640 1280
+No. of Bins
+Fig.6. Thedistancebetweentheactualandnoiseddistributions,asmeasured
+bytheBhattacharyyadistance(lefty-axis)andR2 (righty-axis).
+thoseoftheunnoised(“Actual”)groundtruthdata.Lookingat
+just the “Noised” values, an analyst can clearly obtain useful
+informationaboutthedistributionsofclientconnections,guard
+bandwidths, and exit bandwidths.
+As a more quantifiable indicator of the closeness between
+thenoisedandunnoiseddistributions,weconsiderboththeco-
+efficientofdetermination(alsocalledtheR2 distance)andthe
+BhattacharyyaDistance[3].Thelattermeasuresthedivergence
+betweentwoprobabilitydistributionsandrangesfrom0(iden-
+tical distributions) to ∞. An R2 value of 1 indicates perfect
+prediction.Whennocorrelationexists,R2 =0.TableIreports
+the distances between the actual and noised distributions. Our
+resultshighlightthatevenwithaconservativesettingof(cid:15)=1,
+HisTor(cid:15) produces highly accurate aggregates.
+Thetradeoffbetweenaccuracyandsecurityisgovernedby
+thechoiceof(cid:15).Weexplorethisspacebyvarying(cid:15)between0.2
+and2.0fortheconnectioncountquery.AsshowninFigure6,
+wefindthatvarying(cid:15)haslittleeffectonaccuracy.Theoverall
+variationinR2 (resp.Bhattacharyya)distancebetween(cid:15)=0.2
+and (cid:15)=2.0 was only 0.315 (resp. 0.098).
+C. Bandwidth Overhead
+HisTor(cid:15) incurs communication overhead by transmitting
+encrypted counters between the DCs and the mixes, and
+)BK(
+tsoC
+noitacinummoC
+Mix
+Analyst
+Client
+(cid:15)
+Fig.7. HisTor ’scommunicationcostperepoch(y-axis)asafunctionofthe
+numberofbins(b;shownonthex-axis).Bothaxesareplottedinlogscale.
+encrypted matrices between the mixes and the analyst. To be
+practical, a statistics gathering system should impose a low
+communication overhead for the DCs, since relays are already
+a bandwidth-limited resource in Tor [8]. We envision that
+mixesandtheanalystarededicatedresourcesforHisTor(cid:15),and
+our goal is to not incur unreasonable bandwidth requirements
+for these components.
+We explore HisTor(cid:15)’s bandwidth costs by varying the
+numberofbinsbinaquery.Thevaluesofthebinsforthetype
+ofquery(classvs.histogram)donotaffectthecommunication
+e e
+cost, as the DCs only transmit v (and not ν) for both query
+types. In our bandwidth measurements, we fix the number of
+DC relays at 1839.
+Figure7showstheaveragecommunicationcostsforaDC,
+mix, and analyst. For up to 80 bins, the communication cost
+foreachDCisfairlymodestandisapproximately150KBper
+hour (or about 42 Bps). Generally, we anticipate the number
+of bins to be around 20, although this can vary depending
+upon the analyst’s query. As a potential point of interest, the
+histograms shown in Figure 5 were derived using the guided
+binning process, and resulted in 20, 21, and 20 bins (from left
+to right).
+Even when the number of bins is quite large (1280), a
+DC’s communication cost is only 2.4 MB over the course of
+the hourlong epoch—or 0.67 KBps.
+The communication costs are greater for the mixes and
+the analyst. With 40 bins, each mix consumes 47.8 MB of
+bandwidth per hour, while the analyst uses 3.1 MB. In our
+121.215
+1.210
+1.205
+1.200
+1.195
+1.190
+1.185
+1.180
+1.175
+1.170 Initialization Time
+)sdnoceS(
+emiT
+4.0
+3.5
+3.0
+2.5
+2.0
+1.5
+1.0
+0.5
+0.0 Incrementing Time
+)s(
+emiT
+750
+745
+740
+735
+730
+725
+720
+715
+710
+705
+700 Mapping Time
+)sm(
+emiT
+7.2
+7.0
+6.8
+6.6
+6.4
+6.2
+6.0
+5.8
+5.6 Random Vector Gen Time
+)sm(
+emiT
+54.5
+54.0
+53.5
+53.0
+52.5
+52.0
+51.5
+51.0
+50.5
+50.0 Decryption Time
+)sdnoceS(
+emiT
+740
+730
+720
+710
+700
+690
+680
+670
+660
+650
+640 Noise Gen Time
+)sm(
+emiT
+2.10
+2.05
+2.00
+1.95
+1.90
+1.85
+1.80 Shuffle Time
+)sdnoceS(
+emiT
+16.6
+16.3
+16.0
+15.7
+15.4
+15.1
+14.8
+14.5
+14.2
+13.9 Aggregation Time
+)sm(
+emiT
+670
+660
+650
+640
+630
+620
+610
+600
+590
+580
+570 Unmask Time
+)sm(
+emiT
+2.50
+2.45
+2.40
+2.35
+2.30
+2.25
+2.20
+2.15 Verification Time
+)sdnoceS(
+emiT
+Fig. 8. Microbenchmark results for the DSes (left), mixes (center), and analyst (right). Boxes denote the lower and upper quartile values, with a line at the
+median.The“whiskers”showtherangeofthedatawithin1.5xIQRfromthelowerandupperquartiles.Outliersareindicatedwithtriangles.
+largest binning scenario with 1280 bins, each mix consumes trends in the network, to detect performance bottlenecks, to
+1.5 GB of bandwidth each hour, or 424.7 KBps; the analyst discover attacks against the network, and to better understand
+requires 27.7 KBps. how Tor is being blocked and censored in various regions of
+the Internet [22].
+In summary, we find that for modest number of bins (20-
+40), HisTor(cid:15) incurs very little bandwidth overhead, and can We are not the first to propose using differential privacy to
+thus support multiple concurrent queries. collectsensitivestatisticsonTor.Elahietal.[15]introducetwo
+variants—one based on secret sharing and another that uses
+D. Computation Overheads distributed decryption—to privately collect traffic statistics for
+Tor. PrivEx provides strong, measurable privacy protection
+To understand the computation costs of HisTor(cid:15), we per-
+even against compromised participants. However, PrivEx does
+form a series of microbenchmarks. In our measurements, we
+not provide integrity guarantees, and as we demonstrate in
+considertheconnectioncountinghistogramquerywithtwenty
+§III, even a single malicious DC can cause inaccurate results.
+bins and 1839 DCs. In comparison, HisTor(cid:15) also applies differential privacy tech-
+The left side of Figure 8 shows the distribution of the niquestoprivatelycollectdata,butinadditionprovidesstrong
+processing overheads for the DCs. The operations involved integrity guarantees about the influence of malicious DCs.
+in maintaining the oblivious counters are initialization, incre-
+e e PrivCount [18] extends the PrivEx secret-sharing variant
+menting, and mapping (from ν to v). The total costs of these
+to make it suitable for a small-scale research deployment. It
+operationsis,intheworstcase,lessthantwosecondsperhour
+allows multi-phase iterative measurements and expands the
+(on a single core). Additionally, the DCs generate the random
+privacy notion of PrivEx to simultaneously handle multiple
+vectorsR andR(cid:48) (suchthatR=R ⊕R(cid:48)),incurringaworst
+i i i i and diverse Tor statistics with an optimal allocation of the
+case processing overhead of approximately 7.2 ms per hour.
+(cid:15) privacy budget. However, even in PrivCount, there are no
+The performance overheads for a mix are shown in the protections for the integrity of the statistics (see §III).
+center of Figure 8. To explore the range in overheads, we
+We use a slight modification of the ((cid:15),δ)-differential pri-
+repeat our query 100 times and plot the range of processing
+vacy scheme of Chen et al. [6]. They use a single mix, which
+costs incurred by the mix over all runs. Here, the operations
+theycallaproxy.Thisallowsamaliciousproxytoundetectably
+consist of GM decryption, the generation of noise records,
+alter the data and cause the analyst to reach an inaccurate
+andshufflingthematrices.Eachhour,intheworstcase,amix
+aggregate result. We detect such manipulation in HisTor(cid:15) by
+spends approximately one minute of computation for a single
+adding redundancy across three mixes. As we prove in §VII,
+query. Using a single core, a mix could thus support at worst
+HisTor(cid:15) detects such tampering if at least one of the mixes is
+60 simultaneous queries per hour.
+honest, and can attribute the misbehavior if two of the three
+The analyst’s processing times are shown in the right side mixes are honest. Additionally, the scheme of Chen et al.
+of Figure 8. As with the mix, we show the results over 100 is vulnerable to compulsion attacks. HisTor(cid:15) uses oblivious
+iterations of the query. The most burdensome operation is counters to mitigate such risks.
+verificationofthethreematrices.Thisconsumeslessthanthree
+HisTor(cid:15) is partially inspired by SplitX, which executes
+seconds of processing, in the worst case, per hour.
+differentially private queries over distributed data [7]. Like
+Overall, the processing costs of operating HisTor(cid:15) is neg- HisTor(cid:15), SplitX uses the ((cid:15),δ)-differential privacy scheme
+ligible for the relays (DCs) and analyst, and manageable for of Chen et al. and uses xor-based encryption to distribute
+the mixes. secret shares to separate mixes. In SplitX, both the mixes
+and the aggregator are assumed to be honest-but-curious. In
+X. RELATEDWORK HisTor(cid:15),weareabletotolerateamaliciousmixbyredundantly
+encoding information in secret shares.
+Loesing et al. [22] motivate the need for performing
+statistical analysis of the Tor network. The authors promote McSherry and Mahajan [25] apply differential privacy
+privacy-preserving statistics gathering as a means to identify techniques to the PINQ programming interface [26] in order
+13to support privacy-preserving network trace analysis. They some fixed probability. Lee and Clifton [21] provide one such
+show that performing trace analysis in a differentially private construction for (cid:15)-differential privacy. Incorporating this se-
+setting is technically feasible, but do not offer a distributed lectionprocessintoHisTor(cid:15)(whichprovides((cid:15),δ)-differential
+solution. Combining their network trace analysis techniques privacy) is an exciting potential future research direction.
+with HisTor(cid:15) could potentially allow network operators to
+In the current implementation of HisTor(cid:15), the analyst
+identify patterns of misbehavior in Tor. We leave synthesizing
+communicatesitschoiceof(cid:15)tothemixes.Sincethenumberof
+these techniques as an exciting avenue of future research.
+noiserecordsisproportionalto(cid:15)−2,largevaluesof(cid:15)offerlittle
+securitywhiletoosmallvaluesof(cid:15)havelittlebenefittoprivacy
+XI. DISCUSSIONANDLIMITATIONS
+whileincurringpotentiallyenormouscommunicationcosts.To
+In this section, we discuss practical aspects of deploying provide a simple sanity-check, a real-world deployment of
+HisTor(cid:15), as well as some of the system’s limitations. HisTor(cid:15) could establish system-wide parameters (cid:15) and (cid:15)
+max min
+that bound the analyst’s choice.
+Detectability, attribution and suitability of the threat
+model. A malicious mix may attempt to manipulate the Privacy budget. ((cid:15),δ)-differential privacy schemes impose
+results of a query by modifying the inputs it receives from a privacy budget whose balance is decremented as a function
+the DCs. As we discuss in §VI and §VII, an analyst can of δ and (cid:15) for each issued query. This budget is defined in
+detectthatmisbehavioroccurredifatleastoneofthemixesis terms of a static database D over which queries are issued.
+honest. Since data is replicated across all three mixes, we can In HisTor(cid:15), counters are zeroed after each epoch, effectively
+additionally attribute the misbehavior to a specific malicious resultinginanewdatabase.Thisthussignificantlyreducesthe
+mixifexactlytwoofthethreemixesarehonest—themalicious risk of exceeding the privacy budget.
+mix will be revealed through its non-conforming output.
+Unfortunately,forcertainquerytypes,theremaybedepen-
+The difficulty with performing attribution is that the cases
+dencies in the statistic of interest between epochs that violates
+of one malicious mix vs. two malicious mixes can be in-
+this assumption of independence. This further motivates a
+distinguishable if, in the latter case, the two mixes perform
+careful selection of (cid:15) to minimize this privacy risk.
+identical manipulations. Unless it is readily apparent through
+some other mechanism which mix(es) has been compromised,
+XII. CONCLUSION
+a reasonable solution once misbehavior is detected is to re-
+evaluate the security of all three mixes. This paper presents HisTor(cid:15), a distributed statistics collec-
+tion system for Tor. Unlike existing work, HisTor(cid:15) provides
+More generally, mixes should be carefully selected, since
+strong integrity guarantees for collecting data on Tor. In
+collusion between two or more dishonest mixes compromises
+particular, we demonstrate that the influence of a colluding
+data privacy. This is, to some degree, similar to Tor’s existing
+group of malicious data collectors is tightly bounded by the
+quasi-centralized notion of trust: if a majority of the Tor
+fraction of nodes that they control in the network. More
+directory authorities are compromised, then Tor offers no
+practically speaking, HisTor(cid:15) ensures that a small colluding
+anonymity protections since the directories could advertise
+group of malicious data collectors has negligible impact on
+only the existence of malicious relays.
+the results of statistics queries.
+Like directory authorities, mixes must therefore be chosen
+In addition to ensuring integrity, HisTor(cid:15) provides strong
+carefully. We envision that the maintainers of the Tor Project
+could selectively grant permission to operate HisTor(cid:15) mixes privacy guarantees as long as malicious mixes do not collude
+with a dishonest analyst. HisTor(cid:15) also achieves resistance to
+to parties. Or, to keep the existing level of trust, the directory
+compulsion attacks through use of novel oblivious counters.
+authorities could additionally operate mixes.
+We demonstrate using real-world data sets and realistic
+From the perspective of integrity, it may at first blush
+seem that HisTor(cid:15) and PrivEx offer similar guarantees—that
+queryworkloadsthatHisTor(cid:15)enableshighlyaccuratestatistics
+aggregation, with small bandwidth and computational over-
+is, certain nodes must behave honestly to ensure integrity
+heads. Our performance experiments and microbenchmarks
+of the query results. We argue that the integrity guarantees
+offered by HisTor(cid:15) are significantly stronger, since in PrivEx, indicate that dozens of simultaneous HisTor(cid:15) queries could
+be supported on a single CPU core. To encourage its use by
+a single relay can significantly perturb the results of a query.
+privacyresearchers,weareplanninganopen-sourcereleaseof
+SuccessfullycompromisingPrivExstatisticsgatheringisthusa
+HisTor(cid:15) in the near future.
+fairly simple operation since there are no barriers to operating
+a relay. In contrast, HisTor(cid:15) removes the necessity to trust the
+data collectors, and instead relies on a much smaller set of ACKNOWLEDGMENTS
+nodes (i.e., mixes). Additionally, so long as a single mix is
+We thank the anonymous reviewers for their insightful
+honest, query tampering can be trivially detected.
+comments. We also thank Aaron Johnson, Henry Tan, and
+Selection of (cid:15). A consistent problem in schemes that apply Sridhar Venkatesan for the valuable discussions. This paper
+differential privacy is selecting an appropriate value of (cid:15). In is partially funded from National Science Foundation (NSF)
+our experimentation, we apply the same conservative value as grants CNS-1149832 and CNS-1527401. The findings and
+existing work [25] and set (cid:15)=1. opinions expressed in this paper are those of the authors and
+do not necessarily reflect the views of the NSF.
+Since (cid:15) is a relative and not an absolute measure of
+privacy, an interesting area of future work is to derive per-
+queryvaluesof(cid:15)thatareguaranteedtoprotectindividualswith
+14REFERENCES Network and Distributed System Security Symposium
+(NDSS), 2012.
+[1] Akamai’s State of the Internet Q2 2015 Report, [18] R.JansenandA.Johnson.SafelyMeasuringTor.InACM
+2015. Available at https://www.akamai.com/ Conference on Computer and Communications Security
+us/en/multimedia/documents/state-of-the-internet/ (CCS), 2016.
+2015-q2-cloud-security-report.pdf. [19] A.Johnson,C.Wacek,R.Jansen,M.Sherr,andP.Syver-
+[2] K. Bauer, M. Sherr, D. McCoy, and D. Grunwald. Ex- son. Users Get Routed: Traffic Correlation on Tor By
+perimenTor: A Testbed for Safe and Realistic Tor Ex- Realistic Adversaries. In ACM Conference on Computer
+perimentation. In USENIX Workshop on Cyber Security and Communications Security (CCS), November 2013.
+Experimentation and Test (CSET), August 2011. [20] D. Kedogan, D. Agrawal, and S. Penz. Limits of
+[3] A. Bhattachayya. On a Measure of Divergence between AnonymityinOpenEnvironments.InInformationHiding
+two Statistical Population Defined by their Population Workshop (IH), 2002.
+Distributions. Bulletin Calcutta Mathematical Society, [21] J. Lee and C. Clifton. How Much is Enough? Choosing
+35:99–109, 1943. ε for Differential Privacy. In International Conference
+[4] A.Biryukov,I.Pustogarov,F.Thill,andR.-P.Weinmann. on Information Security, 2011.
+ContentandPopularityAnalysisofTorHiddenServices. [22] K. Loesing, S. J. Murdoch, and R. Dingledine. A
+In International Conference on Distributed Computing Case Study on Measuring Statistical Data in the Tor
+Systems Workshops (ICDCSW), 2014. Anonymity Network. In Financial Cryptography and
+[5] T.-H.H.Chan,E.Shi,andD.Song.PrivateandContinual Data Security (FC). 2010.
+Release of Statistics. ACM Transactions on Information [23] N.Mathewson. Some ThoughtsonHidden Services(Tor
+and System Security (TISSEC), 14(3), 2011. BlogPost), 2014. Available athttps://blog.torproject.org/
+[6] R. Chen, A. Reznichenko, P. Francis, and J. Gehrke. blog/some-thoughts-hidden-services.
+TowardsStatisticalQueriesoverDistributedPrivateUser [24] D. McCoy, K. Bauer, D. Grunwald, T. Kohno, and
+Data. In USENIX Symposium on Networked Systems D. Sicker. Shining Light in Dark Places: Understanding
+Design and Implementation (NSDI), 2012. the Tor Network. In Privacy Enhancing Technologies
+[7] R. Chen, I. E. Akkus, and P. Francis. SplitX: High- Symposium (PETS), 2008.
+performance Private Analytics. In Conference on Ap- [25] F. McSherry and R. Mahajan. Differentially-private
+plications,Technologies,Architectures,andProtocolsfor Network Trace Analysis. ACM SIGCOMM Computer
+Computer Communications (SIGCOMM), 2013. Communication Review, 41(4):123–134, 2011.
+[8] R. Dingledine and S. Murdoch. Performance Improve- [26] F. D. McSherry. Privacy Integrated Queries: An Exten-
+mentsonTor,or,WhyTorisSlowandWhatWe’reGoing sible Platform for Privacy-preserving Data Analysis. In
+to Do About It. https://svn.torproject.org/svn/projects/ ACMSIGMODInternationalConferenceonManagement
+roadmaps/2009-03-11-performance.pdf, March 2009. of Data (SIGMOD), 2009.
+[9] R.Dingledine,N.Mathewson,andP.Syverson. Tor:The [27] M. Perry. The Trouble with CloudFlare (Tor Blog Post),
+Second-Generation Onion Router. In USENIX Security March2016. Availableathttps://blog.torproject.org/blog/
+Symposium (USENIX), August 2004. trouble-cloudflare.
+[10] C. Dwork. Differential Privacy. Automata, Languages [28] M.Prince. TheTroublewithTor(CloudFlareBlogPost),
+and Programming, pages 1–12, 2006. March 2016. Available at https://blog.cloudflare.com/
+[11] C. Dwork, K. Kenthapadi, F. McSherry, I. Mironov, and the-trouble-with-tor/.
+M. Naor. Our Data, Ourselves: Privacy via Distributed [29] Protocol Buffers. https://developers.google.com/
+Noise Generation. In Advances in Cryptology (Euro- protocol-buffers/.
+crypt), 2006. [30] C. Soghoian. Enforced Community Standards For Re-
+[12] C. Dwork, M. Naor, T. Pitassi, and G. N. Rothblum. searchonUsersoftheTorAnonymityNetwork. InWork-
+Differential Privacy under Continual Observation. In shoponEthicsinComputerSecurityResearch(WECSR),
+ACMSymposiumonTheoryofComputing(STOC),2010. 2011.
+[13] C. Dwork, A. Roth, et al. The algorithmic foundations [31] Tor Project, Inc. Tor Metrics Portal. https://metrics.
+of differential privacy. Foundations and Trends in Theo- torproject.org/.
+retical Computer Science, 9(3-4):211–407, 2014. [32] Tor Research Safety Board. Available at https://research.
+[14] T. Elahi, K. Bauer, M. AlSabah, R. Dingledine, and torproject.org/safetyboard.html.
+I. Goldberg. Changing of the Guards: A Framework for [33] C.Wacek,H.Tan,K.Bauer,andM.Sherr. AnEmpirical
+Understanding and Improving Entry Guard Selection in Evaluation of Relay Selection in Tor. In Network and
+Tor. In ACM Workshop on Privacy in the Electronic Distributed System Security Symposium (NDSS), Febru-
+Society (WPES), 2012. ary 2013.
+[15] T. Elahi, G. Danezis, and I. Goldberg. PrivEx: Private [34] P.Winter,R.Ko¨wer,M.Mulazzani,M.Huber,S.Schrit-
+Collection of Traffic Statistics for Anonymous Commu- twieser,S.Lindskog,andE.Weippl. SpoiledOnions:Ex-
+nicationNetworks. InACMConferenceonComputerand posing MaliciousTor ExitRelays. In Privacy Enhancing
+Communications Security (CCS), November 2014. Technologies Symposium (PETS), 2014.
+[16] S. Goldwasser and S. Micali. Probabilistic Encryption.
+Journal of Computer and System Sciences, 28(2):270–
+299, 1984.
+[17] R. Jansen and N. Hopper. Shadow: Running Tor in
+a Box for Accurate and Efficient Experimentation. In
+15

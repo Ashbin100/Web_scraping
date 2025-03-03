@@ -1,0 +1,1321 @@
+DoS Protection for Reliably Authenticated Broadcast
+Carl A. Gunter, Sanjeev Khanna, Kaijun Tan, and Santosh Venkatesh
+University of Pennsylvania
+Abstract
+This paper proposes an approach to solving these
+and other DoS threats by a technique called selective
+Authenticating broadcast packet communications veriflcation. The idea is to use public key signature
+poses a challenge that cannot be addressed e–ciently packetstoauthenticatehashes,parityinformation,and
+with public key signatures on each packet, or securely data,whileusingrandomcheckingofsignaturepackets
+with the use of a pre-distributed shared secret key, or todefendagainstsignature(cid:176)oodingandsequencenum-
+practically with unicast tunnels. Unreliability is an bers and time stamps to combat replay attacks. The
+intrinsic problem: many broadcast protocols assume sender sends many copies of its signature packets and
+that some information will be lost, making it problem- the recipient checks the signature packets it receives
+atic to amortize the cost of a single public key signa- with a given probability. The number of copies and
+tureacrossmultiplepackets. ForwardErrorCorrection the probability of veriflcation can be varied to match
+(FEC) can compensate for loss of packets, but denial theloadthattherecipientisabletochecktocopewith
+of service risks prevent the naive use of both public an expected level of attack. For example, suppose a
+keys and FEC in authentication. In this paper we in- sendersendsa10Mbpsstreamtoareceiver, butthisis
+troduce a protocol, Broadcast Authentication Streams mixed with a 10Mbps stream of DoS packets devoted
+(BAS), that overcomes these barriers and provides a entirely to bad signatures. To relieve the recipient of
+simple and e–cient scheme for authenticating broad- the need to check all of these bad signatures, the re-
+cast packet communications based on a new technique ceiver can check signatures with a probability of 25%,
+called selective veriflcation. We analyze BAS theoreti- and, if the sender sends about 20 copies of each signa-
+cally, experimentally, and architecturally. ture packet, the receiver will flnd a valid packet with
+a probability of more than 99% even if the network
+drops 40% of the sender’s packets. This technique is
+1 Introduction
+inexpensive, efiective against severe DoS attacks, and
+adaptable to many difierent network characteristics.
+Authenticating packet broadcasts is an interesting
+To demonstrate selective veriflcation we have de-
+technicalchallenge. Ifacommonsymmetrickeyisused
+veloped a protocol called Broadcast Authentication
+toauthenticatethepacketsthenanypartythathasthe
+Streams(BAS)thatprovidesauthenticationforadata
+key can spoof the broadcast. Using a public key signa-
+streambyaddingapairofauthenticationstreams. Our
+ture would solve this problem, but signing and verify-
+target is to show that BAS can be used efiectively on
+ing each packet would be expensive. Signing a group
+stock PCs over mid to high bandwidth links ranging
+of packets would reduce this cost, but many types of
+from 10Mbps to almost 1Gbps. To this end we pro-
+broadcastareunreliable: ifasignatureisforagroupof
+vide a theoretical analysis of BAS, an implementation,
+packets and one or more of them is dropped, then it is
+and experiments. The theory describes how to set
+not possible to check the signature. A variety of ideas
+parameters that afiect features such as latency, over-
+havebeenproposedtoaddressthisproblemwithpublic
+head, recovery confldence, and maximum bufier size
+keys by including some kind of redundancy such as in-
+requirements. The experiments conflrm our theoreti-
+cludingmultiplecopiesofhashvaluesorusingForward
+calcalculations andprovidepracticalinformation such
+Error Correction (FEC). Such approaches are vulner-
+as throughputs on the target systems. Our implemen-
+able to a Denial of Service (DoS) attack on either the
+tationofBASforasendertakesanarrayofinputRTP
+redundancy scheme itself or the public key signature
+packets and produces an array of authentication data.
+packets. In the former case, false parity information
+For a receiver, it takes an array of packets based on
+makes it expensive to reconstruct valid packets, and,
+models of packet loss and a \shared channel" model
+in the latter case, a (cid:176)ood of false signatures burdens
+of DoS attacks introduced in this paper and processes
+the recipient with too many signature checks.
+thesetoflndauthenticateddatapackets. Theseexperi-mentsconflrmestimatesliketheoneaboveandprovide Sender Packet Dropped Sender Packet
+informationaboutthroughputcapacities. Forinstance,
+the packets from a 10Mbps sender with 40% loss can
+be authenticated with the use of less than 10% of pro- S1 A1 S2 S3 S4 A2 A3 S5 A4 A5
+cessortimeevenduringanattackof10Mbps. Ourthe-
+orypredictsandourexperimentsconflrmthatselective
+Attacker Packet
+veriflcationandBASworkwellonPCsforapplications
+that can tolerate 1-2 second latencies under signature
+(cid:176)ood attacks that range up to 500Mbps. This can be Figure 1: Shared Channel Model
+compared to latencies for playout bufiers for Internet
+multi-media streams, which often use latencies of 5-10
+seconds. like sequence numbers. This makes a considerable dif-
+Anothercontributionofthepaperisarigorousmodel ference for some protocols. For instance, an informed
+foranalysingandquantifyingtheefiectivenessofaDoS attack on TCP could use sequence numbers in an on-
+protectionscheme. Wecalltheoneintroducedherethe going connection to break the connection, providing a
+shared channel model. It is based on the idea that an muchcheaperattackthananuninformedapproachlike
+adversary can insert packets into a valid stream and SYN (cid:176)ooding. An adversary may ‘modify’ a packet by
+may afiect the loss rate of the stream statistically, but replayingamodifledversionofapreviously-seensender
+cannot choose exactly which valid packets are actually packet. However, the adversary is unable to cause spe-
+received. This contrasts with the Dolev-Yao model in ciflc sender packets to be dropped or modifled: sender
+which the adversary is considered to have control over packets are dropped probabilistically at rate p. The
+exactlywhichpacketsaredelivered. Wearguethatthe model assumes that sender packets arrive in the order
+weaker model is more appropriate for analyzing DoS inwhichtheyweresentwhentheydoarrive. However,
+threats in many cases. packets may appear to arrive out-of-order if an adver-
+The paper is divided into nine sections. Section 2 sary replays dropped packets. Many protocols, includ-
+introduces the shared channel model, which serves as ingBAS,willtreatreorderedpacketsasdroppedifthey
+the foundation for our analysis. Section 3 provides an are grossly out-of-order (say, by more than a few hun-
+informaldescriptionoftheBASprotocol. Section4de- dred packets), so the assumption of in-order delivery
+scribes related work. We specify the BAS protocol in for sender packets is not as strong as it may appear.
+Section 5 and analyze it theoretically in Section 6. We Reordering can be modeled by taking a higher value
+describeourprototypeimplementationofBASwithse- of p and assuming that the adversary replays many
+lectiveveriflcationinSection7. Thiswasusedtocarry dropped packets.
+out experiments described in Section 8. Section 9 con- The shared channel model is more appropriate for
+cludes. Appendices contain details of the loss models analyzing denial of service than the much-studied
+anderror-correctioncodesused,theoreticalresultsand Dolev-Yao model [3], which assumes that an adversary
+proofs, and additional experimental data. is able to drop all sender packets. An adversary with
+this ability is ensured of a DoS capability. The shared
+channelmodelisweakerthanonethatassumesthatthe
+2 Shared Channel Model
+adversary has all of the channel bandwidth (W1 = 0).
+Whenahostcanhandle the load with thisassumption
+The shared channel model assumes that a legitimate
+(for instance, by rejecting all of bad packets without
+sender and an attacker share a packet communication
+excessive processing), it can handle it with, say, a pro-
+channel to a receiver. A given model is characterized
+portionateattack. But,therearecases(asshownlater)
+bby ana dw4- it du tp hle W( 0W o0 f; tW he1; sA en; dp e) rc ,o tn hs eis mti an xg imof ut mhe bm ani dn wim idu tm
+h
+whereW0 6=0makesamajordifierenceinhowlargeA
+W1 of the sender (where W0 • W1), the bandwidth A must be to achieve an efiective attack. That is, if the
+legitimate sender can get some packets through, then
+oftheadversary,andthelossratepofthesenderwhere
+0•p<1. The ratio R=A=W1 is the attack factor of these can be used to raise the bar for a successful DoS
+attack.
+the model. When R=1, this is a proportionate attack
+A signature (cid:176)ood attack is one in which an adver-
+and, when R > 1, it is a disproportionate attack. A
+sary sends false signatures. Checking these signatures
+proportionateattackwithalossrateof20%isdepicted
+is costly and burdens the victim’s processor. Typical
+in Figure 1. In an informed shared channel model, the
+costs1 are given in Table 1. The table provides signa-
+adversary is assumed to know all of the values sent
+by the receiver and is able to forge predictable values 1These are for a 2.4GHz PC with Redhat Linux 7.3 usingData Stream
+Table 1: Cryptographic Costs
+Hash Hash Hash Parity
+Crypto Operations Operating Time
+Hash/Parity Stream
+Sign(3) 4.92ms
+Signature Stream
+Check(3) 86.8„s
+Sign(17) 4.96ms Figure 2: Architecture for Broadcast Authentication
+Check(17) 124„s Streams (BAS)
+Sign(65,537) 5.10ms
+Check(65,537) 270„s
+Hash(1460) 13.3„s
+to preserve their confldentiality, but the BAS protocol
+Hash(10) 1.57„s
+does provide this service. The second stream, called
+the Hash/Parity (HP) stream, consists of two kinds of
+packets. The flrst kind are called hash packets. These
+ture and veriflcation times for RSA on 10 bytes with contain hashes of data packets. The second kind are
+exponents of 3, 17, and 65537 as well as SHA hashes calledparity packets. ThesecontainFECcodinginfor-
+on 10 and 1460 bytes. One can see from the flgures for mation that allows dropped hash packets to be recon-
+public key signatures that the processor is only able to structed. Thethirdstream,calledthesignaturestream,
+create about 200 signatures each second. The costs of consistsofpacketsthatsignhashesofHPpackets. The
+a Public Key Check (PKC) depends somewhat on the collection consisting of the data packets together with
+exponent. We will work with an exponent of 17 in this theircorrespondinghash,parity,andsignaturepackets
+paper. A signature (cid:176)ood that results in 8000 PKC/sec iscalledatransmissiongroup(TG).Figure2showsthe
+would completely overwhelm a processor. We will typ- packets in one transmission group. In general, a trans-
+icallyworkintermsofaPKCbudget,forinstance,one mission group will include more than a thousand data
+thatrequiresthatnomorethan5%ofprocessortimebe packets,asdeterminedbytheallowablelatencyforau-
+spentonPKCs. Soanefiective(cid:176)oodcouldbeachieved thentication, anumberofhashandparitypacketsthat
+by forcing 400 PKC/sec. In a proportionate attack at depends on the number of data packets and loss rate,
+high bandwidths, this could be easy. For instance, in andanumberofsignaturepacketsthatdependsonthe
+Figure 1, if packet S5 holds a signature on hashes for bandwidth and DoS threat.
+packets S1-S4 and packets A1-A5 are false signature Our approach to DoS prevention is based on two
+packets that look like S5 but contain a bad signature, strategies. First, FEC-encoded information is pro-
+then the receiver may end up checking most or all of tected by a digital signature. Thus spurious packets
+these bad signatures. Since the entire bandwidth of intended to burden FEC decoding will be discarded
+the adversary could be devoted to the signature (cid:176)ood, as quickly as their hashes can be checked. Second,
+theattackcouldrealizeaveryhighPKCburdenatthe we address DoS based on public key signature (cid:176)ood-
+receiver. ing with selective veriflcation. We discuss two kinds
+of selective veriflcation, sequential and bin. In both
+cases the idea is to send copies of signature packets to
+3 Informal Description
+the receiver. The receiver checks a subset of the signa-
+ture packets it receives. Some of these may be spoofed
+Our protocol, BAS, is based on a combination of FEC
+by an attacker, but the receiver will flnd a valid one
+and repetition coding to provide modest bandwidth
+quickly enough and with su–ciently modest computa-
+overhead and robust DoS protection. BAS uses FEC
+tional efiort to defeat signature (cid:176)ooding. In sequential
+toreducethecostsofrepeatedhashes; itusesrepeated
+veriflcation, the receiver verifles signature packets ran-
+signatures to secure the FEC-encoded hashes and ad-
+domlyuntilflndingavalidsignature. Afterasu–cient
+dress DoS attacks based on fake signature packets.
+number of such trials the probability of flnding a valid
+Overall the architecture consists of three streams of
+signature will be high and the next signature packet
+packetsaspicturedinFigure2. Theflrststream,called
+can be sought. In bin selection we use sequence num-
+the data stream, consists of the data packets; these are
+bersinredundantsignaturepackets. Thatis,thesame
+notrequiredtocontainanycryptographicinformation.
+signature is sent, but with a difierent sequence num-
+The BAS protocol aims to authenticate this stream;
+ber for each copy. Suppose for example that a channel
+the data packets may be encrypted if it is important
+with a 25% average loss rate between the sender and
+receiver supports an attack in which an adversary can
+operationsfromOpenSSL0.9.6.send500fakesignaturepacketspersecond. Inbinveri- orspecialkindsofpublickeysignatures. Eachofthese
+flcation, wedividethespooflngefiortsoftheadversary approachesofiersitsownchallenges. Theflrstapproach
+betweenacollectionofsignaturepacketsusingdistinct is vulnerable to signature (cid:176)oods, the second is vulner-
+sequence numbers. For example, suppose the sender able to attacks on FEC encoding as well as signature
+creates 10 signature packets numbered 1 through 10 (cid:176)ooding,andthethirdrequiresadditionalassumptions
+in a given second. The receiver waits long enough to such as synchronized clocks or special cryptography.
+receive some or all of these, together with up to 500 The idea of amortizing the cost of public key sign-
+spoofed signature packets from an attacker. For at ing and checking over multiple packets by using hash
+least 2 of the ten sequence numbers there will be no chainswassuggestedin[5]. Todealwithpacketlossin
+more than 102 spoofed and legitimate packets using authenticated broadcast, one approach that has been
+that number. There is about a 93% probability that a extensivelystudiedistoaddmorehashesintothepack-
+legitimately signed packet is in this group of 102 pack- ets[18,13,6,17]. Forinstance,apacketmightcontain
+ets. Thustheattackeristypicallyonlyabletoforcean the hash of the packet before it and the packet before
+additional 100 veriflcations with 500 spoofed packets. that one. If the middle packet is lost, then the extra
+Increasing the number of sequence-numbered packets hashenablesveriflcation. Thischaininghassomeprob-
+improves the burden at the receiver at the cost of a lems, however. First, the choice of the chaining has a
+modest additional bandwidth. signiflcant impact on the reliability that is achieved,
+Our approach to loss is also based on two strategies. and this impact is subtle to analyze. Second, reliabil-
+The flrst, as discussed already, is to use FEC where ity costs bandwidth since multiple hashes are needed
+possible and repetition where necessary. Since repeti- to assure that chains to signature packets remain un-
+tion was necessary to thwart denial of service in some broken by losses. In any case, adding extra hashes to
+cases anyway, and FEC ofiers very signiflcant savings packets does not deal with dropped signature packets
+over repetition, this provides a comfortable tradeofi. so something needs to be done about this too. A hy-
+The second strategy involves spacing hash, parity, and brid approach [24] addresses computation and reliabil-
+signature packets though the data stream to improve ity problems by putting a signature into each packet
+robustness against bursts. The idea is illustrated in along with hashes of a collection of other packets. The
+Figure 3. The flgure shows packets from three trans- signature is applied to a Merkle hash tree [12] created
+from this collection and only needs to be checked once
+0 0 0 0 -1 0 0 0 0 -1 0 0 0 0 0 -1 for each collection. This also has the advantage that
+each packet can be verifled as soon as it arrives. De-
+spitetheoptimizationprovidedbytheMerkletree,this
+1 1 1 1 0 1 1 1 1 0 1 1 1 1 1 0
+approach has a signiflcant bandwidth overhead since
+space must be allocated for the signature and multiple
+Figure 3: Interleaving of Streams
+hashes in each packet.
+The use of coding techniques to limit overhead for
+authenticated broadcast appears in the extended hash
+mission groups numbered ¡1;0;1 and having a proflle
+chainschemeof[18]basedonRabin’sIndependentDis-
+similartotheTGsinFigure2. Ingeneral,hashpackets
+persal Algorithm (IDA). Subsequent work on FEC for
+are sent as soon as they are ready while signature and
+authenticated broadcast has shown that low overheads
+paritypacketsarespacedthroughoutthedataandhash
+canbeacheived[14,15]. Theseapproachesarevulnera-
+packetsofthesubsequenttransmissiongroup. Thisin-
+bletosignature(cid:176)oodingandattacksonFECencoding.
+terleavingaddsrobustnesstoburstlossatthepotential
+An FEC-based technique to a address a DoS attack in
+cost of some additional latency.
+which an adversary is able to modify a small number
+of sender packets is discussed in [15]. This technique
+4 Related Work is not efiective when large numbers of invalid packets
+can be inserted by an adversary as in the shared chan-
+There are essentially three approaches to authenticat- nel model. For instance, suppose we wish to endure a
+ing broadcast packets. The one we consider in this pa- proportionate attack with a code of n segments that
+per is to use ‘ordinary’ public key signatures to secure can be reconstructed if no more than t segments are
+data, hash, and parity information. An alternative is lost and no more than fi are modifled. Decoding is
+tousepublickeysignaturesonthedataandassurethat the flrst step in the veriflcation phase of [15], so the
+the signature can be checked by using FEC to achieve receiver will need to look for segments to use in de-
+reliability. A flnal alternative is to use symmetric keys coding from among the segments he receives. Assumethatm‚n¡tofthesecameassentbythesenderand fundamental types of protection: (1) a mechanism en-
+anothernsegmentsarriveasmodifledbyanadversary. abling reliable recovery of authentication packets (i.e.,
+To decode, the receiver needs to flnd a set of n¡t seg- hash and signature packets) lost at a priori unpre-
+ments from among n+m possibilities that includes at dictable locations; and (2) a conflguration resilient to
+mostfisegmentsfromamongthenadversary-modifled informed DoS attacks that provides computationally
+segments. For reasonable values of n;t;fi;m, testing e–cient authentication. We consider each of these is-
+these combinations until a good one is found will add suesinturnbeforeprovidingaformalspeciflcationand
+many multiples of processing overhead to the decod- analysisofthebroadcastauthenticationstreams(BAS)
+ing. This problem is the basis of the conventional wis- protocol.
+dom[19,9]thatunauthenticatedFEC-encodeddatais
+vulnerable to DoS attack. 5.1 FEC in the Authentication Stream
+There are several approaches to broadcast authen-
+tication based on symmetric keys or special kinds of We refer the reader to Appendix A for a discussion of
+public key signatures. One approach [1] involves se- forwarderrorcorrectioncodes. Wesummarizeherethe
+lecting a collection G of symmetric keys and distribut- speciflc variant that we use in our protocol.
+ing a random subset of G to each receiver; a trusted
+sender uses MACs based on all of the keys in G, and Encoding Hash Packets We will use punctured
+eachreceiververiflesusingthekeystheyhave. Another Reed-Solomon codes to protect the k hash packets for
+approach [18] assumes that the sender and receivers each transmission group from erasures. While it is
+can synchronize their clocks to within an accpetable temptingtophilosophicallythinkofapacketasasym-
+threshold. The sender then sends out data packets bol, the size of each packet, say 1500 bytes, makes for
+with MACs and later discloses the key for computing adauntingfleldsize. Itiscomputationallymucheasier
+theMAC.Packetsreceivedafterthedisclosurearedis- to work in flelds of modest size. Accordingly, we par-
+carded. The use of MACs helps defeat DoS attacks tition each hash packet of N bits into N=m symbols
+becuase of their relatively low processing cost. When (neglecting packet overhead bits and integer round-ofi
+distributing sets of secret keys or synchronizing clocks forsimplicity),eachofmbits. Groupingcorresponding
+is feasible these approaches are robust against DoS at- symbols in each of the k hash packets yields a parallel
+tacks. Of course, attention must then be paid to DoS collectionofN=mgroupsofk sourcesymbolstobefed
+treats against supporting protocols for time synchro- in parallel to a punctured Reed-Solomon encoder. If
+nizationandkeydistribution. Anotherstrategytodeal erasure protection for losses of up to ‘ authentication
+withDoSistouselessexpensiveformsofcryptographic packets in a group is desired, we now create ‘ par-
+veriflcation such as one-time [5, 16] or k-time [21] sig- ity packets, with each packet consisting of N=m parity
+nature schemes. symbolsresultinginaparallelcollectionofN=mgroups
+Our contribution in this paper is a technique, se- ofn0 =k+‘symbolsformingthepuncturedcodewords.
+lective veriflcation, and its application to DoS attacks Observe that the loss of any packet results in the loss
+onbroadcastauthentication schemesthatusecommon of a symbol in the same location for each of the N=m
+kinds of public key signatures. Selective veriflcation codewords that have been formed. Thus, as long as no
+can be used with most of the existing approaches to more than ‘ of these n0 Hash/Parity (HP) packets are
+public key authentication of broadcast packets. Our lost, no codewords will have lost more than ‘ symbols
+speciflc instantiation, the BAS protocol, uses a sim- and all symbols, hence all hash packets, can then be
+ple kind of hash tree divided into two authentica- recovered. See Rizzo [20] for details on this approach.
+tion streams. This approach flts well with our use
+of RTP [23] and FEC techniques [20] that add parity Encoding Signature Packets Each transmission
+packets as a supplementary stream (see also [4]). Our group creates only one signature packet. Latency con-
+system achieves the low overheads of FEC-based tech- siderations prohibit pooling signatures from several
+niqueswithouttheneedfornewkindsofcryptography groups and as a consequence we end up coding sig-
+or other assumptions and provides robust protection natures individually from group to group. In such set-
+against DoS attacks. tings repetition codes yield comparable protection to
+more sophisticated codes and we may as well opt for
+simplicity of implementation. A second, more subtle
+5 Protocol Speciflcation
+computational factor arises when we consider coding
+to protect against DoS signature attacks next.
+As discussed broadly earlier, in order for broadcasts to
+bereliablyauthenticated,ourprotocolwillprovidetwo5.2 DoS Protection via FEC Selective bin veriflcation provides an e–cient way to
+counter DoS attacks on HP packets.
+We consider DoS attacks that attempt to confuse the
+Selective bin veriflcation. In the absence of a DoS at-
+recipient by sending a (cid:176)ood of packets mimicking true
+tack, FEC allows us to recover the hash packets for a
+packets by usurping their sequence numbers. In what
+transmission group as long as any k of the n hash and
+follows, we describe a paradigm that uses FEC to
+parity packets in the code successfully arrive at the re-
+severely diminish such attacks. For instance, using our
+ceiver. Typically, the code parameters are chosen such
+approach, an adversary launching a DoS signature at-
+that the probability of k packets arriving is very high,
+tack at a rate of 100 Mbps, can be reduced efiectively
+say, 99:99%. We can instead choose a more powerful
+to a 1 Mbps DoS attack with a very small bandwidth
+code that, with high probability, ensures that at least
+overhead. As mentioned earlier, there are two varia-
+ck of the HP packets successfully arrive at the receiver
+tions of the basic approach. The flrst one, called selec-
+(where c > 1). Suppose we are searching for k valid
+tivesequentialveriflcation,workswithrepetitioncodes,
+HP packets for transmission group i, and suppose we
+and is well-suited for handling signature attacks since
+have identifled a set W of received packets such that
+they only occupy a tiny fraction of the authentication
+all valid HP packets for transmission group i must be
+stream. The second approach, called selective bin ver-
+contained within W|this set presumably contains a
+iflcation, works with a broad range of FEC schemes,
+large amount of adversary tra–c. Since we know the
+andisparticularly well-suited tohandleattacks onthe
+validpacketsequencenumbersforHPstreamfortrans-
+HP packets.
+missiongroupi, wecaneasilyclusterallofthepackets
+in W by their sequence numbers (i.e., all packets that
+Signature Attacks Theadversaryattack inthisin-
+share a sequence number are put together in a bin)
+stance involves (cid:176)ooding the receiver with spurious sig-
+thereby forming several bins. The algorithm now pro-
+nature packets. This is a strong attack since public
+cesses these bins in increasing order of sizes|checking
+key veriflcation is the single most computationally ex-
+all packets in each bin until a valid packet is found.
+pensive step performed at the receiver end. To cope
+While scanning each bin, we compute the hash of each
+with the attack the sender creates a number of copies,
+packet in the bin and match it against the hash in-
+say M, of the flrst signature packet in a transmission
+cluded in the signature packet. We stop once we have
+group and interleaves and transmits these copies over
+collected k valid hash and parity packets. Suppose p
+the next transmission group. The copies are identical
+is the loss probability. If at least ck HP packets arrive
+barring the packet sequence number so that the com-
+and the average size of a bin is W=ck, then searching
+putational burden on the sender is kept minimal.
+[1=(1¡p)]k bins is likely to yield k valid HP packets.
+Selective sequential veriflcation. For a given compu- Thus there is a net efiect of diminishing the adversary
+tational budget, say 5% of the processor, the receiver tra–cbyafactorof(1¡p)c. So,forinstance,choosing
+sequentially samples received packets purporting to be c to be 10, can efiectively slow down the adversary by
+signatures (i.e., with a valid sequence number). Each a factor of 10, diminishing the computational load on
+putative signature is examined with a probability … the receiver by an order of magnitude.
+(determinedbytheavailablecomputationalbudgetand
+the maximum number of packets arriving per second)
+5.3 The BAS Protocol
+soastoensurethatthetotalnumberofsignatureveri-
+flcations per unit time remains within the budget with We can now put the previous considerations together
+high confldence. A su–cient number of replications of to specify the BAS protocol. This protocol uses selec-
+the signature vis a(cid:181) vis the adversary’s spurious copies tive sequential veriflcation to handle a DoS signature
+will su–ce to guarantee a high confldence that a valid attack and selctive bin veriflcation to handle aDoSat-
+signature will, in fact, be discovered. Each time a sig- tack on HP stream. Let N ;N ; and N respectively
+d h s
+nature is verifled the receiver proceeds to verify the denote the number of data packets, HP packets, and
+corresponding hashes. signature packets ineach transmission group. Also, let
+N =N +N +N , andletR denote theratioofmax-
+d h s
+Hash/Parity Attacks An adversary may also at- imum possible adversary tra–c rate to the maximum
+tack the HP packets in the authentication stream. possible sender tra–c rate.
+Given the relatively large number of HP packets in
+each transmission group, selective veriflcation, which Sender Protocol (Figure 4)
+is based on repetition coding, can no longer be e–-
+1. As data packets are produced, collect their hashes
+ciently used because of the large per packet overhead.
+into hash packets. Forward data packets as soonCollect data Buffer putative
+packets, compute Interleave data and hash Flush buffer
+hashes, send
+pkts
+No Enough for
+hash pkt?
+Randomly verify
+signature pkts Find valid data
+Yes over latency pkts
+window
+Compute parity
+Form hash packet,
+and signature
+send
+packets
+Yes
+Pick most recent Reconstruct hash
+valid signature pkt stream
+No Enough for
+TG?
+Figure 4: Flow Chart for BAS Sender
+Find valid hash
+and parity pkts
+as their hashes are taken, and send hash packets
+as soon as they are complete.
+Figure 5: Flow Chart for BAS Receiver
+2. Whenenoughdatapacketshavebeenprocessedto
+make a transmission group, create parity packets
+and a signature for the group.
+Receiver Protocol: Stream Processing Phase
+3. While sending the next transmission group, inter- (Figure 5)
+leave the parity packets and N copies of the sig-
+s
+nature packet for this group. In this interleaving, 1. When a valid signature has been found, it is used
+the signature and parity packets should alternate. to search for the corresponding hash and parity
+packetsinitsTG.Thissearchiscarriedoutovera
+collection of packets received before and after the
+Receiver Protocol: Acquisition Phase To ac-
+receipt of the valid signature packet. This collec-
+quire a stream the receiver begins searching for sig-
+tioniscalledtheHP(HP)veriflcationwindow and
+nature packets as indicated in RTP headers. The ac-
+ischosentoconsistof2(R+1)(N)packetsreceived
+quisition phase is vulnerable to a replay attack, and in
+priortothepacketcontainingavalidsignatureand
+order to protect against such an attack, the receiver
+(R+1)N packets that are received after that. It
+flrst bufiers all candidate signature packets that are
+iseasytoseethatallrelevantHPpacketsmustbe
+received over a window of time that corresponds to
+contained within this window.
+the time needed to broadcast g transmission groups.
+Nowitchoosesarandomsubsetofpacketsforveriflca-
+2. The receiver now applies the selective bin verifl-
+tionfromthisset,pickingeachcandidatepacketinthe
+cation technique to cluster these packets into bins
+bufier with probability …. Among the signature pack-
+(basedonpacketsequencenumbers)andprocesses
+ets that are successfully verifled, the receiver picks the
+these bins in increasing order of sizes. While pro-
+one with the most recent time stamp and proceeds to
+cessing a bin, it checks the hash of each candidate
+locate the HP stream corresponding to this packet. At
+packet against the hash recovered from the signa-
+this point, we say that the stream is acquired. Once a
+ture packet (using the packet sequence number).
+streamisacquired,thereceiverknowsthepacketnum-
+Once the valid hash and parity packets in the HP
+bers that correspond to signature packets sent by the
+veriflcation window are found, FEC is used to re-
+sender since the authentication stream has a repetitive
+construct as many missing hash packets as possi-
+structure.
+ble. Those hashes that can be verifled are usedto obtain verifled data packets, which are passed which receiver is unable to compute a hash due to the
+along or otherwise indicated as authenticated. computational overload, causes a loss of a single data
+packet. In contrast, each transmission group for which
+3. After a TG has been processed, the receiver con-
+we are unable to compute hashes for enough packets
+tinues searching for the next valid signature by
+in the hash parity stream, will cause us to lose all N
+d
+verifyingeachincomingsignaturewithprobability
+data packets in the corresponding transmission group.
+…. This process repeats after each valid signature
+is used to process a TG.
+OtherAttacks Otherattacksofinterestinclude: in-
+tegrity attacks on the data or HP stream, attacks on
+6 Protocol Analysis key distribution, and attacks on time stamps. Let us
+flrst consider each of these in turn. If an adversary
+A formal analysis of the BAS protocol is presented in introduces false (non-replay) packets into the data or
+Appendix B. We present here a brief overview of how HP stream, then their hashes will not coincide with
+theBASprotocoldefendsagainstvariousattacks. The the ones signed by the signature packets. An adver-
+threeattacksofprimaryinterestaresignature(cid:176)ooding, sary who sends a large number of such false packets
+replay, and hash (cid:176)ooding. willhavethemdiscardedasquicklyastheirhashescan
+be computed. The BAS protocol uses public keys so
+Signature Flood Signature (cid:176)ood attacks are efiec- there is no session key distribution protocol to attack.
+tively handled by the selective sequential veriflcation Attacks on PKI represent the same risk for other pro-
+feature of the protocol. For instance, if the sender tocols that they do for BAS. BAS uses a very coarse
+sends 50 copies of each signature packet, the receiver time requirement, on the order of hours, so attacks on
+cansampleeachcandidatesignaturepacketwitha10% time stamps cannot exploit flne errors.
+probability and still recover a valid signature packet
+with a 99.5% confldence. On the other hand, the 10% 7 Implementation
+samplingratecutsdownthesignature(cid:176)oodbyafactor
+of 10.
+We have implemented the BAS protocol based on the
+Real-time Transport Protocol [23]. RTP provides a 12
+Replay Attack A successful replay attack occurs byte header that includes a 16 bit sequence number, a
+when in the acquistion phase, the receiver chooses a timestamp, and other information such as a synchro-
+valid old signature packet that is being replayed by nization source identifler. The BAS protocol exploits
+the adversary. BAS protects against this by bufier- the sequence numbers to correlate three RTP streams.
+ing all signature packets seen over a window of several The flrst of these, the data stream, is an RTP stream
+transmission groups. A simple analysis shows that by of any kind provided by an application-level protocol.
+sampling from a suitably large bufier, we can ensure BAS associates two additional RTP streams to this
+that the receiver obtains at least one current signa- one, namely the HP and signature streams. A given
+ture packet with high probability. Since the acquistion collectionofdatapacketswilldeterminecorresponding
+phase selects the most recent valid signature packet, hash,parity,andsignaturepackets;thisassociatedcol-
+the probability of a replay attack is negligible. Once lection of data, hash, parity and signature packets is a
+the acquisition phase succeeds in choosing a current Transmission Group (TG). The nature of a transmis-
+signature packet, a replay attack does not efiect the sion group depends on the rate of at which the data
+stream processing phase. We note here that only a will be sent and the anticipated reliability of its chan-
+coarse synchronization is needed between the clocks of nel. We developed design parameters for two rates,
+thesenderandthereceiverinordertochoosethemost 10Mbps and 100Mbps, and three levels of reliability
+recent signature packet. re(cid:176)ecting average losses of 5%, 20% and 40%. The pa-
+rameters are predicated on the assumptions that the
+Hash Flood If the adversary attack rate is so high receiver should be able to verify the packets it receives
+that we cannot perform even hash computations of all within 2 seconds over a low speed channel (10Mbps)
+incoming adversary and valid packets, then we essen- and1secondoverahighspeedchannel(100Mbps)with
+tially drop data packets (the ones that could not be a confldence of 99%. For a given rate and reliability,
+authenticated). It is not di–cult to see that an adver- theseassumptions yield achoice ofthenumberof data
+sary targeting hash computation load at the receiver packets k in a transmission group, the number of hash
+will be more efiective by focusing on the hash parity packets needed to hold their hashes, and a number of
+stream than data stream. Each valid data packet for parity packets ‘ needed to provide su–cient reliabilitytothehashstream. Table3providesreliabilityparam- lar, the three streams have distinct sequence numbers.
+eters used in our implementation. On a 10Mbps link The SN fleld of each hash packet is the flrst sequence
+we use 11 hash packets: for loss rates of 5%, 20%, and numberfromthedatastreamforwhichahashappears
+40% we use 5, 11, and 22 parity packets respectively. in the hash packet payload, and the range indicates
+On a 100Mbps link we use 57 hash packets: for loss the total number of data packets whose hashes are in-
+rates of 5%, 20%, and 40% we use 10, 30, and 66 par- cluded. This number is generally 144 (the maximum
+ity packets respectively. The size of the transmission that will flt), but could be smaller. The hash of a data
+group is the number of data packets assuming 144 for packet applies to its RTP header and payload but not
+each hash packet plus the number of hash and par- to its IP and UDP headers. Parity packets are illus-
+ity packets plus the number of signature packets. For trated in Figure 6(c). Parity packets are created from
+10Mbpswesend20signaturepacketsandfor100Mbps applying a systematic Reed Solomon code to the RTP
+we send 200. A TG for 10/5 (10Mbps and 5% loss) and payload portions of the hash packets from their
+has1620packets, including20signaturepackets, while transmissiongroup. ThesepacketshavetheirownRTP
+a TG for 100/5 has 8475 packets, including 200 signa- headers, but the parity information does not recover
+ture packets. These choices assume that packets can theseortheIPandUDPheadersofhashpacketsinthe
+contain up to 1500 bytes of data. Nothing about the transmissiongroup. Italsodoesnotallowtherecovery
+BASalgorithmfundamentallyreliesonpacketsof1500 of any lost data packets. Signature packets are illus-
+bytes, but we would use difierent parameters for other trated in Figure 6(d). The signature is applied to the
+sizes. For a hash we use the flrst 10 (of 20) bytes in a truncatedhashofthesigniflcantfleldsinthepacketfol-
+SHA hash [8]. lowingthesignature. Theseincludethesequencenum-
+The number of signature packets to be sent is de- berfleld,SN,whichistheRTPsequencenumberofthe
+termined by the need to ensure that the receiver can flrst hash packet in its group, the HRng fleld, which is
+flnd a valid signature packet within the specifled veri- the value of k, the PRng fleld, which is the value of
+flcation latency assuming that an attacker is given the l, a 32 bit time based on the Network Time Protocol
+same capacity as the sender. Signatures use 1024 bit (NTP), and the collection of truncated hashes of the
+RSA with an exponent of 17. Selective sequential veri- HL stream packets in the transmission group. These
+flcation uses a veriflcation frequency parameter of 25% hashes cover all of the data in these packets except for
+for 10Mbps and 2.5% for 100Mbps. the IP and UDP headers. Note that only one signature
+BAS relies on the use of sequence numbers to de- isrequiredforeachtransmissiongroup, nomatterhow
+termine transmission groups from the three streams many signature packets are used.
+of packets. We assume that all packets are given IP, Thetimestampisusedtoavoidreplayattacksbased
+UDP, and RTP headers as illustrated in Figure 6(a). on old sequence numbers. With 16 bit sequence num-
+The sizes of headers and available payload are given bers there may be some wrap-around in the signature
+stream, but this will very slow, on the order of many
+20 8 12 Up to 1460 hours. The receiver checks that the time stamp is ac-
+(a) IP UDP RTP Payload curate to within 20 minutes to prevent replays. We
+could have used the time stamp in the RTP header,
+40 2 2 1440
+but this complicates interactions with RTP since the
+(b) HLH SN Rng 144 Hashes
+implementation uses the same signature for all of the
+40 1456 signaturepacketsinatransmissiongroupwhereasRTP
+(c) HLH FEC Parity Data will assign them all distinct time stamps.
+40 128 4 2 2 4 Variable Variable
+(d) HLH Sig SN HRng PRng Time Hashes Pad 8 Experiments
+Figure 6: Packet Formats WenowpresentanexperimentalevaluationoftheBAS
+protocol for various settings of rate, loss and attack.
+in bytes in the flgure. Hash packets are illustrated in
+8.1 Setup
+Figure 6(b). In this and other cases in the flgure, HLH
+referstotheIP,UDP,andRTPheaders. Followingrec- We assume the existence of a DoS attacker with ac-
+ommendations in the RTP standard, the HL and sig- cess to the various levels of bandwidth. The interest-
+nature streams use distinct UDP ports to distinguish ingindependentvariablesarethefollowing: senderrate
+themfromeachotherandthedatastream. Inparticu- and latency; loss rate; average burst length; attackerrate. Our approach flxes a target latency; the proto-
+col is then designed for various bandwidth and relia-
+bility characteristics of the channel. The interesting
+dependent variables are: sender throughput; receiver
+throughput; bandwidth overhead; authentication loss.
+Thesenderrateisthenumberofmegabitsofdatapack-
+ets that can be processed in one second; processing
+consists of producing the necessary hash, parity, and
+signature packets for the data packets. The receiver
+rate is the rate in megabits per second at with which
+valid data packets can be recovered from a mixture of
+packets originating from the sender and an attacker.
+The bandwidth overhead is the percentage of band-
+width devoted to hash, parity, and signature packets.
+Theauthenticationlossisthepercentageofdatapack-
+ets received by the receiver that cannot be verifled by
+the receiver due to the loss or reordering of hash, sig-
+nature, and parity packets.
+Tocarryoutanexperimentforasenderwestartwith
+a collection of data and simply generate the necessary
+hash, signature, and parity packets. For a receiver, we
+start with the stream produced by a valid sender and
+apply a loss model to remove a subset of the stream.
+WetheninsertDoSpacketsrandomlyintotheresulting
+6.00%
+streamataratiodeterminedbytheattackfactor. DoS
+5.00%
+packets are assumed to take advantage of an informed
+4.00%
+attack, so, for instance, they assign sequence numbers
+3.00%
+that the receiver is expecting to see from the sender.
+2.00%
+OurexperimentsareforDoSattacksbasedonsignature
+(cid:176)ooding only. In particular, no other kinds of packets 1.00%
+are sent by an adversary. The aim is to measure ro- 0.00%
+1 4 7 10 13 16 19 22 25 28 31 34
+bustness against signature (cid:176)oods even at levels where
+TGs x 64
+the adversary could be efiective by attacking another
+limit. For instance, a receiver can perform hashes on
+about 77,000 packets each second so a factor 10 attack
+on a 100Mbps link would overwhelm this capacity if
+it forced the receiver to perform hashes on all of the
+packets it receives.
+Our throughput numbers are based on the average
+of three runs for 32 transmission groups. The authen-
+tication loss numbers are based on 15 runs over 32
+transmission groups. These were done on a 2.4GHz
+PC with enough memory to avoid using the disk and
+Redhat Linux 7.3 using cryptographic operations from
+OpenSSL 0.9.6.
+8.2 Results
+Webeginwithacollectionofflguresderivedfromasce-
+nario that illustrates the basic measurements we con-
+sidered. Assumewearegivenasenderthatsendspack-
+ets at a rate of 10Mbps and a receiver that gets them
+over a channel with a 20% average loss that occurs
+etar
+ssol
+htua
+9000
+8000
+7000
+6000
+5000
+4000
+3000
+2000
+1000
+0
+1 4 7 10 13 16 19 22 25 28 31 34
+TGs x 64
+serutangis
+ekaf
+fo
+on
+0.12
+0.1
+0.08
+0.06
+0.04
+0.02
+0
+1 4 7 10 13 16 19 22 25 28 31 34
+TGs x 64
+GT/ces
+Figure 7: Scenario Attack Proflle
+in bursts that average 100 packets. After a period of
+time an attacker sends fake signature packets which
+are received at a rate of 8Mbps. For this proflle the
+BAS implementation uses transmission groups of 1626
+packets,including20signaturepackets. EachTGtakes
+about 2 seconds to transmit. Signature packets are
+checked at the receiver with a probability of 25%. Fig-
+ure 7 illustrates a few of the associated efiects of this
+attack. Figure 7(a) shows the number of false signa-
+tures checked per collection of 64 transmission groups.
+Figure 7(b) shows the time required to process each
+collection of 64 transmission groups. Note that this
+cost rises slightly during the attack. Figure 7(c) shows
+the authentication loss rate, that is, the percentage of
+data packets that reached the sender but could not berequired to prcess a TG rises during an attack, but
+Table 2: Disproportionate DoS Signature Attack Pa-
+theaddedprocessingtimeisonlyabout.02secondper
+rameters for 20% Loss
+TG. This is about 1% of the processor time, which is
+Sender Rate (Mbps) 10 100 100 close to what would be predicted by Figure 7(a) and
+Table1. Figure7(c)showsthattheauthenticationloss
+Attack Factor 10 5 5
+is between 2% and 3% and is not much afiected by the
+PKC Budget Per TG 800 400 1000
+attack.
+Packets Per TG 1666 8333 8333
+When there is no DoS attack, receiver rates are
+Signature Copies 131 657 249
+slightly better than sender rates. A receiver does not
+Checking Probability(%) 4 1 2
+needtoprocessparitypacketsunlesssomehashpackets
+Expected Sender Packets(%) 7 14 14
+arelost,sotheperformanceofareceiverisbetterwhen
+Signature Overhead(%) 8 8 3
+there is a low loss rate. A sender needs to create more
+paritypacketswhenthechannelislossy, sohigherreli-
+ability leads to better performance for both the sender
+authenticated because of the loss of packets in the au- and receiver. A higher rate allows more amortization
+thentication stream. of signature costs and difierent FEC characteristics, so
+We now provide a sample of the flgures we derived processingthroughputratesarebetterforhigherband-
+from various additional experiments. Figure 8 shows widths. These observations address the slight decrease
+processingthroughputsforindependentlossrateswith in thoughputs in Figure 8 for lower bandwidths and
+no DoS attack. These experiments use the parame- reliability.
+ters in Table 3. By contrast Figure 9 shows through- WhenaDoSattackoccurs, receiverthroughputsare
+puts for independent loss for a collection of difierent signiflcantlydegradedasafunctionofthefactorofthe
+disproportionate attacks usingthesignature repetition attack. Figure 9 illustrates how the choice of param-
+codes prescribed by the theory in Section 6. The flrst eters can take advantage of a tradeofi between band-
+three pairs of experiments are for a factor 10 attack widthoverheadandthroughput. Forinstance,the1000
+on a 10Mbps sender at various loss rates assuming a PKC/sec limit for the 100/20 proflle yields a lower
+budget of 800 Public Key Checks (PKC) per TG. The throughput at the receiver than the corresponding 400
+nextthreepairsareforafactor5attackona100Mbps PKC/seclimitbutreducesthesignatureoverheadfrom
+sender with a 400 PKC/sec budget. The last three 8% (657 signatures per TG) to 3% (249 signatures per
+pairs are for a factor 5 attack on a 100Mbps sender TG) as shown in Table 2. The decline in throughput
+witha1000PKC/secbudget. Table2showsthecorre- is so small that it seems reasonable to use larger pro-
+spondingparametersforthecaseof20%lossasderived cessing budgets to reduce bandwidth overhead.
+from our analysis. These flgures are based on a 99% Our reliability parameters were based on indepen-
+confldence for authentication. dent loss, but their throughput is not much afiected
+Figure 10 shows processing throughputs for corre- by correlated losses, as is shown by Figure 10. When
+lated losses ranging from an average of 10 packets per there is a DoS attack the throughputs become lower
+burst loss to 200 packets per burst loss using a two- and more similar for difierent reliability levels. Under
+state Markov chain. As in Figure 8 we are assuming a attack a greater percentage of processor efiort will be
+proportionate attack. Sender rates are not afiected by devoted to checking false signatures so difierences in
+burstratessotheyremainthesameasfortheindepen- FEC costs will matter less.
+dent case. Figure 11 shows authentication loss rates As shown in Figure 11, athentication losses are
+plotted over burst rates. For example, if a 10Mbps nearly absent for bursts below about 100 for all of the
+channel is used at 5% loss, then authentication losses proflles, but rise signiflcantly between 100 and 180. At
+begin to occur at bursts of about 80. bursts of 200 or more authentication begins to break
+downsigniflcantly. Wedidnotincludeagraphtoshow
+this, butaddingmoreparitypacketsdecreasesauthen-
+8.3 Analysis
+tication losses signiflcantly at higher burst levels. In
+ThescenarioanalyzedinFigure7showsthatanattack particular, authentication losses are mainly due to the
+causesthereceivertocheckanincreasednumberofbad loss of parity packets rather than signature packets.
+signature packets, but this number is far less than the
+number actually sent since packets are checked with a
+probability of 25% and signature packets for a given
+TGcanbeignoredafteravalidoneisfound. Thetime300
+10-5 10-20 100-5 100-20 100-40
+250
+10-40
+200
+150
+100
+50
+0
+1 2 3 4 5 6
+)spbM(
+tupurhT
+sender
+receiver
+Figure 8: Throughputs for Independent Loss Under No DoS Attack
+300
+250 10/5 10/20 10/40 100/5 100/20 100/40 100/5 100/20 100/40
+200
+150
+100
+50
+0
+)spbM(
+tupurhT
+sender
+receiver
+Figure 9: Throughputs for Independent Loss Under Disproportionate DoS Signature Attacks230
+225
+220
+215
+210
+205
+200
+195
+190
+185
+180
+10 30 50 70 90 110 130 150 170 190
+Burst Rate
+)spbM(tupurhT
+"10-5"
+"10-20"
+"10-40"
+220
+210
+200
+190
+180
+170
+160
+150
+140
+130
+120
+10 30 50 70 90 110 130 150 170 190
+Burst Rate
+)spbM(
+tupurhT
+Proportionate Attack
+Factor 10 Attack
+10-5
+10-20
+10-40
+Figure 10: Receiver Throughputs for Correlated Loss Under DoS Signature Attacks
+20.00%
+18.00%
+16.00%
+14.00%
+12.00%
+10.00%
+8.00%
+6.00%
+4.00%
+2.00%
+0.00%
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20
+Burst Rate (Pkts x 10)
+)%(etaR
+ssoL
+htuA
+100-40
+100-5
+"10-40"
+"10-5"
+Figure 11: Authentication Loss over Correlated Loss Under Proportionate DoS Signature Attack9 Conclusion
+Broadcast authentication streams provide simplicity,
+e–ciency, and robust protection against denial of ser-
+vice at the cost of modest additional latency and au-
+thentication loss. BAS requires that the rate of the
+sender is known within general bounds and upper
+bounds can be placed on the loss rate and the band-
+width available to an adversary. It requires only famil-
+iar and well-understood FEC and cryptographic oper-
+ations such as Reed-Solomon codes, SHA hashes, and
+RSA signatures. BAS has bandwidth overhead and
+performanceasgoodasanypreviousapproachtopub-
+lic key authentication of broadcast streams and gives
+DoSprotectionthatissigniflcantlybetterthananypre-
+viousapproach. TheDoSprotectioninBASisbasedon
+anewtechniquecalled selectiveveriflcation whichuses
+redundancy and probabilistic veriflcation to diminish
+the adversary attack rate by large factors. We have
+developedtheoreticalfoundationsforselectiveveriflca-
+tion and shown its efiectiveness in experiments over a
+broad range of communication characteristics.
+Acknowledgements
+We appreciated assistance from programmers who
+helped us with coding the BAS protocol and collect-
+ingdatafortheexperimentsinSection8. SumeetBedi
+led this efiort with assistance from Watee Arjsamat,
+Sonal Ghandi, Kevin Lux, and Aloka Singh. We also
+received useful comments from Karthikeyan Bharga-
+van, Ran Canetti, Michael Greenwald, Klara Nahrst-
+edt, Adrian Perrig, and Jonathan Smith. We thank
+LuigiRizzoforassistanceandtheuseofhisFECpack-
+age. ResearchofGunterandTanwassupportedinpart
+byNSFEIA00-88028andONRN00014-02-1-0715. Re-
+search of Khanna was supported in part by an Alfred
+P. Sloan Research Fellowship and by an NSF Career
+Award CCR-0093117References
+[14] A. Pannetrat and R. Molva. E–cient multicast
+packetauthentication. InProceedingsoftheNDSS
+[1] RanCanetti,JuanGaray,GeneItkis,DanieleMic- Symposium, 2003.
+ciancio, Moni Naor, and Benny Pinkas. Multicast
+security: Ataxonomyandsomee–cientconstruc- [15] J.M.Park,E.K.P.Chong,andH.J.Siegel. E–-
+tions. In INFOCOMM’99, 1999. cient multicast stream authentication using era-
+sure codes. ACM Transactions on Information
+[2] H. Chernofi. A measure of the asymptotic e–- and System Security, 6(2):258{285, 2003.
+ciency of tests of a hypothesis based on a sum of
+observations. Ann. Math. Stat., 23:493{507, 1952. [16] Adrian Perrig. The biba one-time signature and
+broadcast authentication protocol. In ACM Con-
+[3] Danny Dolev and Andrew C. Yao. On the secu- ference on Computer and Communications Secu-
+rity of public-key protocols. IEEE Transactions rity, pages 28{37, 2001.
+on Information Theory, 2(29):198{208, 1983.
+[17] Adrian Perrig, Ran Canetti, Dawn Xiaodong
+[4] David C. Feldmeier, Anthony J. McAuley, Song,andJ.D.Tygar. E–cientandsecuresource
+JonathanM.Smith,DeborahS.Bakin,WilliamS. authenticationformulticast. InProceedings of the
+Marcus, andThomas M.Raleigh. Protocol boost- NDSS Symposium, 2001.
+ers. IEEE Journal on Selected Areas in Commu-
+nications, 16(3):437{443, 1998. [18] Adrian Perrig, Ran Canetti, J. D. Tygar, and
+Dawn Xiaodong Song. E–cient authentication
+[5] RosarioGennaroandPankajRohatgi.Howtosign and signing of multicast streams over lossy chan-
+digitalstreams.InProceedingsofCrypto’97,pages nels. In IEEE Symposium on Security and Pri-
+180{197, 1997. vacy, pages 56{73, 2000.
+[6] PhilippeGolleandNagendraModadugu. Authen- [19] Adrian Perrig and J. D. Tygar. Secure Broadcast
+ticating streamed data in the presence of random Communication in Wired and Wireless Networks.
+packet loss. In Proceedings of the NDSS Sympo- Kluwer, 2003.
+sium, 2001.
+[20] Luigi Rizzo. Efiective erasure codes for reliable
+[7] W. Hoefiding. Probability inequalities for sums of computer communication protocols. ACM Com-
+boundedrandomvariables. J. Amer. Stat. Assoc., puter Communication Review, 27(2):24{36, 1997.
+58:13{30, 1963.
+[21] Pankaj Rohatgi. A compact and fast hybrid sig-
+[8] H. Krawczyk, M. Bellare, and R. Canetti. Hmac: natureschemeformulticastpacketauthentication.
+Keyed-hashing for message authentication. RFC In ACM Conference on Computer and Communi-
+2104, IETF, February 1997. cations Security, pages 93{100, 1999.
+[9] M. Luby, L. Vicisano, J. Gemmell, L. Rizzo, [22] S. M. Ross. Stochastic Processes. Wiley, second
+M. Handley, and J. Crowcroft. Forward error cor- edition, 1996.
+rection(fec)buildingblock. RFC3452,IETF,De-
+cember 2002. [23] H.Schulzrinne,S.Casner,R.Frederick,andV.Ja-
+cobson. RTP: a transport protocol for real-time
+[10] F. J. MacWilliams and N. J. A. Sloane. The The- applications. RFC 1889, IETF, January 1996.
+ory of Error-Correcting Codes. North-Holland,
+1977. [24] Wong and Lam. Digital signatures for (cid:176)ows and
+multicasts.IEEE/ACMTransactionsonNetwork-
+[11] R. J. McEliece. The Theory of Information and ing, 7, 1999.
+Coding. Addison-Wesley, 1977.
+[12] Ralph Merkle. A certifled digital signature. In
+Proceedings of Crypto’89, pages 218{238, 1990.
+[13] Sara Miner and Jessica Staddon. Graph-based
+authentication of digital streams. In IEEE Sym-
+posium on Security and Privacy, pages 277{288,
+2001.A Forward Error Correction
+morethantherequisite‘erasures. Inthiscaseonecan
+elect to keep just, say, the flrst ‘ parity check symbols
+Severalunicastprotocolsutilizeacombinationofalow in each codeword together with the k source symbols
+complexity error-detection code (typically a cyclic re- andcheerfullydroptheremainingn¡k¡‘paritycheck
+dundancy check (CRC) code) coupled with feedback symbols. Theresultingcodeiscalledapunctured Reed-
+in the form of automatic repeat requests (ARQs) to Solomon code; in the punctured code, each codeword
+recover from errors and losses in transmission. Such consists of only k+‘ symbols. We can still afiord to
+ARQ-based protocols, while well understood, unfortu- lose up to ‘ more symbols before the code falters. The
+nately do not scale well in multicast settings. In such benefltofpuncturingthecodethusisthatwehavenow
+cases, coding introduced in the transmission to cope boosted the rate of the code to k=(k +‘) which may
+with errors and losses in the authentication stream efiect a substantial reduction in coding overhead over
+must be su–ciently powerful to allow each recipient theoriginalk=nrate. Thus, erasureprotectionmaybe
+to unambiguously reconstruct the entire authentica- continuously traded-ofi against rate by puncturing the
+tionstreamcorrespondingtoagroupofdatawithvery code.
+highconfldence(sothateachrecipientlosesonlyavery Othercodeswithroughlysimilarcharacteristicssuch
+small fraction of transmissions to non-authentication). as Rabin’s Information Dispersal Algorithm may also
+As feedback is eschewed, the entire process of coding, be used. While coding overheads in our application
+transmission, and decoding is accomplished in a single are typically low and coding and decoding costs are
+forward pass. notsigniflcant,insituationswheredecodingcostisim-
+In general, error-control coding adds redundancy to portant one may trade-ofi space for time using codes
+the stream. Repetition codes, for instance, constitute such as Tornado codes. For these and related ideas see
+a na˜‡ve application of this idea whereby each packet Luby, et al [9], Park, et al [15], and Rizzo [20].
+to be protected is simply retransmitted a flxed num-
+ber of times. From the perspective of erasure recovery,
+B Formal Analysis of BAS
+however, repetition codes have simplicity commending
+them but little else. As we see in the next section, it
+is easy to get a flve- to ten-fold improvement in cod- In this section we describe the theoretical foundations
+ing overhead over repetition codes with a modicum of of the protocol and provide analyses of difierent loss
+efiort. and DoS attack models.
+For our present purposes we focus on a very pow-
+erful and practical family of codes called the Reed- B.1 Loss Recovery Analysis
+Solomon (RS) codes over the flnite fleld GF(2m) (c.f.,
+The simplest loss model occurs when packets are as-
+MacWilliams and Sloane [10] or McEliece [11], for in-
+sumed to be dropped independently with some flxed
+stance) for some positive integer m. An RS(n;k) code
+will consist of n = 2m ¡1 symbols in GF(2m) out of probability p. Suppose the hash/parity stream of a
+transmission group consists of n0 packets comprised of
+whichtheflrstk aresourcesymbolsandtheremaining
+k hash packets and ‘ = n0¡k parity packets. As be-
+are parity check symbols that add redundancy.
+fore, wesupposethatthe‘paritypacketsareobtained
+Several features of the Reed-Solomon codes make
+bypuncturingan(n;k)systematicReed-Solomoncode
+them particularly appealing for our application. The
+and selecting ‘ • n¡k parity packets. Consider the
+codes can be implemented very e–ciently using public
+transmissionofthen0 =k+‘hash/paritypacketsover
+domain software. No special tweaking or proprietary
+apacketerasurechannelwithpacketlossprobabilityp.
+material is needed. The codes are very well suited
+Assume for the nonce that there are no packet inser-
+to situations where errors in bit transmissions occur
+tions, i.e., no DoS attack on the hash/parity stream.
+in bursts. And the Reed-Solomon codes can be e–-
+Lettheinteger-valuedrandomvariableS denotethe
+ciently combined or concatenated with other codes to
+number of dropped packets in the hash/parity stream
+form even more powerful codes.
+of the transmission group. We can interpret the prob-
+Mostimportantly,anRS(n;k)codecanrecoverfrom
+any combination of up to n¡k erasures. Suppose it ability that S does not exceed ‘ as our confldence in
+therecoverabilityofallhashpacketscorrespondingtoa
+is desired to provide erasure protection for up to‘ era-
+giventransmissiongroup. Alternatively,theconfldence
+suresoutofksourcesymbols. ThenanyReed-Solomon
+code with length n ‚ k+‘ and dimension k will pro- representsthelong-runfractionoftransmissiongroups
+that are authenticatable, DoS attacks in abeyance, in
+vide the requisite level of erasure protection and more.
+Indeed, if ‘ ¿ n¡k, the code protects against much the sense that the hash packets of these groups are re-
+covered. We typically require a confldence of at leastk =11 k =57 More sophisticated Markovian loss models can be
+p ‘ (‘H) ‘0 ‘ (‘H) ‘0 constructed to capture time correlations in packet
+0:05 5 (8) 22 10 (17) 114 losses. Similar results can be derived for these models
+0:20 11 (12) 44 30 (33) 285 though we will not describe them here in the interests
+0:40 22 (22) 77 66 (67) 513 of brevity.
+B.2 Denial of Service Attacks
+Table 3: Coding overhead for Reed-Solomon and repe-
+tition codes.
+A DoS attack may focus on the data stream,
+hash/parity stream, or signature stream. Or an at-
+99 percent that all hash packets in a group are recov- tacker may elect to spread his resources in an attack
+ered so that fewer than one in a hundred groups are on some combination of these streams. In a shared
+compromised. channel model the attack is in the form of a (cid:176)ood of
+As packet drops are independent, S conforms to a spurious packets having the apparent characteristic of
+binomialdistributionandaselectionofexponentialtail the packets in the stream under attack, for instance,
+bounds may be deployed to provide crisp estimates for by bearing sequence numbers of legitimately expected
+the tail probability, packets.
+n ¡ (cid:176) ¢o Wemayconsiderattacksoneachofthethreestreams
+PrfS >‘g<exp ¡(k+‘)D ‘ (cid:176) p in isolation; a combination attack efiectively reduces
+k+‘
+the attack factor of the adversary in each stream as
+(Chernofi bound) his resources have to be spread across the streams. A
+‰ ¡ ¢ (cid:190)
+¡2 (1¡p)‘¡kp 2 successful attack on a data packet will result in the ef-
+<exp ; fectivelossofthatpacketasitcannotbeverifled;asuc-
+k+‘
+cessfulattackonahashpacketwillresultintheinvali-
+(Hoefiding bound)
+dation of the group of data packets whose hashes have
+been compromised; a successful attack on a signature
+where, with logarithms to base e,
+packet will compromise the entire transmission group.
+¡ (cid:176) ¢
+D ‘ (cid:176) p = ‘ log ‘ + k log k Of such attacks, a signature (cid:176)ood attack is potentially
+k+‘ k+‘ p(k+‘) k+‘ (1¡p)(k+‘)
+the most damaging as an adversary can invalidate an
+denotes the Kullback-Le¡ibler dive¢rgence between the entire transmission group in one fell swoop if the at-
+probabilitydistributions ‘ ; k and(p;1¡p). The tack is successful. We hence begin with an analysis of
+k+‘ k+‘
+flrst bound is that of Chernofi [2], the second, slightly signature (cid:176)ooding attacks and how the BAS protocol
+more analytically amenable, is due to Hoefiding [7]. copes with such attacks.
+Givenavalueofkandadesiredconfldence1¡–(where As a design parameter we require that the proto-
+– =0:01,say)onetypicallywishestodetermineavalue col provide a guaranteed confldence of 1¡– that any
+of ‘ for which the desired confldence is attained. In- given transmission group is veriflable. Here – 2 (0;1)
+vertingHoefiding’sbound,forinstance,weobtainthat is our confldence parameter. We may think of – as
+if the number of parity packets per transmission group some suitably small number (we selected – = 0:01 in
+satisfles our simulations) but for purposes of analysis we leave
+s this as an application-specifled parameter. Two ad-
+• ‚
+kp log– 8k(1¡p) ditional design parameters are the authentication and
+‘‚ 1¡p ¡ 4(1¡p)2 1+ 1¡ log– (1) loss recovery overhead o which is the fraction of pack-
+ets in a transmission group devoted to authentication
+then all k hash packets in a given transmission group and error or loss recovery and the sender-side authen-
+can be recovered with confldence at least 1¡–. As a tication latency ¿ which is the delay between the be-
+practical matter, the values of ‘ provided by Hoefid- ginningoftransmissionofdatainatransmissiongroup
+ing’sboundareonlyslightlylargerthanthoseprovided and the completion of transmission of packets needed
+by Chernofi’s bound; see Table 3 where, for a given toauthenticatethegroup. Ofcourse,theoverheadand
+value of k, ‘ denotes the Chernofi estimate of the par- latencyarerelated. Inouranalysisweassumethatthe
+ity overhead, ‘H denotes the Hoefiding estimate, and maximum overhead o is specifled as a design parame-
+forcomparativepurposes,‘0 istheparityoverheadthat ter; the latency ¿ is then determined as a function of o
+resultsifana˜‡verepetitioncodeweretobeusedinlieu and–. Aswillbecomeclear,wecouldequallywellhave
+of a Reed-Solomon code. specifled a maximum latency that the application canwithstand anddeterminetheoverheadthatisincurred Signature Stream
+in consequence. The latter may be more appropriate
+The number of signature copies N needed per trans-
+in situations where excess capacity is available. s
+mission group will be determined loosely by the loss
+For deflniteness we consider the following explicit
+rate and the attack factor. The actual estimates de-
+speciflcations of communication and computation pa-
+pend on whether the sequential veriflcation or bin ver-
+rameters in the analysis. Suppose all packets have a
+iflcation protocols are adopted and we consider these
+flxedlengthandconsideracontinuoustransmissionset-
+in turn.
+ting where a sender has an available bandwidth of W
+packets per second which he fully utilizes. We con-
+Selective sequential veriflcation Suppose that
+sider a shared channel model where the attacker has
+each incoming signature is verifled independently with
+the capability of transmitting at the rate of RW pack-
+probability …. The following result is elementary but
+etspersecondwhereR isthedimensionlessattack fac-
+useful.
+tor. We assume that sender packets arrive in order at
+the receiver (though adversarial packets may be timed
+Lemma 1 The receiver will successfully verify a sig-
+and inserted anywhere in the sequence) and that the
+receiver has a computational budget of K = K sig-
+nature in any given transmission group¡with confldenc¢e
+s at least 1¡– provided N ‚ log(–)=log 1¡(1¡p)… .
+nature checks per second on average. Finally, we sup- s
+A fortiori it su–ces if N ‚¡log(–)=(1¡p)….
+posethatpackettransmissionsareoveranindependent s
+loss channel in which each packet transmitted by the
+Proof: Consider the start of the transmission of the
+sender is lost independently with probability p. We do
+current group of signature packets (i.e., N copies of
+s
+not assume that the adversary’s packets are also sub-
+the same signature packet). The probability that a
+ject to loss. Typical numbers that we consider in the
+givensignaturepacketisbothsuccessfullyreceivedand
+examplesandsimulationsare1500bytepackets;trans- verifled by the receiver is given by (1¡p)…. It follows
+missionsover1Mbps,10Mbps,and100Mbpsconnec-
+thattheprobabilitythatnoneofthebonaflde signature
+tions, which translate into packet transmission rates
+packets in the current group is successfully verifled is
+¡ ¢
+of W = 83, 833, and 8333 packets per second, respec- 1¡(1¡p)… Ns and we require this to be no larger
+tively;proportionateanddisproportionateattackswith
+than –. The bound on N follows. Finish ofi the proof
+attack factors R=1 and R=10, respectively; compu- s
+with the elementary observation ¡log(1¡x) > x for
+tationalbudgetsK between40to800publickeychecks
+0<x<1. ⁄
+per second on stock PC’s assuming that we can devote
+5% to 10% of the processor toward signature checks; As the entire transmission group requires N=W sec-
+packet loss probabilities p of 5%, 20%, and 40%; confl- onds for transmission, under an informed DoS attack
+dence parameter – =0:01; and overhead o between 5% onthesignaturestreamwithattackfactorR,themax-
+and 10%. imumnumberofpacketsinthesignaturestreamofthe
+The analysis may be modifled to flt other mod- currentgroupisN +RN =R(N +N )+(R+1)N . To
+s d h s
+els such as variable sender rates, attacks on keep within the computational budget of K signature
+shared/modiflcation channels, out-of-order packets, checks per second on average at the receiver, it su–ces
+and correlated packet losses without much ado. hence to verify signatures randomly with probability
+In this setting our goal is to determine the size and
+KN=W K(N +N +N )
+composition of a transmission group that meets the … = = d h s : (2)
+confldence and overhead constraints. Let N (to be de- N s+RN WR(N d+N h)+W(R+1)N s
+termined) denote the number of packets in a transmis-
+(More accurately, … is chosen as the smaller of the
+sion group and let N , N , and N denote the num-
+d h s
+above quantity and 1; to obviate trivialities suppose
+ber of data packets, hash and parity packets, and sig-
+that the right-hand side above is less than 1.) A di-
+nature packets, respectively, comprising the transmis-
+rect application of the lemma shows that a choice of
+siongroup. Oncedetermined,thesizethetransmission
+N ‚ ¡log(–)=(1¡p)… will provide adequate protec-
+group specifles the sender-side authentication latency, s
+tionagainstasignature(cid:176)oodDoSattackwhilestaying
+¿ =N=W. (Of course, this is for the independent loss
+within the given computational resources. It follows
+model; in a correlated loss model, the authentication
+that the number of signatures N may be chosen to be
+packets will need to be interspersed across the follow- s
+ing transmission group to combat burst errors leading
+to a latency of approximately 2N=W.)any positive integral value for which the quadratic expected number of signature checks for the current
+£ group is bounded above by
+Q(N )=(1¡p)KN2 + (1¡p)K(N +N )
+s s⁄ d h
+X1
+(cid:181) ¶
+¡W(R+1)log 1 – N s¡WR(N d+N h)log1 – B (j+2)RN +N s –j
+N
+d =ef aN2
++bN +c
+j= £0 s
+¡ ¢ ⁄
+s s
+B R(N +N )(2¡–)+ R(2¡–)+1¡– N
+d h s
+= :
+is nonnegative. It is easy to verify that Q is convex N (1¡–)2
+s
+andhastworealroots. Indeed, thediscriminant of the
+quadratic is nonnegative and given by It su–ces if the right-hand side is bounded above by
+£ ⁄ KN=W tokeepwithinthecomputationalbudget. This
+¢=b2¡4ac• (1¡p)K(N +N )+W(R+1)log1 2 : leads to a quadratic inequality for N and proceeding
+d h – s
+as in the proof of Theorem 2, we obtain
+As we may choose N to be any integral value greater
+s
+than or equal to the larger of the roots of Q, it su–ces Theorem 3 Underasignature(cid:176)oodattackwithattack
+if p p factor R in a shared channel with independent packet
+¡b+ b2¡4ac ¡b+ ¢
+N ‚ = loss probability p, selective bin veriflcation over B =
+s 2a 2a dlog–=logpebinswillresultintheacquisitionofavalid
+and by virtue of the above bound on the discriminant signatureforanytransmissiongroupwithprobabilityat
+we hence obtain the following least 1¡– if
+£ ⁄
+Theorem 2 Underasignature(cid:176)oodattackwithattack W R(2¡–)+1¡– log1
+N ‚ –:
+factor R in a shared channel with independent packet s K(1¡–)2log 1
+p
+loss probability p, selective sequential veriflcation at a
+rate of K signature checks per second on average will The mean rate of signature checks will be bounded by
+result in the acquisition of a valid signature for any K.
+transmission group with probability at least 1¡– if
+Observe that the signature overhead imposed by the
+W(R+1)log1 two strategies is very comparable.
+N ‚ –:
+s (1¡p)K
+Hash/Parity Stream
+Observe that, as anticipated, the number of signature
+copies in a transmission group is determined by the The number of hash packets k in a transmission group
+attackfactorR andthelossratepandthat, moreover, is proportional to the number of data packets in the
+N s may be specifled independently of N d and N h. group, k = fiN d for some constant fi. If, for instance,
+packets have size 1500 bytes and for hashes we use
+the flrst 10 bytes (of 20) in a SHA hash, then each
+Selective bin veriflcation The probability that
+hash packet of 1500 bytes contains the hashes of 144
+noneofB selectedbinscontainsavalidsignatureispB.
+data packets (some packet real estate to the tune of
+Thus, we can ensure that the probability of encounter-
+56bytesbeingconsumedbyvariousheaders)andthus,
+ing a valid signature in the group of bins correspond-
+ing to a transmission group is at least 1¡– provided k =N d=144. The number of parity packets‘ requisite,
+B ‚log–=logp. Considerasignature(cid:176)oodattackwith however, in the absence of a DoS attack depends on
+the channel loss probability as seen in the estimate (1)
+attackfactorRoverasharedchannel. Conditiononthe
+though, as seen, ‘ only grows linearly with k, hence
+number of consecutive transmission groups for which
+with N . In the absence of a hash/parity (cid:176)ood attack,
+veriflcation failed following the last successfully vali- d
+the total number of packets N =k+‘ required in the
+dated transmission group. The window of signature h
+packets given j ‚0 consecutive group veriflcation fail- hash/parity stream increases linearly with the number
+of data packets N . The typical overhead is less than
+uresisthenboundedaboveby(j+2)RN+N packets. d
+s
+a couple of percent as we see in Table 3.
+Selective bin veriflcation proceeds by examining the B
+Hash/parity (cid:176)ood attacks may be handled on one of
+smallest bins in order of size. The total number of
+two levels. Hash computations are typically an order
+sig£nature packets⁄in these B bins is then bounded by
+of magnitude faster than signature veriflcations; a re-
+B (j+2)RN+N =N . Astheprobabilityofj consec-
+s s
+ceivercancomputeoftheorderof77;000packethashes
+utive veriflcation failures is bounded above by –j, the
+per second but only about 8000 signature checks persecond on a stock PC. If the attack factor R and avail- data packets in a transmission group together with
+able bandwidth W are both moderate (for instance, a N =cN hash/paritypacketsguaranteesthattheover-
+h d
+proportional attack on a 10 Mbps link), the receiver head is no larger than the specifled o.
+can simply compute the hash of all packets in the
+We can recast the bound in terms of data rates. Sup-
+hash/parity stream discarding spurious packets (as-
+pose an application has to support a minimum data
+suming that a valid signature has been acquired). If
+rate of D packets per second. Under continuous trans-
+theattackfactorRexceedsthecapacityofthereceiver
+mission, this is equivalent to requiring that the maxi-
+K to perform all the hashes, a variation on the bin
+h mumallowable overheadsatisfleso‚1¡D=W sothat
+strategy allows us to force the adversary to difiuse his
+wemaycasttheexpressionforN intermsofthedata
+advantage at small cost in overhead. The idea is to se- d
+rate D that the application has to support.
+lect a number of parity packets large enough that the
+Observe that N = N =(1¡o) so that, in particu-
+the lowest population B bins contain at least k valid d
+lar, thesender-sideauthentication latency¿ toachieve
+packets from the hash/parity stream. As packet losses
+confldence of at least 1¡– of verifying received pack-
+are independent, Hoefiding’s bound quickly allows us
+ets in a transmission group is approximately N=W …
+to estimate the requisite number of bins,
+N =W(1¡o). Consider a low bandwidth, low compu-
+q d
+2(1¡p)k+ 1 log1 + 2(1¡p)klog1 + 1 log2 1 tational capability example where the sender has ac-
+B ‚ 2 – – 4 – ; cess to a 1 Mbps channel, whence W =83 packets per
+2(1¡p)2
+second assuming 1500 byte packets, and the receiver
+can only compute K = 40 public key checks per sec-
+to ensure that at least k of the B selected bins contain s
+ond. The hash/parity overhead is trivial as is easy to
+valid hash/parity packets.
+see: only a single hash packet is required. Consider a
+The analysis now parallels that for the number of
+proportionate DoS signature attack with R = 1. Sup-
+signatures in selective bin veriflcation and we obtain
+pose the channel has an error rate of p=1=2. With a
+the following
+choice of confldence parameter – = 0:01, and a maxi-
+mum specifled overhead of 20% the latency is approxi-
+Theorem 4 Selective bin veriflcation yields at least k
+mately2seconds. Ifthemaximumspecifledoverheadis
+packets in the hash/parity stream with confldence at
+5%,thelatencyisapproximately9seconds. Weprovide
+least 1¡– if the number of packets in the hash/parity
+some more examples focusing on higher bandwidths in
+stream satisfles
+thefollowing sections. At10-100Mbps wegetlatencies
+£ ⁄
+BW R(2¡–)+1¡– log1 of 1-2 seconds and overheads of 1-3%.
+N =k+‘‚ –: (3) Data (cid:176)ood attacks are easy to handle if the attack
+h K (1¡–)2log 1
+h p factor is moderate: we simply compute all hashes dis-
+carding packets that are spurious. If the attack fac-
+The number of parity packets ‘ that are requisite can
+torexceedsthecomputationalcapabilityofthereceiver
+now be determined as the larger of the values deter-
+to compute hashes, a data (cid:176)ood attack efiectively in-
+mined from (1) and (3).
+creases the packet drop rate: as many arriving data
+packets are verifled as there is computational capacity
+Data Stream
+to handle the hashes. A variant of the bin approach
+may be used here as well to weed out large attacks on
+The number of packets in the data stream of a trans-
+individual packets.
+mission group can now be determined. Recall that a
+design parameter is the maximum allowable transmis-
+siongroupauthenticationoverheado‚(N +N )=N = B.3 Acquisition Phase
+h s
+1¡N =N whichistypicallyspecifledbytheapplication.
+d Wenowderiveaboundontheparameterg,thenumber
+The number of packets N in the data stream hence is
+d of transmission groups, over which we bufier signature
+required to satisfyN ‚(1¡o)N =(1¡o)(N +N +
+d d h packets to protect against a replay attack. It is easy
+N ). In line with the discussion for the hash/parity
+s to see that the probability that we fail to acquire a
+stream, we may set N =cN for a constant c so that
+h d validcurrentsignaturewithing groupsis(cid:176)g where(cid:176) =
+we obtain the following
+(1¡(1¡p)…)Ns. Thuschoosingg =log–=log(cid:176) su–ces
+to ensure that we will obtain a valid current signature
+Theorem 5 A choice of
+packet with confldence at least 1¡–.
+(1¡o)N
+N ‚ s
+d 1¡(1¡o)(1+c)

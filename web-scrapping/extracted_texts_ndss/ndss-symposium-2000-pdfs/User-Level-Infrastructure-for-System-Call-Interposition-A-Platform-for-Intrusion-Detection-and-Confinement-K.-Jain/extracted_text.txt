@@ -1,0 +1,1394 @@
+User-Level Infrastructure for System Call Interposition:
+A Platform for Intrusion Detection and Confinement (cid:0)
+K. Jain R.Sekar
+IowaStateUniversity StateUniversityofNew York
+Ames, IA50014 StonyBrook, NY 11794
+kapil@cs.iastate.edu sekar@cs.sunysb.edu
+Abstract
+Severalnewapproachesfor detectingmalicious attacks
+on computer systems and/or confining untrusted or ma-
+licious applications have emerged over the past several
+years. These techniques often rely on the fact that when
+asystemisattackedfromaremotelocationoveranetwork,
+damage can ultimately be inflicted only via system calls
+madebyprocessesrunningonthetargetsystem.Thisfactor
+hasleadtoasurgeofinterestindevelopinginfrastructures
+that enable secure interception and modification of system
+callsmadebyprocessesrunningonthetargetsystem. Most
+known approachesfor solving this problem have relied on
+anin-kernelapproach,wheretheinterceptionmechanisms
+as well as the intrusion detection/confinement systems are
+implemented within the operating system kernel. We ex-
+plore an alternative approach that uses mechanisms pro-
+videdbymostvariantsoftheUNIXoperatingsystemtoim-
+plement system call interposition at user level, where the
+systemcallsmadebyoneprocessaremonitoredbyanother
+process. Someofthekeyproblemsthatneedtosolvedinde-
+veloping such an approachare: providing adequate set of
+capabilitiesintheinfrastructure,portabilityofthesecurity
+enhancements and the infrastructure itself across different
+operatingsystems,andminimizingperformanceoverheads
+associated with interception for a wide range of applica-
+tions. We present a solution that satisfactorily addresses
+theseissues,andcanthusleadtoaplatformforrapiddevel-
+opmentanddeployment ofrobust intrusiondetectors,con-
+finementsystemsandotherapplication-specificsecurityen-
+hancements.
+1 Introduction
+One of the biggest problems faced by businesses, in-
+dividuals and organizations is the protection of their net-
+workedcomputingsystems from damagedue to malicious
+(cid:1)
+attacks launched remotely via the Internet. Such attacks
+mayutilizeavarietyoftechniques,e.g.,exploitsoftwareer-
+rorsinprivilegedprogramstogainrootprivilege,exploit
+vulnerabilities in system configuration to access confiden-
+tial data, or rely on a legitimate system user to download
+andrunalegitimate-lookingTrojanHorseprogramthatin-
+flictsdamage. Intrusiondetectionreferstoabroadrangeof
+techniques that have been developed over the past several
+years to protect against malicious attacks. A majority of
+thesetechniquestakethepassiveapproachofofflinemoni-
+toring ofsystem(or user) activities toidentify thoseactiv-
+ities that deviate from the norm [1, 26, 10, 12, 17, 21] or
+are otherwise indicative of attacks [14, 18, 22]. More re-
+cently, several proactive approaches have emerged. These
+approaches can prevent or isolate attacks before any dam-
+ageiscaused[9,13,20,28].
+Most approaches aimed at preventing intrusions [9, 13,
+20, 28] are based on the following observation about at-
+tacks:regardlessofthenatureofanattack,damagecanulti-
+matelybeeffectedonlyviasystemcallsmadebyprocesses
+running on the target system. It is thus possible to iden-
+tify (and prevent)damage if we can monitor everysystem
+call madebyeveryprocess, andlaunchactionstopreempt
+anydamage,e.g.,abortthesystemcall,changeitsoperands
+(e.g.,openadifferentfilefromonethatisspecified)oreven
+terminatetheprocess.
+Inadditiontothepreventiveapproaches,systemcallin-
+terception can significantly enhance the power and effec-
+tiveness of most offline intrusion detection techniquesthat
+makeuseofsystemauditdata.Thisisbecausesystemaudit
+logsoftendonotprovidealloftheinformationneededfor
+intrusiondetection. Forinstance,wemayneedtoknowthe
+valueofa stringthatwasread fromanetworkconnection,
+the target of a symbolic link or contents of a file. While
+it may be possible to identify and record all such poten-
+tiallyusefulinformationintheauditlog,suchanapproach
+is likely to be impractical due to excessive overheads and
+diskspacerequired. Consequently,evenofflinetechniques
+can benefit from active system call interception, as it en-
+This research is supported in part by Defense Advanced Research ablesthemtoaccessallthedataneededforidentifyingin-
+Agency’sInformationTechnologyOffice(DARPA-ITO)undertheInfor-
+trusions,withoutincurringtheoverheadforaccessingirrel-
+mationSystemSurvivabilityprogram,undercontractnumberF30602-97-
+C-0244. evantinformation.
+1For reasons mentioned above, the problem of develop- ticular, the system call interception is implemented within
+ing infrastructures for active interception and modification the operating system kernel, and all of the extension code
+of system calls has attracted a lot of research attention (forallprocessesbeingmonitored)runsinthekernelmode.
+[9, 11, 13, 20]. Modification is effected by user-specified Thisapproachhasbeenadoptedbymostresearchersinthis
+code fragments (sometimes referred to as wrappers or ex- area [9, 11, 20, 28]. One of the primary advantages of a
+tensions) that are interposed at the system call entry and kernel-based approach is low interception overhead. The
+exit points. These research efforts have demonstrated that overheads for system call interposition are determined al-
+such extensions can be used to enhance application func- most entirely by the extension code. Moreover, a kernel-
+tionality in a varietyof ways, e.g., application-specific ac- based implementation offers more power in terms of what
+cesscontrol,intrusiondetection,transparentenhancements canbedonewithinextensioncode, e.g., extensionscanbe
+for security (e.g., data encryption) or fault-tolerance (e.g., executedwiththesameprocesscontextastheprocessbeing
+datareplication). Itisimportanttonotethatalloftheseen- monitored. However, the power afforded by kernel-mode
+hancementscanbeobtainedusingsystemcallinterposition operationbringssomeseriousdrawbacksaswell:
+withoutmakinganychangestotheapplicationsthemselves.
+Thispaperpresentsa newapproachforimplementation
+of a system call extension infrastructure. Our approach
+is characterized by a user-level implementation like [13],
+wherethesystemcallsperformedbyoneprocessareinter-
+cepted(andpossiblymodified)byanotherprocess.Thisap-
+proachcontrastswithamajorityofapproachesinthisarea
+thatemployanin-kernelimplementationofsystem-callin-
+terposition. Ourworkimprovesupon[13]by(a)providing
+a moreextensivesetofcapabilitiesfor extensioncode, (b)
+developingan architecture and implementationthat is eas-
+ilyportedtodifferentversionsoftheUNIXoperatingsys-
+tem, and (c) presenting a comprehensiveevaluation of the
+performanceoverheadsassociatedwithextensions. Below,
+wedescribepreviousworkinsystemcallinterpositionand
+summarizethemainbenefitsofourapproach.
+1.1 PreviousWorkinSystem-CallInterposition
+Inthissectionwereviewpriorresearchinsystemcallin-
+terposition, motivateuser-level implementations of system
+callinterception,andsummarizetheresearchproblemsthat
+have not yet been addressed in this context. A more ex-
+tendedtreatmentofrelatedworkcanbefoundinSection8.
+Someoftheearlierresearcheffortsinsystemcallinter-
+positionsuchas[16,15]wereimplementedwithinlibraries.
+Forinstance,systemcallsareaccessedviaawrapperfunc-
+tion within the libc library on most UNIX systems. By
+linking to a different library that contained modified ver-
+sions of these wrapper functions, one could effect system
+call interposition. This approach has the benefit that it is
+easy to implement and very efficient. An important draw-
+back of this approach is that these wrapper functions can
+be bypassed; for instance, it is possible for a program to
+directly invokethe system call using a lower level mecha-
+nismsuchasexecutionofasoftwareinterrupt.Thusthisap-
+proachisnotsuitableforsecurity-relatedapplicationssuch
+asintrusiondetectionandconfinement.
+An alternative approach that does not suffer from the
+abovedrawbackis a kernel-based implementation. In par-
+(cid:2) normal protection mechanisms that guard against er-
+rorsinoneprocessfromdamaginganotherprocessdo
+not apply for code executed in kernel-mode. Hence
+it is possible for errors in the extension code for one
+processtocorruptthememoryorfilesusedbyanother
+process, orevenworse,bringdowntheentiresystem.
+Unlessweareextremelycareful,thereisthusapoten-
+tialformakingthesystemlesssecurebyaddingexten-
+sions!
+(cid:2) state-of-the-art in kernel-resident software develop-
+ment lags user-level software development signifi-
+cantly. This makes it much more cumbersome and
+error-pronetowritetheextensioncode.
+(cid:2) addition of code at the kernel-levelwill require supe-
+ruser privileges. Thus, it isdifficult ina kernel-based
+approach for normal users to develop or deploy their
+ownextensions.
+(cid:2) kernel-basedimplementationsrequirekernelmodifica-
+tions,whichmaybeviewedastooriskyandhencenot
+widelyaccepted.
+Thesefactorsmotivated[13]todevelopauser-levelimple-
+mentation of an infrastructure for confining the actions of
+helperapplicationslaunchedfromaweb-browseroramail
+reader. Specifically,theyusedthecapabilitiesprovidedby
+the Solaris operating system to intercept the system calls
+made by a helper application (i.e., a monitored process)
+withinamonitoringprocess. Typically,themonitoringpro-
+cessrunswiththesameprivilegesasthemonitoredprocess.
+However, due to their focus on helper applications on the
+Solaris operating system, several important problems such
+as the portability, expressive power and performance of
+user-levelsystemcall interpositionwerenotexplored. For
+instance, they study performance of CPU-intensive code
+that makes few system calls, e.g., ghostscript and
+mpeg play. Overheads for system-call intensive appli-
+cations such as network and file servers were not studied.
+In addition, their focus on application-specific accesscon-
+trolrequiresonlylimitedcapabilitiesfortheextensioncode,Application Realtime Realtime
+(Lowload) (Highload)
+gzip
+(cid:3)
+2%
+(cid:3)
+2%
+ghostscript
+(cid:3)
+5%
+(cid:3)
+10%
+tar 5% 10%
+cp-r 5% 10%
+ftpd
+(cid:3)
+2% 30%
+httpd
+(cid:3)
+5% 35%
+Figure 1. Overhead for system call intercep-
+tionfordifferentapplications.
+e.g.,noattemptwasmadetomodifysystemcalldataorre-
+turncode. Finally,theydidnotaddress portability oftheir
+system to other popular variants of UNIX such as Linux.
+Consequently, a comprehensive treatment of the issues in
+user-level implementation of system call extension infras-
+tructures has remained open. We address this problem in
+thispaperandshowthatwecaninfactbuildpowerfuland
+efficientinfrastructuresattheuserlevel. Thekeycontribu-
+tionsofthispaperaresummarizedbelow.
+1.2 SummaryofResults
+Inthis paper,wepresent anapproach forimplementing
+a system-call interposition infrastructure at the user level.
+Thekeyissuesaddressedinthispaperare:
+(cid:2) Portability of extension code: Clearly, an extension
+cannot be used across different UNIX variants if it
+makesuseoffeaturesunique tooneofthesevariants.
+Oneapproachtomakeextensionsportableistorestrict
+the interface provided by the interposition infrastruc-
+ture so that it only exposes features common to all
+UNIXvariants. However,suchanapproachisunnec-
+essarilyrestrictive.Abetteralternativeistopermitex-
+tensionstoaccesssystem-specific features, yetassure
+thatthoseextensionsthatoperateusingonlythosefea-
+tures common across UNIX variants can be used “as
+is”onthesevariants.
+Wetacklethisproblembydesigninganobject-oriented
+interfacethatencapsulatesOS-dependencies(interms
+of system call names as well arguments) so that they
+are hidden from extension code. Moreover, our ap-
+proach enables similar system calls (e.g., the many
+different system calls for reading from a file) to be
+grouped together so that they can be handled in the
+sameway. Byvaryingthegroupingasneededfordif-
+ferentUNIXvariants,itispossibletowriteextension
+codethatcanbeusedwithoutanymodificationsacross
+thesevariants. Adetaileddescriptionofourapproach
+inthiscontextcanbefoundinSection3.
+(cid:2)
+modern versions of the UNIX operating system such
+as Solaris, Linux, IRIX and OSF/1 provide a mech-
+anism for one user process to trace another process
+with the same userid, or if the first process has the
+permissionsofthesuperuser.Anuser-levelinfrastruc-
+turecanbeimplementedusingthismechanism. How-
+ever, since this mechanism is intended primarily for
+debugging, it does not operate in the same way on
+different UNIX variants, thus posing a challenge in
+terms of portability of the infrastructure. We tackle
+the portability problem by partitioning the infrastruc-
+tureintoanOS/architecture-dependentcomponentand
+a second component that is independent of them.
+The OS-independent component comprises the bulk
+of the functionality of our infrastructure. It uses the
+primitivecapabilitiesprovidedbytheOS/architecture-
+dependent component that may have to be imple-
+menteddifferentlyondifferentOS’sandprocessorar-
+chitectures. Our approach for making infrastructure
+portabilityisdetailedfurtherinSection4.
+Portability of the interception infrastructure: Most
+(cid:2) Capabilities ofextensioncode: eventhoughmostop-
+erating systems provide an ability to intercept system
+calls, they do not always provide adequate or conve-
+nientmechanismsforaccessingormodifyingthesys-
+temcalldata. Forinstance:
+– Some UNIX variants such as Linux do not pro-
+vide a way to abort system calls, yet we need
+these capabilities to confine applications or to
+preventintrusions.
+– Modificationofvariable-sizedatasuchasstrings
+poses a problem, as the new value may occupy
+more space than what was originally available.
+Thus, the obvious approach of overwriting the
+datawillnotwork.
+– Malicious applications may attempt to modify
+system call arguments between the time they
+are checked by the monitoring program and the
+time thesystem call isexecuted. (Such changes
+are possible if the malicious program is multi-
+threaded.)
+– Sincethemonitoringprocessandmonitoredpro-
+cess typically run with the same privileges, we
+need to guard against a monitored process from
+interfering with the operation of a monitoring
+process, e.g., by attempting to kill the monitor-
+ingprocessorreduceitspriority.
+Ourapproachforaddressingtheseproblemsisalsode-
+scribedinSection4.
+(cid:2) Efficiency:Ascomparedtoakernelimplementation,a
+user-level implementation of system call interceptionP Kernel P
+1 2
+.
+.
+open(...)
+entry processing open: .
+Stop P2, awake P1
+.
+int 0x80 .
+Pre-syscall
+extensions Await
+Normal
+next syscall
+syscall
+processing
+libc
+awake P1
+Post-syscall
+extensions Await
+next syscall exit processing
+Figure2.Systemcallexecutionsequencewhenaprocessismonitored.
+incurs the followingadditionalcosts. First, two addi-
+tionalcontextswitchesareintroducedforeachsystem
+callinauser-levelimplementation. Second,theopera-
+tionstoaccessormodifythememoryofthemonitored
+processaregenerallylessefficientthanthoseavailable
+toakernelimplementation. Toobtainacceptableper-
+formance, we adopt the following techniques. First,
+weemploythefastestmechanismavailableundereach
+OS for implementing the memory access operations.
+Second, we make use of selective interception capa-
+bility (where a selected subset ofthe system callsare
+intercepted)tominimizecontextswitchesonOS’sthat
+provide this capability. Finally, we use lazy derefer-
+encing of accesses to the monitored process memory,
+i.e.,operationstoaccesssystemcallargumentsarede-
+ferreduntiltheirvaluesarereallyneeded. Usingthese
+techniques, we have been able to obtain good perfor-
+mance for user-level system call interception, as de-
+scribedfurtherbelow.
+(cid:2)
+ningRedHat5.2Linux. Thetableshowstheoverhead
+in termsofincrease in perceivedexecutiontime (also
+known as real time). For measuring real time, light
+load corresponded to one instance of a process in the
+case of gzip, ghostscript, tar and cp -r,
+and a throughput of 20Mb/s for httpd and ftpd.
+A high load corresponds to ten instances of the pro-
+cesses (for gzip, ghostscript, tar, cp -
+r) and over100Mb/s throughput for the servers. Our
+results show that for CPU and disk-intensiveapplica-
+tions,theoverheadsduetosystemcallinterceptionare
+very small. Even for servers, where the overhead is
+moderate under high loads, we believe that the over-
+heads are well-worth the increase in security that can
+beobtainedusingsystemcallinterposition.
+Wenotethatourapproachfortacklingportabilityissuesare
+largelyapplicabletokernel-basedimplementationsaswell.
+2 SystemOverview
+Performance analysis: For applications such as in-
+trusion detection and confinement, the overhead due Almost all versions of UNIX provide a mechanism for
+to context switch (typically in the range of the time one process to trace and control the execution of another
+needed to execute thousands of instructions) far out- process and/or access its memory using the system call
+weighs the overhead of memory access operations or ptrace. The primary use of this mechanism has been
+executingthe extensioncode[25]. (SeeSection5 for in implementing debuggers. Some UNIX variants such as
+details.) Thus our performance analysis in Section 6 Linux providean enhancement to this mechanism that en-
+focuses primarily onthe overheaddue to interception ableoneprocesstotracethesystemcallsmadebyanother.
+alone, while leaving out the overheads due to execu- SystemVRelease4(SVR4)compatibleversionsofUNIX
+tion of extension code. (Measuring the overhead due supportamorepowerfulandconvenientmechanismforsys-
+to extension code execution is not useful for a com- temcallinterceptionviathe/procinterface.
+parison of in-kernel versus user-level implementation Thesequence ofactionsinvolvedin systemcall tracing
+ofsystemcallinterposition.)Figure1summarizesour is shown in Figure 2. A user process
+performanceresultsona350MHzPentiumIIPCrun-
+(cid:4)(cid:6) (cid:5)
+invokes a sys-
+tem call such as open, which refers to an entry point inMonitoring process
+Supervisor objects
+Supervisor Interface
+(Mostly) Arch/OS Independent Functions
+Runtime System
+OS/Architecture Dependent Functions
+Mapping
+File Kernel
+Figure3.Componentsofthesystem
+libc. After setting up the argumentsand the system call
+numberin appropriateregisters, this codetransfers control
+intothe kernel byusing a processor traporsoftware inter-
+rupt(e.g.,int 0x80inLinux/i386). Inthekernelmode,
+theentryprocessingcodewakesupthemonitoringprocess
+(cid:4)(cid:8) (cid:7)
+, which cannow examine ormodify the registers orthe
+memory of
+(cid:4)(cid:6) (cid:5)
+. After whatever processing desired by
+(cid:4)(cid:9) (cid:7)
+,
+ittransfers controlbacktokernel, wheretheactualsystem
+call functionality is performed. Before exiting the system
+call, control is transferred back into
+(cid:4) (cid:7)
+, where additional
+actionssuchasexamination/modificationofthesystemcall
+return parameters and return code may be performed. Fi-
+nally,controlisreturnedbackto
+(cid:4) (cid:5)
+.
+In order for
+(cid:4) (cid:7)
+to trace
+(cid:4) (cid:5)
+, the effective userid of
+(cid:4) (cid:7)
+must be root, or the same as the effective userid of
+(cid:4) (cid:5)
+manymonitoringprocessesasthenumberofdistinctusers
+thathaveprocessesrunningonthesystem.)
+All supervisor classes are derived from the base class
+SupIfc.Communicationbetweentheruntimesystemand
+supervisor object happens via method invocations on this
+interface. The supervisor classes are dynamically loaded
+intothemonitoringprocessasnewprocessesareidentified
+formonitoring. Amappingfilemapsafully-qualifiedexe-
+cutable name into a shared library containing the code for
+a supervisor class. This provides a (static) mechanism to
+identify which supervisor class will be used to monitor a
+process. A second (and more dynamic) mechanism pro-
+vides for a parent process to determine which supervisor
+objectwillbeusedformonitoringitschild.
+Thesupervisorobjectsresideontopofaruntimesupport
+.
+infrastructure which consists of two parts. Lower part of
+Oneoftheprimarybenefitsofauser-levelinterceptionap-
+the runtimesystem consists of code that islargelyspecific
+proachisthatthemonitoringprocessdoesnotneedthepriv-
+todifferentoperatingsystemsandarchitectures. Thediffer-
+ilegesofsuperuser. Thismeansthatordinaryuserscande-
+ences here arise not only due to the differences in system
+velop and use system call extensionsin ways theychoose.
+callinterceptionmechanisms(i.e.,variationsofptraceor
+Equallyimportant,thepotentialdamagecausedbythemon-
+/procinterface), butalso becausetheseinterfacesdonot
+itoring process can be no more than what can be caused
+typicallyprovideallofthecapabilitiesneededfor modify-
+by the monitored process. Note that this is not the case
+ing the behavior of system calls. As such, our implemen-
+withakernel-basedimplementationofinterposition,where
+tationhastoaccessregistersandotherarchitecture-specific
+(faulty)extensioncodecancausedamagethatisbeyondthe
+aspectsofthesystem. Therestoftheruntimesystemcon-
+damagethatcanbecausedevenbyaroot-ownedprocess.
+sistsofcodethatmakesuseoftheOS/architecture-specific
+Our system call interception/extension infrastructure is
+functions. This code remains the same across different ar-
+builtontopofthesystemcalltracingfacilitiesprovidedby
+chitectures and operating systems, except for minor varia-
+thedifferentUNIXvariants.Theoverallarchitectureofour
+tions due to the fact that the system call names and argu-
+systemisshowninFigure3. Aninstanceoftheinfrastruc-
+mentsvaryslightlyacrossdifferentUNIXvariants.
+tureresideswithinasingleuserprocessthatwecallmoni-
+toringprocess. Asingleprocessmaymonitor(andcontrol
+3 Supervisor Interface
+thebehaviorof)oneormoreprocesses. Theactualcodefor
+monitoringa process resides in a supervisor object, which
+inourimplementationisaC++object.Therewillbeseveral The supervisor interface is designed so that supervisor
+monitoring processes running on a system, each monitor- classes can be written without having intimate knowledge
+ingoneormoreprocesses. (Therewilllikelybeatleastas of1. howsystemcallinterceptionisperformed
+2. internalcodesusedtoidentifydifferentsystemcalls
+3. architecture/OS-specificwaystoaccesssystemcallar-
+gumentsorreturnvalue
+4. OS-specificmechanismstoreadormodifymonitored
+processdata
+Inaddition,theinterfaceshouldprovide:
+5. supportfunctionstocontrolexecutionofthemonitored
+process
+6. abstractionmechanismsforwriting asupervisorclass
+without having to hard-code system call namesor ar-
+gumenttypesspecifictooneormorevariantsofUNIX
+Our first step is to define a base class called SupIfc
+fromwhichallsupervisorclassesarederived.Foreachsys-
+temcalltherearetwomethodsintheinterfacecorrespond-
+ing to the entry and exit for the system call. For instance,
+correspondingtothereadsystemcall,thefollowingmeth-
+odsaredefinedinSupIfc:
+void read_entry(Integer& fd, CharPtr& buf,
+Integer& count)
+void read_exit(Integer& fd, CharPtr& buf,
+Integer& count, Integer& rv)
+Wheneveramonitoredprocess
+(cid:4)
+entersorexitsasystem
+call (say,read)theruntime systemidentifiesthe supervi-
+sorobject
+(cid:10)(cid:12) (cid:11)
+monitoring
+(cid:4)
+class CharPtr {
+int get(char *buf, int len);
+int put(char *buf, int len);
+int lockVal(); /* ensure that value can’t
+be modified by a thread of the monitored
+process before syscall completion */
+}
+The get and put have obvious meanings. To under-
+stand the lockVal operation, note that if the system call
+argument is from a region of memory shared by multiple
+threads or processes, it may be possible for one of the
+threads/processes (other than the one making the system
+call) to modify the contents referenced by a pointer argu-
+mentbetweenthetimeitisexaminedbythesupervisorand
+thetime itisfetchedbythekernelwhen thesystemcall is
+executed. ThelockValmethodisusedtoindicatetothe
+runtime system that this must nothappen. Theimplemen-
+tationsofthesesystemcallargumentclassesisprovidedby
+theruntimesystem,asdescribedinthenextsection.
+Issue(5)isaddressedbydefiningasymmetricinterface
+toSupIfccalledRtIfcthatdefinesseveralsupportfunc-
+tionssuchas:
+andinvokesthecorresponding
+entry or exit (i.e., read entry or read exit) method
+onit. Thisapproachaddressesissues(1)and(2)mentioned
+above. Toaddressissue(3),thesystemcallargumentsand
+returnvaluearepassedexplicitlyasargumentstotheentry
+orexitmethods.
+Issue(4)isaddressedbyencapsulatingeachsystemcall
+argumentinanobject. Thisfreesthesupervisorobjectfrom
+havingtodealwiththedetailsoflayoutsofsystemcallar-
+gumentsdataonaparticularOS/architecture,orthemecha-
+nismstobeusedtoreadthememoryofthemonitoredpro-
+cess. Instead, it relies on methods providedby the system
+call argument classes to conveniently examine or modify
+system call arguments. Finally, encapsulation of system
+call arguments in class objects enables lazy dereferencing
+of arguments. For instance, an Integer object can be
+constructedwithafieldrecordingtheregisterinwhichthe
+argumentis located. If the value of the registeris needed,
+thesupervisormethodwillinvokeagetoperationonit,at
+whichpointtheregistercontentscanbefetched.
+To illustrate system call argument classes, we give an
+exampleoftheCharPtrclassbelow:
+(cid:2) killsendsthespecifiedsignaltothemonitoredpro-
+cess.
+(cid:2) abort, which can be invoked only from within a
+methodinvokedonsystemcallentry,preventsthesys-
+temcallfromcompleting.Anargumenttoabortwill
+specifythevaluetowhichthereturncodeshouldbeset
+tobeforereturningcontroltothecallingprogram.
+(cid:2) switchactionreplacesthecurrentsupervisorobject
+with a new object belonging to the class specified as
+the argument. This ability to dynamically change the
+supervisor object is particularly useful when we sus-
+pect (or know for a fact) that a monitored process is
+misbehaving,andwewishtomonitortheprocessmore
+closely (or even better, confine its actions). More-
+over, the switch capability is useful to implement so-
+phisticatedpoliciesregardingwhichsupervisorobject
+should monitor a process after it execve’s another
+program.
+Theapproachpresented sofar hasnotaddressedissue(6),
+since it requires the supervisor class to support methods
+with names that exactly match the system call names in
+a particular (version of an) operating system. To over-
+come this problem, we have developed a higher level lan-
+guage that provides an abstraction by which groups of re-
+lated system calls can be abstracted into a higher level
+event. This abstraction mechanism is one of the features
+of our behavioral specification language for intrusion de-
+tection/preventiondescribed in [25]. Thebasic form of an
+abstracteventdefinitionis:(cid:13)(cid:15) (cid:14)(cid:16) (cid:13)(cid:15) (cid:17)(cid:12) (cid:18)(cid:20)
+(cid:26)# "
+(cid:19)(cid:22)
+(cid:7)
+(cid:21)(cid:24)
+(cid:26) $
+(cid:23)(cid:25)
+(cid:7)
+(cid:13)(cid:16)
+(cid:28)&
+(cid:26) (cid:27)(cid:22)
+%’) (*
+(cid:28)(cid:30)
+(cid:17),
+(cid:29)(cid:31)(cid:29)!
++
+(cid:7)
+(cid:28)- %(cid:31)%/ .& .- .& %(cid:31)%0(cid:26)1 "(cid:15) 2, (cid:26) $3 24 (cid:28)- %’) (* (cid:17), +5 26 (cid:28)
+We have used the shorthand (cid:27) to denote a list
+78 (cid:7): 9- ;(cid:31);<;(cid:31)9= 78 >
+of arguments, and "
+(cid:7)* 9- ;(cid:31);(cid:31);<9
+"& 2 denote either a system call or
+another abstract event. (But cyclic definitions are not per-
+mitted.) Each ’) (* (cid:17), +(cid:24) ? provides a binding for each of the
+variables in (cid:27) in terms of the values of one or more vari-
+ablesin $ ? . Additionally, ’) (* (cid:17), + ? mayconsistofconditions
+onthevariablesin $ . Theconditionandexpressionsyntax
+aresimilartothatofC++.
+An abstract event that denotes operations to read a file
+usingafiledescriptoroperandcanbedefinedasfollowsfor
+Linux:
+readFd(Integer fd) ::=
+read(fd,_,_)||readdir(fd,_,_)||
+getdents(fd,_,_)||readv(fd, _, _)
+Here, “ ” denotes an argument whose value is not of
+interest for defining the abstract event. The same abstract
+eventmaybedefineddifferentlyforOSF/1:
+readFd(Integer fd) ::=
+read(fd,_,_)||pread(fd,_,_)||
+getdirentries(fd,_,_,_)||readv(fd,_,_)
+Predefined collections of such abstract events can be
+specified in interface definitions, which serve a purpose
+similartoOS-specificheaderfiles.Thesupervisorclasscan
+nowbedefinedinanoperatingsystemindependentfashion
+byprovidingamethodforeachoftheabstracteventsinthe
+interfacedefinition,e.g.,readFd.
+A compiler for the interface definitions is responsible
+forarrangingtocallthecodecorrespondingtotheabstract
+event (cid:13)(cid:15) (cid:14)(cid:16) (cid:13)& (cid:17)(cid:12) (cid:18)(cid:20) (cid:19)@ (cid:21)5 (cid:23)A (cid:13) whenever any of "
+(cid:7) 9- ;(cid:31);<;(cid:31)9
+" 2 are called,
+andmoreover,thecorrespondingconditionissatisfied. The
+code for (cid:13)& (cid:14)(cid:16) (cid:13)(cid:15) (cid:17)(cid:12) (cid:18)(cid:20) (cid:19)(cid:22) (cid:21)(cid:24) (cid:23)(cid:25) (cid:13)
+3.1 ExampleSupervisorClass
+WeprovideanexampleofasupervisorclassUntrust-
+edUtilitytoillustratetheAPIdescribedsofar. Wede-
+scribeasimpleclasswhichrestrictsthemonitoredprocess
+fromperformingmanydamagingsystemcalls,andalsore-
+stricts the files that can be opened by the application. We
+beginbydefiningabstracteventsofinterest:
+deniedCalls ::= fork||execve||connect||bind
+||listen||chmod||chown||chgrp||kill||ptrace
+||sendto||mkdir||utimes||rename||...
+/* other disallowed calls omitted */
+wrOpen(f) ::= (open(f,md)|isWrite(md))
+||creat(f)||truncate(f)
+Wehaveomittedsomeorallofthetrailingargumentsof
+some system calls in the above definition for conciseness.
+Afterdefiningtheabstractevents,we canthenprovidethe
+implementation of just two methods, deniedCalls and
+wrOpen. Anysystemcallthatdoesnotmatchoneofthese
+abstracteventdefinitionswillbegiventhedefaulttreatment,
+which for most system calls is to continue. (The runtime
+willincludecertainprotectionmechanismsthatensurethat
+the monitored process cannot make system calls such as
+killonthemonitoringprocess.) Theimplementationsof
+thesetwomethodsmaybeasfollows:
+void UntrustedUtility::deniedCalls_entry() {
+abort(EPERM);
+}
+void UntrustedUtility::wrOpen(CharPtr f) {
+char *fv = f.get();
+/* we may want to lockVal(), first */
+if (!isInDir(fv, "/tmp") && (exists(fv)))
+abort(EPERM);
+}
+The code for wrOpen uses support functions to deter-
+is invoked with parameter bindings mine whether the file being opened for write is inside the
+as given by the condition. In effect, the compiler gener- /tmpdirectory,andifnot, whetheritwillendupcreating
+atesastubroutineforeachsystemcallthatinturnendsup anewfileormodifyinganexistingone.
+calling an operation in the supervisor class with the name
+correspondingtotheabstractevent1. 4 Runtimesystem
+Wenotethat[9]usesarelatedapproachformakingtheir
+wrappersportable. Ourinterfacedefinitionfilesaresimilar Amonitoringprocessisstartedwiththenameofanex-
+to their characterization files. They make use of a notion ecutable to be monitored. Optionally, the name of the su-
+of tagging system calls, and use the tags in a way similar pervisorclasstobeusedformonitoringtheexecutableand
+toourabstracteventnames. Anadvantageofourapproach thenameofthefilecontainingtheobjectcodeforthisclass
+isthateventabstractionscanbecomposed,whiletaggingis maybespecified.Otherwiseanappropriatesupervisorclass
+not. isidentifiedfromthemappingfile. Themonitoringprocess
+then loadsthesupervisorclassand thenforksanduses the
+1Ifmultipleabstracteventsmatchthesamesystemcall,allofthemare
+attach primitive provided by OS-specific module to at-
+invokedinsomeorder.Undesirableinteractionsmayariseduetointerfer-
+tachtothechildprocess. Followingthis, thechildprocess
+enceamongactionsforthesedifferentabstractevents–thisisanareaof
+currentresearch. exec’s the executable, and now the process is set up to bewhile there exist processes to be monitored {
+pid = waitForCall(); /* wait for a monitored process to enter/exit sys call*/
+call = getscno(pid);
+if (isEntry(call)) {
+/* Pre-entry processing, details omitted */
+switch (call) {/* get system call identifier */
+case OPEN_ENTRY:
+supObj[id].open_entry(scInfo[OPEN_ENTRY][0],
+scInfo[OPEN_ENTRY][1], scInfo[OPEN_ENTRY][2]); break;
+/* cases for other system calls not shown */
+}
+/* Post-entry processing (omitted) */
+}
+else if (isExit(call)) {
+/* Pre-exit processing (omitted) */
+switch (call) {/* get system call identifier */
+case OPEN_EXIT:
+supObj[id].open_exit(scInfo[OPEN_EXIT][0], scInfo[OPEN_EXIT][1],
+scInfo[OPEN_EXIT][2], scInfo[OPEN_EXIT][3]); break;
+/* cases for other system calls not shown */
+}
+/* Post-exit processing (omitted) */
+}
+else if (isSignal(call)) {
+/* signal related processing (omitted) */
+}
+}
+Figure4.Mainloopoftheruntimesystem
+monitored by an object of the specified supervisor class.
+When the runtime system is monitoring one or more pro-
+cesses,itisexecutingwithinaloopshowninFigure4.
+The functions waitForCall and getscno are pro-
+videdbythearchitecture/OS-specificcomponentoftherun-
+timesystem.Thiscomponentalsoincludesthedefinitionof
+the array scInfo which specifies the registers (or offsets
+intothekernel-maintaineduserstructureforthemonitored
+process)thatcontainthesystemcallarguments.Systemcall
+argument class objects such as Integer and CharPtr
+areconstructedfromtheseregisternumbers.(Thisstephap-
+pensimplicitly,thankstothetypeconversionrulesofC++.)
+Finally, the runtime looks up its association table to iden-
+tifythesupervisorobjectcorrespondingtotheprocessthat
+made the system call, and the corresponding entry or exit
+method is invoked on this class. On return from this call,
+themonitoringprocessgoesbackintowaitForCall.
+While the action of the runtime system to most system
+call entry and exitoperations are similarto that for open,
+someoperationsrequirespecialtreatment:
+(cid:2)
+toringthechild.
+fork: theruntimesystemneedstoidentifythepidof
+the child process, and be ready to monitor it. More-
+over, the supervisor object itself is cloned, with one
+copymonitoringtheparentprocessandanothermoni-
+(cid:2) execve:nospecialprocessingisrequiredonthepart
+oftheruntimesystem. Ifthecurrentsupervisorobject
+requiresthenewprocesstobemonitoredbyadifferent
+supervisorobject,itexplicitlyinvokesswitchopera-
+tionfromitsexecve entrymethodwiththeappro-
+priatesharedlibrarynameandclassnameforthenew
+supervisorclass. Alternatively,theswitchoperation
+may specify a mapping file that is looked up to de-
+termine thesupervisor basedonthe executablename.
+Switchingtoanewobjectwillbedoneaspartofpost-
+supervisorprocessing.
+(cid:2) kill:sincetheruntimesystemtypicallyrunswiththe
+same userid as the process being monitored, we have
+tobecarefultoensurethatthemonitoredprocesscan-
+not kill the monitoring process or otherwise damage
+its ability to monitor it. This is ensured by intercept-
+ingevery“potentiallydangerous”systemcall suchas
+kill, and permitting it to go through only if it will
+notaffectthis orothermonitoringprocesses. Asimi-
+larremarkappliestoseveralothersystemcallsthatcan
+interferewiththemonitoringprocess.(cid:2) exit: oncompletionoftheentryfunction,thesuper- The race condition with respect to checking of system
+visorobjectforthemonitoredprocessisdestroyedby call parameter values stored within user memory was first
+theruntimesystem. addressedin[11]. Theyidentifiedtheirabilitytodealwith
+theraceconditions reliablyasone ofthebenefitsofanin-
+4.1 Implementation of System Call Argu- kernelimplementation.Whileasimilarguaranteecanprob-
+mentClasses ably neverbe providedin a user-level implementation, we
+believethatapproachessuchasoursthatexploitsomesort
+Theruntimesystemalsoprovidestheimplementationof ofrandomizationcanreducethesuccessprobabilityofsuch
+the system call argument classes. These implementations raceattacks toa negligiblevalue. Nevertheless,itmust be
+are made independent of the OS and machine architecture noted that successful attacks can go undetected, in the ab-
+byusingthefunctionsprovidedbythearchitecture-specific senceofkernelsupport.
+module. Theimplementationoftheseclassesismostlyrou-
+tine,exceptforthewayinwhichwedealwithmodifications 4.2 Architecturedependentprimitives
+tothememoryreferencedbypointerarguments,whichwe
+discussfurtherbelow.
+This module contains the lowest level functions whose
+Forinstance,ifwehaveafilenameargument,andwould
+implementationswillvarysignificantlyacrossdifferentop-
+liketomodifyit,thiscanbedoneinplaceifthenewname
+erating systems and/or processor architectures. The func-
+issmallerthantheoldone. Otherwise,weneedtoallocate
+tionsprovidedbythismoduleinclude:
+newstorage,andchangethesystemcallargumentvalueto
+pointtothis newlocation. Thecatchisthatthis newloca-
+tionmustbewithintheaddressspaceofthemonitoredpro-
+cess,anditisdifficulttoidentifyunusedsectionsofmem-
+ory from the monitoring process. Our approach is to allo-
+catenewstorage onthestack beyondthetopofstack. We
+find that normally, the allowable stack size is much larger
+(by several MBs) than the value of stack pointer, so all of
+thisspacecanbeused.
+Regardlessofwhetherthenewvaluerequiresmorestor-
+age space than old value, we may choose to store the new
+valueatarandomlocationonthestack. Themotivationfor
+this is as follows. There is a window of time between the
+assignment of a new value to a system call argument and
+the time when these arguments are actually fetched from
+user memory for system call execution by the kernel. In
+a multithreaded environment, one of the threads can make
+a system call, while the other tries to locate and modify
+the system call argument back to its original value. Even
+worse, the first thread may provide a valid-looking argu-
+ment(e.g., a filename) which ispermittedbythe supervi-
+sor object, while the second thread changes the file name
+to an unacceptable value. Putting the modified value at a
+random locationonthe stack impliesthat theroguethread
+hastosearchthroughtheentirestacktoidentifywherethe
+valueisstored. Ifthereissufficientstackspace,say1MB,
+this may take millions of instructions to complete. Com-
+pared with this, the time window being exploited is prob-
+ably much smaller, say, severalhundredinstructions. This
+impliesthat theprobabilityoftheroguethreadsucceeding
+initseffortisverysmall2.
+2Arogueprogrammaytrytocircumventthisapproachbyleavingvery
+littleroomonthestackwheretheruntimesystemmaystorearguments.
+SincetypicalprogramsexecutewithseveralMBsofavailablestackspace
+atalltimes,wemaysimplyterminatetheprocesswheninsufficientstack
+space(say,lessthan1MB)isdetected.
+(cid:2) getScNum, isEntry, isExit, isSignal:
+get the system call number (or signal received by
+the monitored process) as an OS-independent value,
+identifyifweinterceptedasystemcallentry,exitora
+signal. Thismodulealsoneedstoidentifytheregister
+numberswherethesystemcallargumentsarestored.
+(cid:2) getReg, setReg: get or set the values of regis-
+ters. We note that register numbers do not neces-
+sarily correspond to the processor hardwareregisters.
+They are simply handles created by the architecture-
+dependentmoduletorefertosomelocationwithinthe
+user structure (or anywhere else within the process
+control block) that canbe read ormodified by the ar-
+chitecturedependentmodule.
+(cid:2) getData, setData, getText: Read or mod-
+ify the memory of the monitored process. Its imple-
+mentation is different for ptrace and SVR4 based
+OSes. For ptrace-based interface, reading or writ-
+ingbulkdatacanbeinefficient,soweemployanyOS
+orarchitecturespecificenhancementstothesecapabil-
+ities, e.g., we use the /mem facility in Linux which
+permitsefficientreadsbutnotwrites.
+(cid:2) attachProcess, waitForCall: Again, the
+implementations of these operations are different
+acrossptraceand/procinterfaces.
+(cid:2) abort: SVR4-compatible UNIX versions provide a
+special operation for aborting system calls. Still, we
+neededtodevelopawaytomodifythereturncodeso
+that anyvaluechosenbythe supervisor objectcan be
+providedtothemonitoredprogram,ratherthanthede-
+fault value in SVR4 which indicates an error EINTRTestCase Normal Time Overhead level interposition approach. However, the results do es-
+execution spentin tablishthatourapproachofachievingportabilityofsystem
+time extension callextensions(usingtheSupIfcinterfaceandthesystem
+ftpd 2.2s 0.03s 1.5% call argument classes, which are implemented in the same
+telnetd 3.1s 0.04s 1.3% wayinbothruntimesystems)iseffective. Theyalsoshow
+httpd 5.8 0.09s 1.5% that the overhead due to the execution of extension code
+is verysmall —infact, it isnegligibleascomparedto the
+Figure5.Systemcallinterpositionoverhead. overheadsforsystemcallinterceptionandargumentaccess.
+Consequently, in a user-levelapproach such as ours, over-
+(system call interrupted). The ptrace implementa-
+allperformanceforapplicationssuchasintrusiondetection,
+tion in Linux provides no way to abort system calls.
+confinement and access controlcan bemeasured purelyin
+Ourapproachistomodifythesystemcallargumentto
+termsoftheoverheadsforsystemcallinterceptionanddata
+avaluethatwouldcausethecalltofail. Wetheninter-
+access. (This is precisely how we analyze performance in
+ceptthesystem callexitand setthereturnvaluesand
+thenextsection.)
+parametersasappropriate. Identifying suchargument
+The results shown in Figure 5 were taken on 350MHz
+values(thatcausesystemcallstofail)isfairlysimple
+PentiumIILinuxPCwith128MBmemoryand8GBEIDE
+in most cases, e.g., null pointer value for file names.
+disk. They include only the time spent within the exten-
+However,somecallsdonottakearguments,sothisap-
+sion code. Sample specification for the ftpd server can
+proachfails.Fortunately,mostsuchsystemcallseither
+be found in [25]. This specification consists of approxi-
+donotchangesystemstate(sonoharminlettingthem
+mately15propertiesthatrestricttheoperationsoftheFTP
+complete,pluswecanmodifythereturnvalues),orare
+serversothatit(a)accessesonlycertainfilesbeforeuserlo-
+notpermittedtobeexecutedevenbysuperuser-owned
+gin,andcertainotherfilesafteruserlogin,(b)executesonly
+processes(e.g.,setupandidleinLinux). Notable
+certain files, (c)performs host and user authentication, (d)
+exceptions are fork and exit. With fork, our ap-
+allowsconnectionsbacktotheFTPclient,butnotarbitrary
+proach is to kill the child before it completes its first
+hosts, (e) does not use privileged system calls or system
+system call. With exit, it is arguablewhether there is
+callsexceptforbindingtoaprivilegedTCPport,and(f)en-
+anymeritinabortingit,sowesimplyletitcomplete.
+forces additionalrestrictions for certain users, e.g., anony-
+moususersandsuperuser.Thespecificationsfortelnetd
+5 An Application in Intrusion Detection and andhttpdweresimilarintermsofcomplexity.
+Confinement
+6 PerformanceResults
+We have built a system for intrusion detection, appli-
+cation confinement and application-specific access control The primary goal of our performance experiments is to
+based on system call interposition [25, 26]. Our approach assess the impact of additional overheads introduced by
+is based on specifying security-relevant properties of pro- user-level system call interposition as compared to kernel
+grams as patterns oversequences of system calls executed based interposition. As mentioned earlier, the time spent
+byprocesses. Ourspecificationlanguageenablesustocap- inside the extension code remains the same for both ap-
+tureconditionsonsystemcallnamesaswellastheirargu- proaches,butadditionaloverheadsareincurredintheuser-
+ments. Responseactionscanbeassociatedwitheachsecu- level approach due to contextswitches and relativelyinef-
+rity property, and these responses will be triggered when- ficient operations to access the memory of monitored pro-
+everthepropertyisviolated.Theseactionsmaybeusedfor cess. Therefore our experiments were designed with null
+avarietyofpurposessuchasdisallowingtheviolatingsys- extensionbodies,orextensionsthatsimplyaccess(andpos-
+temcall,modifyingitsargumentsothatadifferentresource siblymodify)systemcallarguments. Forkernel-basedim-
+fromtheonespecifiedinthesystemcallismanipulated,or plementations,theoverheadsduetosuchextensionswillbe
+terminatingtheprocess. Acompilertranslatesthesespeci- negligibleascomparedtotheoverheadsforauser-levelim-
+fications into C++code for a supervisor object. This code plementation.
+iscompiledwiththeC++compilerandthenlinkedwiththe Measuring the overhead due to execution of extension
+systemcallinterpositioninfrastructuretoprovideintrusion codewillservetomeasurewhethercomputationallyinten-
+detectionandconfinement. sive tasks were performed within extension code. Such
+TheresultsshowninFigure5wereobtainedwitharun- measurementswouldbeusefulfordeterminingthesuitabil-
+timesystemthatusesin-kernelsystemcallinterposition[4]. ity of system call interposition for accomplishing a partic-
+Thusanyoverheadmeasurementsrelatingtosystemcallin- ulartask. Priorresearchin[9,20],aswellourresults[25]
+terceptionordataaccesscannotbeextrapolatedtotheuser- summarized in the previous section, provideadequate evi-Application CPUtime Realtime Realtime
+(Lowload) (Highload)
+gzip (cid:3) 2% (cid:3) 2% (cid:3) 2%
+ghostscript 10%
+(cid:3)
+5%
+(cid:3)
+10%
+tar 30% 5% 10%
+cp-r 50% 5% 10%
+ftpd 70%
+(cid:3)
+2% 30%
+httpd 65% (cid:3) 5% 35%
+Figure 6. Overhead for system call intercep-
+tionfordifferentapplications.
+dencetotheefficiencyandeffectivenessofthesystemcall
+interpositionapproachforapplicationssuchasintrusionde-
+tection,confinementandaccesscontrol. However,measur-
+ingtheexecutiontimewithinextensioncodewillnotinany
+wayhelpassesstheperformanceoftheinfrastructuredevel-
+opedinthis paper. Thisisanotherreason forourfocus on
+verysimpleextensionsinourperformancestudy.
+Most of the results presented in this section were ob-
+tained for Linux running on a 350MHz Pentium II with
+128MBmemoryand8GBEIDEdisk,whiletheotherswere
+obtainedonIRIXrunningonSGIR10000150MHz128MB
+4GBSCSI,andOSF/1runningonDECalpha500MHzwith
+1GBmemory.WheneverthemeasurementspertaintoIRIX
+or OSF/1, we indicate this explicitly; otherwise the mea-
+surementspertaintoLinux.
+6.1 OverheadforSystemCallInterception
+For performance analysis, we consider three categories
+of applications to monitor: CPU-intensive, disk I/O inten-
+sive, and network-intensive applications. The overhead is
+measuredintermsofincreaseinCPUtime,asgivenbythe
+formula:
+CPUtimeformonitoredappANDmonitoringprocess
+CPUtimeforunmonitoredapp
+B
+C
+4
+3.5
+3
+2.5
+2
+1.5
+1
+0.5
+0
+0 20000 40000 60000 80000 100000
+CPU time is taken to be the sum of the times spent in
+user and system mode by the system on behalf of a pro-
+cess. Wealsomeasuretheperceiveddegradationinperfor-
+mance,whichiscomputedusingrealtime(otherwisecalled
+elapsedtime)insteadofCPUtime. Theperceiveddegrada-
+tionisshownunderlightlyloadedandheavilyloadedcon-
+ditions in Table 6. In the table, lightly loaded conditions
+refertoasingleinstanceofarunningapplicationforgzip,
+ghostscript,tarandcp -r,andadeliveredthrough-
+put less than 20Mb/s for ftpd and httpd. Heavy load
+corresponds to running ten instances of an application for
+gzip, ghostscript,tarand cp -r, and a delivered
+throughputof100Mb/sorhigherforftpdandhttpd.
+The graph in Figure 7 shows the increase in CPU time
+as a function of the number of system calls made by dif-
+ferent applications. We expect the overhead to be mainly
+sdnoces
+ni
+daehrevO
+’gzip’
+’gs’
+’tar’
+’cp’
+’ftp’
+Number of system calls
+Figure 7. Increase in overhead with increase
+innumberofsystemcalls.
+duetocontextswitches,whosecostshouldbeindependent
+of the cost of the system call itself. Thus we expect a lin-
+ear relationship between the overhead and the number of
+system calls made. The graph shows that this overhead is
+between26and38microsecondspersystemcall,withmost
+pointsconcentratedaround34microseconds. Thevariation
+isa resultoftime measurementerrorswhichgetamplified
+sincewearetakingthedifferencebetweenCPUtimeswith
+andwithoutmonitoring. Moreover,whenaprocessismon-
+itored,weneedadditionalprocessesformonitoring,which
+caninturnleadtopoorervirtualmemoryandcacheperfor-
+mance. Theimpactofthisishardtopredict,andmayvary
+fromapplicationtoapplication.
+6.1.1 CPU-intensiveapplications
+This category is meant to represent typical CPU-intensive
+applications that are used frequently. Users are typically
+sensitive to additional overheads for such applications,
+since their running time is long enough to be perceived.
+We consider gzip and ghostscript in this category.
+Whilegzipmakesveryfewsystemcalls,ghostscript
+makesamoderate numberduetothesocket-relatedopera-
+tionsneededfordisplayingonX-windows.
+Our overhead results confirm the results of [13] for
+SVR4 compatible operating systems such as IRIX, while
+establishing that similar overheads (almost immeasurable)
+holdforLinuximplementationthatusestheptracefacil-
+ity.
+6.1.2 DiskI/O-intensiveapplications
+Inthiscategory,westudiedtarandcp -r(i.e.,recursive
+copy of directories). This category of applications tends
+to make a very large number of system calls. Since our
+main overhead is due to context switching for every sys-
+temcall,higheroverheadsaretobeexpectedforthesepro-
+grams. However, due to a large amount of I/O operations400
+350
+300
+250
+200
+150
+100
+50
+0
+0 5 10 15 20 25
+cesD/stibM
+’normal’ 140
+’monitoring’
+’localnormal’
+’localmonitoring’ 120
+100
+80
+60
+40
+20
+0
+0 20 40 60 80 100
+Number of clients
+Figure8.FTPserverthroughput
+tothedisk,theelapsedtimeismuchlargerthanCPUtime,
+thus the perceived increase in overhead is typically small
+for these applications. Due to opportunities for multiplex-
+inginI/O,theperceivedoverheadincreaseswhenmultiple
+concurrentinstancesoftheseapplicationsarerun.
+6.1.3 NetworkServers
+Network serverssuchas ftpdand httpd areamong the
+most important applications that need the increased secu-
+rity offered by system call monitoring. Consequently, our
+performance analysis on these applications is more com-
+prehensive.RatherthanmeasuringjusttheincreaseinCPU
+timeduetosystemcallinterception,ourexperimentswere
+gearedmoretowardsevaluatingthedegradationinthrough-
+putandlatencyexperiencedbyclientsoftheseservices.
+Thetestsuiteforftpdconsistedofseveralfileswhose
+sizes were uniformly distributed over the range of 0.5 to
+5MB. First, we ran the server and client on different ma-
+chines.We ensured that all of the requested files would to-
+getherfitwithinthein-memoryfilecachefortheserver,so
+theeffectofdiskaccesswascompletelyeliminatedinthese
+tests. Figure8showshowthethroughputvariesasafunc-
+tion of the number of clients. The graph shows that the
+throughput is limited by network bandwidth, as the curve
+flattens outaround 80Mb/s, which isprobably close tothe
+bestthatcanbeachievedona100Mb/sEthernet,when all
+of the protocol overheads are considered. Since the CPU
+utilization remains fairly low at this point (around 20%),
+theoverheadsofmonitoringdonotaffectthethroughputat
+all;thusthethroughputwithmonitoringcoincideswiththe
+throughputwithoutmonitoring.
+To simulate what happens under higher CPU loads (or
+faster networks), we then ran the client and server on the
+samemachine. Moreover,wespecifiedthe localfilename
+on the client to be /dev/null so as to eliminate the ef-
+fectofdiskaccess. Inthiscase,thethroughputislimitedby
+CPUusage,sothereisasignificantdegradationinthrough-
+cesD/stibM
+’normal’
+’monitoring’
+’localnormal’
+’localmonitoring’
+Number of clients
+Figure9.HTTPserverthroughput
+put.
+Figures9showsthroughputresultsforhttpd.Thetests
+wereperformedusingWebStone,whichisoneofthewidely
+used benchmarks for web server performance. We used
+WebStone with the standard fileset included in the bench-
+mark.Weusedtwoclientmachinesandoneservermachine.
+Wetestedstartingwith10clientsgoingto100clientsinin-
+crements of 10. The time per run was set to 10 minutes
+andwetook3iterations. Ontheserver,httpdwasrunwith
+andwithoutmonitoring.WebStoneprovideduswiththere-
+sults for the throughputand the response times. When the
+clientandserverarerunondifferentmachines,thethrough-
+put saturates at about 75Mb/s when no monitoring is per-
+formed. (Thisnumberislowerthanthatforftpd,reflect-
+ing a higher overheadfor HTTP due to the protocol itself,
+andduetoadifferentdistributionoffilesizes.) Atthesat-
+urationpoint,theCPUutilizationissufficientlyhightore-
+sultinmeasurabledropinthroughputofabout15%. When
+theexperimentsareperformedwiththeclientandserveron
+the same machine, the overhead is even more pronounced
+(about30to35%). WebStonealsoprovidesresponsetimes
+forhttpd,whichareshowninFigure10. (Responsetimes
+arenotverymeaningfulinourftpdexperimentssincethe
+largefilesizesmeant that thetime to receivea filewasal-
+mostcompletelyduetothetimefortransferringthefiles.)
+350
+300
+250
+200
+150
+100
+50
+0
+0 20 40 60 80 100
+)sdnocesillim(
+ycnetaL
+’normal’
+’monitoring’
+’localnormal’
+’localmonitoring’
+Number of clients
+Figure10.HTTPresponsetime.Operating Intercept Accessarguments Accessfilenames Followallpointers
+System only (read-mostly) (read-mostly) (read) (read/write)
+IRIX 55% 55% 75% 330% 400%
+Linux 27% 34% 39% 60% 2000%
+Figure11.Overheadforreadingandwritingsystemcallarguments.
+Operating Overhead /procdirectory. Butwritingbulkdataisveryinefficient,
+System as it requires one ptrace system call per 4 bytes of data
+Linux 37% to be written. Thus the overheads for modifying all argu-
+IRIX 60% mentsshootsupdramatically. Thisproblemdoesnotapply
+OSF/1 35% toIRIXsinceitprovidesefficientbulkreadandwriteopera-
+tions. Still,theoverheadishighwhenwefollowallpointer
+Figure 12. Interception overhead on IRIX, arguments,sincethisalsoimpliesthatallsystemcallentries
+OSF/1andLinux. andexits(includingthoseforreadandwrite)arebeing
+intercepted.
+6.2 InterceptionOverheadsonOtherUNIXVari- We conclude that the overheads are low when we limit
+ants ourselvestoaccessestoargumentssuchasfilenames.Intru-
+siondetection,accesscontrolandconfinementapplications
+Table 12 shows the overheads for system call intercep- require accesses only to this kind of data, and hence the
+tionontwovariantsofSystemVRelease4compatibleop- performance degradation introduced by these applications
+eratingsystems,namely,IrixandOSF/1. Weonlyshowthe islow. Extensiveaccesstodatamaybeneededinsomeap-
+averageoftheoverheadsamongthesixapplicationsshown plications such as those for transparent data encryption or
+inprevioustables. Theseoperatingsystemsprovideafiner file replication. User-level interception introduces signifi-
+granularityofcontroloverwhatsystemcallsaretobemon- cantoverheadsforsuchapplications.
+itored. Weusedthiscapabilitysothatweignored“uninter-
+esting”systemcallslikereadandwrite.Inaddition,for 7 Discussion
+mostsystemcalls,weinterceptedonlytheentryandnotthe
+exit. Theoverheadsforinterceptionundertheseconditions
+Theruntimesystemdescribedcanbeusedforreal-time
+areshownin the tableand compared againstthe times ob-
+monitoringofanyapplication,intheabsenceofsourcecode
+tainedforLinux. AlthoughLinuxdoesnotpermitselective
+andwithouttheneedforchangingorevenrecompilingany
+monitoringofasubsetofsystemcalls, thisfactordoesnot
+system software. Sinceour monitoring programresides in
+necessarilytranslateintoahigheroverheadformonitoring.
+a separate address space, it is essentially nonbypassable.
+Having a user levelapproach providesus the ability to se-
+6.3 OverheadforFetchingArguments
+lectivelymonitorcertainsystemcalls,ormonitoreverycall,
+thus controlling the granularity of control. Thesefeatures,
+Table11showstheoverheadsforaccessingand/ormod-
+andareasonableperformanceoverheadgiveoursystemthe
+ifying system call arguments. The overhead shown is the
+powertoaddandenforceavarietyofsecuritypolicies,and
+average taken across ghostscript, tar and ftpd. In
+wediscusssomeofthepossibleapplicationsofoursystem
+Linux,accessingeachsystemcallargumentrequiresasin-
+below:
+glesystemcallinthemonitoringprocess,sothereisamod-
+est overhead for getting these values. In IRIX, no system
+calls need bemade to accessthe arguments,so there is no
+additional overhead. When we follow pointer arguments
+and access the monitored process memory, we have addi-
+tionaloverheads.Inmostcases,weareinterestedinaccess-
+ingargumentsthatarestringsofrelativelysmallsizesuchas
+filenames,andtheoverheadincreaseissmall.Butwhenwe
+followallpointerarguments,weendupreadingthebuffers
+used for file read and write operations, and this leads to a
+substantial overhead. In the case of Linux, there is an ef-
+ficientwaytoperformbulkreadsusingthememfileinthe
+(cid:2) Policy-based Auditing: In its simplest form, our sys-
+temcanrecordinformationaboutsystemcallsandsig-
+nalsinalogfilethatcanbeusedforarchivalpurposes
+or as a source of information to investigate attacks.
+Theinformationtoberecordedcanincludesystemcall
+argumentsaswellassystemstaterelatedinformation,
+andcanbecustomizedonaper-processbasis.
+(cid:2) Intrusion detection: As described earlier, a majority
+of intrusion detection techniques make use of system
+callinformationtoperformtheirtask. Systemcallin-terception can enable them to obtain additional infor-
+mationthatmaynotbeavailablefromauditlogs,and
+thereby improve their ability to detect attacks. The
+abilityto modify orabort systemcalls willenable in-
+trusiondetectorstotakeamoreproactiverolewherein
+theycanpreventattacksfromsucceeding.
+(cid:2) Access Control: Fine-grained access control that is
+based on users as well as applications can be easily
+implemented using our infrastructure. Our user level
+approachhasadistinctadvantageinthatuserscande-
+ploy(orexperimentwith)newaccesscontrolpolicies
+withoutanyhelpfromsystemadministrators.
+(cid:2) Confining applications: Since our interception and
+extension mechanisms cannot be bypassed, we can
+use them to confine uncooperative applications. To-
+gether with this factor, the mechanisms we provide
+for aborting system calls, modifying their arguments,
+and“locking”argumentvalues(sothattheycannotbe
+changed with the intention of exploiting race condi-
+tions)giveustheabilitytoconfinemaliciousapplica-
+tionsaswell. However,thisabilityislimitedtosome
+extent due to the lack of adequate operating system
+support in some UNIX variants such as Linux. Our
+ability to dynamically change the supervisor object
+(andhencetheconfinementpolicy)providesincreased
+flexibilityinconfiningmaliciousapplications.
+(cid:2)
+thoughtthroughcompletelybyanimplementoroftherun-
+timesystem.Any“holesinthearmor”resultingduetosuch
+oversight can be exploited by a malicious program to es-
+cape. Kernel-based implementations are harderto circum-
+vent. Thedownside,however,isthaterrorsinkernel-based
+implementationscancausesignificantlymoredamagethan
+errorsintheextensioncodeexecutingattheuserlevel.
+Ourimplementationaddsmoderateoverheadsformoni-
+toring,andthisoverheadishigherthanthatforkernel-based
+implementations. Thesilverliningisthatmostoftheappli-
+cationswheretheuserissensitivetoperformanceareCPU-
+intensive,andforsuchprograms,theoverheadofourinter-
+ceptionmechanismsarenotevennoticeable.
+Our approach is implemented on top of the interfaces
+providedbytheoperatingsystemfeatures intendedforde-
+bugging. Limitations in these mechanisms directly impact
+our infrastructure. For instance, in the current implemen-
+tationof theptrace mechanismin Linux, there is a race
+conditionregardingtheforksystemcall. Inparticular,the
+childprocessdoesnotinheritthetracingflag,soitcanrun
+freeuntilthemonitoringprocessattachestoit. Duringthis
+window of time, we do not have any ability to monitor or
+confinethechildprocess. However,itappearsthatthisrace
+conditiononlyarisesinmultiprocessorarchitectures. (This
+problemdoesnotariseinSVR4compatiblesystems,asthey
+providemechanismsthatenablethemonitoringprogramto
+arrange for the tracing flags to be inherited after a fork.)
+It appears possible to develop a work around by dynamic
+Otherapplications:Systemcallinterpositionhasbeen
+modification of code in the text segment, or better, mod-
+usedforotherapplicationssuchastransparentencryp-
+ifying the instruction pointer to point back to a specially
+tion, data replication, etc. While our system can also
+constructedsequenceofinstructionsonthestack. Thebest
+support these applications, the performance overhead
+solution, however, is to eliminate this “bug” from the OS
+is higher. More efficient implementations, such as
+implementationitself.
+thosebasedonsharedwrapperlibraries,offerabetter
+Oneoftheassumptionsofourapproachisthatthepolicy
+alternative.
+incorporatedinthesupervisorcodeisa“good”one,andwill
+notitselfcausedamageorotherwisemodifythecapabilities
+7.1 Drawbacks
+of the monitored process in undesirable ways. The upside
+isthatthescopeofdamagethatcanariseduetosucherrors
+Oneoftheadvantagesofakernel-basedapproachisthat
+is minimized by using appropriate high-levellanguage for
+theextensioncodecanperformoperationsinthecontextof
+specifying thesupervisor functionality,andalso byhaving
+the monitored program. In a user-levelapproach, we have
+thesupervisorsrunatuser-level.
+toperformtheseoperationsinthecontextofthemonitoring
+process,whichisdistinctfromthemonitoringprocess. For
+8 RelatedWork
+instance,operationssuchaschangingtheuseridorfilesys-
+tem root of the monitored process is not possible with our
+approach. Nevertheless,itispossibletoconstrainthemon- There has been a lot of research done on improving
+itoredprocesstoonlyfilesaccessibletonewuseridornew theaccesscontroltechniquesavailableinoperatingsystem
+filesystemroot. such as UNIX. Many of the works focussed on improving
+Inauser-levelimplementationsuchasours,theOSker- the filesystem protection model in UNIX [8, 19, 2]. Their
+neltreatsthemonitoringandmonitoredprocessesthesame, implementationapproachisbasedonmodifyingtheoperat-
+anditisreallyuptothemonitoringprocesstodefenditself ingsystemkerneltoprovideanenhancedprotectionmodel
+against a malicious monitored process. There are a num- that can operate at a per-process and per-user level. The
+berofwaysinwhichthemonitoredprocesscantrytocrip- workof[28]developsamorepowerfulandflexibleaccess
+ple a monitored program. Not all of these may have been controlmethodcalleddomaintypeenforcement(DTE).Us-ing DTE, system administrators can specify fine-grained Linux (which is our main interest) or issues of portability
+mandatoryaccesscontrolsovertheinteractionbetweenpro- acrossotherUNIXvariants.
+cessesandtheobjectsaccessedbythem. Thisworkismore Severallanguageshavebeenproposed tosimplify writ-
+closelyrelatedtooursinthattheirimplementationisbased ingsystemcallextensions[9,13,26,25].Someapproaches,
+on intercepting and checking system calls within the OS suchas[13]useaverysimple,high-levellanguage. Other
+kernel. approachessuchas[9]aregearedtomaximizethecapabil-
+Several research efforts have developed interception ities that canbe programmed intothe extensions, and thus
+techniquesthatareimplementedinlibraries[16,15].While theyuseasupersetoftheC-languageforwritingextensions.
+thisapproachleadstolowoverheads,theycanbeeasilyby- Yet other approaches[26, 25] strivefor a balancebetween
+passedbycodethatdirectlyinvokesthesystemcallwithout expressivepower,robustnessofextensionsandeaseofwrit-
+usingthelibrary,andarethusnotappropriateforintrusion ing extensions geared for a specific purpose such as intru-
+detectionandconfinementapplications. siondetection/prevention.
+Interception of system calls within the kernel, coupled
+with the ability to add extension code that can be exe- 9 Conclusions
+cutedatthispoint,hasbeenproposedbyseveralresearchers
+[9,11,20].Theapproachesin[9,20]usesimilartechniques
+Inthis paperwe presentedanewapproachfordevelop-
+forsystemcallinterception: theyoverwritethesystemcall
+ing a user-level infrastructure for system call interception
+tableinthekernel(LinuxorFreeBSD)topointtomodules
+andextension.Ourworkaddressesseveralimportantissues
+thatwillroutethesystemcallsthroughtheextensionsprior
+not addressed by previousresearch. Eventhough we have
+to and after the execution of normal system call function-
+a user-levelimplementation, itofferssimilarlevelofsecu-
+ality. Beingkernel-based,theseapproachesgenerallyhave
+rityandcomparablelevelofcapabilitiesaskernel-basedim-
+moreflexibilityandpowerintermsofwhatactionscanbe
+plementations of system call extensions. This is achieved
+performedwithintheextensioncode.
+without themaindrawbacksofthe kernel-basedapproach,
+A more comprehensiveset ofcapabilities for extending namely,normaluserscandevelopanddeploytheirownex-
+operatingsystemfunctionalitywasproposedin[11]. They tensions; moreover,damage due to errors in the extension
+allow for extensions to operate in user mode as well, but code is limited, and does not bring down the entire sys-
+theyrunontopofthekernellevelprimitivesdevelopedby tem. As a result of this, our infrastructure can be used to
+them,asopposedtomakinguseofthefeaturesofcommod- develop extensions that accomplish a variety of security-
+ityoperatingsystems. Theirworkalsodealswithsomeis- related tasks such as custom auditing and logging, fine-
+suesnotaddressedbytheworksmentionedabove,suchas grainedaccesscontrol,intrusiondetectionandconfinement.
+handlingraceconditionsthatmightarisewhenamalicious Another important distinction of the research presented
+multithreaded program attempts to change an argument of inthispaperisthatwehavedevelopedtechniquestomake
+a system call (such as a filename) between the time it is our infrastructureportableacross manyversionsofUNIX.
+checked by the extension code and the time the argument More importantly, the extension code itself can be easily
+is actually used in a system call. Although it is difficult ported. Many of these techniques can be applied to in-
+to provide absolute protection against such attacks using kernelimplementationsofextensioninfrastructuresaswell.
+our approach, our technique ofcopyingsuch argumentsto We presented a comprehensive analysis of the perfor-
+a random location on the stack (beyond the stack pointer) manceimpactduetouser-levelinterceptionofsystemcalls.
+providesagoodsolution. Itwouldbeverydifficultforthe The overheads are moderate in the worst case, and almost
+malicious thread to search the entire stack (usually a few imperceptible under typical conditions. From a perfor-
+MBinsize)toidentifythelocation(s)intowhichthemoni- mance point of view, we believe that our results establish
+toringprogrammayhavecopiedthearguments. thepracticalityofuser-levelmonitoringofsystemcallsasa
+Thekeydistinctionbetweenourapproachandthatofthe waytoimprovesystemsecurity.
+above works is that we aim for a user-level implementa- Our performance analysis, as well as the discussion in
+tionofthesystemcallinterceptioninfrastructure,similarto Section7,indicatethattheapproachiswell-suitedforappli-
+[13].Theirsystemisaimedatconfininghelperapplications cationssuchasintrusiondetection,accesscontrolandcon-
+(such as those launched by web-browsers) to restrict their finement of applications. Moreover,due to the limitations
+useofsystemcalls. Duetotheirfocuson“sand-boxing”of in OS-provided mechanisms for user-level interception of
+helper applications, their system provides abilities to only systemcalls,thesetechniquesarecurrentlybettersuitedfor
+allow or deny a particular system call. Modifying system confining uncooperative applications than malicious ones.
+call arguments or the data referenced by them, or changes Itisalsolesssuitedforapplicationssuchastransparentdata
+to the system call returncode were notconsidered. More- encryptionorfilereplicationthatrequireextensiveaccesses
+over, their work was based on Solaris and did not address tothememoryofthemonitoredprocess.References [17] C.Ko, M. RuschitzkaandK. Levitt, Execution Monitoring
+of Security-Critical Programs in Distributed Systems: A
+[1] D. Anderson, T. Lunt, H. Javitz, A. Tamaru, and A. Specification-BasedApproach,IEEESymposiumonSecu-
+Valdes,Next-generationIntrusionDetectionExpertSystem rityandPrivacy,1997.
+(NIDES):A Summary, SRI-CSL-95-07, SRIInternational,
+[18] S. Kumar and E. Spafford, A Pattern-Matching Model for
+1995.
+Intrusion Detection, Nat’l Computer Security Conference,
+[2] A. Berman, V. Bourassa and E. Selberg, TRON: Process- 1994.
+specific file protection for the UNIX operating system,
+[19] N.LaiandT.Gray,Strengtheningdiscretionaryaccesscon-
+USENIXWinterTechnicalConference,1995.
+trolstoinhibitTrojanhorsesandcomputerviruses,USENIX
+[3] M.Bishop,M.Dilger,CheckingforRaceConditionsinFile SummerConference,1988.
+Access.ComputingSystems9(2),1996,pp.131-152.
+[20] T.Mitchem,R.Lu,R.O’Brien,UsingKernelHypervisors
+[4] T.Bowenetal,OperatingSystemSupportforApplication- toSecureApplications,AnnualComputerSecurityApplica-
+SpecificSecurity,Personalcommunication,1999. tionConference,December1997.
+[5] W.R.Cheswick,Aneveningwithberferd,inwhichacracker [21] T.Luntetal,AReal-TimeIntrusionDetectionExpertSys-
+islured,enduredandstudied,WinterUSENIXConference, tem (IDES) - Final Report, SRI-CSL-92-05, SRI Interna-
+1992. tional,1992.
+[6] Fred Cohen and Associates, The Deception Toolkit Home [22] P. Porras and R. Kemmerer, Penetration State Transition
+Page,http://www.all.net/dtk/dtk.html. Analysis: A Rule based Intrusion Detection Approach,
+EighthAnnualComputerSecurityApplicationsConference,
+[7] D.Engler, M.KaashoekandJrJ.O’Toole,Exokernel: An
+1992.
+Operating System Architecture for Application-Level Re-
+sourceManagement, 15th ACMSymposium on Operating [23] M.RussinovichandZ.Segall,Fault-ToleranceforOff-The-
+SystemsPrinciples,December1995. Shelf Applications and Hardware, Proceedingsof the25th
+InternationalsymposiumonFault-Tolerantcomputing,1995
+[8] G.FernandezandL.Allen,ExtendingtheUNIXprotection
+modelwithaccesscontrollists, USENIXSummerConfer- [24] R. Sekar, Y. Guang, T. Shanbhag and S. Verma, A High-
+ence,1988. Performance Network Intrusion Detection System, ACM
+ComputerandCommunicationSecurityConference,1999.
+[9] T. Fraser, L. Badger, M. Feldman Hardening, COTS soft-
+warewithGenericSoftwareWrappers,SymposiumonSe- [25] R. Sekar and P.Uppuluri, Synthesizing Fast Intrusion Pre-
+curityandPrivacy,1999. vention/DetectionSystemsfromHigh-LevelSpecifications,
+ToappearinUSENIXSecuritySymposium,1999.
+[10] S. Forrest, S. Hofmeyr and A. Somayaji, Computer Im-
+munology,Comm.ofACM40(10),1997. [26] R.Sekar,T.BowenandM.Segal,OnPreventingIntrusions
+byProcessBehaviorMonitoring,USENIXIntrusionDetec-
+[11] D. Ghormley, D. Petrou, S. Rodrigues, and T. Anderson,
+tionWorkshop,1999.
+SLIC: An Extensibility System for Commodity Operating
+Systems,USENIXAnnualTechnicalConference,1998.
+[27] R.Wahbe,S.Lucco,T.AndersonandS.Graham,Efficient
+Software-BasedFaultIsolation, 14thACMSymposiumon
+[12] A.K.Ghosh,A.SchwartzbardandM.Schatz,LearningPro-
+OperatingSystemsPrinciples,December1993.
+gramBehaviorProfilesforIntrusionDetection,1stUSENIX
+WorkshoponIntrusionDetectionandNetworkMonitoring,
+[28] Confining Root Programswith Domain Type Enforcement
+1999.
+(DTE),K.Walker,D.Sterne,L.Badger,M.Petkac,D.Sher-
+[13] I. Goldberg, D. Wagner, R. Thomas, and E. Brewer, A mannandK.Ostendorp, USENIXUNIXSecuritySympo-
+Secure Environment for Untrusted Helper Applications, sium,July1996.
+USENIXSecuritySymposium,1996.
+[14] K.Ilgun,R.Kemmerer,andP.Porras,StateTransitionAnal-
+ysis: A Rule-Based Intrusion Detection Approach, IEEE
+TransactionsonSoftwareEngineering,March1995.
+[15] M. Jones, Interposition Agents: Transparently Interposing
+UserCodeattheSystemInterface,14thACMSymposium
+onOperatingSystemsPrinciples,December1993
+[16] E. Krell and B. Krishnamurthy, COLA: Customized over-
+laying,USENIXWinterConference,January1992.

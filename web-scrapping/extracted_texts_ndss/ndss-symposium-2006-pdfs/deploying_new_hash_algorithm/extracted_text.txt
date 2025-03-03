@@ -1,0 +1,649 @@
+Deploying a New Hash Algorithm
+Steven M.Bellovin Eric K.Rescorla
+smb@cs.columbia.edu ekr@networkresonance.com
+ColumbiaUniversity NetworkResonance
+Abstract However,itisclearthatneitherMD5norSHA-1isasstrong
+asitstargetsecuritylevelandsoneedtobe replaced. The
+ThestrengthofhashfunctionssuchasMD5andSHA-1 possibilityofnewattackslendssomeurgencytothistransi-
+has been called into questionas a result of recent discov- tion.
+eries. Regardlessofwhetherornotitisnecessarytomove Although we don’t discuss the issue in detail, most of
+away from those now, it is clear that it will be necessary ouranalysisappliestodeployingnewsignaturealgorithms
+todosointhenot-too-distantfuture. Thisposesanumber aswellastodeployingnewhashfunctions. Ifthesignature
+ofchallenges,especiallyforcertificate-basedprotocols. We algorithm is linked to a particular hash function, as DSA
+analyzeanumberofprotocols,includingS/MIMEandTLS. is tied to SHA-1, the two would change together; beyond
+Allrequireprotocolorimplementationchanges. Weexplain that, since signature algorithms are almost always applied
+the necessary changes, show how the conversion can be to the output of hash functions, if there is no easy way to
+done,andlistwhatmeasuresshouldbetakenimmediately. substituteanewhashalgorithmthereisalmostcertainlyno
+waytosubstituteanewsignaturealgorithm,either.
+1 Introduction 2 OverviewofRecentHashFunctionAttacks
+Nearlyallmajorcryptographicprotocolsdependonthe Conventionally, hash functions are designed to have
+security of hash functions. However, this is increasingly threeproperties:
+lookinglikeabrittlefoundation: althoughavarietyofhash
+Collisionresistance Itiscomputationallyinfeasibletofind
+functionsareavailable,onlyMD5[32]andSHA-1[23]are
+in wide use. Both hash functions derive from MD4 [31],
+x,y,x6=ysuchthatH(x)=H(y).
+whichhaslongbeenknowntobeweak[7,8],thusleading
+Preimageresistance Givenanoutputvaluey,itiscompu-
+toconcernsthattheymighthavecommonweaknesses.
+tationallyinfeasibletofindxsuchthatH(x)=y.
+Theseconcernswereborneoutinlate2004,whentech-
+niques for efficiently finding collisions in MD5 [37] and Secondpreimageresistance Givenaninputx′,itiscom-
+SHA-0[2] were announced. Subsequently, Wang[36] an- putationally infeasible to find x such that H(x) =
+nouncedatechniqueforfindingcollisionsinSHA-1in269 H(x′ ).
+operations,1 ratherthanthe 280 forwhichitwas designed,
+The current generation of attacks address collision re-
+and Lenstra et al. [21] demonstrated a pair of X.509 cer-
+sistance. MD5 is effectively dead from that perspective;
+tificates with the same distinguished name, different pub-
+SHA-1 is much weaker than it should be, though finding
+lic keys, and identical signatures, though no extension is
+collisionsisstillimpractical.
+knownwhichcangeneratesuchapairwithdifferentdistin-
+While not as devastating as failures of the
+guishednames.
+other two properties, collision resistance is in-
+Itshouldbe emphasizedat thispointthatnone ofthese
+deed a serious issue. Lucks and Daum have gen-
+results have translated into demonstrable attacks on real-
+erated Postscript files that exploit the attack (see
+world protocols, though [21] comes uncomfortably close.
+http://th.informatik.uni-mannheim.de/
+1Inapresentation delivered atthe RumpSession of CRYPTO 2005, people/lucks/HashCollisions). They took
+Shamir stated that Wang had improved the attack to 263 operations.
+advantage of a well-known property of Merkle-Damga˚rd
+Also see http://www.csrc.nist.gov/pki/HashWorkshop/
+hashfunctions:
+2005/Oct31_Presentations/Wang_SHA1-New-Result.
+pdf,theslidesfromWang’skeynote speechattheNISTCryptographic
+HashWorkshop. H(x)=H(y)⇒H(x||Σ)=H(y||Σ)whereΣisanarbitrarystring,providedthatxandyarethe Atthebeginningofthetransition,allagentsareOld. At
+samelength. the end of the transition (at least theoretically), all agents
+First, they generatedtwoPostscriptprologues that con- are New. (In practice, of course, transitionsof this nature
+tained a collision in what was, syntactically, a constant. tendtopersistforanarbitrarilylongtime,sinceoldsystems
+Thisconstant was assignedtoa variable. Toeachofthese never quite die off.) The purpose of a transition strategy
+files,theythenappendedaPostscriptprogramthatchecked is to accomplishthe transitionbetweenthese states witha
+the value of this variableand displayedone of twoletters. minimumofdisruption.Anumberofissuesarecommonto
+An attacker could persuade someone to digitally sign the most,ifnotall,suchtransitions:
+first, harmless letter; this same signature would match the
+second,harmfulletter.Note,however,thattoagreatdegree Backwardcompatibility Old agents and Switch-hitting
+this attackis enabled by the fact that users do not directly agentsshouldbeabletocommunicateusingtheolder
+viewthePostscriptcodeandratheruseaninterpreter.Sim- version. Without backward compatibility, users have
+ilarattackscanbedemonstratedagainstsuchsystems(e.g., an enormous disincentiveto upgrade theirimplemen-
+HTMLwithJavaScript)evenwithouttheabilitytofindhash tations.
+collisions[30]byexploitingconditionalelementsinthedis-
+Newestcommonversion WhentwoSwitch-hittingclients
+playsystem[15,16].
+communicate, they caneitheruse the new or oldver-
+Collision-findingattacksdonotruleoutallusesofahash
+sionsoftheprotocol. Becausethepurposeofthetran-
+function. In particular, the pseudo-random function prop-
+sitionistodeploythenewerversion, itisdesirableto
+erties are not affected at all. Furthermore, HMAC [20] is
+usethatversionwherepossible.
+probablysafe,sincetheunknowncomponent—thekey—of
+the inner hash function makes it impossible to generate a
+Downgradeprotection An additional requirementfor se-
+collision at that stage; this in turn helps protect the outer
+curityprotocolsistodefendagainstversion/algorithm
+hash.
+downgrade. Consider the situation where two peers
+On the other hand, there is grave danger for many sit-
+each support two cryptographic algorithms, one of
+uations involving digital signatures or fingerprinting. If a
+which is strong and one of which is weak. If an at-
+would-beattackercansupplythemessagetobesigned,that
+tackercanforcethepeerstousetheweakeralgorithm,
+sameattackercouldhavepreparedtwoversionsofthemes-
+he may be able to attack the communication. Where
+sage,oneinnocuousandoneharmful,whilepresentingonly
+possible,protocolsshouldresistthisattack.
+the former. The attacks work because the victim inspects
+the innocuous versionand verifies that it is acceptable. In Credentialsversusimplementations In typical public
+environments where victims do not carefully inspect data key-basedsystems,apeer’spublickeyisauthenticated
+beforeitishashed,collisionattacksonlymodestlyincrease using certificates (in the case of the protocols being
+thethreatlevel. discussed here, PKIX [13] certificates). Certificates
+areageneralcredentialandarenottiedtoanyspecific
+3 Overviewofthe Hash TransitionProblem revisionofagivensecurityprotocol. Peersneedtobe
+abletocommunicatewithagentsthathaveavarietyof
+combinationsofnewandoldcredentialsandprotocol
+Althoughthedetailsoftransitionstrategiesforanygiven
+capabilities.
+protocol may vary, there are many common elements. In
+this section, we provide an overview of the hash transi-
+Intheremainderofthispaper, weconsiderthe applica-
+tionproblemandthedesigngoalsthattransitionstrategies
+tionof theseprinciplestotwomajor Internetsecuritypro-
+shouldattempttofulfill.
+tocols:S/MIME(astore-and-forwardprotocol)andTLS(a
+Thehashtransitionproblemisaspecialcaseofthegen-
+session-orientedprotocol). A longer versionof this paper,
+eral protocol transitionproblem. Whenever a new version
+withanalysis of other protocols and more details, appears
+ofaprotocolisrolledout,designersandimplementorsmust
+in[1].
+figureouthowtoaccomplishasmoothtransitionfromoldto
+newversionswithaminimumlevelofdisruption. Inatyp-
+icalprotocoltransitionalenvironment,therearethreetypes 4 S/MIME
+ofagent:
+The first protocol we will consider is S/MIME [25, 26,
+Old Agentswhichonlyspeaktheolderversion.
+12]. S/MIMEisastandardmessageencryptionandauthen-
+ticationprotocol. Inthemostcommonmodes,itusespub-
+Switch-hitting Agentswhichcanspeakbothversions.
+lic key cryptography (RSA [14] and DH [28]) for key es-
+New Agentswhichcanonlyspeakthenewversion. tablishment, symmetric cryptography for bulk encryption,Receiver Choice of certificate A sender with only one certificate
+Sender Old Switch/Old Switch/Both Switch/New New
+must use that certificate. The difficulty comes when a
+Old Old Old Old -
+S/O Old Old Old Old - senderhastwocertificates,onegeneratedwithanoldhash
+S/B Old Either Either SendNew New function, andone witha new hashfunction. The possibil-
+S/N - New New New New ities,ofcourse, aretouseonlyonecertificateor—because
+New - New New New New
+S/MIMEallowsmultiplesignatures—touseboth.Anyone-
+certificatestrategyguaranteesthatsomeclassofrecipients
+Figure1.InteroperabilitytableforS/MIMEim- willnot be able to verifythe message. Usingboth certifi-
+plementations cates preserves the possibilitythat the recipientcan verify
+themessage.
+In order for this to work, however, recipients must
+and digital signatures (RSA and DSA [22]) for message be able to correctly verify messages with multiple signa-
+authentication/nonrepudiation. User public keys are trans- tureswhenone of them is unverifiable. Unfortunately, the
+ported/authenticatedusingPKIX[13]certificates. S/MIMEspecificationisfairlyvagueonthispoint. Anun-
+There are five major types of S/MIMEclient; the types scientificpollofS/MIMEimplementorsindicatesthatsup-
+ofmessages thateachtype of implementationshouldsend portforthisoptionisspottyatbest. [27,11,9].
+areshowninFigure1.
+Becausereceiverbehaviorisunpredictable,sendersmust
+attempttoestimatewhatsortsof implementationreceivers
+1. Oldclients.
+are likely to have. This probably means choosing inter-
+2. Switch-hittingclientswithonlyoldcertificates. operability with the most popular strategies as a default
+(whicharecurrentlytheolder,weak,algorithms)andallow-
+3. Switch-hittingclientswithbothtypesofcertificate.
+inguserstheoptiontoconfigureanewbehavior.Thisisirri-
+4. Switch-hittingclientswithnewcertificates. tatinginthatitinvolvesamanualstepifthesenderguesses
+wrong.Howevertherearealreadyanumberofnon-security
+5. Newclientswithonlynewcertificates.
+scenarios in which users must retransmit unreadable mes-
+Note that this table assumes perfect information about sages(badattachmentformats,HTML-vs-ASCIItext,etc.)
+the recipient’s capabilities, which is not always the case. soit’snottotallyforeigntousers.
+We now consider how to achieve interoperability in prac-
+tice, whichis a matterof tryingtoestimatethe recipient’s
+capabilitiesandcreateamessagewhichtheyaremostlikely
+tobeabletodecode. Fortheremainderofthissection,we Choiceofdigestalgorithm Oncethecertificatehasbeen
+focus on the behavior of Switch-hitting clients, since Old chosen, the sender must choose a digest algorithm to di-
+andNewclientsonlyhaveonepossiblebehavior. gest the message before signing. This choice is made in-
+dependently for each signature, so it is possible the mes-
+4.1 TheInitialMessage sage will be digested twice. In general, if the certificate
+being used was generated with one of the old algorithms
+The first case we consider is the case where a user is (MD5,SHA-1),themessageshouldbedigestedusingSHA-
+sending a message to someone with whom he has never 1, whichreceiversare requiredto accept bysection2.1 of
+communicatedbefore. Therearetwopossiblesub-cases: RFC3851[26]. Thisminimizesthechancethattherecipi-
+entwillnotbeabletoverifythemessagesignature. (MD5
+1. Thesenderdoesnothavetherecipient’scertificate.
+should not be used at all for message digests, even if the
+2. Thesenderhastherecipient’scertificate. certificateusesit.)
+Ifthecertificatebeingusedwasdigestedwithanewhash
+Weconsidereachsub-caseinturn.
+algorithm,werecommendthatthesenderuse thesame al-
+gorithm to digest the message, on the grounds that if the
+4.1.1 SendingWithoutaRecipientCertificate
+recipient can use the digest algorithm to verify the certifi-
+Ifthesenderdoesnothaveaccesstotherecipient’scertifi- catetheycanuseittoverifythemessage. Thisrunstherisk
+cate, thenhe is subjecttotwolimitations. First, he cannot that the recipient will be using a separate toolkit to verify
+encryptbecausehedoesnothavethepublickeytoencrypt the certificate signature than they used to verify the mes-
+under. Second, hehasnoinformationabouttherecipient’s sage signature; howeverweare not aware of anyS/MIME
+capabilities,Inparticular,he cannotsafelyassumethatthe client that behaves in this way. This algorithmhas the at-
+recipient’ssoftwarewillbe abletoprocessnewhashfunc- tractivepropertythatitautomaticallyworkscorrectlywith
+tions. DSA,whichcanonlysignSHA-1digests.4.1.2 SendingWiththeRecipient’sCertificate to sign future messages she should digest using whatever
+algorithmwasusedtoproducethatcertificate.
+Ifthesenderhastherecipient’scertificate(s)thenthesitua-
+tionissimpler.Webelievethatitisareasonableassumption
+4.3 Attacks
+that implementations can verify their own certificates and
+therefore must implement whatever digest algorithm was
+In this section, we consider the problem of protecting
+used to create them. If the recipient has only one certifi-
+Switch-hittingimplementationsduringthetransitionperiod
+cate, the sender should therefore use their certificate with
+when it is impracticalto turn off support for the old algo-
+the corresponding algorithm. If the recipient has multiple
+rithms.Therearethreebasicscenarios:
+certificates,thesendershouldusetheonecreatedusingthe
+strongestalgorithm.Forthereasonsindicatedabove,wedo • The attackerdoes not have a validcertificateand pri-
+notrecommendsendingmultiplecertificatesinthiscase. vatekeyforeitherpeer.
+The choice of which certificate to send would be sim-
+• Theattackerhasacquiredavalid(butfalse)certificate
+pler yet if the recipient’s certificate indicated which algo-
+andknowstheprivatekey.
+rithmsitwascapableofusing. Althoughthisnotcurrently
+possibletheS/MIMEworkinggroupiscurrentlyconsider- • Theattackerisoneofthecommunicatingparties.
+ing a draft [34] that would allowcertificates to contain an
+SMIMECapabilities[26]extensionfortheownerofthecer- 4.3.1 AttacksWithoutaValidCertificate
+tificate. This informationcould include informationabout
+Iftheattackerdoesnothavetheprivatekeyforavalidcer-
+alloweddigestalgorithms.
+tificate,thenhisabilitytomountattacks,evenonolderdi-
+4.2 Subsequent Messages gest algorithms, is fairly minimal unless he can compute
+preimages.2 Clearly, an attacker who can compute preim-
+ages can undetectably modify messages in transit. In this
+OnceanS/MIMEimplementationhasreceivedasigned
+case, the only defense is to stop using the affected algo-
+message from a peer, it is in a much better positionto es-
+rithm. Notethatsenderscannotpreventthisattackbymul-
+timatethe sender’s capabilities. For clarity, say that Alice
+tiply signing their messages; S/MIME multiple signatures
+hasreceiveda signedmessagefromBob. Withhighprob-
+areparallelandindependent,sotheattackercansimplystrip
+ability Bob can verify signatures produced with whatever
+the strongsignature. Receivers must stop acceptingan al-
+algorithm(s)it used to digest its ownmessage. If this is a
+gorithmwherecomputingpreimagesispossible.
+new (strong) algorithm then all is good and Alice should
+herselfusethatalgorithm.
+IfBobusedanold(weak)algorithm,thenAliceatleast 4.3.2 AttacksUsingaValidCertificate
+knowsthatshecancommunicatewithBobusingthatalgo-
+If the attacker has the private key for a certificate with a
+rithm. However, it is stillpossible that Bob has a Switch-
+validsignaturecontainingtheidentityofoneofthepeers—
+hitting implementation. S/MIME has a standard way for
+for instance obtained using an improved version of the
+BobtosignalthisfactusingtheSMIMECapabilitiessigna-
+Lenstra construction—he can impersonate that peer. This
+ture attribute, which includes a (potentially partial) list of
+wouldallowhimtoforge messagesthatappeartobe from
+thealgorithmsthatBobsupports. Bobcansendamessage
+thatpeer. Itmayalsoallowhimtoconvincetheotherpeer
+using SHA-1 but include an SMIMECapabilities attribute
+to encrypt messages using his fake certificates. The only
+indicatingthathealsosupportsSHA-512. Ifthisattributeis
+certain countermeasure here is to stop accepting the com-
+included,itisalways signed, thuspreventingtheintroduc-
+promisedalgorithm. Onepartialworkaroundwouldbefor
+tionofafalseattribute.
+thevictimtorefusetoacceptcertificatesdatedafterthetime
+We recommend that when Switch-hitting implementa-
+when the algorithm was compromised. This is a defense
+tions send messages using weak algorithms they include
+against collision attacks, but if the attacker can generate
+an indication that they also support a stronger algorithm.
+2ndpreimages,thenhecanforgeacertificatewithanarbi-
+Thereisnopointinincludingsuchanindicationifyouare
+trarydateandbypassthiscountermeasure. Anotherpartial
+sendingwiththestrongeralgorithm,sincethatalgorithmis
+workaroundis to store copies of previouslyusedpeer cer-
+preferredandarecipientwhichcannotprocessthestronger
+tificates(as withSSH [38, 39]), thus reducingthewindow
+algorithmcannotverifythatyoualsosupporttheweakone.
+ofexposuretothefirstexchangeofmessages.3
+Because the SMIMECapabilities attribute is part of the
+signerInfoelement,itisnotincludedinmessageswhichare 2Anattackerwhocancomputepreimagesislikelytobeabletoforge
+certificates. However,itispossiblethatanattackercouldcomputepreim-
+unsigned. However,ifAlicereceivesanencryptedmessage
+agesbutwithoutfineenoughcontroltoforgeaspecificcertificate.
+fromBob, sheknowsthathewas abletoverifythecertifi- 3Notethatit’scommontostoreadigestofthecertificateratherthanthe
+catethatheusedtoencrypttoher. Therefore,ifshewishes certificateitself.Thisobviouslyleavesoneopentopreimageattacksifthe4.3.3 TheAttackerisOneoftheCommunicatingPar- Lucks/Daumattack,closeinspectionofsuchmessagesgen-
+ties erallywill reveal their unusual structure and so this attack
+canonlybemountedwhenthedocumentsinquestionwill
+If it is easy to find collisions in a hash, then being one of
+besubjecttoonlycasual(orautomatic)scrutiny.
+thecommunicatingparties—oratleastinapositiontosub-
+stantially control the message contents—confers substan-
+5 TLS
+tial advantage to the attacker. In particular, it allows him
+to cheat in contexts where an S/MIME signature is to be
+verifiedbyathirdparty. Thebasicscenarioisdescribedin TLS [6] is a standard channel security protocol which
+Section 2: two versions of a document are prepared, one livesabovethetransportlayer(wheretheOSIsessionlayer
+innocuous and one malicious. One or both of the parties sits). Originally designed for Web security [29], it is
+signstheinnocuousversionandthentheattackerconvinces now widely used for other applicationprotocols including
+thethirdpartythatthevictimsignedthemaliciousversion. SIP[33] andSMTP [17]. The mostcommonTLS deploy-
+Thisattackcanbemountedregardlessofwhichpartydoes ment involves an anonymous client connectingto a server
+theactualsigning. Thekeyisfortheattackertobeallowed andusingtheserver’scertificateandpublicRSAkeyforkey
+to prepare the document to be signed, since the colliding exchange. Therearefivemajorplacesdigestalgorithmsare
+pairmustbegeneratedtogether. usedinTLS:
+In order to mount this attack on a Switch-hitting peer,
+• Intheper-recordMAC.
+theattackermustrepresentthatheonlysupportsthebroken
+algorithm,thusforcingthesignaturetobeperformedusing • Inthecertificatesusedbyclientandserver.
+that algorithm. However, since supporting only old algo-
+• Inthedigitally-signedelement.
+rithmsis a legitimateconfiguration, this is extremelyeasy
+• In the PRF (pseudo-random function) used to make
+to achieve. The victim has the choice of using that algo-
+keyingmaterial.
+rithmornotcommunicatingatall.
+This attack is extremely difficult to defend against in • IntheFinishedmessage
+standardsystems. Bobcandefendagainstbeingconnedby
+preparingthe finaldocument versionandinsertingenough TLScontainsanextensiveframeworkforalgorithmne-
+randomnessnear the beginning(e.g., ina dummyfield) to gotiation, using the concept of “cipher suites”. A ci-
+make itinfeasiblefor Alicetohave generateda collision.4 pher suite consists of a triple specifying the key estab-
+However,thisiscomplexandnotsupportedbytypicalap- lishment mechanism, the symmetric encryption algorithm
+plicationsoftware.Moreover,Aliceshouldbesuspiciousof used to encrypt traffic, and the message digest used to
+thisrequest,sinceitallowsBobtomountacollisionattack provide traffic message integrity. For instance, the ci-
+himself.Amoregeneraldefenseisforthepartiestojointly phersuiteTLS RSA WITH RC4 128 MD5indicatesRSA
+agreeonrandomvaluesoncethedocumentcontentisfixed, key exchange, encryption with RC4-128, and message in-
+butthisisevenmorecomplexforordinaryusers.5 S/MIME tegritywithaMACbasedonMD5(inTLSthisisHMAC-
+implementationscouldofcoursedothisautomatically,but MD5[20].)
+if one is willing to modify implementations it is easier to Unfortunately,thismechanismisonlyusefulfornegoti-
+simplyaddstrongalgorithms. atingtherecordMAC. Althoughthereisa mechanismfor
+We stressthatthis attackis veryreal andverypractical negotiatingclientcertificatetype,itdoesnotincludedigest
+ifMD5isused. algorithmandtheotheralgorithmscannotbenegotiated.In-
+Because defense against this attack is difficult, in con- deed,thePRF,ServerKeyExchange,andClientVerifymes-
+textswhenusersaresigningmessagesthatmightbeverified sagesarenotparametrized,butratherarespecifieddirectly
+byathirdparty,itisbettertosimplyinsistonusingastrong inthestandard. Inordertoaccomodatenewerdigestalgo-
+algorithm. Similarly,thirdpartiesshouldbeextremelysus- rithmsinthesecaseswemustextendTLS.
+picious when they are asked to rely on signatures that use
+weak algorithms, especially MD5. Note that as with the 5.1 MACFunctions
+attackercanmanagetogetacertificatewiththesamedigest(noteasy,be-
+Negotiating the MAC in TLS is straightforward. Each
+causehemustalsosimultaneouslyattacktheCA’sdigestingprocesswhich
+ciphersuitespecifiesthedigestfunctionfunctiontobeused
+coversdifferentdata). Ifadigestisbeingstored,itmightbewisetostore
+akeyedhashusingsomelocallyknownkeyinstead.) asthebasisfortheMAC. So, inprincipleallthatneedsto
+4Fromasecurityperspectivethisisinferiortorandomizedhashing[10] bedoneistodefineanewsetofciphersuiteswithstronger
+butdoesn’trequirechangingtheS/MIMEimplementationoneitherside.
+hash algorithms. Note that because TLS uses HMAC, the
+5KelseyandKohnopresenteda“Herding”attackattheCRYPTO’05
+rumpsessionthatallowscheatinginthisscenario,buttheeffortlevel(287 currentcollision-onlyattacksmostlikelydonotrepresenta
+forMD5,2108forSHA-1)farexceedsthatofordinarycollisionfinding. threat,thusmakingthisalowpriorityupgrade.5.2 Server Certificates 5.4 TheDigitally-SignedElement
+The most important element of TLS to upgrade is the TherearetwoplacesinTLSwheredataisexplicitlydig-
+server certificate. Because certificates are automatically itally signed: the CertificateVerify and the ServerKeyEx-
+verified, they are the cryptographic technique most threat- change. In both places, the signature is accomplished us-
+ened by current digest attacks. TLS client certificates are ing the “digitally-signedelement”. (“Digitallysigned ele-
+rare; by contrast, virtually every TLS server has a certifi- ment” is the TLS term for a data element protected by a
+cate. signature.) WhenthesignaturealgorithmisDSA,theinput
+Weassumethatduringthetransitionperiod,eachserver is as expected—a SHA-1 digest of the data to be signed.
+willhavetwocertificates,onecreatedwithanoldhash(typ- However,whenthesignaturealgorithmisRSA,theinputis
+ically SHA-1 or MD5) and one created with a new hash. somethingunusual: theMD5andSHA-1digestsofthein-
+The client can then indicate to the server that it can pro- putareconcatenatedandfeddirectlyintotheRSAsignature
+cessthenewcertificate. Therearetwopotentialtechniques algorithm with PKCS#1 padding, but without DigestInfo
+fordoingthis: anoverloadedciphersuiteandaTLSexten- wrapping. This is not a negotiatiable algorithm but rather
+sion[3]. TheTLSextensionapproachisprobablysuperior iswiredintothespecification.
+inthatitpreservesprotocolcleanliness—thehashfunctions Thisunusualconstructionraisesthequestionofwhatthe
+intheTLSciphersuiteoffersdonotrefertothecertificate. targetconstructionshouldbe. Theoriginalrationaleforthe
+Moreover, there are performance reasons for the client to dual hash construction was to provide security in the face
+prefertousetheolderhashalgorithmsforMACfunctions: ofcompromiseofeitherhash. However,inpracticethishas
+SHA-1is much faster than SHA-256, and the MAC func- beenpartiallyundercut bythecommonheritageof SHA-1
+tionsdonotneedtobeupgradedimmediately. and MD5. A practical attack on SHA-1 could potentially
+Note that this does not address the problem of DSA, extendtocompromisingtheMD5/SHA-1pair. Thegeneral
+which, as noted previously, cannot be used withany algo- feeling in the TLS community is that a single negotiated
+rithmotherthanSHA-1. The cleanestsolutionforDSAis digestwouldbeabetterchoice.
+simplytototreatitasanewalgorithmanddefineanewset The best choice here is probably to have the digitally-
+of ciphersuitesthat specifya newer versionof DSA (e.g., signedelementusethesamealgorithmaswasusedtosign
+DSA2). thecertificateof the partydoingthe signing(theclientfor
+the CertificateVerify and the server for the ServerKeyEx-
+5.3 ClientCertificates
+change). This avoids the creationof a new negotiable op-
+tion, thus reducing protocol complexity. In principle this
+TLSclientcertificatesaremuchlesscommonlyused,al- couldleadtointeroperabilityproblemsifthecertificatesys-
+though some organizations are using them. For example, temhasdifferentcapabilitiesthantheTLSimplementation.
+theUSgovernmentisnowissuingclientcertificatesfores- However,we’reskepticalthatthenumberofrealimplemen-
+tablishing user identities [18, 24]. However, in the case tationswiththis problem wouldbe large enough tojustify
+where client authentication is used, it is desirable to have theadditionalcomplexity.
+awayfortheservertoindicatewhichhashesitwouldlike Thischangecaneitherbeimplementedbyhavingcipher
+theclienttouse. Thisisafairlysimplyprotocolengineering suitesthatusestrongalgorithms(i.e.,newciphersuites)use
+matterwithtwoobviousalternatives: thenewerdigitally-signedconstructionor bychangingthe
+behaviorofallciphersuitesinanewversionofTLS. Dueto
+• Add new values to the certificate types field of
+thelowurgencyofthischange,werecommendthecleaner
+the CertificateRequest message. For instance, an
+approachofcreatinganewTLSversion.
+rsa sign sha256typecouldbecreated.
+• Useextensionvalues.
+5.5 PRFs
+Eachoftheseapproaches hasadvantagesanddisadvan-
+tages. TheCertificateRequestapproachkeepsalltheinfor- TLS uses a hash function-basedPRF to create the key-
+mationaboutthecertificatesthattheclientshouldproduce ingmaterialfrom thePreMasterSecretandMasterSecret.
+togetherbutcreatestheriskof riskof combinatoricexplo- ItisalsousedtocomputetheFinishedmessageswhichare
+sion of certificate types values (only 256 such values are used to secure the TLS negotiation against downgrade at-
+available). Thealternativeapproachisfortheservertouse tack. Compromise of the PRF might potentially allow an
+an extension indicating which hash algorithms it accepts. attackertodeterminethekeyingmaterialormountadown-
+This is less elegant, but removes the combinatoric explo- gradeattack.
+sionproblem. Neitherapproachissuperiorfromasecurity The TLS PRF is actually two PRFs, both based on
+perspective. HMAC, with one using MD5 and the other using SHA-1.Like the digitally-signedelement, the TLS PRF is explic- canonlyslightlyinfluence theserver’smessages(bymod-
+itlyspecifiedinthestandardandnotnegotiable.6 Thiscon- ifying the client messages in flight to produce a different
+struction,whilesomewhatover-complex,isprovablysecure negotiationresult)the abilitytocreatecollisionsisinsuffi-
+undertheassumptionthateitherHMAC-SHA1orHMAC- cienttomountthisattack.
+MD5aresecurepseudorandomfunctions[19]. Becausethe Theobviousapproachtotransitionistoreplacethepair
+currentattacksdonotaffectthesecurityofHMAC,upgrad- of hashes with the negotiated hash function used for the
+ingthePRFisalow-prioritytask.However,webrieflycon- messageMAC. However,notethatthisrequiresbothsides
+sidermethodshere. tostorethehandshakemessagesuntiltheMACalgorithmis
+The two basic methods for negotiating the PRF algo- decided(intheServerHello).Thisrequiresamodestchange
+rithm are to use the negotiated cipher suite or to create a in TLS implementation behavior and a slight increase in
+newextension. Inthefirstcase, whateverdigestalgorithm storage requirements. An alternative design would be to
+was negotiated for the cipher suite would also be used as replace the “digest then PRF” construction with a MAC
+thebasisforthePRF. Thishastheobviousdrawbackthatit directly over the handshake messages. This would have
+tiesTLStothebasicHMAC-XstructureofthePRF. Ifthis onlyslightlyhigher storage requirementsand be modestly
+constructionwere foundtobe insecure (despitethe proofs moresecureintheeventofpreimageattacksontheunder-
+ofsecurity),thenitwouldnotbepossibletonegotiateanew lyinghashfunction. Weconsidereitherapproachadequate,
+construction. By contrast, while using an extension adds thoughwebelievethatthesecurityconsiderationsoutweigh
+complexityit would allow substitutionof the construction thememoryissueandthereforerecommendtransitioningto
+withoutcreatinganewversionofTLS. asimpleMACoverthemessages.
+We are skeptical that this increased flexibility justifies
+theaddedcomplexityofdefininganewextension. Inview 5.7 Attacks
+ofthe securityproofs forHMACanditswideuse inTLS,
+itseemslikelythatanyattackonHMACwouldimplycom-
+As with S/MIME, we consider the problem of protect-
+promiseofthe underlyingdigestfunctionandresultinthe
+ingSwitch-hittingimplementationsduringthetransitionpe-
+compromiseofkeyelementsofthesystem(messageMACs,
+riod.Thegeneralformoftheattackisfortheenemytoforce
+certificates,etc.), thusnecessitatinga newrevisionof TLS
+oneorbothsidestobelievethattheothersideisanoldim-
+inany case. Itwouldbe straightforwardtorevisethe PRF
+plementationandconvincethemtouseweakeralgorithms,
+atthattime.
+thusrenderingthemsusceptibletoattack.
+PRFs have similar roll-out issues to those described in
+Wecandividetheseattacksbroadlyintotwocategories.
+Section5.4. As withthe digitally-signedelement, we rec-
+Inthe first, the attacker has obtaineda validcertificatefor
+ommendthat the transitionto a negotiatedPRF occur ina
+one side of the connection (most likely the server) and
+futureversionofTLS.
+knowsthecorrespondingprivatekey. Inthiscase,nocom-
+pletedefenseispossibleotherthanturningofftheoldalgo-
+5.6 TheFinishedMessage
+rithm.Theattackercansimplyintercepttheconnectionand
+useitscertificate.AswithS/MIME,partialdefensesinclud-
+The TLS Finished message is computed by computing
+ingrejectingnewercertificatessignedwithweakalgorithms
+the TLS PRF over the master secret and the concatena-
+andSSH-stylefingerprintcomparison.
+tion of two digests over the handshake messages, one us-
+Ifthe attackerdoes nothave a validcertificate,he must
+ing MD5and one using SHA-1. The same considerations
+attack the negotiation more indirectly. However, because
+apply here as in the PRF. The hash itself is unkeyed al-
+thenegotiationisprotectedbyaMACcomputedusingthe
+though both sides contribute random nonces. This design
+PRF,theattackermustbeabletopredictPRFoutputinor-
+modestly reduces memory requirements on the client and
+dertopredictthekeyusedforthePRF. AsarguedinSec-
+server; HMAC-based MACs require having the key avail-
+tion5.5, thiswouldrequireaveryseriousbreakofHMAC
+ableatthebeginningoftheMACcomputation,butthekey
+and most likely that the attacker can compute preimages,
+is only available after the key exchange, so using HMAC
+makingadirectattackoncertificatespossible.
+directlywould require storing initialhandshake messages.
+Thehash-then-PRFtechniqueonlyrequiresstoringthehash
+6 DesignPrinciples for AlgorithmAgility
+state. There is a potential riskinthis designin that keyed
+hashes are harder to attack than simple hashes. However,
+becausetheattackercannotcontroltheclientmessagesand Itisclearfromouranalysesthatdesigningforalgorithm
+agility is harder than thought. In this section, we present
+6This has already been an issue with the proposed GOST cipher
+somesuggestionsforprotocoldesignthatmaymakefuture
+suite[5],whichforregulatoryreasonsmustusetheGOSTdigestfunction
+inthePRF transitionssmoother.6.1 Avoidthe use ofhardwired cryptographic al- algorithmnegotiationbut can be implementedwithonly a
+gorithms small working buffer. IKE already includes a capability
+discovery exchange in the right place; the problem is that
+Any protocol which depends on a single hardwired al- some necessary capabilitieswere not negotiated. Another
+gorithmisinherentlybrittle—ifthat algorithmis broken it approachistodesignprotocolswhereonepeerisoptimistic
+canbeveryhardtorepairtheprotocol. Thisisparticularly butcanfallbackiftheyguesswrong,asin[35].
+obvious in the case of DSA;the transitionfrom SHA-1to
+someotherdigestalgorithmisgoingtobemuchmoredif- 6.4 Avoiddowngradeattacks
+ficult than with RSA, because the hash algorithm and the
+signaturealgorithmwillneedtobereplacedsimultaneously. Downgradeattackis a persistentproblemwithnegotia-
+Similarly,thedecisiontohardwireMD5andSHA-1intothe tioninsecurityprotocols. Therearegenerictechniquesfor
+basic structure of SSL/TLS necessitates far more protocol protecting negotiation in session-oriented protocols (typi-
+re-engineeringthanifthealgorithmshadbeenparametrized callybycomputinga MACover the handshake messages)
+inthefirstplace. but they cannot be guaranteed to work if the MAC or key
+exchange algorithmsare broken. AlthoughTLS andIPsec
+6.2 Provide mechanisms for capability discovery do a fairly good job of this via HMAC, which is largely
+and/ornegotiation unaffected by the current level of attacks, they are still at
+risk if hash compromises lead to compromise of the cer-
+Even if a protocol allows for the use of multiple algo- tificate system used to authenticate the key establishment
+rithms,algorithmtransitionscanbedifficulttoaccomplish phase. Thedowngradeproblemissubstantiallyharderwith
+if the agents do not have good information about the ca- store-and-forward protocols. For instance, in the case of
+pabilities of the peers with which they wish to communi- S/MIMEmultiplesignaturestheattackercansimplydelete
+cate. In session-oriented protocols such as TLS or IPsec, thestrongersignature.Ingeneral,althoughdefensesagainst
+thisinformationiseasytoexchangebyincorporatinganal- downgrade are important to incorporate, sufficiently pow-
+gorithmnegotiationphase inthe sessionestablishment. In erful attacks on the cryptographic algorithms will require
+store-and-forwardprotocols,however,theproblemismuch agentstostopacceptingthosealgorithms.
+moredifficultandgenerallyrequiressomesortofdirectory
+whichcanbeusedbyagentstoadvertisetheircapabilities. 7 Conclusions
+In both kinds of protocols, it is important to allow for the
+advertisementofcapabilitiesforeveryparameter.S/MIME,
+Itisclearthatnewhashfunctionsornewmethodsofem-
+TLS,andIPsecallfailthistest.
+ployinghashfunctionsarenecessary. However,aswehave
+demonstrated, neither the specifications nor implementa-
+6.3 Capabilitydiscovery should occur asearly as tions are ready for the transition. We have presented an
+possible analysisoftransitionstrategiesforS/MIMEandTLS;anal-
+ysis of other protocols, including IPsec and DNSsec, ap-
+Even protocolswhichallownegotiationoftenfail todo pears in[1]. We stronglyurge the analysisof other proto-
+so early enough in the exchange. In the best case, one colsthatusehashfunctions. Prominentcandidatesinclude
+party must try to adapt to whatever is eventually chosen, OpenPGP[4],andSecureShell[38,39].
+possiblyresultinginincreasedcomputationalcosts(aswith For the protocols we analyzed, we present recommen-
+TLS CertificateVerify messages or S/MIME multiple sig- dations toimplementorsand the IETF. These changes are
+natures). Inthe worst case, one side must guess about the necessarytoprepareforthetransition.Wesuggestthatthey
+other side’s capabilitiesand a wrong guess results in non- bemadeasquicklyaspossible,toprovidemaximumsecure
+interoperabilityorarequirementformanualreconfiguration interoperabilitywhennewhashfunctionsareready.
+(aswithS/MIMEsinglesignaturesorIPsechashfunctions). Whenprotocolupgrades arebeingdesigned, considera-
+Inordertoavoidthis,protocoldesignersshouldallownego- tionshouldbe giventosignaturealgorithmagilityaswell.
+tiation/capabilitydiscovery tohappen as early inthe com- Inmostcases,thesignalingwillhavetobedoneinthesame
+municationprocessaspossible. placeasforhashfunctions.However,someoftheoverload-
+Thereisatradeofftoconsiderhere. Ifdiscoveryisdone ingoptionsareinappropriateforsignaturealgorithms. For
+entirelybefore crypto, it can introduce extra latency (e.g., example, in IPsec one might use the appearance of a new
+one round trip for the discovery/negotiation, then another hashalgorithmintheSAproposalasasignalthatoneparty
+for the crypto). Careful protocol design can mitigate this supports a new hash algorithm in one context, and hence
+tosomeextent:forinstance,thehashnegotiationtechnique presumablyinanother. There isnoobvious waytoextend
+describedinSection5.4impliessomecryptographybefore thisto,say,supportofECCsignatures.S/MIME References
+Implementors of S/MIME should ensure that their
+product handles multiplesignatures properly. In par- [1] S.M.BellovinandE.K.Rescorla. Deploying anewhash
+ticular, programs should report success with one sig- algorithm. Technical ReportCUCS-036-05,Dept.ofCom-
+naturewhilewarningaboutunverifiablesignatures. puterScience,ColumbiaUniversity,October2005.
+[2] E.Biham, R.Chen,A.Joux, P.Carribault, C.Lemuet, and
+MD5 shouldnever be used for digests, since all con-
+W. Jalby. Collisions of SHA-0 and Reduced SHA-1. In
+formingimplementationsalreadysupportSHA-1. ProceedingsofEurocrypt’05,2005.
+[3] S.Blake-Wilson, M.Nystrom,D.Hopwood, J.Mikkelsen,
+The IETF should develop a method for indicating
+andT.Wright. TransportLayerSecurity(TLS)Extensions.
+digest function capabilities in certificates, CA ven-
+RFC3546,June2003.
+dors shouldimplementit, andnewcertificatesshould
+[4] J. Callas, L. Donnerhacke, H. Finney, and R. Thayer.
+contain explicit statements about hash functions sup- OpenPGPMessageFormat. RFC2440,November1998.
+ported. [5] G.ChudovandS.Leontiev. AdditionofGOSTciphersuites
+toTransportLayerSecurity(TLS),May2004.draft-chudov-
+TLS cryptopro-cptls-01.txt.
+The IETF should define a TLS extension by which [6] T.DierksandC.Allen.TheTLSProtocolVersion1.0.RFC
+serverscansignalsupportfornewercertificates. 2246,January1999.
+[7] H. Dobbertin. Cryptanalysis of MD4 (Third Workshop
+The IETFshouldpickone ofthetwosuggestedalter- on Cryptographic Algoruthms, Cambridge 1996). Lecture
+nativesforsupportingclientsidecertificatesproperly. NotesinComputerScience,pages55–72,1996.
+[8] H.Dobbertin. TheFirstTwoRoundsofMD4areNotOne-
+TheIETFshouldconsidermakingthePRFdependon
+Way. LectureNotesinComputerScience,1372,1998.
+theMACalgorithminafutureversionofTLS.
+[9] P.Gutmann. Personalcommunication,2005.
+The definition of the digitally-signed element should [10] S. Halevi and H. Krawczyk. Strengthening Digital Signa-
+tures via Randomized Hashing, May2005. draft-irtf-cfrg-
+beamendedtosupportnewhashfunctions.
+rhash-00.txt.
+The definition of the Finished message should be [11] S.Henson. Personalcommunication,2005.
+amendedtosupportnewhashfunctions. [12] R.Housley. Cryptographic Message Syntax (CMS). RFC
+3852,July2004.
+DSA [13] R.Housley,W.Polk,W.Ford,andD.Solo. InternetX.509
+PublicKeyInfrastructureCertificateandCertificateRevoca-
+DSApresentsaspecialproblem,sinceitmayonlybe
+tionList(CRL)Profile. RFC3280,April2002.
+employedwithSHA-1. NISTneedstoclarifythissit-
+[14] J.JonssonandB.S.Kaliski. Public-keycryptographystan-
+uation,eitherbydefiningDSA-2orbydescribinghow
+dards(PKCS)#1: RSAcryptographyspecificationsversion
+DSAcanbeusedwithrandomizedhashesortruncated
+2.1. RFC3447,InternetEngineeringTaskForce,Feb.2003.
+longerhashes. [15] A.Jøsang,D.Povey,andA.Ho.Whatyouseeisnotalways
+whatyousign.
+The problems we have described here are symptomatic [16] K.Kain, S.Smith, andR.Asokan. DigitalSignatures and
+of a more general problem. Most security protocols al- Electronic Documents: A Cautionary Tale. Kluwer Aca-
+low for algorithm negotiation at some level. However, it demicPublishers,2002.
+[17] J.Klensin.SimpleMailTransferProtocol. RFC2821,April
+isclearthatthishasneverbeenthoroughlytested.Virtually
+2001.
+allofthe protocolswehave examinedhave somewired-in
+[18] L. D. Kozaryn. DoD issues time-saving Common Ac-
+assumptionsabout a commonbase of hashfunctions. Itis
+cess Cards, 10 October 2000. American Forces In-
+a truism in programming that unexercised code paths are formationService,http://www.defenselink.mil/
+likelytobebuggy. Thesameistrueincryptographicproto- news/Oct2000/n10102000_200010107.html.
+coldesign. [19] H. Krawczyk. SIGMA: The ‘SIGn-and-MAc’ Approach
+toAuthenticaticated Diffie-HellmananditsUseintheIKE
+Protocol, June 2003. http://www.ee.technion.
+Acknowledgments
+ac.il/˜hugo/sigma.ps.
+[20] H.Krawczyk, M.Bellare, andR.Canetti. HMAC:Keyed-
+TheauthorswouldliketothankRussHousleyforhisde- HashingforMessageAuthentication. RFC2104,February
+1997.
+tailedreviewofthispaper. WewouldalsoliketothankAlex
+[21] A. Lenstra, X. Wang, and B. de Weger. Colliding X.509
+Alten, Steve Burnett, Hal Finney, Eu-Jin Goh, Peter Gut-
+Certificates. In Proceedings of ACISP, 2005. To appear.
+mann, Steve Henson, Charlie Kaufman, John Kelsey, Ben
+Online: http://eprint.iacr.org/2005/067.
+Laurie, Arjen Lenstra, Blake Ramsdell, Hovav Shacham, [22] National Institute of Standards and Technology, U.S. De-
+BennedeWeger,andtherefereesfortheiradviceandcom- partment ofCommerce. Digital Signature Standard, 2000.
+ments. FIPSPUB186-2.[23] National Institute of Standards and Technology, U.S. De-
+partmentofCommerce. SecureHashStandard,2002. FIPS
+PUB180-2.
+[24] National Institute of Standards and Technology, U.S. De-
+partmentofCommerce. Personalidentityverification(PIV)
+offederalemployeesandcontractors,2005. FIPSPUB201.
+[25] B.Ramsdell. Secure/MultipurposeInternetMailExtensions
+(S/MIME)Version3.1CertificateHandling.RFC3850,July
+2004.
+[26] B.Ramsdell. Secure/MultipurposeInternetMailExtensions
+(S/MIME) Version3.1Message Specification. RFC3851,
+July2004.
+[27] B.Ramsdell. Personalcommunication,2005.
+[28] E.Rescorla. Diffie-HellmanKeyAgreementMethod. RFC
+2631,June1999.
+[29] E.Rescorla. HTTPOverTLS. RFC2818,May2000.
+[30] E. Rescorla. MD5 Collisions in PostScript Files”,
+June 2005. http://www.educatedguesswork.
+org/movabletype/archives/2005/06/md5_
+collisions.html.
+[31] R. Rivest. MD4 Message Digest Algorithm. RFC 1186,
+October1990.
+[32] R. Rivest. The MD5 Message-Digest Algorithm . RFC
+1321,April1992.
+[33] J. Rosenberg, H. Schulzrinne, G. Camarillo, A. Johnston,
+J.Peterson, R.Sparks, M.Handley, andE.Schooler. SIP:
+SessionInitiationProtocol. RFC3261,June2002.
+[34] S.Santesson. X.509CertificateExtensionforS/MIMECa-
+pabilities,May2005. draft-ietf-smime-certcapa-05.txt.
+[35] H.Shacham,D.Boneh,andE.Rescorla.Client-sidecaching
+forTLS. ACMTransactionsonInformationandSystemSe-
+curity(TISSEC),7:553–575,Nov2004.
+[36] X. Wang, Y. Yin, and H. Yu. Collision Search Attacks
+onSHA1,2005. http://theory.csail.mit.edu/
+˜yiqun/shanote.pdf.
+[37] X.Wangand H.Yu. HowtoBreakMD5and Other Hash
+Functions. InProceedingsofEurocrypt’05,2005.
+[38] T.Ylonen. SSH–secureloginconnections over theInter-
+net. InProceedingsoftheSixthUsenixUnixSecuritySym-
+posium,pages37–42,July1996.
+[39] T. Ylonen. SSH protocol architecture, 2005. draft-ietf-
+secsh-architecture-22.txt.

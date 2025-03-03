@@ -1,0 +1,657 @@
+Building an Encrypted and Searchable Audit Log
+BrentR.Waters1∗,DirkBalfanz2,GlennDurfee2,andD.K.Smetters2
+1 PrincetonUniversity 2 PaloAltoResearchCenter
+ComputerScienceDepartment 3333CoyoteHillRoad
+Princeton,NJ08544 PaloAlto,CA94304
+bwaters@cs.princeton.edu {balfanz,gdurfee,
+smetters}@parc.com
+Abstract to be audited even when that system has been under ac-
+tive attack by malicious insiders or outsiders [7, 9]. Cor-
+rectly designed secure audit logging mechanisms can de-
+Audit logs are an important part of any secure system, tect unauthorized past activity, even when the person per-
+and they need to be carefully designed in order to give a forming that action goes to great lengths to cover their
+faithfulrepresentationofpastsystemactivity. Thisisespe- tracks. The existence of such logs can be used to en-
+cially true in the presence of adversaries who might want force correct user behavior, by holding users accountable
+totamperwiththeauditlogs. Whileitisimportantthatau- fortheiractionsasrecordedintheauditlog. Suchlogscan
+ditorscaninspectauditlogstoassesspastsystemactivity, beusedinawidevarietyofsystems,fromacontrolsystem
+thecontentofanauditlogmaycontainsensitiveinforma- thatlogsthecommandsauserissues,toadatabasesystem
+tion, andshouldthereforebeprotectedfromunauthorized thatlogsthequeriesausermakes.
+parties. Typically, when an organization wishes to inspect past
+Protecting the contents of audit logs from unauthorized activity it will search the audit log for relevant informa-
+parties (i.e., encrypting it), while making it efficiently tion. For example, if a certain user was suspected of be-
+searchablebyauthorizedauditorsposesaproblem. Wede- havingimproperlytheorganizationmightsearchforallac-
+scribe anapproach for constructingsearchable encrypted tionsperformedbythatparticularuser. Iftheorganization
+auditlogswhichcanbecombinedwithanynumberofexist- wishes to see all actions of a certain type, it might search
+ingapproachesforcreatingtamper-resistantlogs. Inpar- foralllogentriesthatmatchagivenkeyword. Foranaudit
+ticular, weimplementedanauditlogfordatabasequeries logtobeusefulinpractice,itiscriticalthatitbeefficiently
+thatuseshashchainsforintegrityprotectionandidentity- searchableforkeywordsofinterest.
+basedencryptionwithextractedkeywordstoenablesearch- Atthesametime,thecontentsofanauditlogcanbecon-
+ingontheencryptedlog.Ourtechniqueforkeywordsearch sideredtobesensitiveinformation. Forinstance,knowing
+onencrypteddatahaswideapplicationbeyondsearchable what actions are made by a certain user could violate that
+auditlogs. individual’sprivacy. Ifthelogcontainsinformationabout
+not only what query was made, but what results were re-
+turned, access to the audit log would imply effective ac-
+1.Introduction cess to the database, circumventing database access con-
+trols. Theorganizationthatownsthesystembeinglogged
+Systemlogsprovideaninvaluableviewintothecurrent mightconsidertheinformationthelogholdstobevaluable
+andpaststateofalmostanytypeofcomplexsystem. Most andnotwishtoshareitwithothers, whileforrobustness’
+server software in existence today includes some logging sake,theorganizationmaywanttostorebackupcopiesof
+mechanisms. theauditloginformationatsitesitmaynotcompletelycon-
+Secureversionsofsuchlogs,designedtodefendagainst trol.Ingeneral,thismeansthatthecontentsoftheauditlog
+malicioustampering, allowthecurrentstateofthesystem mustbeencrypted. However,thismakesitextremelydiffi-
+culttosearch.
+∗Themajorityofthisworkwascompletedwhiletheauthorwasasum- Usingtraditionaltechniques,searchingthelogwouldre-
+merinternatPARC.quire decrypting every record. This approach has several The rest of the paper is organized as follows. In Sec-
+disadvantages. First, it requires decrypting all of the log tion2wedescriberelatedwork.Sections3and4introduce
+data,regardlessofwhatinformationoneislookingfor;this secure audit logs in general, and our system in particular.
+opens opportunities for unintended access to log records Section5.1presentsasymmetrickeybasedscheme,while
+other than the ones relevant to the current investigation. Section5.2presentsanpublic-keyschemebasedonIBE.In
+Second, it requires the entity with the decryption key to Section6wepresentourimplementationofaproxyserver
+interactively process all the log data, which can be quite thatcreatesasearchableauditlogofdatabasequeriesand
+large. In many applications, one would like to entrust the discussitsperformance. Finally,weconcludeinSection7.
+abilitytodecryptauditlogstoanentityorsystemwithhigh
+levelsoftrustandassurance; requiringthatsystemtoalso 2.RelatedWork
+beabletoprocesslargequantitiesoflogdatainanon-line
+fashion limits one’s choice of trusted parties. It would be SEARCHING ON ENCRYPTED DATA. Song et al. [11]
+preferable to be able to selectively delegate the ability to study the problem of searching on encrypted data in a
+searchthelogtopartieswiththemeanstoprocessthedata. symmetric-keysetting. Inasymmetrickeybasedscheme,
+Thekeychallengetobuildingasuccessful,secureaudit the keys that are used to create the encrypted entries also
+loggingsystemistosimultaneouslyprotecttheintegrityof allowsearchanddecryptionoftheauditlog. Thus,servers
+the audit log, control access to contents, and maintain its thatconstructauditlogentriespossesskeyscapableofde-
+usefulnessbymakingitsearchable. cryptinglogentries. Wediscusstheshortcomingsofsuch
+Inthispaper,wepresentadesignforanencryptedaudit anapproachinSection5.1andcontrastitwithapublic-key
+logthatallowsadesignatedtrustedparty,theauditescrow basedscheme. Ourpublic-keybasedschemeeasilyallows
+agent, to construct keyword search capabilities, which al- auditescrowagents(andonlythoseagents)tocreatecapa-
+low(lesstrusted)investigatorsinpossessionofsuchcapa- bilitiestosearchtheauditlogforcertainkeywords.
+bilities to search for and decrypt entries matching a given Goh examines how Bloom Filters can be used to make
+keyword. The escrow agent can distribute a capability to searchingonencrypteddatamoreefficient[4]. LikeSong
+aninvestigatorifhedeemsitappropriate. Sinceweexpect etal.,Gohpresentsaschemeinthesymmetrickeysetting.
+keyword search capabilities to be distributed rather infre- He presents a scheme where a encrypted data consists of
+quently, the escrow agent can be made to be very secure theencryptionofadocumentandaBloomFilterattached
+fromattack. thatisusedforkeywordsearching.
+Wedevelopedapublickeybasedcryptographicscheme Bonehetal.[2]havealsorecentlyexaminedtheproblem
+thatallowskeywordsearchingonencrypteddatabyadapt- of searching on publicly encrypted data. They indepen-
+ing Boneh and Franklin’s [3] Identity-Based Encryption dently devised a scheme based on the Identity-Based En-
+(IBE)scheme. (Wenotethatthecryptographicschemewe cryptionschemeofBonehandFranklin[3]. Theirscheme
+use is similar to a scheme that was independently discov- is similar to our underlying cryptographic scheme in its
+ered by Boneh et al. [2]; see Section 2 for details.) In an construction and security properties. The contribution of
+IBE scheme, public keys can be arbitrary strings – e.g., their work is different, however: they provide a detailed
+“bob@parc.com”. Private keys are derived from public theoretical analysis which includes a precise definition of
+keys through use of a system-wide master secret, known whattheycallsearchablepublic-keyencryption,alongwith
+byatrustedauthority. Inourdesign, searchkeywordsare threeconstructionsthatareprovablysecureintheirmodel
+used as IBE public keys, and the master secret is held by under suitable cryptographic assumptions. Our work, on
+anauthoritytrustedtoissuekeywordsearchcapabilitiesfor the other hand, introduces our independently developed
+a given audit log, in our case, the audit escrow agent de- construction and focuses on the pragmatic security con-
+scribedabove. cerns regarding integrating it in a system for creating se-
+Inourdesign,theservergeneratingauditlogentriesen- cureauditlogs.
+crypts entries with the public keys corresponding to the
+AUDIT LOGS. Schneier and Kelsey [7, 8, 9] describe a
+keywords that are derived from those entries. The escrow
+secure audit logging scheme capable of detecting any at-
+agent, which holds the IBE master secret, can construct a
+tempt to delete or alter past audit log entries, even on a
+searchcapabilityforagivenkeywordastheprivatekeycor-
+hostthathasbeencompromised(assumingtheentrieswere
+respondingtothegivenkeyword. Furthermore,additional
+madebeforethecompromise). Suchtamperingcanbede-
+securitypropertiesofBonehandFranklin’sschemeimply
+tected even if the compromised host has not been able to
+thatanadversarycannottellwhichpublickeywasusedto
+offloadanystateinformationtoanotherhost;anoperation
+createaciphertextwhengiventheciphertext. Thus,when
+referredtoas“checkpointing”inthediscussionbelow. To
+anencryptedauditlogentryiscreated,evenitssearchkey-
+accomplishthis,asystemopeninganewauditlogfirstes-
+wordsarehidden.
+tablishesasharedsecretA withatrustedthirdparty. After
+0each audit record is generated, the current shared secret, presentandhavenotbeenaltered. Auditlogscaneitherbe
+A, is evolved – it is completely replaced by a new shared publicly verifiable – verifiable by anyone holding appro-
+i
+secret, A , computed as the cryptographic digest of the priatelyauthenticatedpublicinformation,e.g.,thelogging
+i+1
+previoussharedsecret, A. Eachauditrecordisencrypted system’s public key, or an authenticated hash of all exist-
+i
+under a key K which is derived from the current value of ingauditentries. Or, theymayrequireatrustedverifier –
+i
+A,andthentheencryptedrecordisprotectedusingaMes- theycanonlybeverifiedbyadesignatedpartyholdingone
+i
+sageAuthenticationCode(MAC)keyedwithA. Records ormoresecrets,e.g.,aMACkey. Thechoiceofapproach
+i
+arelinkedusingahashchain[6]. isapplication-dependent. Publiclyverifiableauditlogsys-
+Becausethesecretsusedtoencryptandauthenticateeach tems,e.g.,systemsthatsimplydigitallysigneachlogentry
+logrecordarecompletelyreplacedonthelogginghostaf- theygenerate,alloweasystorageofauditlogsonuntrusted
+ter the record is generated, an attacker compromising that systems, and the increased trust resulting from the ability
+host does not have the necessary information to go back ofanyinterestedpartytoverifythelog. Ontheotherhand,
+and replace, delete, or modify existing log records stored trusted verifier systems, such as the Schneier and Kelsey
+on that host. Any attempt to do so can be detected by the schemedescribedin[7,8,9]allowforagreaterdegreeof
+trustedthirdparty,whoretainsA ,andcancheckthatthere forwardsecurityinanauditlogsystem,makingitpossible
+0
+isavalidrecordauthenticatedwitheachMACkeyA. This todetectattemptstodeleteauditlogentriesmadeanytime
+i
+constitutesaformofforwardsecurityfortheauditlog. beforeasystemiscompromised,withoutrequiringanyin-
+TheuseofsymmetricMACstoauthenticatelogrecords formation about those entries to be communicated to the
+means that only the trusted third party (or someone to outsideworld.
+whomithasdelegatedarecordauthenticationkey,A)can To verify an audit log, it must contain two types of in-
+i
+verify the audit log. As each record is encrypted with a formation. First,eachentrymustcontainenoughinforma-
+differentkey,thetrustedthirdpartycandelegatetheability tiontoverifyitsauthenticitywhenconsideredonitsown.
+to decrypt particular audit records to designated individu- If some entries are altered or deleted, the ability to indi-
+als,bygivingthemthekeysusedtoencryptthoserecords. viduallyverifytheremainingentries(orblocksofentries)
+However, it does not allow any form of search on the en- makesitpossibletorecoversomeusefulinformationfrom
+cryptedauditdata. thedamagedlog. Second,theindividualentriesmustalso
+be linked together in a way that makes it possible to de-
+3.CharacteristicsofaSecureAuditLog termine whether any entries are missing. Serial numbers
+allowonetocheckwhetherallentriesarepresent,butturn
+Wecanidentifythreeimportantpropertiesasecureaudit theproblemoftamperingwiththelogintooneofattacking
+log: those designed to prevent and detect tampering, and each entry individually. Hash chaining [6, 7, 8, 9], where
+thosedesignedtocontroldataandsearchaccess. eachentrycontainsacryptographicdigestoftheprevious
+TAMPERRESISTANCE. Asecureauditlogmustbetamper entry, is a better solution, as it tightly links all entries in
+resistant–itmustguaranteethatnooneotherthanthecre- thechain.1 Italsoallowsaverysimpleformofpublicver-
+atorofthelogcancreatevalidentries,andthatonceentries ifiability, where the hash of the most recent audit entry is
+havebeencreated,theycannotbealtered. checkpointed,i.e.,publishedviaatrustedthirdparty(e.g.,
+One cannot prevent an attacker who has compromised theNewYorkTimes).
+thesystemcreatingthelogfromalteringwhatthatsystem DATA ACCESS CONTROL AND SEARCHABILITY. Given
+will put in future log entries [7]. One also cannot prevent thatthedatainanauditlogmaybesensitive,itmustbeen-
+himfromdeletinganylogentriesthathavenotalreadybeen crypted. However,onewouldliketobeabletoallowlegit-
+copiedtoanothersystem. Thegoalofasecureauditlogin imatesearchaccesstoasubsetofallauditlogentries(e.g.,
+suchcasesistomakesurethathecannotalterexistinglog all entries matching the keyword “Smith”). We present a
+entries,andthatanyattemptstodeletesuchexistingentries newcriteriafortheconstructionofusefulsecureauditlogs,
+willbedetected. Ideally,onewouldliketodetectattempts namelythattheyallowthesecuredelegationofsearchca-
+to delete or alter any entries created up to the time a host pabilities.
+is compromised [7, 8]. For for some applications it may Delegation of capabilities is important so that an inves-
+be enough to have the logging host “checkpoint” its state tigatorcansearchandviewentriesofanarrowscope. For
+periodically–tocopyitslogdata,orsomefunction(e.g.,a example, if Alice Smith wanted to investigate all entries
+signature)ofitslogdatatoanotherhost,andsimplybeable related to her the audit escrow agent might give her the
+toassurethatnoentriesuptillthemostrecentcheckpoint capability to search for all entries matching the keyword
+havebeendeletedoraltered.
+1In order to provide individual entry verifiability in a hash-chained
+VERIFIABILITY. Asecureauditlogmustalsobeverifiable
+auditlog,eachlogentrymustexplicitlycontainthehashoftheprevious
+–itmustbepossibletocheckthatallentriesinthelogare entrytoallowsomerecoveryifthatentryismissing.“Smith”, but not give her anything more. The alternative Thesearethekeywordsthatcanbeusedtosearchforthat
+ofhavingthemastersecretholderperformthesearchesis record in the future. Next, it encrypts the entry using the
+undesirablesinceitunnecessarilyexposesahighlytrusted key K, producing the keyword search information c in
+i wn
+componentofthesystem. the process. In Sections 5.1 and 5.2 we present two con-
+For such delegation to be considered secure, it must be crete instantiations of this procedure. Finally, the server
+impossible for an adversary to learn the content of entries constructs the verification dataV. In our implementation,
+i
+intheauditlogthatheshouldnothaveaccessto(uptothe we periodically “checkpoint” the audit log by publishing
+security provided by the underlying encryption function, themostrecentverificationvalue,V,tooneormoreother
+i
+whichmightnot,forinstance,disguisecharacteristicssuch servers,producingapubliclyverifiableauditlog.
+asthelengthoftheauditlogentry.)Weallowouradversary
+KEYWORD EXTRACTION. Inourimplementation,queries
+tobeaninsiderinthesensethathemaybebothauserof
+are made in SQL. See Figure 1 for an explanation of how
+the system, and may have had some legitimate search ca-
+weextractkeywordsfromaquery.Oursetofkeywordsnot
+pabilitiesexplicitlygiventohimbytheauditescrowagent.
+onlycontainskeywordsfromthequery, butalsometadata
+We would like to ensure that, assuming he does not com-
+suchastheuserwhomadethequeryandthetimewhenthe
+promise the escrow agent itself, he is unable to view the
+querywasissued. Notethatweprefixkeywordswithsuit-
+contentsofanyauditlogentry,oreventolearnwhichkey-
+able labels so that we can distinguish the case where user
+words match an entry beyond those set of keywords and
+“AliceSmith”ismakingaqueryfromthecasewheresome-
+entriesforwhichhehaslegitimateaccess.
+onemakesaquerymentioningthename“AliceSmith”.
+4.AuditLogComponentsandNotation
+5.SearchingonEncryptedQueries
+Tomakeourpresentationconcrete,wetakeasanexam-
+Ifatsomepointaninvestigatorwantstosearchanaudit
+ple the problem of logging queries made by a set of au-
+logforentriesmatchingacertainkeyword,shemustgoto
+thenticatedusersagainstoneormoreSQLdatabases. The
+the audit escrow agent for the organization that generated
+mechanisms we describe can also be applied directly to
+thelogandrequestasearchcapabilityforthatkeyword. If
+generatesearchablesecureauditlogsforothersystemtypes
+theescrowagentdeemsitappropriate,hegrantsthiscapa-
+– only the actual content to be logged, and the choice of
+bilitytotheinvestigator. Shemaythengototheauditlog
+keywords to support for search on that content need to be
+andsearchthroughtheentriesandseewhichentriesmatch
+customizedtotheapplicationorsystemtolog.
+the keyword. For those audit log entries that match the
+Our audit log L consists of a series of individual audit
+keyword, the investigator can decrypt the entry and view
+records,R ,R ,...,R . EachrecordR contains:
+0 1 n i
+itscontents(seeFigure2).
+1. E (m),theencryptionofthedatatobeloggedunder In this section we present two schemes for creating en-
+Ki i
+akeyK. Thestringm consistsofthedatabasequery crypted and searchable entries. We first present a scheme
+i i
+tobelogged,alongwithmetadatasuchastheidentity based on symmetric key cryptography. Although this
+oftheuserwhoissuedthequery. Optionally,itcould scheme is secure against a passive adversary, we find that
+alsocontainthequeryresults. Inoursystem,thekey theschemeisinsecureagainstanadversarythatisableto
+K ischosenrandomlyforeachlogentry. compromise an audit log server. The second scheme we
+i
+2. H(R ), the hash of the previous record, to form a present is based on asymmetric key cryptography and ad-
+i−1
+hashchain. dressesthisissue.
+3. c ,c ,c ,..., information about the keywords
+wa wb wc 5.1.SymmetricKeyScheme
+w ,w ,w ,...thatcanbeusedforsearching.
+a b c
+4. Verification information V. In our implementation, Wedescribeasymmetrickeybasedschemeforencrypt-
+i
+this is simply the hash to date of the current chain ing searchable audit log entries. Our method is derived
+of audit records (i.e., H(R)). We note that we could frompreviousworkonsearchingonencrypteddata[4,11].
+i
+also use a standard public key signature, or a MAC
+created using a key shared with a trusted verifier. If
+Setup: Suppose there are t audit log servers. The audit
+thatsharedkeyevolveswitheachrecord,wegetdesir-
+escrowagentgeneratesindependentanduniformlyrandom
+ableforwardsecuritypropertiesasdescribedin[7,8]). secretsS ,...,S andgivesS tothe jthserver.
+1 t j
+V must authenticate all of the other data in the audit
+i
+record,includingthekeywordinformationc .
+wn
+Encryption: Suppose the audit escrow agent has issued
+To construct a searchable secure audit record R, the asecretStoaparticularauditlogserver. LetH beakeyed
+i
+server first extracts keywords that characterize the record. pseudorandom function (PRF); we denote by H the PRF
+S“select * from cars
+where make=‘ford’”
+audit record creation database
+authentication keyword extraction clock
+uusseerr:: AAlliiccee SSmmiitthh
+kkeeyywwoorrdd:: ccaarrss
+kkeeyywwoorrdd:: mmaakkee
+kkeeyywwoorrdd:: ffoorrdd
+ttiimmee:: 22000033//0088//2266 2233::3344::2244
+keywords for audit record
+Figure 1. Extracting keywords for an audit record: audit records cannot only be searched by key-
+wordscontainedinthequerylogged,butalsobymeta-datasuchasusernameandtime.
+H keyedwiththesecretS. Inpractice, HMAC-SHA1can adversary is unable to link queries that had similar key-
+be used in place of H. Let E be a symmetric encryption words,sincerisanuniformlyindependentrandomvalue.
+function;wedenotebyE thefunctionE keyedwithK.
+K
+Suppose the server is to encrypt the log entry, m, along Search and Decryption: Recall there are t audit log
+with keywords w 1, w 2, ..., w n. Let flag be a constant bit- servers in our scheme, with the jth server holding a se-
+stringoflength‘. Theserverexecutesthefollowingsteps: cretS . Supposeaninvestigatorwishestoobtainasearch
+j
+capabilityforthekeywordw. Theauditescrowagent(ifhe
+1. The server chooses a random symmetric encryption
+approves)constructsthesearchcapabilityas
+key,K,tobeusedonlyforthisentry.
+2. TheservercomputestheencryptionE K(m). d w:=hH S1(w),...,H St(w)i.
+3. Theserverchoosesarandombitstringrofsomefixed We denote dj :=H (w) as the search capability compo-
+w Sj
+length. The random string r is uniformly indepen- nentcorrespondingtothe jthserver.
+dentlydrawnforeachentry. Oncegiventhecapability,theinvestigatorvisitseachau-
+4. Forifrom1tontheservercomputes dit log server. At the jth server, the investigator executes
+thefollowing:
+a :=H (w), b :=H (r), c :=b ⊕(flag|K).
+i S i i ai i i
+1. Theinvestigatorcomputes p:=H (r),whereristhe
+dwj
+In other words, for each keyword w the PRF is first randomstringstoredwiththequery.
+i
+keyed with S and is given input w i. The result a i is 2. For each c i in the entry, the investigator computes
+then used to key the PRF which is then called with p⊕c. Ifthefirst‘bitsoftheresultmatchesflag,then
+i
+input r to give b i. The result b i is then XORed with thepartyextractsKastheremainderoftheresult;oth-
+theconcatenationofflagandthesymmetrickeyK to erwise,thecomputationisdisregarded. Ifnoneofthe
+givetheoutputc i. resultsbeginwithflag,thenthequeryisnotakeyword
+5. TheserverwriteshE (m),r,c ,c ,...,c iastheen- match,andtheinvestigatormovestothenextquery.
+K 1 2 n
+cryptedentrytotheauditlog. 3. If one of the results did match, the investigator uses
+the computed K to decrypt E (m) to obtain m, the
+Informally, anadversarythatdoesnotknowSisunable K
+originalauditlogentry.
+tocomputea =H (w),andthus,b,aslongasthekeyed
+i S i i
+PRFH issecure. TheadversaryisthusunabletolearnK, Supposewhenencryptinganentry,the jthserverusesthe
+and therefore cannot decrypt the entry. Additionally, the keywordw i tocreatec i. Ifw i=w,wehaveH dwj(r)⊕c i=“user: Alice Smith”
+1
+capability
+for search master
+secret
+investigator audit escrow agent
+capability
+for search
+2
+aauuddiitt aauuddiitt … aauuddiitt
+rreeccoorrdd rreeccoorrdd rreeccoorrdd
+investigator audit log
+Figure2.Searchingthelog: First,theinvestigatorhastoobtainasearchcapabilityforthekeyword
+inquestion. Then,theshecansearchtheauditlogforthatkeyword.
+(flag|K); otherwise, this XOR will look random. There- Nevertheless, even with an efficient key update mecha-
+fore, the beginning bits of the result can be tested against nism, this scheme has serious drawbacks. The most sig-
+flagtodetermineifthereisamatch. (Thereisa2−l chance nificant is that in order for the servers to be updated, the
+of a false positive from this check. However, even in the auditescrowagentmusthavea“live”connectiontoanet-
+eventofafalsepositivefromthischeckthedecryptionat- worksharedwiththeservers. Thismakestheauditescrow
+temptwillfailwithveryhighprobability. Sincethelength agent more vulnerable to attacks. Another concern is that
+of‘doesnotactuallyaffectthesecurityofthescheme,the aftervkeyupdatesforeachoft servers,thesizeofakey-
+length of the bitstring flag can have a length significantly wordsearchcapabilityisproportionaltovt (whichcanbe-
+lessthanthatofanencryptionkey. WenotethataCRCor come quite large). Finally, if the adversary compromises
+othersimplechecksumcouldalsobeused.)Inthecaseofa theserver,hemaybeabletolearnasecretthatwouldallow
+match,theremainderoftheresultisthesymmetrickeyK, him to act as the server and receive key updates from the
+whichcanbeusedtodecryptthequery. auditescrowagent. Inthisevent,theauditlogentriesfrom
+WenotethattheuseofapseudorandomfunctionHtode- acompromisedserverwillcontinuetobevulnerable,even
+rivethesearchkeywordcapabilityimpliesthatcapabilities afterthecompromisewasdetectedandtheserverrepaired.
+fordifferentkeywordsappeartobeindependentlyrandom. Thesesecurityissuesindicatethatitisbesttoputaslittle
+Inotherwords,aninvestigatorreceivingacapabilityd for secretinformationintoaserveraspossible,motivatingthe
+w
+akeywordwlearnsnonewinformationaboutthecapability asymmetricschemeoutlinedinthenextsection.
+correspondingtoanyotherkeywordw0.
+5.2.AsymmetricScheme
+Discussion: The primary problem with the symmetric
+The shortcomings of the symmetric key based scheme
+method occurs in the case where an adversary is able to
+suggestthatanasymmetrickeybasedschemeisnecessary.
+compromise a server’s secrets. If the adversary learns S ,
+j Wenowpresentanasymmetrickeybasedschemeforcre-
+hecanbeabletocreateasearchcapabilityforanykeyword
+atingencryptedandsearchablelogentries. Ourschemeis
+thathewishesthatcanbeusedtosearchanddecryptonthe
+based on the Identity-Based Encryption scheme of Boneh
+jthserver.
+and Franklin [3]. We first provide the reader with a brief
+Thisproblemispartiallyalleviatedifweallowtheserver
+review of IBE, then describe our scheme and discuss its
+keys to be updated or evolved over time. If a particular
+attributes.
+secret S was stolen from a server that used a key-update
+j
+schemethentheadversarywillbeabletouseS tosearch
+j
+allentriesthatwerecreatedsincethelastupdate,however, Identity-BasedEncryption: Inthissection,weprovide
+hewouldnotbeabletoreadpastlogentries. abriefreviewofIdentity-BasedEncryptionandsomenec-essarymathematicaldetails.2 TheIdentity-BasedEncryp- Setup: Tosetupourscheme,wefirstsetupaninstance
+tion scheme we use is based on Tate pairings over super- oftheaboveIdentity-BasedEncryptionscheme.Inoursys-
+singularellipticcurves. tem,theauditescrowagentisgiventheIBEmastersecret
+In an Identity-Based Encryption scheme, any arbitrary s, and all servers that contribute to the audit log are given
+stringcancompriseapublickey. IfAlicewishestosenda thesystemparametersP.
+message to Bob, she simply uses a string uniquely iden-
+tifying Bob – say “bob@parc.com” – as the encryption Encryption: Supposetheserveristoencryptthelogen-
+key to encrypt her message. A system-wide master secret trym,alongwithkeywordsw ,w ,...,w . Theserverper-
+1 2 n
+is used by a trusted escrow agent to generate the private formsthefollowingsteps:
+key corresponding to a public key. Bob authenticates to
+1. The server chooses a random symmetric encryption
+the trusted third party (in the same way he might authen-
+key,K,tobeusedonlyforthisentry.
+ticate to a CA) to obtain the private key corresponding to
+2. The server encrypts the log entry using K, to get
+“bob@parc.com”,whichhethenmayusefordecryption.
+E (m).
+K
+IBE SETUP. To set up the system, one first selects large
+primes pandq,twogroupsG andG oforder3 q,andan 3. For each keyword w i, the server computes the
+1 2
+Identity-BasedEncryptionc ofthestring(flag|K)us-
+arbitrarygeneratorP ∈G . Onealsopicksanadmissible i
+0 1
+bilinearmape:G ×G →G andtwocryptographichash ing w i as the public key and P as the public parame-
+1 1 2
+functions H :{0,1}∗ →G and H :G →{0,1}n. The ters.
+1 1 2 2
+mastersecretisarandomvalues∈Z q,knownonlytothe 4. The server writes E K(m),c 1,c 2,...,c n as the entry to
+trustedescrowagent. Thesystemparametersare theauditlog.
+Since a new key K is generated for each log entry (and is
+P=(p,q,G ,G ,e,P ,P ), where P =sP ,
+1 2 0 1 1 0 thrownawaybytheserverimmediatelyafterthelogentry
+isgenerated),theonlywaytorecoveralogentryistode-
+andareknownbyallparties.
+cryptoneofthec’sandobtainK. Itfollowsdirectlyfrom
+i
+IBE KEY GENERATION. To issue the private key corre- thesecurityofIdentity-BasedEncryption[3]thattheonly
+sponding to the public key w, the escrow agent uses the way to recover m is to know the private key correspond-
+mastersecretstocomputed w:=sH 1(w)∈G 1. ing to one of the keywords w i. The particular Identity-
+Based Encryption scheme we have chosen also satisfies a
+IBE ENCRYPTION. To encrypt the plaintext m∈{0,1}n
+stronger security property, namely key-privacy [1], which
+usingastringwasthepublickey,one(1)computesQ =
+w impliesthatanadversarycanobtainnoinformationabout
+H (w)∈G ,(2)computesg =e(Q ,P ),(3)picksaran-
+1 1 w w 1 whatpublickeyw wasusedtoproduceanyciphertextc.
+domr∈Z ,and(4)computes i i
+q (Wereferthereaderto[2]foradetailedproofofthekey-
+c=hrP ,m⊕H (gr)i. privacy property for IBE.) This implies that the presence
+0 2 w ofthec inthelogentryrevealsnoinformationaboutwhat
+i
+keywordsarepresentinthelogentry,andanattackercan-
+IBEDECRYPTION. Todecryptaciphertextc=hU,Vius-
+notcorrelateentriesintheauditlogbasedontheirkeyword
+ingd astheprivatekey,onecomputes
+w tags.
+m=V⊕H (e(d ,U)).
+2 w SearchandDecryption: Supposeaninvestigatorwishes
+Sinceeisabilinearmap4,itfollowsthatdecryptionopera- toobtainasearchcapabilityforthekeywordw. Theaudit
+escrow agent (if he approves) constructs the capability d
+tionistheinverseoftheencryptionoperation. Wereferthe w
+astheIdentity-BasedEncryptionprivatekeycorresponding
+readerto[2,3]forthedetailsregardingthesecurityofthis
+to the string w. For each audit log entry, the investigator
+scheme.
+executesthefollowing:
+2There are actually two IBE schemes described by Boneh and
+1. For each c the investigator attempts to IBE-decrypt
+Franklin: the simpler is semantically secure, the other satisfies chosen i
+ciphertextsecurity.Tokeepthepresentationclear,webaseourdiscussion c i usingtheprivatekeyd w. Iftheprefixoftheresult
+onthesemanticallysecurescheme.Itisstraightforwardtogeneralizeour matches flag then the investigator extracts K as the
+worktotheschemesatisfyingchosenciphertextsecurity,andwerecom- remainder of the result. If none of the results begin
+mendusingtheirmoresecureschemeinanyimplementationofthesecure
+with flag then the log entry does not match and the
+auditlogsystemdescribedhere.
+3Tobeprecise,fortheschemeweuse,G 1isanorder-qsubgroupof investigatormovestothenextlogentry.
+ellipticcurvegroupoverasupersingularellipticcurve, whileG 2 isan
+order-qsubgroupF p2. 2. If one of the results did match, the capability holder
+4Thatis,e(aP,bQ)=e(P,Q)abforallP,Q∈G 1andalla,b∈Z q. maycomputeK todecryptE K(m)toobtainm.Notice that the investigator holding some capability d theserversmaycollectqueriesinto“blocks”tobesentto
+w
+for keyword w will not be able to gain a capability d w0 to theauditlogallatonce.
+searchforanotherkeywordw0. Again,thisfollowsdirectly Suppose a server collects log entries m ,...,m to be
+1 t
+fromthesecurityoftheIdentity-BasedEncryptionscheme: sent to the audit log, sharing in total the set of keywords
+the capabilities correspond to different private keys in an w ,...,w . Theservercreatesanauditlogblockandindex
+1 u
+Identity-Based Encryption scheme, which cannot be de- asfollows.
+rived from each other, even if large numbers private keys
+1. The server chooses random symmetric encryption
+areknown.
+keys,K ,...,K,forone-timeuse.
+1 t
+2. Theserverencryptseachlogentrym usingK,toget
+Discussion: This asymmetric scheme corrects many of i i
+E (m).
+thedrawbacksofthesymmetricscheme. Sinceeachserver Ki i
+3. For each distinct keyword w , the server finds the
+onlystorespublicparameters, therearenosecretkeysfor j
+indices {i , ..., i } for which w is a keyword
+anattackertosteal. Compromisingaserverdoesnotallow j,1 j,‘(j) j
+where‘(j)isthenumberofentriesforwhichw isa
+theattackertosearchordecryptanyentriesintheauditlog j
+keyword. (Thatis,w isakeywordinq exactlywhen
+thathavealreadybeengeneratedandstored. j i
+i∈{i ,...,i }.)
+Adrawbackofthisschemeistheperformanceoverhead j,1 j,‘(j)
+of using Identity-Based Encryption; however, optimiza- 4. TheservercomputestheIdentity-BasedEncryptionc
+j
+tions(discussedinthenextsection)areavailableforspeed- ofthestring
+ingupouruseofIBE.
+(flag|i |K |···|i |K )
+We note that this scheme is also easy to modify to al- j,1 ij,1 j,‘(j) ij,‘(j)
+lowseparatingtheabilitytofindrecordsmatchingagiven usingwasthepublickeyandPasthepublicparame-
+keyword from the ability to decrypt those records. To do ters.
+this,weomittherecordkeyK intheIBEencryptionsper-
+5. The server writes E (m ),...,E (m),c ,...,c as
+formedthatgeneratethetagsc (leavingonlytheflag),and
+K1 1 Kt t 1 u
+i theblockandindextotheauditlog.
+addanencryptionofKencryptedunderanotherpublickey
+belonging to the escrow agent. This introduces an extra As the length of the IBE-encrypted strings grow we may
+“round trip” to the escrow agent to decrypt those records usehybridencryptionforefficiency:foralongstringMwe
+forwhichamatchisdiscovered. computetheIBEencryptionaone-timesymmetrickeyK 0,
+then perform block encryption of M using the symmetric
+5.3.OptimizationsfortheAsymmetricScheme key K . (This was not necessary in the non-indexed case,
+0
+asthestringsencryptedwereveryshort.)
+The operations in the asymmetric scheme are signifi-
+Indexing introduces a significant performance advan-
+cantlymoreexpensivethanthoseofthesymmetricscheme.
+tageforsearching/decryptionwhenkeywordsarerepeated
+The main bottlenecks are the computations of the pairing
+among several audit log entries within a block. When a
+and modular exponentiations for each keyword w. How-
+keyword w is present in k entries in a log block, only one
+ever, if the same keywords are used frequently then inter-
+pairing operation and one modular exponentiation are re-
+mediateresultscanbereused. Wediscussthreesuchopti-
+quiredtofindanddecryptthekauditlogentries.
+mizationsinthissection.
+Usingindexingalsoresultsinabigperformancewinfor
+PAIRING REUSE. Our first observation is that the com- audit log generation. For a keyword w appearing k times
+putation of g only needs to be performed once per key- inablock,againonlyonepairingoperationandonemodu-
+w
+word. Subsequent Identity-Based Encryptions using w as larexponentiationarerequiredtogeneratetheindexentry
+thepublickeycanreuseg ifithasalreadybeencomputed relevanttow.
+w
+forsomeotherlogentry. Encryptionthensimplybecomes We note that this method may open up a slight vulner-
+amatterofpickingarandomrandfollowingsteps(3)and ability: an attacker may obtain partial information about
+(4) of encryption (see explanation of Identity-Based En- thefrequencyofkeywordspresentinasingleblockbyob-
+cryption above). This speeds up encryption: over a set servingthelengthsoftheIBEencryptedstringswithinthe
+of log entries in which a keyword repeated k times, only index. Thiscanbethwartedbyadjustingtheblocksizeto
+one pairing operation and k modular exponentiations are be small enough to limit the amount of statistical knowl-
+required. edgeobtained(which, inthelimitoft =1, reducestothe
+securityofthenon-indexedsolution.)
+INDEXING. Furthersavingsarepossiblebycreatinganin-
+dexofkeywordsatperiodicintervalsinthelog,insteadof RANDOMNESS REUSE. Lastly, we consider an optimiza-
+storingIBEencryptionswitheachlogentry. Ifthesystem tion for the decryption process. We perform an indepen-
+designallowsbufferingofentriessenttotheauditlog,then dentIBEencryptiontocreatingthec correspondingtothe
+ioptimizationmethod encryption search/decryption
+pairings exponentiations pairings
+none t·v t·v t·v
+pairingreuse(PR) u t·v t·v
+indexing u u u
+randomnessreuse(RR) t·v t·v t
+PR+RR u t·v t
+allthree u u 1
+Table1.Numberofcompute-intensiveoperationsneededtoprocessablockoft logentries,includ-
+ingintotaludistinctkeywords,withanaverageofvkeywordsperlogentry.
+keywordsw forgivenlogentry. However,itispossibleto ingsasdescribedinSection5.3. Thecacheisimplemented
+i
+reuseanintermediateresultoftheIBEencryptionprocess: as a simple hash table which associates the pairing result
+we may save the value r chosen in step (3) of the encryp- g with the keyword w. Every time a keyword w that has
+w
+tionthatproducesc touseincalculationofc ,...,c . As not been seen before is used, the newly computed pairing
+1 2 n
+longasthew aredistinctkeywords, thisreuseoftheran- g is stored in the hash table. Another optimization we
+i w
+domnessproducesresultsindistinguishablefromtheorigi- implementedisthereuseofrandomnessdescribedinSec-
+nalmethod. Thisspeedsupdecryption,asonlyonepairing tion5.3.
+is needed for each distinct r chosen. This implies that in- We also implemented the hash chain method of check-
+steadofnpairingsrequiredtotestifanyofthec matcha pointingdescribedinSection4. Theauditlogservercom-
+i
+givenkeyword,only1pairingisrequired. putes the updated value of the hash chain for every audit
+logentryitconstructs. Thecurrenthashvaluecanberead
+OPTIMIZATION SUMMARY Table1summarizesthenum-
+atanypointintime. Apartywhichreadsthisvaluecanuse
+berofcompute-intensiveoperationstoprocess(encryptor
+itlatertochecktheintegrityoftheauditlogforallentries
+search/decrypt) a block of audit log entries. Table 2 sum-
+writtenbeforethehashcheckpoint.
+marizes the storage requirements of a block of audit log
+Finally,weimplementedthetooltheinvestigatorusesto
+entries.
+search the audit log when given a capability. The tool re-
+trievesallrecordsfromtheauditlogandsearchesthemone
+6.Implementation
+recordatatime. Asmentionedabove,ourimplementation
+Weimplementedadatabaseauditlogsystemthatcreates uses the same randomness for each encryption within an
+asymmetricallyencryptedandsearchableentries. Thelog- entry. Therefore,searchinganentryonlyrequiresoneIBE
+ger is implemented as a MySQL proxy server. The user pairing. Infuturework,weplantoimplementtheindexing
+signs onto the proxy and makes SQL queries. The proxy algorithmdescribedinSection5.3.
+server,uponreceivingaquery,logsthequeryinadditionto OurperformancemeasurementsweretakenonaPentium
+passingittotheMySQLdatabaseserver. IVprocessormachinerunningRedHatLinux9.0with2GB
+The proxy was developed on a Linux platform and is ofmemory. Thespeedoftheprocessoris2.8GHz.
+multi-threadedsothatmultipleuserscanbeservedsimul- We measured the added cost of encryption for each
+taneously and that the logging component runs in parallel searchablekeywordthatispartofthequery. Ifakeyword
+with the rest of the system. The audit log server attaches w does not have a corresponding cache entry g w, then the
+thedateandtimetotheauditlogentry. Thelogentriesare server must hash w into the group G 1, execute a pairing
+writtentoanotherMySQLdatabaseserverthatisdedicated to compute g w, and also compute a modular exponentia-
+tostoringauditlogentries. tion. Thecostoftheseoperationstotals180ms. However,
+WeusedtheStanfordIdentity-BasedEncryptionlibrary if there is a cache entry for g w, the server only needs to
+[12]forthebasicIBEoperations5 andtheCryptliblibrary executeanexponentiationandthecostis5ms.
+[5] as the implementation of the the symmetric encryp- Clearly,theuseofthecacheisimportantforefficientop-
+tion of the query itself. We parameterize IBE with values erationofthesystem. Weexpectthatinmostapplications
+p=1024andq=160. Weusea128-bitAESkeyforthe most extracted keywords will have a corresponding pub-
+symmetricencryption. lickeyinthecache(providedthesystemhasbeenrunning
+Theserversoftwarehasacachethatisusedtoreusepair- forasufficientamountoftime). Wealsodonotanticipate
+memorylimitationstoeffectmostcaches. A100MBcache
+5WenotethatanimplementationofIBEthatisapproximatelytwice
+canholdapproximately800,000publickeys. Incompari-
+asfasthasrecentlybecomeavailableaspartofthemiraclpackage[10].optimizationmethod storagerequirement(inbits)
+none t·(M+v·log p+v·n )
+2 H2
+indexing t·M+u·(log p+n )+t·v·log t
+2 H2 2
+randomnessreuse(RR) t·(M+log p+v·n )
+2 H2
+indexing+RR t·M+log p+u·n +t·v·log t
+2 H2 2
+Table2.Storagerequirementsofablockoft logentries,includingintotaludistinctkeywords,with
+anaverageofvkeywordsperlogentry. Mistheaveragebitlengthofalogentry, pistheprimeused
+forIBEoperations,andn istheoutputbitlengthofthehashfunctionH usedforIBEoperations.
+H2 2
+Pairingreusehasnoeffectonstoragerequirements.
+sonthenumberofentriesinthesecondeditionoftheOx- [2] D.Boneh,G.D.Crescenzo,R.Ostrovsky,andG.Persiano.
+fordEnglishDictionaryisapproximately300,000. Searchablepublickeyencryption. Submittedforpublica-
+The tool which searches the encrypted audit log must tion.Seehttp://eprint.iacr.org/2003/195/.
+computeapairingperentry. Thisoperationtakes81ms. [3] D.BonehandM.Franklin. Identity-basedencryptionfrom
+the Weil pairing. In Proc. CRYPTO 01, pages 213–229.
+Springer-Verlag,2001. LNCS2139.
+7.Conclusion
+[4] E.-J.Goh.Buildingsecureindexesforsearchingefficiently
+Designing a secure audit log is not a trivial task. Apart onencryptedcompresseddata. Submittedforpublication.
+Seehttp://eprint.iacr.org/2003/216/.
+fromguaranteeingpropertiessuchastamperresistanceand
+[5] P. Gutmann. cryptlib. http://www.cs.auckland.
+verifiability,thecontentsoftheauditlogmayitselfbecon-
+ac.nz/˜pgut001/cryptlib/.
+sidered sensitive, and need to be protected from unautho-
+[6] S.HaberandW.Stornetta.Howtotime-stampadigitaldoc-
+rizedaccess.
+ument. InA.MenezesandS.A.Vanstone, editors, Proc.
+A natural approach to such protection is to encrypt the CRYPTO90,pages437–455.Springer-Verlag,1991. Lec-
+auditlog,whichneedstobedoneinsuchawaythatthelog tureNotesinComputerScienceNo.537.
+stillremainseffectivelysearchable.Wepresentedascheme [7] B. Schneier and J. Kelsey. Cryptographic support for se-
+inwhichweuseidentity-basedencryptiontoprotectsym- cure logs on untrusted machines. In Proceedings of the
+metrickeysthatareusedtoencryptauditlogentries. Priv- 7th USENIX Security Symposium, pages 53–62. USENIX
+ileged audit escrow agents can create search capabilities Press,1998.
+[8] B. Schneier and J. Kelsey. Minimizing bandwidth for re-
+that allow their bearer to search the audit log for records
+mote access to cryptographically protected audit logs. In
+matchingcertainkeywords.
+Web Proceedings of the 2nd International Workshop on
+We implemented our scheme as a secure audit log for
+Recent Advances in Intrusion Detection. USENIX Press,
+MySQL database queries. It turns out that the identity-
+1999.
+based encryption scheme we use introduces considerable [9] B.SchneierandJ.Kelsey.Secureauditlogstosupportcom-
+overhead(althoughsmallenoughtobenegligibleinanin- puterforensics.ACMTransactionsonInformationandSys-
+teractive system), but it buys us security and convenience temSecurity(TISSEC),2(2):159–176,1999.
+oversymmetrickeybasedschemes. [10] Shamus Software Ltd. MIRACL: Multiprecision Inte-
+Our current implementation relies on checkpointing to ger and Rational Arithmetic C/C++ Library. http://
+indigo.ie/˜mscott/.
+securetheintegrityandverifiabilityoftheauditlog. While
+[11] D.X.Song,D.Wagner,andA.Perrig. Practicaltechniques
+the focus of our work so far has been to investigate the
+forsearchesonencrypteddata. InIEEESymposiumonSe-
+searchability of the audit log, we plan to implement more
+curityandPrivacy,pages44–55,2000.
+advanced integrity protection mechanisms to improve the
+[12] StanfordAppliedCryptographyGroup. IBEsecuree-mail.
+overallsecurityofthesystem. http://crypto.stanford.edu/ibe.
+8.Acknowledgments
+This workwas sponsoredby DARPA grant F30602-03-
+C-0037.
+References
+[1] M. Bellare, A. Boldyreva, A. Desai, and D. Pointcheval.
+Key-privacy in public-key encryption. Lecture Notes in
+ComputerScience,2248,2001.

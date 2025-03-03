@@ -1,0 +1,1072 @@
+A Crawler-based Study of Spyware on the Web
+AlexanderMoshchuk,TanyaBragin,StevenD.Gribble,andHenryM.Levy
+DepartmentofComputerScience&Engineering
+UniversityofWashington
+{anm,tbragin,gribble,levy}@cs.washington.edu
+Abstract servers[16]. TheAOLscanmentionedabovehasprovided
+simplesummarystatisticsbydirectlyexaminingdesktopin-
+Malicious spyware poses a significant threat to desktop fections [2], while a recent set of papers have considered
+securityandintegrity. Thispaperexaminesthatthreatfrom userknowledgeofspywareanditsbehavior[6,29].
+an Internet perspective. Using a crawler, we performed a In this paper we change perspective, examining the na-
+large-scale, longitudinal study of the Web, sampling both ture of the spyware threat not on the desktop but from an
+executablesandconventionalWebpagesformaliciousob- Internetpointofview. Todothis,weconductalarge-scale
+jects. Our results show the extent of spyware content. For outward-looking study by crawling the Web, downloading
+example,inaMay2005crawlof18millionURLs,wefound contentfromalargenumberofsites,andthenanalyzingit
+spyware in 13.4% of the 21,200 executables we identified. to determine whether it is malicious. In this way, we can
+At the same time, we found scripted “drive-by download” answerseveralimportantquestions. Forexample:
+attacksin5.9%oftheWebpagesweprocessed. Ouranaly-
+• HowmuchspywareisontheInternet?
+sisquantifiesthedensityofspyware,thetypesofofthreats,
+and the most dangerous Web zones in which spyware is • Where is that spyware located (e.g., game sites, chil-
+likely to be encountered. We also show the frequency with dren’ssites,adultsites,etc.)?
+whichspecificspywareprogramswerefoundinthecontent
+• Howlikelyisausertoencounterspywarethroughran-
+we crawled. Finally, we measured changes in the density
+dombrowsing?
+of spyware over time; e.g., our October 2005 crawl saw a
+substantialreductioninthepresenceofdrive-bydownload • Whatkindsofthreatsdoesthatspywarepose?
+attacks,comparedwiththosewedetectedinMay. • What fraction of executables on the Internet are in-
+fectedwithspyware?
+• What fraction of Web pages infect victims through
+1 Introduction scripted,drive-bydownloadattacks?
+• Howisthespywarethreatchangingovertime?
+Inthespanofjustafewyears,spywarehasbecomethe
+Internet’s most “popular” download. A recent scan per- Overall,ourgoalistoprovideaquantitativeanalysisofthe
+formedbyAOL/NCSAof329customers’computersfound extentofspyware-ladencontentintheWeb.
+that 80% were infected with spyware programs [2]. More Spyware typically installs itself surreptitiously through
+shocking, each infected computer contained an average of oneoftwomethods.First,ausermightchoosetodownload
+93spywarecomponents. Theconsequencesofspywarein- softwaretowhichpiggy-backedspywarecodehasbeenat-
+fectionscanbesevere,includinginundatingthevictimwith tached. Piggy-backedspywareisparticularlycommonwith
+pop-up ads, stealing the victim’s financial information or file-sharingsoftware;theKazaasystem[10]alonehasbeen
+passwords,orrenderingthevictim’scomputeruseless. thesourceofhundredsofmillionsofspywareinstallations.
+Despitetheseverityoftheproblem,littleisknownabout Second, a user might visit a Web page that invisibly per-
+the nature or extent of spyware in the Internet. Previous forms a “drive-by download” attack, exploiting a vulnera-
+studies have taken a desktop- or user-centric view. For bility in the user’s browser to install software without the
+example, in an earlier study, we measured the presence user’sconsent.
+of a small set of spyware programs at the University of We have designed and implemented a scalable, cluster-
+Washingtonbysniffingtheuniversity’sInternetconnection based analysis platform that uses virtual machines (VMs)
+for communication between client desktops and spyware to sandbox and analyze potentially malicious content. By
+1installing and running executable files within a clean VM vulnerabilities. While there are some differences in our
+image,wecanusecommercialanti-spywaretoolstodeter- methods, our study differs from theirs in several other
+mine whether a specific executable file found by our Web significantways. First,weexaminedexecutablefilecontent
+crawlercontainspiggy-backedspyware. ByvisitingaWeb for piggybacked spyware programs in addition to examin-
+pagewithanunmodifiedbrowserinsideacleanVM,wecan ingWebpagesfordrive-bydownloadattacks. Second, we
+useheuristic“triggers,”suchastheinstallationofanewli- providearichanalysisofthespywarethatweencountered,
+braryorthecreationofanewprocess,todeterminewhether including which areas of the Web are most infected, and
+the Web page mounts a drive-by download attack. We de- the fraction of spyware that contains malicious functions,
+scribe our methodology in detail, including the heuristics such as modem dialing or Trojan downloading. Third,
+thatmaketheapproachpracticalandscalable. we examined how spyware on the Web has changed over
+We carried out our study by running multiple crawler- time. Fourth, weanalyzedthesusceptibilityoftheFirefox
+basedexperiments, firstinMayof2005, andthenagainin browser to drive-by downloads, in addition to the Internet
+October 2005. This allowed us to evaluate changes in the Explorerbrowser.
+spyware environment over that five-month period. Our re-
+Overall, at the time of thepublication oftheir technical
+sultsshowthatspywareisasignificantthreatintheInternet.
+report[24],HoneyMonkeyhadbeenmorefocusedmoreon
+Forexample,wefoundpiggy-backedexecutablespywarein
+thetool. Incontrast,ourstudyhasfocusedontheanalysis
+4.4% of the domains we crawled in October 2005. More-
+ofourresultstounderstandthespywarethreatfromseveral
+over,morethan1in20oftheexecutablefilesweexamined
+differentpointsofview.
+contained spyware. We also saw significant changes, e.g.,
+The Gatekeeper project [26] monitors extensibility
+wefoundscripteddrive-bydownloadattacksin3.4%ofthe
+pointsintheWindowsoperatingsystemanditsapplications
+domainsweexaminedinMay,butinonly1.6%ofdomains
+to detect spyware programs. This approach complements
+inOctober. Whilemuchofthespywareweidentifiedisbe-
+signature-baseddetectionschemes,andbearssomesimilar-
+nignadware,wealsofoundalargenumberofTrojandown-
+ity to “trigger” mechanisms we use in our drive-by down-
+loadersandothermoremaliciousthreats.
+load study. It can detect arbitrary spyware programs that
+Therestofthispaperisorganizedasfollows. Section2
+usemonitoredextensionpointsandobservetheseprograms
+describes previous work that places our current study in
+astheyarebeinginstalled.
+context. Section 3 presents both methodology and results
+forourexaminationofInternetexecutables. Themethodol- ArecenteditionoftheCommunicationsoftheACMcon-
+ogyandresultsforourdrive-bydownloadstudyaredetailed tained over a dozen articles on the spyware problem [3, 4,
+inSection4. Finally,Section5summarizesourresults. 6,7,8,12,14,17,18,20,23,27,29].Thesearticlesdiscuss
+issues such as the public perception of spyware, security
+threats caused by spyware, and frameworks for assessing
+2 RelatedWork
+andcategorizingspywareprograms.
+Many projects have examined the detection, measure-
+In our previous work, we used passive network moni-
+ment, and prevention of malware, such as worms and
+toring to measure the extent to which four specific adware
+viruses [11, 13, 19]. Some of their techniques may ulti-
+programs had spread through computers on the University
+matelybeapplicabletothedetectionandpreventionofspy-
+of Washington campus [16]. In this paper, we study the
+ware. A notable example is the semantics-aware malware
+spywareproblemfromadifferentperspective. Specifically,
+detection project [5], which uses an instruction-level se-
+we measure the extent to which: (1) executable Web con-
+manticanalysisofprogramstomatchtheirbehavioragainst
+tentcontainsspywareand(2)Webpagescontainembedded
+high-levelsignaturetemplates. AnotherexampleisGhost-
+drive-by download attacks. Both studies confirm the exis-
+buster[25],whichdetectsOSrootkitinstallationsbycom-
+tenceofasignificantspywareproblem.
+paringthefile-systemofanOSusingaprogramrunningon
+TheAOL/NCSAonlinesafetystudyconductedapollof
+theOSandscanningfromanOSbootedfromaCD.
+329householdsandalsoexaminedtheircomputersforthe
+presence of spyware [2]. Over half of the respondents be- At least two commercial anti-spyware companies have
+lievedtheirmachineswerespyware-free;inreality,80%of implemented automated crawlers to seek out new spy-
+computers scanned were infected with spyware programs. ware threats on the Web. Though we have not found de-
+TheAOL/NCSAstudydidnotattempttoidentifyhowthese tailedtechnicaldescriptionsoftheirarchitecture,Webroot’s
+computersbecameinfected. Phileas [28] system appears to use a cluster of computers
+Both our work and the Strider HoneyMonkey toscanWebcontentforknownthreatsandpatternsthatare
+project [24] are inspired by honeypot techniques [15]. suggestive of new browser exploits. Sunbelt Software has
+StriderHoneyMonkeyusesamethodthatissimilartoours announcedthatisisbuildlingaWebcrawlertoautomatethe
+to construct a tool to find Web sites that exploit browser identificationofnewspywareoutbreaks[22].
+23 Spyware-InfectedExecutablesintheWeb list of pages to crawl. Note that JavaScript programs can
+dynamically construct URLs when interpreted. Since our
+This section describes our study of spyware in exe- Web crawler does not execute JavaScript code, we missed
+cutable files on the Web. We first examine the tools and anysuchexecutables.
+infrastructure that we constructed to carry out the study.
+We then discuss high-level results and answer the follow-
+3.1.2 RunningexecutableswithinaVM
+ingquestions:
+Oncewedownloadedanexecutable,weinstalledandranit
+• Which spyware programs are most prevalent and
+in a clean VM. This was challenging; while it is simple to
+whichsitesdistributethemostspyware?
+run a “naked” executable file, software is often distributed
+• ArespywareexecutablesuniformlyspreadontheWeb using an installer framework, such as Windows Installer.
+orconcentratedinspecificareas? Unfortunately, installers typically interact with users, re-
+• What spyware functions are more common (e.g., ad- quiring them to perform manual tasks such as agreeing to
+warevs. keylogging)? a EULA, filling in demographic information, or pressing
+buttonstobegintheinstallationprocess.
+• How is the density of spyware-laden executables
+To automate the execution of installer frameworks, we
+changingovertimeontheWeb?
+developed a tool that uses heuristics to simulate common
+userinteractions. Forexample,someofourheuristicsiden-
+3.1 Study tools and infrastructure
+tifyandclickonpermission-grantingbuttonssuchasnext,
+OK,run,install,orIagree.Otherheuristicsidentifyandse-
+Thisstudyrequiredanautomatedsolutiontothreeprob-
+lectappropriateradiobuttonsorcheck-boxesbylookingfor
+lems: (1) determining whether a Web object contains exe-
+labels commonly associated with EULA agreements. The
+cutable software, (2) downloading, installing, and execut-
+tool also looks for type-in boxes that prompt the user for
+ingthatsoftwarewithinavirtualmachine, and(3)analyz-
+information, such as their name or email address, and fills
+ing whether the installation and execution of the software
+them in with dummy information. While our tool cannot
+causedaspywareinfection.Inaddition,werequiredahigh-
+handleallinstallationscenariosperfectly,weverifiedthatit
+performance infrastructure to solve these problems so that
+successfullynavigatesallpopularinstallerframeworksand
+wecouldanalyzealargenumberofexecutablesfromava-
+wehaverarelyseenitfail.
+rietyofsourcesinareasonableamountoftime.
+Our study focuses on Windows executables. Accord-
+ingly, foreachexecutablethatweanalyze, wefirstcreated
+3.1.1 Findingexecutables
+a VM that contained a clean Windows XP guest operating
+WeassumedthataWebobjectwasanexecutableifeither: systemimage. Todothis,weusedthe“snapshottake”and
+(1) the Content-type HTTP header provided by the Web “snapshotrevert” functionsprovided inVMware Worksta-
+server when downloading the object was associated with tion5.0[21]runningonaLinuxhostoperatingsystem. For
+an executable (e.g., application/octet-stream), eachnodewithinourcluster,wemaintainedapoolofVMs.
+or(2)itsURLcontainedanextensionknowntobeassoci- When we wished to analyze an executable, we allocated a
+ated with executables and installers (e.g., .exe, .cab, VM from this pool, rolled-back the VM to a clean check-
+or .msi). Once we downloaded a Web object, we also point, injected the executable or installer image into the
+looked for well-known signatures at the beginning of the VM,andusedourtooltoinstallandexecutetheprogram.
+filetohelpusidentifyitstype. Ifwecouldnotidentifythe
+file’stype,weassumeditwasnotanexecutableanddidnot
+3.1.3 Analyzingtheinstalledexecutable
+analyzeit. Whileourapproachmayhavemissedsomeex-
+ecutables, it rarely produced false positives. Accordingly, Once an executable was installed and run in a VM, our fi-
+ourstudymayunderestimatethenumberofexecutablefiles nalchallengewastodeterminewhetherthatexecutablehad
+ontheWeb,butitisunlikelytooverestimateit. infectedtheVMwithspyware. Todothis,werantheLava-
+Some executable files on the Web are not immediately softAdAwareanti-spywaretool[1]intheVM,usingscripts
+obvioustoaWebcrawler.Twoinstancesofthisareexecuta- tolaunchthetoolandcollecttheinfectionanalysisfromits
+blesembeddedinarchives(suchasZIPfiles),andexecuta- emitted logs. The log information we collected was rich
+bles whose URLs are hidden in JavaScript. To handle the enoughforustoidentifywhichspywareprogramswerein-
+firstcase,wedownloadedandextractedarchivefiles,look- stalled. Using online databases of spyware, we also man-
+ing for filenames with extensions associated with executa- ually classified which functions those spyware programs
+bles. Tohandlethesecondcase, ourWebcrawlerscanned contained,suchaskeystrokelogging,adware,Trojanback-
+JavaScriptcontentlookingforURLsandaddedthemtothe doors,orbrowserhijacking.
+3Ofcourse,AdAwarecandetectonlythosespywarepro- the owner site, we allowed our crawler to fetch executable
+grams that have signatures within its detection database. contentlinkedtofromtheseedsitebuthostedonadifferent
+Accordingly, our analysis misses spyware programs that Webserver.
+AdAwaredoesnotfind.Alsonotethatweonlycollectedin- For comparison with our chosen categories, we also
+formationaboutspywaresoftwarethatisinstalled. Though crawled a number of “randomly selected” Web sites. For
+manyanti-spywaretoolssuchasAdAwarealsoidentifyma- thisstudy,weusedarandomwalkofthelinkstructureofthe
+liciouscookiesorregistryentriesasspywarethreats,weex- Web. WefirstscrapedkeywordsfromMetaspy,whichlists
+cludedthese,focusingonlyonspywaresoftware. in-progress searches occurring on the Metacrawler search
+To speed up the AdAware sweep, we pruned the Win- engine. Next, we performed Google searches using those
+dows/XPimageinstalledinourVMsothatitcontainedas keywords and selected several results at random rankings
+few files and ran as few components as possible. We also fromeachsearch. Startingfromtheresults’Webpages,we
+disabled the host firewall and automatic updates, so as not followedhyperlinksatrandomtoadistanceof8linksaway
+tointerferewithouranalysis. andconsideredtheresultingsitestobe“random.”
+3.3 Examining the changing spyware
+3.1.4 Performance
+environment
+Ourexecutableanalysisinfrastructurewashostedona10-
+nodeclusterconsistingofdual-processor,2.8GHzPentium Toevaluatethewayinwhichthespywarethreatischang-
+4machines,eachwith4GBofRAMandsingle80GB7200 ing over time, we used our methodology to conduct exe-
+RPMdisks.Onaverage,ittook92secondstocreateaclean cutableprogramcrawlsontwooccasions:inMay2005,and
+VM,installanexecutable,runit,andperformanAdAware thenagain5monthslater,inOctober2005.Ineachcase,we
+sweep. Ofthistime,wespentaround1-2secondscreating beganfromscratch,generatinglistsofcrawlingseedsfrom
+the VM, 55 seconds installing and running the executable the Google directory and the results of category-specific
+intheVM,and35secondsperformingtheAdAwaresweep. Google keyword searches, as described above. Therefore,
+By parallelizing our analysis to run one VM per processor each crawl represents a partial view of the Web, informed
+inourcluster,wecouldanalyze18,782executablesperday. in part by Google’s page rankings at that moment in time.
+Inpractice,wefoundthatthebottleneckofoursystemwas Thisallowsusfollowtime-basedtrendsofexecutablespy-
+crawlingtheWebforexecutables,ratherthananalyzingthe wareintheInternet.
+executablesoncefound. Note that when analyzing the May crawl, we used the
+most recent version of the AdAware anti-spyware tool
+3.2 Web crawling that was available at that time (signature database version
+SE1R42, released on April 28, 2005). For the October
+We used the Heritrix public domain Web crawler [9] to crawl, we used an updated version of AdAware (signature
+gatheracrawlofover2,500InternetWebsites. Tounder- database version SE1R70, released on October 12, 2005)
+stand how spyware had penetrated different regions of the thatcontainedmorerecentspywaresignatures.
+Web,wecrawledsitesfromeightdifferentcategories:adult
+entertainmentsites,celebrity-orientedsites,games-oriented 3.4 Limitations
+sites,kids’sites,musicsites,onlinenewssites,pirate/warez
+sites,andscreensaveror“wallpaper”sites. Inaddition,we Our study has several limitations due to our measure-
+crawled c|net’s download.com shareware site, which pro- mentmethodandthenatureoftheWebitself. First,wedid
+videsalargenumberofdownloadableexecutables. notcrawltheentireWeb–ourresultsarebasedonadirected
+Within each category, we selected sites using both sampling of Web pages and executables. While our sam-
+the Google directory and the results of category-specific pling explores what we believe are interesting parts of the
+Google keyword searches. For each selected Web site, we Web, such as Google-selected domains and URLs in vari-
+usedthetop-levelpageasaseedandthencrawledtoadepth ous categories, we cannot prove that this is representative
+ofthreelinksaway,restrictingourselvestopageshostedon ofwhatpeopleactuallyencounterwhilebrowsingtheWeb
+the same domain. We chose a depth of three in order to orthosecategoriesasawhole. Second,ourgoalistostudy
+balancethoroughcoverageofindividualsiteswithbreadth thepresenceordensityofspywareontheWeb; wecannot
+across many sites. With a depth of three, we crawled an extrapolate any relationship between that density and the
+averageof6,577pagespersite. presenceofthreatsonthedesktop,sincethelatterisbased
+ManyWebsiteshostdownloadableexecutablesonsepa- onthebehaviorofrealusers. Aspreviouslynoted,weand
+rateWebserversoroutsourcetheirdistributiontothirdpar- othershavemeasuredthedesktopthreatseparately. Finally,
+ties. Because we wanted to attribute these executables to because we ultimately determine the existence of spyware
+4URLs domains executables domains w/ infected infected unique spyware
+crawl date
+crawled crawled found executables executables domains programs
+May 2005 18,237,103 2,773 21,200 529 (19.1%) 2,834 (13.4%) 106 (3.8%) 82
+October 2005 21,855,363 2,532 23,694 497 (19.6%) 1,294 (5.5%) 111 (4.4%) 89
+Table1: Executablefileresults. Thenumberofpagescrawled,domainscrawled,executablesanalyzed,andinfectedexecutablesfound
+duringourstudyofexecutablefilesontheWeb.
+by running a scan of an anti-spyware tool (AdAware), we
+arelimitedbywhatAdAwareisabletodetectasathreat.
+Despite these limitations, we believe that our study is a
+significant step forward in understanding and quantifying
+thespywarethreatfromanInternetpointofview.
+3.5 High-level results
+(a)
+Table1showsthehigh-levelresultsfromourexecutable
+filestudy. Wecrawledover18millionURLsinMay2005
+and nearly 22 million URLs in October 2005. In both
+crawls, we found executable files in approximately 19%
+of the crawled Web sites and spyware-infected executa-
+bles in about 4% of the sites. While the absolute number
+of spyware-infected executables dropped substantially be-
+tweenthecrawls,thisisdueprimarilytoasinglesitewhose
+numberofinfectedexecutablesdeclinedfrom1,776inMay (b)
+to503inOctober. Exceptforthatsite, theamountofspy-
+ware we found did not change appreciably over the five- Figure1: Spywareprevalence(October2005).(a)Thenumber
+ofspyware-infectedexecutablesfoundincrawledsites.Thex-axis
+month period between our two crawls. Overall, we found
+issortedbythenumberofexecutablesfoundonthatsite. (b)The
+that as of October 2005, approximately 1 in 20 of the ex-
+numberoftimesagivenspywareprogramwasfound; thex-axis
+ecutablefileswecrawledcontainedspyware,anindication
+showsthenumberoftimestheprogramwasfound. Bothgraphs’
+oftheextentofthespywareproblem.
+axesaredrawnonalog-scale.
+3.6 Who are the main culprits?
+in Table 2. (We removed data for the outlier site scenicre-
+Table1showsthatspywareappearsonasmall,butnon-
+flections.com from the spyware program lists in Tables 2a
+negligible fraction of the Internet Web sites we crawled
+and 2b; this single site contained 1,776 instances of “Tur-
+(3.8% in May 2005, 4.4% in October 2005). However,
+boDownload”and1,354of“WhenU”inMay2005).
+somesitesaremuchmoreegregiousthanothersinpresent-
+inginfectedcontent. Figure1aplots,onalog/logscale,the Most spyware programs are rare; during our May 2005
+number of infected executables we found on each site that crawl, only 15 spyware programs were found that were
+wecrawledduringOctober2005;theresultsfromMayare present in more than twenty infected executables. How-
+similar. While some sites offer a large number of infected ever,themostprevalentprogramsappearedveryfrequently:
+executables,mostjustofferahandful. wedetected364executablesthatcontainedWhenUinMay,
+Ourcrawlfoundatotalof2,834infectedexecutablesin and 340 such executables in October. This data suggests
+May and 1,294 in October. However, those infected exe- thatsignature-basedanti-spywaretechniquesshouldbeef-
+cutables contained only 82 (May) and 89 (October) differ- fective, as relatively few spyware variants are commonly
+entspywareprograms;thetotalnumberofdistinctspyware encounteredwhenWebbrowsing.
+threats we encountered is relatively small. Figure 1b plots Looking at the change in these lists over time, six of
+theprevalenceofeachspywareprogramintheinfectedex- the top-ten offending sites in the May 2005 crawl also ap-
+ecutables. The 10 that appear most frequently are shown peared in October’s top-ten list. The remaining four sites
+5# infected times expect to encounter more spyware on freeware and share-
+site spyware program
+executables observed waresitesthanoncommercialnews-reportingsites.Table3
+scenicreflections.com 1,776 WhenU 364 shows the frequency with which we encountered spyware-
+screensaver.com 191 180Solutions 236
+infected programs in ten different categories of Web sites,
+celebrity-wallpaper.com 136 EzuLa 214
+as defined in Section 3.2, during our October 2005 crawl.
+screensavershot.com 118 Marketscore 143
+While all categories except “news” contained at least one
+download.com 116 BroadCastPC 67
+spywareexecutable,ourresultsconfirmthatsomeWebsite
+gamehouse.com 111 Claria 44
+categoriesdoappearmorespyware-ladenthanothers.
+galttech.com 38 VX2 41
+appzplanet.com 37 Favoriteman 36
+Our data shows that the most high-risk category is
+megspace.com 36 Ebates MoneyMaker 31 “games.” Approximately 60% of these sites contain exe-
+download-game.com 30 NavExcel 24 cutable content, which presumably consists of free games
+available for download. Though only a small fraction of
+(a) executable file study, May 2005 crawl
+theseexecutablescontainspyware(5.6%),oneinfivegame
+sitesincludespywareprograms.Anotherhigh-riskcategory
+# infected times
+site spyware program is “celebrity,” for which over one in seven executables are
+executables observed
+scenicreflections.com 503 WhenU 340 infectedwithspyware.
+gamehouse.com 164 Marketscore 47 We have not included a similar detailed breakdown for
+screensavershot.com 137 Claria 41 theMay2005crawl,sincewesawfewqualitativechanges
+screensaver.com 107 BroadCastPC 37 between the May and October crawls. Two cells in Ta-
+hidownload.com 50 Aurora 36 ble3didexperienceasubstantialchange,however:thefrac-
+games.aol.com 30 FOne 35 tion of infected celebrity executables dropped from 73.5%
+appzplanet.com 27 Zango 34 in May to 16.3% in October, and the number of infected
+dailymp3.com 27 EzuLa 33
+screensaverexecutablesdroppedfrom2,256inMayto789
+free-games.to 27 Web3000 32
+in October. In both cases, the change is attributable to a
+galttech.com 23 180Solutions 25
+singleWebsitethatofferedananomalouslyhighnumberof
+(b) executable file study, October 2005 crawl infectedexecutablesinMay,butfarfewerinOctober.
+The c|net Web portal has a large number of free and
+Table 2: Top 10 spyware programs and sites. The top 10
+shareware programs available for download. In May, we
+spyware-laden sites, and the top 10 spyware programs found, in
+examined2,370executablesatc|netandfoundspywarein
+the(a)Mayand(b)October2005crawl.Programsandsitescom-
+110ofthem(4.6%). InOctober,were-crawledthesiteand
+monacrossthetwocrawls’top-tenlistsareitalicized. Notethat
+examined 1,944 executables, but we found only 6 infected
+thetop10spywareprogramlistsexcludedatafromtheoutliersite
+withspyware(0.3%). Sometimeinbetweenourtwocrawl
+scenicreflections.com, which contained 1,776 instances of “Tur-
+boDownload”and1,354of“WhenU”intheMaycrawl. dates,c|nethadimplementedapolicyofscanningfilesub-
+missionstoensuretheyareadwareandspywarefree.While
+afewprogramsseemtohaveslippedpasttheirscans,they
+have substantially reduced how much spyware is available
+were still functioning and serving spyware, but three were
+throughtheirsite.
+not encountered during our October crawl, and the fourth
+(c|net) was serving far less spyware. Similarly, six of the
+3.8 What kinds of spyware do we find?
+top-tenoffendingprogramsfromMayalsoappearedinOc-
+tober’slist. Nooffendersdisappeared: alltenfromtheMay
+crawlwereencounteredatleastonceintheOctobercrawl. Adware may be an annoyance and can degrade perfor-
+Interestingly, oneofthe“newcomers”inOctober’stop-ten mance, but it typically poses no significant security threat.
+list,Aurora,wasfirstreleasedinApril2005,andhasgained Incontrast, keyloggingspywareisdangerous, sinceitputs
+significant“popularity”sincethen. at risk a victim’s passwords, account numbers, and other
+Overall, while the absolute rank of the top offenders sensitive information. To understand the danger posed by
+changedovertime,wefoundthatthelistofthemostegre- thespywaretypicallyfoundontheWeb,wecategorizedthe
+gioussitesandprogramswasfairlystable. spyware-infectedexecutablesaccordingtothekindofspy-
+waretheyinstalled.
+3.7 Are some Web categories more In addition to adware and keyloggers, we categorized
+dangerous than others? Trojandownloaders,whichdownloadandinstalladditional
+software chosen by the attacker; browser hijackers, which
+AnecdotalevidencesuggeststhatsomezonesoftheWeb modifybrowserfunctions, suchassearchenginetoolsand
+are more dangerous than others. For example, one might the user’s default home page, or redirect URLs to differ-
+6adult celebrity games kids music news pirate wallpaper c|net random
+URLs crawled 3,465,024 3,131,497 872,686 733,648 3,421,796 458,079 3,042,390 678,506 193,118 5,858,619
+domains crawled 157 144 125 183 220 20 311 125 1 1,356
+executables found 158 153 4,872 112 4,218 19 3,422 6,860 1,944 2,000
+26 28 76 24 72 7 111 51 1 102
+domains with executables
+(16.6%) (19.4%) (60.8%) (13.1%) (33.2%) (35.0%) (36.0%) (40.8%) (100%) (7.5%)
+18 25 272 3 149 0 74 789 6 6
+infected executables
+(11.4%) (16.3%) (5.6%) (2.7%) (3.5%) (0%) (2.2%) (11.5%) (0.3%) (0.3%)
+12 11 25 3 24 0 21 12 1 5
+infected domains
+(7.5%) (7.6%) (20.0%) (1.6%) (11.4%) (0%) (7.1%) (9.6%) (100%) (0.4%)
+unique spyware programs 12 10 32 5 55 0 43 34 5 2
+Table 3: Executable infections across Web categories. This table shows the percentage of executables and domains infected with
+spywareacrossdifferentWebcategories,basedonourOctober2005crawl.
+spyware function May 2005 October 2005
+keylogging 0.04% 0.15%
+dialer 0.14% 0.9%
+Trojan downloader 9.1% 13%
+browser hijacker 60% 85%
+adware 91% 75%
+Figure 2: Number of programs installed. The number of
+Table 4: Spywarefunctions. Thefractionofspyware-infected
+spywareprogramsinstalledperexecutable,fortheOctober2005
+executables found that contain various spyware functions. Note
+crawldata.Mostinfectedexecutablesinstallonlyoneortwospy-
+that since a given spyware-infected executable may have more
+wareprograms,butsomeinstallmany.
+thanonefunction,thecolumnsinthesetablesdonotsumto100%.
+atalaterdate. Inthisstudy,wewaited10secondsafterin-
+stallingtheoriginalexecutablebeforerunningourAdAware
+ent sites; and dialers, which use a victim’s modem to call
+scan. As a result, our study primarily observed programs
+expensive toll numbers. A given executable might contain
+installed directly, but we captured some of these cascaded
+more than one function, either because it contains several
+downloads as well. Figure 2 shows our results for the Oc-
+spywareprogramsorbecauseitcontainsonespywarepro-
+tober crawl data; the May crawl data showed qualitatively
+gramthathasmultiplefunctions.
+similar results. The majority of infected executables in-
+Table 4 shows our results. In both the May and Octo- stalled only one spyware program, as shown in the figure.
+bercrawls,mostinfectedexecutablesconsistedofrelatively Some executables cause a larger number of infections; for
+benignadwareorbrowserhijackers. However,asignificant example,sixtyofthespyware-infectedexecutablesinstalled
+fractionofinfectedexecutablescontainedTrojandownload- fiveormorespywareprograms.
+ers,whichdoposeaseriousthreat.
+Comparingtheresultsfromthetwocrawls,weseelittle 3.9 Can signature-based tools keep up?
+absolutechange. Thoughthefractionofdangerouskeylog-
+gers and dialers went up by nearly an order of magnitude, One common defense against spyware is a signature-
+they both still remain rare relative to the more benign ad- based anti-spyware tool. By comparing a database of
+wareandbrowserhijackerfunctions. spyware signatures to files and processes running on a
+Spyware-infected executables can cause a single spy- clientcomputerornetworktrafficarrivingatthecomputer,
+ware program to be installed, or they can cause multiple signature-based tools can detect when the computer is in-
+infections. Toexplorethis,wecountedthenumberofspy- fected with known spyware programs. Because new spy-
+wareprogramsinstalledbyeachinfectedexecutable. Note ware programs and variants emerge over time, the ven-
+thatsomespywareprogramsdownloadadditionalspyware dors of these tools are forced to compete in a perpetual
+7URLs domains executables domains w/ infected infected unique spyware
+crawl date
+crawled crawled found executables executables domains programs
+May 2005 14,441,999 6,272 5,534 823 (13.1%) 653 (11.8%) 279 (4.4%) 125
+Table6: Executablefileresults(blacklistedsites). Thenumberofpagescrawled,domainscrawled,executablesanalyzed,andinfected
+executablesfoundduringourstudyofexecutablefilesonblacklistedWebsites.
+May 2005 October 2005 nine, three were newly introduced programs, and six were
+October 2005 executable pool AdAware AdAware newvariantsofolderspywareprograms.
+signature DB signature DB
+While it is important to keep an anti-spyware signature
+# infected executables found 880 1,294 database up-to-date, the rate at which we found new spy-
+# unique spyware programs found 80 89 warethreatspiggybackedonWebexecutableswasslightly
+less than two per month. In contrast, the total rate at
+(a) .
+whichnewspywaresoftwareiswrittenmustbesignificantly
+faster, as confirmed by the fact that leading commercial
+# times found new program
+anti-spywaretoolsnowaddanywherefromafewdozento
+spyware program using October or
+AdAware DB new variant? severalthousandnewsignaturestotheirsignaturedatabases
+WhenU 398 new variant permonth.1 Whilemanynewspywareprogramsarecreated
+WebHancer 6 new variant permonth,ourresultssuggestthatinpracticeonlyasmall
+Spyware.WebDir 2 new program numberofthembecomewide-spreadenoughtobeencoun-
+teredbyatypicalWebuser.
+Lycos Sidesearch 2 new variant
+Because it may be difficult to predict in advance which
+AdBlaster 2 new variant
+newspywarethreatswillactuallybeencounteredbyusers,
+WinFixer 1 new program
+signature-based anti-spyware tools must either use auto-
+BroadcastPC 1 new variant
+mated tools to find all new threats and generate signatures
+Whazit 1 new variant
+for them, or use automated techniques to focus human at-
+iDonate.BHO 1 new program
+tention on the emerging “important” threats if manual sig-
+(b) . nature generation is necessary. Without such automated
+techniques, anti-spyware tool vendors might become over-
+Table 5: Newspywarevariants. (a)Infectionsdetectedwithin whelmedbytheeffortofensuringtheirsignaturedatabases
+theOctober2005executablepool,usingeithertheMayorOctober haveenoughcoveragetoprotectagainstthespecificthreats
+AdAwaresignaturedatabases. (b)Spywareprogramsdetectedby
+thatendupmatteringinpractice.
+AdAware’sOctobersignaturedatabasethateludeditsMaysigna-
+turedatabase.
+3.10 How effective is blacklisting?
+Another defense against spyware is to construct black-
+“armsrace”withspywarepurveyorstokeeptheirsignature listsofURLsordomainsthataresuspectedtocontainspy-
+databasesfresh. ware.Givenablacklist,afirewallorproxycanblockclients
+To determine how rapidly new spyware programs and from accessing listed sites. To evaluate the potential of
+variants surfaced over the period of our crawl, we re- blackliststoblockspywareinfections,wecrawleddomains
+analyzedallofthespyware-infectedexecutableswefound listedintwothird-partyblacklists(“IE-SPYAD”and“meth-
+inOctober,butusingtheolderAdAwaresignaturedatabase labs,”bothreadilyavailableontheWeb),andrepeatedour
+that was available in May. If new spyware threats were executable file analysis. We performed our blacklist crawl
+released between May and October, this older version of inMay2005.
+AdAwaremightnothavesignaturesthatmatchthem.
+1Forexample,WebrootusesautomatedWebcrawlingtofindnewspy-
+Table5showsourresults.Ofthe1,294infectedexecuta-
+warethreats[28].Fedbythis,their“SpySweeper”toolcurrentlycontains
+bles that the newer October AdAware signatures detected, over100,000signatures,andadded3,863newsignaturesbetweenOctober
+only880weredetectedbytheolderMaysignatures:414in- 11thandNovember11thof2005. Notethatanygivenspywareprogram
+fectedexecutablescontainednewprogramsorvariantsthat mayhavemanysignaturesassociatedwithit,sothesenumbersdonotdi-
+rectlyreflecthowmanydistinctspywareprogramsareintheirdatabase.
+required updated signatures. However, only nine spyware
+Incomparison,AdAwarehasaddedorupdatedsignaturesforonly70spy-
+programswereresponsible,asshowninTable5b. Ofthese wareprogramspermonth,astheyrelyonmanualdetection.
+8May 2005 May 2005 oftheexecutablesweidentifiedwereinfectedwithspyware
+spyware function
+blacklisted sites non-blacklisted sites inourOctobercrawl–asurprisinglyhighfraction. Wealso
+keylogging 0.1% 0.04% showedthatsomeInternetzones,suchasgameorcelebrity
+dialer 7.2% 0.14% sites, have a higher incidence of executable spyware than
+Trojan downloader 30% 9.1% others. Whilesomechangeshaveoccurredinthetimebe-
+browser hijacker 74% 60% tween our crawls, at a high level they show a similar level
+ofrisktoWebusers.
+adware 72% 91%
+We examined potential issues facing two spyware de-
+fenses: signature-based anti-spyware tools and spyware
+Table 7: Spyware functions (blacklisted vs. non-blacklisted
+blacklists. BycomparingthethreatsfoundinourMayand
+sites). The fraction of spyware-infected executables found that
+contain various spyware functions, for the May 2005 blacklist October crawls, we found only nine spyware programs in
+crawlandthepreviouslypresentedMay2005non-blacklistcrawl. October that would not have been detected using a signa-
+Note that since a given spyware-infected executable may have ture database from May, in spite of the fact that leading
+more than one function, the columns in these tables do not sum commercialanti-spywaretoolsaddthousandsofsignatures
+to100%. per month. As well, we found that while blacklisted sites
+often contain more dangerous variants of spyware, many
+blacklistedsitesdonotcontainanyspywareatall,andmany
+non-blacklistedsitedocontainspyware.
+Table 6 shows the summary statistics from our black-
+list crawl. Comparing these results to our May crawl of
+other Web categories (Table 1), we see that a similar frac- 4 Drive-byDownloads
+tionofblacklistedsitesandURLscontainspyware-infected
+executablesasnon-blacklistedsites.Theoverallconclusion
+This section measures and analyzes drive-by download
+we can draw is that blacklists are ineffective in two ways:
+attacks on the Web. We begin by presenting the tools and
+manyblacklistedsitescontainnospyware, andmanynon-
+infrastructure weconstructed to carryout our study. Next,
+blacklistedsitesdocontainspyware.
+wepresentourresultsandanswerspecificquestionsabout
+Table2,presentedearlierinthepaper,showedthatthere
+thesourceandfrequencyofdrive-byinducedinfections.
+werealargenumberofsitesthateachprovideahandfulof
+infectedexecutables.Thisfurthersuggestswhyblacklisting
+4.1 Study tools and infrastructure
+isonlypartiallyuseful:whileablacklistscanfindandblock
+egregious“heavyhitter”sites,itisdifficultforthemtofind
+This part of our research examined drive-by download
+andblockthemuchlargernumberofsitesthatcontainsmall
+attacks, a common method for infecting victims with spy-
+numbersofinfectedexecutables.
+ware. A drive-by download attack occurs when a victim
+We were interested in understanding the kinds of spy-
+visits a Web page that contains malicious content. An ex-
+wareonwhichblacklistsfocusattention. Table7showsthe
+ampleisJavaScriptembeddedinHTMLthatisdesignedto
+fractionofblacklisted,spyware-infectedexecutablesfound
+exploitavulnerabilityinthevictim’sWebbrowser. Asuc-
+to contain various spyware functions. Compared to what
+cessful drive-by download lets the attacker install and run
+we previously observed in the non-blacklisted crawl from
+arbitrarysoftwareonthevictim’scomputer.
+May 2005, blacklisted spyware programs tend to contain
+The primary challenge in detecting drive-by attacks is
+agreaterfractionofkeyloggers, dialers, andTrojandown-
+performinganautomatedanalysisofWebcontenttodeter-
+loaders. It appears as though blacklists tend to focus on
+minewhetheritcontainsattackcode.Fortunately,wefound
+spywarethatcontainsmoredangerousfunctions.
+asimplesolution: weassumedthatadrive-bydownloadat-
+tackwouldattempttobreakoutofthesecuritysandboxim-
+3.11 Summary
+plementedbytheWebbrowser,e.g.,modifyingsystemfiles
+or registry entries. To recognize such an attack, we ren-
+To study the threat of executable-based spyware on the deredtheWebpageusinganunmodifiedbrowserandtried
+Web,weexaminedapproximately20millionURLsineach todetectwhenthesandboxhadbeenviolated.
+oftwocrawlsin2005.Thecrawlsexplored2,773and2,532
+domains in May and October of 2005, respectively. Our
+4.1.1 Detectingbrowsersandboxviolations
+results show that spyware piggybacked on executables is
+a significant threat. While we found only a small num- Our method for detecting browser sandbox violations is
+berofdistinctexecutablespywareprograms(89inOctober basedonthenotionofeventtriggers. Atriggerfireswhen
+2005), we discovered instances of those programs in ap- an event matching a trigger condition occurs in the guest
+proximately4%ofthedomainswevisited. Overall,1in20 OSoranapplicationrunningonit. Forexample,ifvisiting
+9Trigger condition
+Process creation: a new process is launched, excluding known browser helper processes.
+File system activity: a file is created or modified, excluding those in “safe” folders such as the browser cache, browser cookies,
+system event logs, and paths associated with helper processes.
+A suspicious process writes to a file: a process besides the browser and its known helper processes creates or modifies any file.
+Registry activity: sensitive registry entries are modified, such as those that control programs that are launched on reboot, browser
+helper objects (BHOs) loaded when the browser runs, initialization scripts that are executed when certain programs are launched, etc.
+Browser or OS crash: the browser or OS crash, or otherwise stop responding to events.
+Table8: Triggerconditions. IfanyofthesetriggerconditionsoccurswithintheguestOS,wemarktheassociatedURLassuspicious
+andrunaspywarescan.
+aWebpagecausesfile-systemactivitytooccuroutsideofa up windows to open, which in turn may contain malicious
+smallsetofprescribedfoldersassociatedwiththebrowser code. Ifwemishandlethesecomplexities,wecouldpoten-
+(suchasitslocalcache),atriggerwillfire.Table8describes tiallyattributeatriggerfiringtotheincorrectURL.
+thetriggerconditionsthatwedefinedandimplementedfor To deal with time bombs, we sped up the virtual time
+detectingdrive-bydownloads. on the guest OS by a factor of fifteen. Thus, each second
+In our VM environment, we have precise control over of wall-clock time that elapsed caused fifteen seconds to
+the software that runs in our guest operating system. This appear to elapse on the guest OS and its applications. All
+letsusreducethenumberoftriggerconditionsthataregen- time-bombs that we have observed in drive-by downloads
+erated by the base software. For example, we configured hadafuse-lengthoflessthanfifteenseconds,soweensured
+theguestOStodisableallunnecessarybackgroundsystem thatatleastasecondelapsedbetweenfetchingoneURLand
+services.Thisincreasesthelikelihoodthatatriggerfiringis beginningtheanalysisofthenextURLinthesameVM.
+theresultofadrive-bydownload.However,someofourde- Copingwithpage-closecodeisstraightforward. Before
+finedtriggerconditionscanoccurnaturally,e.g.,fromback- concluding the analysis of a URL, we caused the browser
+groundservicesthatwefailedtodisableorfromsystemor to fetch a known, clean Web page, thereby triggering the
+browsercrashes. Inaddition,notalldrive-bydownloadsin- page-closehandlersofthepreviousWebpage.
+stall spyware; some install benign software. Accordingly, To correctly handle pop-up windows, we waited for all
+whenatriggerfires,weconsiderthepagetobesuspicious pop-up windows to finish loading and then closed them in
+andperformanAdAwarescanoftheVMtodetectinstalled order to trigger any page-close JavaScript handlers asso-
+spyware. ciated with the pop-ups. Some pop-up windows caused
+Asaperformanceoptimization,weattemptedtoreduce an endless sequence of additional pop-up windows to be
+thenumberofnewVMsthatmustbecreated. Therefore,as opened; in this case, we iterated through our pop-up clos-
+wecrawledWebpagestoscanfordrive-bydownloads,we ingprocedures10timesbeforehaltingtheanalysisforthat
+continuedloadingpageswithinthesame browser andVM URLandresettingtheVMimage.
+instance until a trigger fired or we visited 100 Web pages. Thereareseveraladditionalcomplexitiesthatwehandle,
+In either case, we then garbage collected the VM and cre- includingdealingwithbrowserdialogboxesthatpromptthe
+atedanewonefromourclean,checkpointedVMimage. In user for input (e.g., when a Web page asks the user to ac-
+practice,weobservedthattriggersfireoftenenoughthatwe ceptalicenseagreementortoagreetochangetheirdefault
+haverarelyreachedthe100-pagelimit. homepage). Wedevelopedasetofautomatedheuristicso-
+lutions to this and other problems, but we omit a detailed
+4.1.2 Dealingwithcomplexwebcontent descriptionhereduetospaceconstraints.
+Some Web pages contain scripted content that could con-
+4.1.3 Browserconfiguration
+found our analysis. One example is a “time bomb” used
+bysomedrive-byattacks;whenabrowserrendersthepage, We analyzed two different browser configurations, both
+JavaScript within it causes the browser to set a timer that based on Microsoft’s Internet Explorer (IE) version 6.0,
+willtriggersomeactivity(suchasapageload)atsomede- running on Windows XP without either SP1 or SP2 in-
+fined point in the future. As another example, some Web stalled. We deliberately chose to use unpatched versions
+pages contain JavaScript that is executed when the page ofXP,sincethemajorityofexistingexploitsattackvulner-
+closes. As a third example, some Web pages cause pop- abilities in such older system configurations. In addition,
+10May 2005
+October 2005 October 2005 additional108seconds. Weobservedthat5%ofWebpages
+(recrawl May URLs) (new URLs)
+causedatriggertofire,leadingtoanaveragelatencyof11.7
+URLs crawled 45,000 45,000 45,000
+secondsperpage. WecouldruntwoVMsperCPUwithout
+domains crawled 1,353 1,353 1,420
+lossofperformance,and,accordingly,weanalyzedapprox-
+unique spyware
+48 26 36
+programs found imately14,769pagesperCPUperday.
+infectious
+say yes to URLs 2,675 (5.9%) 1,548 (3.4%) 186 (0.4%)
+prompts
+(“cfg_y”) infectious 46 (3.4%) 27 (2.0%) 23 (1.6%) 4.2 High-level results
+domains
+s pa ry
+o
+mno
+p
+tt so
+inf Ue Rct Lio su s
+690 (1.5%) 37 (0.1%) 92 (0.2%)
+Our drive-by download study examined Web pages se-
+(“cfg_n”) in df oe mct aio inu ss 16 (1.2%) 5 (0.4%) 9 (0.6%) lected from the Website categories we described in Sec-
+tion3.2,usingthesamemethodologybasedonGooglekey-
+Table9: Drive-bydownloadresults. Thenumberofinfectious word searches. We performed three crawls overall. To
+pages and domains found by our drive-by download study. We begin, in May 2005 we crawled 45,000 URLs from 1,353
+reportresultsfortwobrowserconfigurations:IEconfiguredtoau- domains and analyzed their content. In October 2005, we
+tomaticallysay“yes”tosecuritydialogboxes(cfg y),andIEcon- performedtwoadditionalstudiesforcomparison. First,we
+figured to say “no” (cfg n). We also report on three traces: our re-crawled these same URLs to understand how their con-
+May2005crawl,thesameURLsfromtheMaytracere-crawled
+tenthadchanged.Second,wegeneratedanewlistof45,000
+inOctober2005,andanewsetofURLsgatheredandcrawledin
+URLsfrom1,420domains,seededbyre-executingtheorig-
+October2005.
+inal Google keyword search. This second October crawl
+accounts for the constant change in domains, pages, and
+popularityontheWeb.
+most(butnotall)newlyfoundexploitsaffectbothpatched Ourhigh-levelresultsareshowninTable9.2 InourMay
+andunpatchedsystems. crawl,withIEconfiguredtosay“yes”tosecurityprompts,
+For the first configuration (cfg y), the browser behaves 2,675URLsin46domainscausedspywareinfections.With
+asthoughtheusergrantspermissioninallsecurity-related IE configured to say “no,” we found 690 infectious URLs
+IE dialog boxes. For example, when a Web page tries to in 16 domains. That is, 1.5% of the URLs we crawled in
+downloadandrunActiveXcontrols, IErequests theuser’s May exploited IE security flaws to install spyware without
+approval for the action. Sometimes a Web page attempts promptingtheuser. Whilethismayseemlikeasmallper-
+to “push” an executable file to the user’s computer, using centage,considerthat1in67Webpagesthatweexamined
+eitherinlineJavaScriptorpop-upwindows. Inthiscaseas containedmaliciouscontenttargetingbrowserflaws.
+well,IEasksforpermissiontoinstallorruntheexecutable. Our examination of the same URLs in October saw a
+For the second configuration (cfg n), the browser be- reduction in the number of drive-by attacks, with the drop
+haves as though the user refuses permission in security- significantly more pronounced for the cfg n configuration.
+related dialog boxes. Spyware that installs itself despite Many of the pages and domains that previously exploited
+the user’s refusal typically exploits browser flaws, bypass- browser vulnerabilities no longer did so: e.g., of the 690
+ingIE’ssecurityframework. cfg ninfectiousURLswefoundinMay,only37werestill
+NoneoftheURLsexaminedinthissectionlinktoexe- infectious in October. Through manual examination, we
+cutablecontent.Accordingly,anyspywareinfectionsfound found that some of the formerly infectious sites had been
+weretheresultofadrive-bydownload. Notethatifanex- removed, somewerestillfunctioningbuthadsubstantially
+ecutable were installed in the cfg n configuration, the user changedincontent,andsomehadthesameuser-perceived
+willnothavetheopportunitytorefusetheinstallation,and, contentbutnolongerperformeddrive-bydownloadattacks.
+in most cases, no notification will occur. This is the most Forcomparison,wealsocrawledandexaminedthenew
+malicious form of a drive-by download: simply visiting a set of 45,000 URLs that we generated in October. During
+Web page will cause an executable to be installed and run this crawl, both browser configurations observed a signifi-
+onthevictim’ssystem. cantlylowernumberofdrive-bydownloadattacksthanwe
+found in May. For example, in May, 5.9% of the crawled
+URLsperformedcfg yattacksand1.2%ofsitesperformed
+4.1.4 Performance
+cfg n attacks; in October, these percentages dropped to
+Using the same cluster of machines described in Sec- 0.4%and0.6%,respectively.
+tion3.2,wefoundthatanalyzingasingleWebpagetookon
+average 6.3 seconds, including restarting the browser and
+2Werepeatedourdrive-bystudyforblacklisteddomains,similarwhat
+wepresentedinSection3.10forexecutablefiles.Blacklisteddomainshad
+loadingthepageanditspop-ups. Forthosepagesthatfire
+drive-byresultsthatarequalitativelysimilartonon-blacklisteddomains,
+atrigger,performinganAdAwarescantookonaveragean sowehavechosennottopresentthemforthesakeofbrevity.
+11adult celebrity games kids music news pirate wallpaper random
+category
+cfg_y cfg_n cfg_y cfg_n cfg_y cfg_n cfg_y cfg_n cfg_y cfg_n cfg_y cfg_n cfg_y cfg_n cfg_y cfg_n cfg_y cfg_n
+URLs
+5,000 5,000 5,000 5,000 5,000 5,000 5,000 5,000 5,000 5,000 5,000 5,000 5,000 5,000 5,000 5,000 5,000 5,000
+crawled
+domains
+67 67 99 99 105 105 125 125 145 145 21 21 78 78 83 83 716 716
+crawled
+infectious 35 30 182 18 493 500 0 0 439 127 0 0 1451 2 30 7 45 6
+URLs 0.7% 0.6% 3.6% 0.4% 9.9% 10% 0% 0% 8.8% 2.5% 0% 0% 29% 0.04% 0.6% 0.1% 0.9% 0.1%
+5002
+yaM
+infectious 3 3 10 1 4 3 0 0 10 5 0 0 11 2 3 1 7 4
+domains 4.5% 4.5% 10% 1.0% 3.8% 2.9% 0% 0% 6.9% 3.4% 0% 0% 14% 2.6% 3.6% 1.2% 1.0% 0.6%
+domains
+101 101 103 103 93 93 164 164 116 116 17 17 185 185 92 92 621 621
+crawled
+infectious 2 0 24 16 14 5 1 0 0 0 0 0 139 68 1 0 5 3
+URLs 0.04% 0% 0.5% 0.3% 0.3% 0.1% 0.02% 0% 0% 0% 0% 0% 2.8% 1.4% 0.02% 0% 0.1% 0.1%
+5002
+rebotcO
+)sLRU
+wen(
+infectious 2 0 4 1 2 1 1 0 0 0 0 0 8 4 1 0 5 3
+domains 2.0% 0% 3.9% 1.0% 2.2% 1.1% 0.06% 0% 0% 0% 0% 0% 4.3% 2.2% 1.1% 0% 0.8% 0.5%
+Table10: Drive-bydownloadsacrossWebcategories.Drive-bydownloadattacksthatcausespywareinfectionsacrossWebcategories,
+forboththeMay2005andOctober2005crawls. Notethatthenumberofinfectious“games”URLsinMay2005ishigherforcfg nthan
+cfg y.In“games,”manyoftheexaminedURLsnon-deterministicallysenddifferentcontentonsubsequentdownloads.
+Overall, our summary statistics suggest that the density 100
+ofdrive-bydownloadattacksontheWebhasdeclinedover
+80
+thefive-monthperiodofourstudy.
+60
+4.3 From where do drive-by downloads
+40
+originate?
+20
+TounderstandwhethercertainWebcategoriesaremore 0
+likelytoperformdrive-bydownloadattacksthanothers,we 1 4 7 10 13 16 19 22 25 28 31 34 37 40 43 46
+examined URLs from eight different Web categories and domain
+calculated the fraction of URLs and domains that were in-
+fectious in each. Table 10 shows our results for the May
+crawlandtheOctobercrawlofnewURLs.3
+FocusingonthefractionofMaydomainsthatareinfec-
+tious,wesawablendofhigh-riskandno-riskcategories.At
+thehighend,14%of“pirate”sitesinstalleddrive-byinfec-
+tionswhentheuserresponded“yes”toprompts. Atthelow
+end, we found no drive-by download attacks in either the
+“kids”orthe“news”sites. The“random”categorygivesus
+an approximate view of the state of Web pages reachable
+throughaWebcrawl. Only1%of“random”Websitescon-
+taineddrive-bydownloadattacksinMay(0.8%inOctober),
+confirming that these attacks are focused on specific por-
+tions of the Web rather than being spread more uniformly
+throughoutit.
+It is common for infectious sites to attempt drive-by
+downloads on a large fraction of their Web pages. For
+each infectious domain we found using the cfg y browser
+3Theremainderofthispaperpresentsdataforthesetwocrawlsand
+ignorestheOctoberre-crawloftheMayURLs.There-crawltolduswhat
+changed in sites that were infectious in May; however, we believe that
+thenewOctobercrawlismorerepresentativeofthestateoftheWebin
+October,sinceitwasgeneratedwithnewseeds.
+htiw
+niamod
+ni
+sLRU
+fo
+%
+skcatta
+yb-evird
+Figure3:FractionofURLsininfectiousdomainsthatcontain
+drive-byattacks(May2005crawl).Foreachinfectiousdomain,
+thisgraphshowsthefractionofURLswithinthatdomainthatin-
+stall spyware when the user responds “yes” to security prompts.
+configuration, Figure 3 shows the fraction of pages in that
+domain that performed drive-by downloads, for the May
+crawl.Thisfractionrangesbetween0.29%and100%,how-
+ever,approximatelyhalfoftheinfectiousdomainsinstalled
+spywarethrough50%ormoreoftheirURLs.
+The“games”zoneshowsaninterestinganomaly: inour
+Maycrawl,weobservedslightlymorecfg ndrive-bydown-
+loads occurring in this category than cfg y drive-bys. In
+principle,thecfg ndrive-bysshouldbeasubsetofthecfg y
+drive-bys, sinceexploitsthataffectacfg nbrowsershould
+workequallywellonacfg ybrowser. Inpractice,however,
+someURLsbehavenon-deterministically,servingdifferent
+contenteachtimetheURLisvisited. Theirinfectiousness
+depends on chance, and there were enough of these in the
+“games”categorytovisiblyaffectouroverallresults.
+12times times October 2005
+spyware program observed spyware program observed spyware function May 2005
+(cfg_y) (cfg_n) (new URLs)
+DyFuCA 1,176 IEHijacker.Hotoffers 250 keylogging 0% 0%
+PeopleOnPage 1,132 Win32.TrojanDownloader.Agent.jq 43
+dialer 0.02% 0%
+Adintelligence 1,114 CoolWebSearch 28
+istbar 1,008 Security iGuard 22 Trojan downloader 51% 37%
+Hijacker.TopConverting 905 AdRotator 12
+browser hijacker 84% 60%
+BargainBuddy 889 Aurora 10
+SideFind 805 VX2 6 adware 75% 55%
+WindUpdates 628 TIB Browser 5
+IEHijacker.Hotoffers 556 Dialer.WSV 5 (a) cfg_y .
+ZyncosMark 421 Win32.Trojan.Delprot.a 2
+(a) drive-by download study, May 2005 crawl October 2005
+spyware function May 2005
+(new URLs)
+times times
+spyware program observed spyware program observed keylogging 0% 0%
+(cfg_y) (cfg_n)
+dialer 2.4% 0%
+Aurora 63 Aurora 63
+EffectiveBrandToolbar 61 EffectiveBrandToolbar 53 Trojan downloader 22% 12%
+WindUpdates 56 VirtualBouncer 14 browser hijacker 83% 78%
+WinAD 55 AdDestroyer 12
+adware 73% 37%
+ImlServer IEPlugin 33 VX2 12
+Roings 27 CasinoClient 9
+(b) cfg_n .
+DyFuCA 20 CoolWebSearch 8
+Win32.TD.TSUpdate 15 BookedSpace 4
+istbar 14 BroadCastPC 4 Table 12: Spyware functions. The fraction of drive-by down-
+CoolWebSearch 9 Virtumonde 4 loads that cause various spyware functions to be installed. Note
+thatagivendrive-bydownloadcaninstallmorethanonefunction,
+(b) drive-by download study, October 2005 crawl (new URLs)
+socolumnsdonotsumto100%.
+Table11:Top10spywareprograms.Top10drive-bydownload
+infectionsfor(a)theMay2005crawl, and(b)theOctober2005
+crawl(newURLs). Programsthatwerefoundinthetop-tenlists 4.4 What kinds of infections do drive-by
+ofbothcrawlsareshownitalicized. downloads cause?
+Table11showsthespywareprogramsinstalledmostfre-
+quentlyduringdrive-bydownloadattacksforboththeMay
+and October crawls. There is little overlap between these
+We now turn our attention to the change in drive-by listsandtheexecutablefilestudy(Figure2)–infact,only
+downloadsovertime.Innearlyallcategories,thedensityof VX2, BroadCastPC, and Aurora appear in both. The set
+drive-bydownloadattackswefoundinOctoberwaslower ofspywareprogramsthattendtobepiggybackedwithex-
+than in May. In many categories, the density had dropped ecutablesarelargelydisjointfromthosethattendtobein-
+substantially. For example, in the May crawl, a noticeable stalledviadrive-bydownloads.
+fraction of music sites and URLs performed drive-by at- Table 12 shows the spyware functions that are present
+tacks in both browser configurations, while in October, no in drive-by downloads. The results are similar to the ex-
+musicsitesorURLsperformedattacks. ecutable study: keylogging and dialer functions are rarely
+observed,andthemorebenignadwareandbrowserhijack-
+Itisdifficulttoattributethisdeclinetoaspecificcause, ing functions are much more common. Adware functions
+but there are several recent trends that we believe may be declined noticeably between May and October, dropping
+partially responsible. The adoption of anti-spyware tools from 75% to 55% for cfg y, and from 73% to 37% for
+hasincreased, shrinkingthepotentialmarketreachofspy- cfg n. Whilepromisingatfirstblush,inpracticemanyTro-
+wareprograms. Automatedpatchinstallationtoolssuchas jandownloadersretrieveandinstalladwareoveralongpe-
+Windows Update have made it simpler for typical users to riod of time. Our results may therefore underestimate the
+administer security updates, reducing the number of Inter- ultimatenumberofadwareinstalls.
+netExplorerinstallationssusceptibletoknownbrowservul- InFigure4, weshowhistogramsofthenumber ofspy-
+nerabilities. Finally, a recent set of civil lawsuits brought wareprogramsinstalledbydrive-bydownloadsusingeach
+against spyware distributors or affiliates that use drive-by of the cfg y and cfg n browser configurations, for both the
+download mechanisms might have discouraged some po- May and October crawls. Most drive-by downloads in-
+tentialattackers. stalledonlyafewspywareprograms, thoughafewcaused
+13(a) cfg_y, May 2005 (b) cfg_n, May 2005
+(a) cfg_y, October 2005 (new URLs) (b) cfg_n, October 2005 (new URLs)
+Figure4: Numberofprogramsinstalled.Thenumberofspywareprogramsinstalledperdrive-bydownloadforcfg yandcfg n,andfor
+theMay2005andOctober2005(newURLs)crawls.Mostdrive-bydownloadsinstallonlyafewprograms,butsomeinstallmany.
+many to be installed. Interestingly, in May, most drive-by bombs.” Finally, we created both cfg y and cfg n Firefox
+downloadsinstalledonlyasingleprogram,whilethetrend configurations.
+wastowardstheinstallationofseveralprogramsinOctober.
+In October 2005, we gathered a new crawl of the same
+The May data shows a cluster of cfg y drive-by attacks Web site categories that we explored for the IE drive-by
+thatinstalledmanyspywareprogramsperattack.Forexam- download study. Our methodology for selecting seed do-
+ple, 307 of May cfg y drive-by attacks installed nine pro- mainstocrawlwasidenticaltoourothercrawls,exceptwe
+grams. These incidents can be attributed to a set of Web tuned the crawler to favor breadth across sites rather than
+siteswithinthe“pirate”categorythatinstalledsimilarbun- depthwithinasite.Wedidthisinanticipationoftherebeing
+dlesofspyware. Thespywareprogramsthatthesesitesin- farfewermaliciousdomainsthattargetFirefox,andaccord-
+stalldominateourMaycfg ytop-tenspywareprogramlist
+inglywewantedexposuretoalargernumberofdomains.
+inTable11a.
+Table 13 shows the results of our study. Out of the
+45,000URLsweexamined,wefound36(0.08%)thatper-
+4.5 Is the Firefox browser susceptible?
+formed drive-by spyware installs on Firefox. These spy-
+wareinstallsaffectedonlythecfg ybrowserconfiguration.
+Thusfar,wehavefocusedonthesusceptibilityoftheIn- Wefoundnocfg nattacks,i.e.,wedidnotobserveanyWeb
+ternet Explorer browser to drive-by download attacks. We pagesthatexploitFirefoxvulnerabilitiestoinstallspyware
+nowturnourattentiontotheFirefoxbrowser,whichiscur- withouttheuser’sconsent.
+rentlythesecond-mostpopularbrowserinuse.4 Acommon
+The few cfg y Firefox drive-by downloads that we ob-
+perception about Firefox is that it is more secure against
+servedwerebasedonaJavaappletcreatedanddistributed
+drive-bydownloadattacks,inpartbecauseitdoesnotsup-
+by Integrated Search Technologies (IST), a developer of
+portActiveXcomponents,acommoncontributingfactorto
+severaladvertisingandbrowsersearchredirectionsoftware
+IEbrowservulnerabilities.
+products. TheJavaappletattemptstoinstallabundlecon-
+To explore this issue, we modified our experimental in-
+taining several spyware and adware programs, including
+frastructure, creating a virtual machine instance that con-
+DyFuCA and SideFind. An applet is normally prevented
+tainsFirefoxversion1.0.6onWindowsXPwithnoservice
+from installing new software by Java’s security sandbox.
+packsinstalled. Wereplicatedalloftheheuristicsweprevi-
+Sun’sJavaRuntimeEnvironmentwillallowdigitallysigned
+ouslybuiltforIE,suchasthosethathandleJavaScript“time
+applets to run outside the sandbox in some circumstances.
+4MSIEcurrentlyhasan83%marketshare,whileFirefoxhasan8% In particular, if the applet contains a previously unknown
+marketshare,accordingtohttp://www.thecounter.com. signature, the user is prompted whether or not to trust the
+14URLs domains infectious infectious verylikelytobehitwithaspywareinfection,oftenwhether
+crawled crawled URLs domains
+or not they respond “yes” to a security prompt. Overall,
+cfg_y 5,000 744 0 0
+adult inourmostrecentcrawl,wefounddrive-bydownloadsat-
+cfg_n 5,000 744 0 0
+tempted in 0.4% of the URLs we examined and drive-by
+cfg_y 5,000 319 4 (0.08%) 1 (0.3%)
+celebrity attacks that exploit browser vulnerabilities in 0.2% of the
+cfg_n 5,000 319 0 0
+examinedURLs.
+cfg_y 5,000 659 0 0
+games WealsoexaminedwhethertheFirefoxbrowserwassus-
+cfg_n 5,000 659 0 0
+ceptibletodrive-byinstallations.Wefoundthatonly0.08%
+cfg_y 5,000 164 0 0
+kids of examined URLs performed a drive-by download instal-
+cfg_n 5,000 164 0 0
+lation,butalloftheserequireduserconsentinordertosuc-
+cfg_y 5,000 392 7 (0.14%) 1 (0.26%)
+music ceed. Wefoundnodrive-byattacksthatexploitedvulnera-
+cfg_n 5,000 392 0 0
+bilitiesinFirefox.
+cfg_y 5,000 136 0 0
+news
+cfg_n 5,000 136 0 0
+5 Conclusions
+cfg_y 5,000 300 25 (0.5%) 5 (1.6%)
+pirate
+cfg_n 5,000 300 0 0
+cfg_y 5,000 272 0 0 Thegoalofthisresearchistoquantifythenatureofthe
+wallpaper
+cfg_n 5,000 272 0 0 spyware threat from a Web-centric point of view. To do
+cfg_y 5,000 4,494 0 0 this,weconductedacrawler-basedexaminationofbothex-
+random
+cfg_n 5,000 4,494 0 0 ecutablecontentandscriptedpagecontentintheWebover
+afive-monthperiodin2005.
+Table 13: Drive-by downloads with the Firefox browser. In the first part of our study, we crawled approximately
+Drive-bydownloadattacksthatcausespywareinfectionswiththe 20 million URLs in May and again in October of 2005,
+Firefox browser in the October 2005 crawl. The few successful looking for executable content. Our crawls found exe-
+drive-byattackswefoundusedJavaappletstoattempttodown- cutableprogramsin19%ofthedomainsweexamined. In
+loadexecutables,butrequiredausertoconsenttothedownload. October, approximately 5.5% of executables and 4.4% of
+the domains we crawled contained piggy-backed spyware.
+While the largest portion of that spyware is adware, we
+found that 14% of the spyware contained potentially ma-
+applet. Iftheusersaysyes,theappletisgrantedpermission licious functions, such as Trojan downloaders and dialers.
+toexecuteoutsidethesandbox. Inthisparticularexample, We also showed that some Web categories, such as games
+grantingpermissionresultsintheinstallationofspyware. and wallpaper sites, have a higher concentration of exe-
+Interestingly,theURLsthatperformthisdrive-bydown- cutablespywarethanothers.
+loadattackuseJavaScripttocustomizetheattackbasedon In the second part of our study, we performed three
+the browser that is retrieving the URL. If IE is used, an crawls of 45,000 URLs in eight Web categories to exam-
+Active-X based attack is attempted. Otherwise, the Java ine drive-by download attacks over a period of 5 months.
+applet-basedattackisused. Theapplet-basedattackappar- Ourresultsshoweda93%reductioninpagescarryingdrive-
+ently works on several different browsers, including Fire- by attacks between May and October, from 5.9% to 0.4%.
+fox,Mozilla,Netscape,andAvant.5 Approximately 0.2% of the pages crawled in October ex-
+ploitedbrowservulnerabilitiestoinstallspywareevenwhen
+theuserdeniedpermissionforadownloadorscriptexecu-
+4.6 Summary
+tion. In the most recent crawl, we found that pirate sites
+havethegreatestriskofdrive-byattacks(4.3%ofpiratedo-
+To study drive-by installations of spyware using the In-
+mains),withcelebritysitesfollowingclosebehind(3.9%of
+ternetExplorerbrowseronWindows,weperformedacrawl
+domains). Forsomeofthemostdangeroussites,wefound
+of 45,000 URLs in May and two crawls of 45,000 URLs
+thatthemajorityofURLsinthedomainposearisk.
+in October 2005. Our study found a reduction in the frac-
+Overall,ourresultsshowthatevenwithsomeofthere-
+tionofdomainshostingdrive-bydownloadsacrossthecat-
+ductionswehaveseen, thedensityofspywareontheWeb
+egoriesweexamined. Ingeneral,asmallnumberofinfec-
+isstillsubstantial. Itisdifficulttogeneralizefromasingle
+tiousdomainsareresponsibleforthemajorityofinfectious
+study,butinthezonesthatwecrawled,overoneintwenty
+links. Once a user browses an infectious domain, they are
+executables contained piggy-backed spyware. In our Web
+pagecrawl, onaverage, 1in62domainscontainedatleast
+5Thisparticularattackhasbeenwell-documented. See,forexample,
+one scripted drive-by download attack. If these numbers
+thedescriptionathttp://www.vitalsecurity.org/2005/03/
+firefox-spyware-infects-ie.html. are even close to representative for Web areas frequented
+15by users, it is not surprising that spyware on the desktop [13] David Moore, Vern Paxson, Stefan Savage, Colleen Shan-
+continuestobeofmajorconcern. nonandStuartStaniford,andNicholasWeaver. Insidethe
+slammerworm.IEEESecurityandPrivacy,1(4):33–39,July
+2003.
+6 Acknowledgements
+[14] Robin Poston, Thomas F. Stafford, and Amy Hennington.
+Spyware: aviewfromthe(online)street. Communications
+We would like to thank the Computer Science and En-
+oftheACM,48(8):96–99,2005.
+gineering support staff and the Computing and Communi-
+[15] NielsProvos.Avirtualhoneypotframework.InProceedings
+cations staff at the University of Washington for enabling
+of the 13th USENIX Security Symposium, San Diego, CA,
+our research. In particular, we want to thank Erik Lund-
+August2004.
+berg and Warren Jessop for fielding the countless security
+[16] StefanSaroiu,StevenD.Gribble,andHenryM.Levy. Mea-
+alarms that our crawling generated, and David Sinn and
+surement and analysis of spyware in a university environ-
+DavidRichardsonforhelpingsetupelementsofourcrawler
+ment. InProceedingsoftheFirstSymposiumonNetworked
+infrastructure. This research was supported in part by the SystemsDesignandImplementation(NSDI’04),SanFran-
+National Science Foundation under grants CNS-0430477, cisco,CA,March2004.
+CCR-0326546, and ANI-0132817, by an Alfred P. Sloan
+[17] MarkB.SchmidtandKirkP.Arnett.Spyware:alittleknowl-
+Foundation Fellowship, by the Wissner-Slivka Chair, and edge is a wonderful thing. Communications of the ACM,
+bygiftsfromIntelCorporationandNortelNetworks. 48(8):67–70,2005.
+[18] Sudhindra Shukla and Fiona Fui-Hoon Nah. Web brows-
+References ing and spyware intrusion. Communications of the ACM,
+48(8):85–90,2005.
+[1] Ad-Aware. http://www.lavasoftusa.com/ [19] PrabhatK.SinghandArunLakhotia.Analysisanddetection
+software/adaware/. ofcomputervirusesandworms:Anannotatedbibliography.
+ACMSIGPLANNotices,37(2):29–35,February2002.
+[2] America Online and the National Cyber Secu-
+[20] ThomasF.Stafford. Introductiontothespecialissueonspy-
+rity Alliance. AOL/NCSA online safety study.
+ware. CommunicationsoftheACM,48(8):34–36,2005.
+www.staysafeonline.info/news/safety_
+study_v04.pdf,October2004. [21] JeremySugerman, GaneshVenkitachalam, andBeng-Hong
+Lim. Virtualizing I/O devices on VMware workstation’s
+[3] KirkP.ArnettandMarkB.Schmidt.Bustingtheghostinthe
+hostedvirtualmachinemonitor. InProceedingsofthe2001
+machine. CommunicationsoftheACM,48(8):92–95,2005.
+Annual USENIX Technical Conference, Boston, MA, June
+[4] NeveenFaragAwadandKristinaFitzgerald. Thedeceptive 2001.
+behaviorsthatoffendusmostaboutspyware. Communica-
+[22] Sunbelt Software, Inc. Sunbelt Software Aquires Web
+tionsoftheACM,48(8):55–60,2005.
+Spidering Technology. Available at http://www.
+[5] MihaiChristodorescu,SomeshJha,SanjitA.Seshia,Dawn sunbelt-software.com/Press.cfm?id=114,
+Song,andRandalE.Bryant. Semantics-awaremalwarede- April2005.
+tection. InProceedingsofthe2005IEEESymposiumonSe-
+[23] Roger Thompson. Why spyware poses multiple threats to
+curityandPrivacy,Oakland,CA,May2005.
+security. CommunicationsoftheACM,48(8):41–43,2005.
+[6] LeeA.FreemanandAndrewUrbaczewski. Whydopeople
+[24] Yi-MinWang,DougBeck,XuxianJiang,andRoussiRous-
+hatespyware? CommunicationsoftheACM,48(8):50–53,
+sev. Automated web patrol with strider honeymonkeys:
+2005.
+Findingwebsitesthatexploitbrowservulnerabilities. Tech-
+[7] SteveGibson. Spywarewasinevitable. Communicationsof nicalReportMSR-TR-2005-72,MicrosoftResearch,August
+theACM,48(8):37–39,2005. 2005.
+[8] QingHuandTamaraDinev. Isspywareaninternetnuisance [25] Yi-MinWang,DougBeck,BinhVo,RoussiRoussev,Chad
+orpublicmenace? CommunicationsoftheACM,48(8):61– Verbowski, and Aaron Johnson. Detecting stealth soft-
+66,2005. warewithStriderGhostBuster.Technicalreport,Yokohama,
+Japan,July2005.
+[9] InternetArchive. TheHeritrixwebcrawlerproject. http:
+//crawler.archive.org/. [26] Yi-Min Wang, Roussi Roussev, Chad Verbowski, Aaron
+Johnson, Ming-Wei Wu, Yennun Huang, and Sy-Yen
+[10] Kazaa. http://www.kazaa.com.
+Kuo. Gatekeeper: Monitoringauto-startextensibilitypoints
+[11] DarrellM.KienzleandMatthewC.Elder.Recentworms:A (ASEPs) for spyware management. In Proceedings of the
+surveyandtrends. InProceedingsofthe2003ACMWork- 18th Large Installation System Administration Conference
+shoponRapidMalcode,Washington,DC,October2003. (LISA’04),Atlanta,GA,November2004.
+[12] YounghwaLeeandKennethA.Kozar. Investigatingfactors [27] Merrill Warkentin, Xin Luo, and Gary F. Templeton. A
+affectingtheadoptionofanti-spywaresystems. Communi- frameworkforspywareassessment. Communicationsofthe
+cationsoftheACM,48(8):72–77,2005. ACM,48(8):79–84,2005.
+16[28] Webroot Software, Inc. Automated threat research.
+Described at http://research.spysweeper.com/
+automated_research.html.
+[29] XiaoniZhang. Whatdoconsumersreallyknowaboutspy-
+ware? CommunicationsoftheACM,48(8):44–48,2005.
+17

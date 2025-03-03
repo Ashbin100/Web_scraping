@@ -1,0 +1,819 @@
+Active Certificates: A Framework for Delegation
+NikitaBorisov EricBrewer
+UniversityofCalifornia,Berkeley
+E-mail: nikitab,brewer @cs.berkeley.edu
+Abstract be uniformly interpreted by all access monitors, and rich
+enough to specify a highly restrictive delegation policy.
+Consequently,suchsystemsoftenencounterlongdelaysin
+Inthispaper,wepresentanovelapproachtodelegation standardizationanddeployment,differingimplementations
+in computer systems. We exploit mobile code capabilities interpretstandardsinincompatibleways[19],andresulting
+of today’s systems to build active certificates: crypto- systemsarefrequentlylessflexiblethanmanyuserswould
+graphicallysignedmobileagentsthatimplementdelegation desire.
+policy. Active certificates arrive at a new combination Anothermechanismtoperformdelegationisaproxy. A
+of properties, including expressivity, transparency, and proxy is a daemon, endowed with sufficient credentials to
+offline operation, that is not available in existing systems. perform access as the original rights owner. The proxy
+Thesepropertiesmakeactivecertificatespowerfultoolsto performsdelegationbyacceptingrequestsfromothersand
+express delegation. Active certificates can also be used thencarryingthemoutontheowner’sbehalf.Thisapproach
+as a mechanism to implement complex policy systems, is highly general, since the proxy completely mediates
+such as public key infrastructures; systems built in this access andcan therefore enforce a wide rangeof policies.
+way are easily extensible and interoperable. A prototype Proxiescanalsobereadilydeployedandupgradedwithout
+implementationofactivecertificateshasbeenbuiltaspart any changes to the infrastructure. However, the lack of
+oftheNinja[17]project. infrastructure support means that the proxy must have its
+owninternalmechanismstoauthenticatetherequesters,and
+thattheownermustfindawaytokeeptheproxyavailable
+1 Introduction for use. Furthermore, lending important credentials to a
+daemonintroducessecurityconcerns.
+Delegation is an essential tool of cooperation. In com-
+Activecertificatesarea newapproachtodelegationthat
+puter systems, components frequently need to delegate
+arrives at a combination ofthese two solutions. An active
+rights to other components in order for cooperation to
+certificate is a special type of delegation certificate that
+succeed. Delegation of rights always carries with it a risk
+contains the program code implementing a mobile agent.
+of misuse; therefore, it is important to minimize exposure
+This mobile agent acts as a delegation proxy, mediating
+by delegating the precise set of rights necessary for the
+requests andresponses. However, the agentis instantiated
+taskathand. Thissecurityconcernisespeciallyrelevantin
+bytheaccessmonitorwheneveruseofrights is requested.
+view of the current trends, as cooperating components are
+Because the certificate is signed, requests coming from
+distributed widelyovertheInternetamongmanymutually
+the agent are implicitly authenticated as coming from the
+untrustingsystems[26,27].
+signer; thus, the agent can successfully proxy the original
+The issue of delegation has been addressed in several
+owner’srights.
+public key infrastructures by introducing the concept of a
+Activecertificatesusemobilecodetobringmuchofthe
+delegation certificate. A principal that wishes to delegate
+generalityofproxiestoacertificate-basedsystem.Theonly
+rights to another principal issues a delegation certificate,
+restrictions onthepossibletypesofpolicyresultfromany
+whichactsasasignedstatementofpolicydescribingwhat
+limitationsofthemobileexecutionplatform. Ontheother
+rights should be delegated and to whom. When access
+hand, since the certificate is run at the access monitor, it
+is required, the certificate is interpreted by the access
+is able to avoid the availability requirements and security
+monitor, which combines the delegation policy contained
+concernsofproxy-basedsolutions.Activecertificatesenjoy
+in the certificate with internal policies, as well as any
+several properties of certificate systems that have been
+other certificates available, and produces an authorization
+responsible for their popularity, such as offline operation
+decision. A challenge in designing such systems is the
+andeaseofcertificatedistribution.
+choice of policy language — it must be simple enough toTCB of Resource
+Bob: Request Alice: Request
+Active
+Bob Resource
+Cert
+Response
+Response
+K
+Alice
+Figure1.Activecertificateinoperation.
+The programmatic nature of active certificates allows ever,insteadofrunningtheproxyherself,Aliceimplements
+them to express concepts such as composition and modu- the proxy in the form of a mobile agent. She signs the
+larity. They can therefore be a useful policy tool even in code for the mobile agent with her private key, producing
+circumstances where delegation is not required. They are an active certificate. This certificate is then distributed to
+complex enough to build systems such as a hierarchical Bob.
+public key infrastructure. The use of a general purpose WhenBobneedstousetheResource,hemustpresentit
+language coupled with the interposition architecture make withtheactivecertificate. TheResourceverifiesthesigna-
+systems built with active certificates easily extensible and tureandthencreatesaninstanceofthemobileagent,setting
+interoperable. ituptoproxyrequestsfromBob.Thesignatureontheagent
+The rest of the paper is organized as follows: the next certifies its right to act on Alice’s behalf; therefore, the
+section describes active certificates and their properties. runtimesystemoftheResourceimplicitlyauthenticatesall
+Section 3 explains how to use active certificates to build requestscomingfromtheproxyascomingfromAlice.The
+complexsystems. Section4formallyexaminesthesecurity operationofactivecertificatesissummarizedinFigure1.
+ofactivecertificates. Section5 describes ourimplementa- Toillustratetheoperationofactivecertificates,consider
+tionofactivecertificates. Sections6and7discussrelated an example where Alice wishes to delegate some of her
+andfuturework.Finally,Section8concludes. right to read the file "foo" on the file system to Bob.
+Shefirstcreatesanagentprogram,whichlookssomething
+2 ActiveCertificates like the code in Figure 2. She then signs the code for the
+agentprogram,creatinganactivecertificate,andhandsthe
+2.1 Operation
+certificate to Bob. When Bob wishes to access "foo",
+Inthispaper,wewilldiscussdelegationintermsofAlice, hepresentsthecertificatetothefilesystem,whichverifies
+who has some rights to access a Resource, and wishes to Alice’ssignatureandinstantiatestheagentprogram. Bob’s
+delegate a portion of those rights to Bob. We will first requests toaccess the file aresentto thecertificate, which
+describethecasewhenAliceaccessestheResourcewithout verifiesallthenecessaryconditionsandforwardsthethem
+delegation. Itwill beconvenienttomodel herinteractions ontothefilesystem.Sincetheforwardedrequestsareiden-
+withtheResourceasaflowofrequestsandresponses;this tified as coming from Alice, the file system policy allows
+abstraction is sufficiently general to represent most kinds exactly those actions that Alice is authorized to perform.
+of access. In our model, requests from Alice arrive at the However,thechecksperformedbyAlice’sprogramrestrict
+Resourceoversomesortofauthenticatedchannel,andare Bob’sactionsfurther,enforcingAlice’sdelegationpolicy.
+labeledwiththeauthenticatedsender. Wewillwrite“Alice:
+Request” to represent this. The Resource applies a local 2.2 Properties
+policy decision to decide whether Alice is authorized to
+Active certificates share similarities with both proxy-
+performthespecifiedrequestandsendsbackanappropriate
+basedandcertificate-basedapproachestodelegation. This
+response.
+allows them to combine important properties of both sys-
+WhenAlicewantstodelegatesomeofherrightstoBob,
+tems. Active certificates inherit much of the expressivity
+sheneedstocreateaproxythatwillinteractwithBoband
+andtransparencyofproxies. Ontheotherhand,theycanbe
+theResource. TheproxyreceivesBob’srequeststousethe
+createdanddistributedofflinewiththeeaseofconventional
+Resource and applies Alice’s delegation policy to decide
+certificates. We shall discuss these properties in detail in
+whether to forward the requests onto the Resource. How-processRequest(request):
+This is important because it means that delegation can
+IF getCurrentDate() < "Dec 31, 2001" AND
+proceed without explicit support from an application run-
+request.requester = "Bob" AND
+ning at the Resource. Since applications are frequently
+request.type = READ AND
+used in ways that are not originally intended, interfaces
+request.filename = "/some/pathname/foo"
+providedbytheapplicationarelikelytoeventuallybecome
+THEN
+return FileSystem.processRequest(request) insufficient for users’ evolving needs, and upgrading such
+ELSE interfacescanbeaslowanddifficultprocess. Noticethatin
+return Error thecaseofdelegation,thepolicyischosenbyAliceandnot
+theowneroftheResource,asisthecasewithauthorization.
+Figure2.ExampleActiveCertificate. Therefore, Alice may have a hard time convincing the
+ownertoinvesttheeffortrequiredtoadapttheapplicationin
+ordertosupportherpolicy. ActivecertificatesallowAlice
+thissection.
+to implement her delegation policy without changing the
+application.
+Expressivity. Expressivity is of paramount importance
+Ofcourse,helpfromtheapplicationcangreatlysimplify
+in a delegation system. Delegation of rights involves
+thetaskofimplementingsecuritypolicies. Tosupportthis,
+weakening access control restrictions that wouldnormally
+activecertificatesdefineamechanismtolettheapplication
+be in place; a specific, fine-grained delegation policy is
+communicatewiththecertificateprogram;seeSection3.3.
+needed to avoid weakening these restrictions more than
+necessary. Delegation proxies are highly general in the
+Offline Delegation. The ability to perform delegation
+collectionofpoliciesthattheyareabletoexpress,sincethey
+offlinegivesAlicemoreflexibility,sinceotherwiseshemust
+areinterposedbetweenBobandtheResourceandtheycan
+either remain online and participate in every transaction,
+employ a powerful implementation language. The former
+or leave an agent with her private key to do the same.
+allows proxies to affect the entirety of communication
+The former option limits the scope of delegation, and the
+betweenBobandtheResource;thelatterallowsforhigher
+latterintroducesresourceconstraintsandsecurityconcerns.
+complexityofpolicies.
+Activecertificatesallow delegationto occur withoutAlice
+Activecertificatesinheritmuchofthisexpressivity. Like
+beingonline;indeed,Alicecancreatethecertificatesoffline
+proxies, they are interposed on the request and response
+withouteverstoringherprivatekeyonanetwork-connected
+path;however,the(potentiallydeliberate)limitationsofthe
+computer.
+mobileexecutionplatformmayrestrictthetypesofpolicies
+Anactivecertificatecanbeseenasanofflineexpression
+thatarepossible.Nonetheless,thereexistmobileplatforms
+of Alice’s intentions; i.e. what she would have done had
+thatsupport powerful languages (e.g. Java [16]), allowing
+she been an online participant. To allow Alice to change
+forawiderangeofpolicies.
+her policy at a later time, it is important to associate with
+For example, Java and similar languages are clearly
+eachcertificateanexpirationdate,afterwhichitisnolonger
+sufficientlygeneraltounderstandtheapplicationsemantics
+valid. If more immediate revocation is desired, certificate
+of requests and responses. The certificate in the above
+revocationschemes(e.g.[25,24,28])canbeused;however,
+example is able to understand requests for the file system
+they add the requirement that either the Resource or Bob
+wellenoughtoidentifyboththefilenameandtheoperation
+musthave(atleastintermittent)accesstoanonlineserver.
+thatisbeingperformed.Inconventionalcertificatesystems,
+thenotionofafile namewouldneedtobeintegratedwith
+3 CompositionandAbstraction
+the policy language before certificates could reason about
+them. Active certificates, on the other hand, can easily
+Because active certificates are interposed on the
+supportnewkindsofapplicationsandnewkindsofpolicies
+request/response stream, there is a natural way to
+withoutmodifyingtheruntimesystemthatinterpretsthem.
+compose them. Such composition enables further re-
+delegation of rights with additional restrictions. More
+Transparency. Active certificates retain much of the importantly, it allows decomposition of a complex policy
+transparency of proxy-based delegation. Although the intosmallerpolicymodules. Theuseofageneralpurpose
+Resource does need to be aware of and process active language makes it possible for active certificates to define
+certificates, this function can be restricted to a small abstractions. Using these two techniques, it is possible to
+component of the runtime system. An authentication buildcomplexpolicysystemsbasedonactivecertificates.
+librarycanprocessactivecertificatesandmarkrequestsas
+iftheywerecomingfromAlice;therestofthesystemneed
+notknowthatdelegationistakingplace.TCB of Resource
+Carol: Request Bob: Request Alice: Request
+Active Active
+Carol Resource
+Cert Cert
+Response Response
+K K
+Bob Alice
+Figure3.ChainedActiveCertificates.
+3.1 ChainedOperation certificatetoenforcethispolicywouldneedtoperformtwo
+checks: that the request is coming from a member of the
+Tobegin,considerasimpleexample,whereBobwishes
+group offriends, and thatthe requestis of theappropriate
+to delegate rights he acquired via an active certificate fur-
+form, i.e. accesses "foo". Policy attributes allow these
+ther. Hecreatesanewcertificateprogramthatenforceshis
+checkstobeseparatedintotwocertificates:onethatverifies
+ownrestrictions,signsit,andhandsittoCarol.WhenCarol
+membership in the “friends” group and one that verifies
+wishes to access the Resource, she presents it with both
+the request type. The former certificate would check the
+Bob’sandAlice’scertificates.TheResourceinstantiatesthe
+originatorofarequest,andthenaddanisFriendattributeif
+certificatesinachain,asshowninFigure3.Carol’srequest
+themembershipiscorrect. Thelatterwouldverifythatthe
+isfirstpassedtoBob’scertificate,whichthenforwardsitto
+isFriendattributeispresent,andthenproceedwiththepath
+Alice’scertificate.Atthispointtherequestisauthenticated
+namechecks.
+as coming from Bob, and will therefore be accepted by
+Such decomposition allows policy components to be
+Alice’scertificate. Responsesarepassedbackupthechain
+reused. Alice could create many policies that rely on
+of certificates. Carol can re-delegate her rights using the
+delegatingsomerightstoherfriends, eachofwhichcould
+same process; chains of certificates of arbitrary depth are
+makeuseoftheisFriendattribute. Shecanthenevolveher
+possible.
+set of friends without modifying any of these policies by
+NoticethatalthoughAlicemaynotwishBobtobeable
+issuingnewcertificatesthatgeneratetheisFriendattribute.
+toredelegateherrights, ingeneral she cannot preventhim
+Decomposition also allows distribution of trust. In our
+fromdoingso. EveniftheruntimesystemallowedAlice’s
+example, certificates that consume the isFriend attribute
+certificatetodifferentiatebetweenchainedandnon-chained
+must ensure that attributed requests are authenticated as
+operation,Bobcouldsimplycreateadelegationproxythat
+comingfromAlice,sincepresumablyonlyAliceshouldbe
+iscompletelytransparenttothesystem.
+allowedtodecidewhoherfriendsare. However, forother
+kinds of policies, Alice may trust someone else to define
+3.2 PolicyAttributes
+thoseabstractions;forexample,shemightwanttodelegate
+As witnessed above, chaining can be used to combine somerightstoBob’sfriends.
+severalactivecertificatestoimplementacompositepolicy.
+This is a powerful technique that can be used to break a 3.3 ApplicationPolicyAdapters
+complexpolicyintoseveralsubcomponents, bringingwith
+Although typically policy attributes are consumed by
+it the promise of policy modularity. However, modularity
+chained active certificates and are not passed onto the ap-
+requiresanotherimportantprinciple: abstraction.
+plication, some applications may wish to accept attributed
+Abstraction can be implemented by way of policy at-
+requests in order to facilitate policy implementation. For
+tributes. We create a new type of request, which is a
+example, it may be easier for the file system to identify
+wrapperaroundanotherrequest(ofarbitrarytype)withan
+requests that are read-only internally; in this case, it may
+additional attribute field. This field is used to specify a
+choose to accept attributed requests with a readOnly at-
+policy abstraction generated by one active certificate and
+tribute,andrefusetocarryoutanymodificationoperations
+intended to be consumed by another. In this way, active
+for such requests. Then the example certificate from
+certificatescancommunicatepolicydecisionstoeachother.
+Figure 2 could be rewritten to allow any requests but add
+Considerthefollowing: supposeAlicewantstodelegate
+areadOnlyattribute.
+access to file "foo" to a group of her friends. An activeAnother way to provide support is to create an adapter able to understand each other’s certificate format, name-
+agent operatingoutsidetheapplicationthatconsumespol- spaces,etc. Theuseofactivecertificatesprovidesaneasier
+icy attributes such as readOnly and enforces restrictions way to connect two hierarchies; all that is necessary is an
+based on request type. This agent can either be used as active certificate chaining trust from a node on the first
+a library by Alice’s other certificates, or instantiated as hierarchy to the root (or some other node) on the other.
+a standalone certificate. In the latter case, the certificate Thecertificateactsasa“bridge”betweenthetwosystems,
+would not be performing delegation but instead enforcing performinganynecessarynamespacetranslationsandother
+a higher-level policy; therefore, it should be signed by modificationstomakethesystemscompatible.Itsrolehere
+Aliceandonlyacceptrequestsfromher. Placingtheagent canbecomparedtoanactiveproxy[11]protocoladapter.
+outsidetheapplicationhastheadvantagethatitcanevolve Active certificates also leave plenty of room for exten-
+independently. sion. A general purpose language allows any computable
+function to be used as a policy, and the interposition
+3.4 HierarchicalPKI architecture avoids any limitations of an explicit interface
+with the Resource. As a result, it is possible to create
+Amorecomplexexamplethatusescompositionandab-
+certificates expressing new types of policies and integrate
+stractionisahierarchicalpublickeyinfrastructure.Apublic
+themwithanexistingsystem. Itisevenpossibletoevolve
+key infrastructure uses certificates to create associations
+policy abstractions over time, using adapter certificates to
+between names and public keys. We can represent these
+providebackwardscompatibility. Incontrast,conventional
+nameassociationsaspolicyattributes.Forexample,inaflat
+certificate systems are difficult to upgrade, since all the
+hierarchy,acertificateauthoritymayassignBobthekey .
+libraries that interpret certificates must be replaced, and
+Inthis case, the CA would create an active certificate that
+backwardscompatibilitymaybedifficulttoachieve.
+acceptsanyrequestauthenticatedwithkey andforwards
+Theactivecertificatearchitecturemayalsohelptomake
+anattributedrequestwiththefieldnamesetto“Bob”.Other
+thetrustingcomputingbasemoresecure. Complexcertifi-
+certificatescanrelyonsuchmappingstodelegaterightsto
+cate libraries can be removed from the TCB and replaced
+namedprincipals, insteadofpublickeys; thosecertificates
+by a general-purpose language interpreter. An interpreter
+should accept requests authenticated as coming from the
+foranestablishedlanguageislikelytobemorematurethan
+CA and with the name field set appropriately. Of course,
+anygivencertificatelibrary.Further,theremaybeincentive
+the CA is then able to issue arbitrary requests claiming to
+for commercial vendors to offer the core of their system
+be from an authorized principal, but this is inherent in all
+as open-source, since most ofa given solution’s valuelies
+hierarchicalpublickeyinfrastructures: aCAisalwaysfree
+in management subcomponents which, while essential to
+toassociateanamewithitsownkeyandthusimpersonate
+operation, are not security critical. In this way, they can
+any principal. Our formulation merely makes this ability
+providetheircustomerswithahigherassuranceofsecurity
+moreexplicit.
+thanispossibletoday.
+It is easy to introduce subauthorities: the root CA cre-
+Unfortunately, active certificates cannot duplicate all of
+ates a certificate which accepts any named request that is
+the features of modern PKIs. Since it is undesirable to
+authenticatedbythekeyofthesubauthority,aslongasthe
+allow a mobile agent to open new network connections,
+name is within the authority’s domain of power; this is a
+itisdifficulttoimplementcertificaterevocationlists using
+straightforward example of rights delegation. Notice that
+activecertificates(althoughthe“bill-of-health”certificates
+in this case there is a one-to-one correspondence between
+proposedbyRivest[31]couldbesupported). Itisstillpos-
+conventionalcertificatesusedinahierarchicalPKItocreate
+sible to implement revocation lists in the runtime system,
+the name-key bindings for “Bob” and active certificates.
+butthat solutionlacks theadvantages of activecertificates
+Inthiscase, eachactivecertificateencodes theoperational
+such as the easy ability to change algorithms. Automated
+semanticsofitspassivecounterpart.
+certificate management is also complicated by the fact
+3.5 Discussion that it is infeasible to automatically tell what an active
+certificate does based on its content, thus it is difficult
+ThefactthatitwaseasytobuildahierarchicalPKIoutof
+to tell which subset of a collection of certificates will be
+active certificates speaks to their generality. The resulting
+useful to authenticate Bob to the Resource. And despite
+systemnotonlyduplicatesmanyofthefeaturesofconven-
+a smaller TCB, running untrusted mobile code, even in
+tionalPKIs, it also has interestingnew properties, such as
+a restricted environment, is still considered a risk today.
+easeofinteroperation,extensibility,andthepotentialfora
+Nonetheless, active certificates present an interesting, if
+moresecureTCB.
+notyetpractical,newdirectionforimplementingPKIsand
+InteroperationisanimportantrequirementofPKIs:com-
+otherpolicysystems.
+paniesfrequentlyusecross-certification[2]toconnecttheir
+corporate infrastructures. However, both systems must be4 Security Analysis So, upon getting the request from Bob, the Resource
+passesit totheactivecertificatetoobtain
+In this section, we formally model the operation of
+. Itthenapplies(2)toobtain .Nowitneedsto
+active certificates using a belief logic defined by Abadi et
+interpretthepolicyintheactivecertificate.Wewillassume
+al [1]. Formal methods have been used to examine and
+that it knows that is Alice’s public key, and therefore
+formally verify a large number of security systems; they
+. Thenitcanderive . Wealso
+have helped to identify problems and hidden assumptions
+need another assumption: , which
+in many. Evenoutside the context of proofs of security, a
+says that Alice has the authority to delegate her rights —
+formal specification of a system can often lead to a better
+thisisnotimplicitinthelogic,butnecessaryforoursystem.
+understanding ofits properties. We will thereforeproceed
+Combiningthetwostatements,theResourceobtains
+to describe the operation of active certificates using the
+,whichallowsittoapply(1)andfinallyderive .
+logic.
+At this point it can apply the authorization decision as if
+WhenAliceordinarilyaccessestheResourcewithoutdel-
+Alicemadetherequestherself,andthedelegationsucceeds.
+egation,shesendsarequest overasecurechannel.Thisis
+Wealsocouldhavemodeledactivecertificatesusingthe
+representedinthelogicas .TheResourcereceives
+restricteddelegationprimitivedefinedbydefinedbyHowell
+themessageandperformsanauthorizationdecisiontosee
+andKotz[22]. ,or“ speaksfor regarding ”
+ifAliceisallowedtodoaction ,andiftheauthorizationis
+means that has the authority to act on the behalf of
+successful,proceedswiththerequest.
+foranyactioncontainedintheset . Anactivecertificate
+When Bob wishes to access the resource, he first sends
+wouldthenbemodeledas:
+Alice’s active certificate to the Resource. The certificate
+is signed by Alice’s public key, which we can model by
+.ThecontentsofthecertificatesrepresentAlice’s
+policy delegating access to Bob, so it may be tempting to
+However,thisexpressionisawkwardanddifficulttounder-
+say , where is the “speaks for” operator,
+stand, since an active certificate defines both the potential
+definedas
+recepientsofdelegatedrightsandthesetofallowedactions
+1 (1) implicitly(andingeneral,thesesetsarenotcomputable).
+However,thiswouldbeincorrect,sincethatstatementgives 4.1 AuthenticationofResponses
+unrestricted ability to do anything is allowed to do,
+We can also use the logic to reason about the valid-
+as opposed to only the things allowed by the certificate
+ity of responses received from the Resource when active
+program.Wemustthereforeexaminetheoperationofactive
+certificates are used. When Alice accesses the Resource
+certificatesmoreclosely.
+directly, a response to a request is interpreted as
+After sendingthe certificate, Bobsends his request to
+. The predicate is used to
+theResource.Therequestisgivenasinputtothecertificate
+associatearesponsewiththeappropriaterequest.However,
+program, which we will call . To model the program
+what can Bob tell about the response when active certifi-
+withinthelogic,weconsideritasafunctiononstatements
+cates arein place? Unfortunately,as a consequenceofin-
+inthelogic. SincetheprogramknowsthatitwasBobwho
+terposition,Bobcannotassumethat ,
+madetherequest,wegiveit asinput.Theprogram
+because Alice’s active certificate is allowed to modify
+then produces another request , which
+both requests and responses arbitrarily. In a sense, Alice
+is then passed to the Resource. At this point, must be
+is defining her own predicate by her certificate,
+interpreted as if it were coming from Alice for delegation
+which may be different from the Resource’s predicate.
+to succeed. Since the program is actingon Alice’s behalf,
+However, it would be incorrect for Bob to assume that
+itisappropriatetousethe operator. Weneedtodefinea
+, since the execution of Alice’s cer-
+newprincipal representingtheprogram, andintroduce
+tificateattheResourceisnotmonitoredbyeitherAliceor
+thefollowingrule:
+Bob; the Resource is free to return arbitrary results. We
+mustthereforetakeacloserlookattheoperationofactive
+(2)
+certificates.
+In other words, says whatever the program outputs. Recall that the active certificate passes a request to
+NowAlice’scertificatecanbedefinedsimplyas: theResource,where . Therefore,when
+Alice’scertificatereceivesaresponse fromtheResource,
+(3) itcaninferthat: . Thecertificatethenuses
+toderivethefinalresponse . Itisthereforeappropriate
+1SimilartothenotationusedbyAbadietal,weuse torepresentthe
+logicalcontainmentrelation; meansthatif then .tomodelthecertificate’smodificationstotheresponseas: 5.2 CertificateImplementation
+Because of its support for code mobility and restricted
+programexecution, weuse Javaas the languageforactive
+In other words, given the response from the Resource certificatesinourimplementation. Thischoicealsosimpli-
+to the request , Alice’s certificate computes its own fiedtheintegrationofactivecertificateswiththerestofthe
+response to the request . The resource can apply (2), Ninjaframework.
+substituting for , and (3), to obtain An active certificate implements the ActiveCertIF
+. This canbe sent backto Bob, who interface, which has two methods: init, which accepts
+canobtainthefinalresult: a reference to a stub object for the downstream service,
+and handleTask, which performs a policy decision on
+incoming tasks and sends tasks to the service, using the
+handleTask method on the stub object. It also pro-
+This must be the interpretation that Bob gives to the
+cesses the responsesreceivedfromthe service, potentially
+result,asitreflectsthenatureinwhichtheresultisderived.
+modifying them before returning them to the user. The
+Unfortunately,thisstatementisweakerthanoneBobwould
+interposition of the active certificate is transparent to both
+expect in the non-delegated case; however, it is sufficient
+theserviceandtheclient.
+in many common instances of delegation. Consider, for TheActiveCertIF interfaceiswellsuitedforchain-
+example,thecasewhereAlicegivesBobtherighttocheck
+ing. An active certificate that is part of a chain gets a
+heremail while she is away, or where Alice shares access reference to another certificate, and not to a service stub,
+to some of her files with Bob because they are working as the argument to its init method. Therefore, calls to
+on a project together. In both cases, it does not make handleTask pass the tasks to the next certificate in the
+senseforAlicetotrytodeceiveBobbyreturningmalicious
+chain. In this way, chaining is also transparent to all the
+resultsinhercertificate;delegationhereisusedasatoolfor
+certificates.
+cooperation,whichrequiresacertaindegreeofmutualtrust
+tobeginwith. ProblemsarisewhenBob’sabilitytousethe 5.3 Authentication
+Resource properly is not directly beneficial for Alice; for
+We will not discuss the authentication protocol used by
+example,ifsheissellingheraccesstotheResourcetoBob.
+Ninja,otherthantosaythatitissimilarinspirittoTLS[9],
+Insuchcases,Bobmaywanttoexaminetheoperationofthe
+and can be modeled as a secure channel. The result of
+activecertificateinordertoderiveastrongerstatementon
+authentication is expressed as message metadata: each
+theresult. However,ingeneral,propertiesofthecertificate
+typed message includes an authKey field that is set by
+may be undecidable given the program code; providing
+the infrastructureto be the public key ofthe authenticated
+bettersupportforauditingisthesubjectoffuturework.
+originator of the message. When a service receives a
+message with itcanderivethestatement
+5 Implementation
+.
+We havebuilt a prototype implementation ofactive cer- Active certificates are implemented by changing the
+tificatesaspartoftheservicecallmechanisminNinja[17]. authKey field of messages. When an active certificate
+TheNinjaprojectaimstoserveasaplatformforbuildinga receives a message from a client, the authKey is set
+distributed services infrastructure, with a focus on service to the client’s public key. When it calls handleTask,
+composition. This section discusses the details of our the resulting message that is sent to the service has its
+implementation. authKey set to the signer of the certificate. This makes
+the service behave as if the principal who signed the
+5.1 ServiceCalls certificatewasinteractingwithitdirectly.
+ServicecallsinNinjaarerepresentedastypedmessages,
+5.4 CertificateFormat
+ortasks.AtaskisimplementedasaJavaobject.Java[16]is
+usedinNinjabecauseitprovidesarichtypehierarchy,plat- Anactivecertificateconsistsoffourfields:thecertificate
+form independence, and automated memory management. program, represented by the bytecode for a class that
+When a client wishes to send a task to a service, it calls implements the ActiveCertIF interface, a parameter
+thehandleTaskmethodonastubobjectfortheservice. object (see below), an expiration date, and the public key
+Thetaskisserializedandsenttotheserviceforprocessing. ofthesignerofthecertificate. Thefinalcertificateconsists
+Responses,orcompletions,arereturnedintheformoftyped of a byte array containing the serialized version of these
+messagesaswell. fieldsandasignatureoverthebytearrayusingthespecified
+publickey.public class NameCertificate
+Whentheinfrastructurereceivesanactivecertificatefrom
+implements ActiveCertIF {
+aclient,itfirstverifiesthesignature.Iftheverificationsuc-
+private PublicKey key;
+ceeds,aspecialclass loaderisusedtoloadtheimplemen-
+private Name name;
+tation of the certificate with restricted permissions. Then
+private ServiceIF service;
+theinfrastructurecreatesaninstanceofthecertificateclass,
+// ...
+passingthe parameter objectto the constructor. Finally, it
+installsthecertificateinthemessagepathbetweentheclient void handleTask(Task task) {
+andtheservicebycallingthecertificate’sinitmethod. if (task.authKey.equals(key)) {
+The parameter object allows the reuse of a single class service.handleTask(
+implementing an active certificate program in multiple new MessageFrom(name, task), ...)
+certificates. For example, a blanket delegation certificate } else {
+// error
+that delegates all possible rights to key (for a limited
+}
+time)mightstorethevalueof inaparameterobject.This
+}
+allowsthesame implementationtobereusedtoperforma
+}
+similardelegationtokey . Intheabsenceofaparameter
+field, or would have to be specified as a static field Figure4.ANameCertificate.
+in the class, requiring two separate classes for the two
+certificates.
+certificateservicetolookuptheirnamecertificates,which
+5.5 PrincipalNames theyusetoauthenticatethemselvestoservices. Thedirec-
+tory service only accepts updates from the root authority.
+TheNinjainfrastructuredoesnothaveaninherentunder-
+However,weuseadelegationcertificateissuedbytheroot
+standingofprincipalnames;itusespublickeystoidentify
+that implements the following policy: any client that can
+participants.Tosupportnamedprincipals,weimplemented
+authenticate itself under name is allowed to update the
+ahierarchicalPKIasdescribedinSection3.4. Wecreated
+certificate stored for that name. This allows clients to
+a special wrapper message type called MessageFrom,
+update their own entries in the directory, but not those of
+which contains a name attribute and a message. The
+others. Note thatthis policywas implemented bythe root
+semanticsofamessageoftheformMessageFrom
+authoritywithoutmodifyingthedirectoryservice,aswould
+can be modeled as . However, unlike the
+benecessaryinaconventionalsystem.
+authKeyfield,thenamefieldinaMessageFromobject
+We also experimented with using active certificates
+is not verified by the infrastructure, so a service must be
+to delegate access to the Ninja Jukebox [14] and
+carefultoacceptsuchmessagesonlyfromtrustedsources.
+NinjaMail [36] services. We successfully implemented
+In our prototype hierarchical PKI each service knows the
+certificates with policies to provide read-only access to
+keyoftherootauthorityandonlyacceptsMessageFrom
+individualsongpreferencestoa“collaborativeDJ”service.
+objectsauthorizedbythatkey.
+InNinjaMail,weuseactivecertificatestograntaprocmail-
+The root authority issues delegation certificates that ac-
+like [35] service the ability to examine message headers
+ceptMessageFrommessagesauthenticatedbyitssubau-
+and automatically file messages into folders. In this way,
+thorities, checking that the name field is within the juris-
+a compromise of the procmail service will have limited
+dictionofeachauthority. Thesubauthorities,inturn,issue
+impact on the mail system; in particular, mail cannot be
+certificatesthatacceptmessagessentbyaparticularpublic
+deleted.
+keyandcreateaMessageFrommessagethatincludesthe
+corresponding name. An example of such a certificate is
+5.7 Discussion
+showninFigure4. Whenaclientaccessesaservice,itsets
+upachainofactivecertificatesleadinguptotheroot, and JavaPlatform. OurexperienceusingJavahasbeengen-
+then proceeds to send requests. The first certificate in the erallypositive. TheJava1.2SecurityArchitecture[15]isa
+chain will create a MessageFrom message, which will bigimprovement over the previous version; restrictingthe
+be accepted by the certificates that follow it in the chain. execution of activecertificates was quite natural. It is im-
+Finally,themessagewillarriveattheserviceauthenticated possible, however, to enforce resource limits suchas CPU
+by the root authority. The service can then perform a time or memory usage on the certificate in our prototype.
+decisionbasedonthenow-authenticatednamefield. We are hopingto benefit fromresearch on resource limits
+inJava[13,33],andprovidebetterresourcemonitoringfor
+5.6 Applications
+activecertificatesaswellasothercomponentsoftheNinja
+We built a certificate directory service, which is used framework.
+to look up active certificates by name. Clients use the ThemethodofcreatingJavaactivecertificatespresenteda barrier to automated certificate generation. To create a required, and this process must be repeated for each new
+certificate, it is necessary to locate the bytecode for its applicationdomain.
+implementation; in an interactive setting this is done by Several systems have used a general-purpose program-
+readingthecorresponding.classfileoffthefilesystem. ming language to specify policy. PolicyMaker [4] is a
+However,Ninjaservicesareshippedasmobilecodetotheir system that manages collections of assertions, which can
+executionenvironments andfrequently donothaveaccess include arbitrary programs in a safe version of AWK, and
+to the file system. To let a service create new certificates, computes policy decisions on their basis. Proof-Carrying
+it is necessary to include a static parameter to the service Certificates [3] use proofs written in Twelf [29], which
+thatcontainsthebytecodeofthecertificateimplementation. is a powerful, if not general-purpose, language. Both
+This approach is functional, but it requires administrative systems, in typical usage, lack the transparency of active
+overhead to set and update the service parameter. If the certificates. PolicyMakerapplicationsmustdefinesecurity
+bytecodeimplementationofaclassvisibleatruntimecould attributes that are relevant and specify local policy in
+be obtained through reflection, automatic generation of terms of them. Proof-Carrying Certificates must prove
+certificateswouldbemorenatural. anapplication-dependenttheorem,withlocalpolicyrepre-
+sentedbyaxioms.However,avariantofPolicyMakercould
+MessageInterfaces. Theuseoftypedmessageinterfaces be used to produce a system similar to active certificates,
+helped make active certificates simpler and cleaner. The wherein an entire request is passed as a query to the
+previous version of the Ninja platform [18] used RMI- policymanagementsystem,andalanguageappropriatefor
+style interfaces, which were a collection of method sig- parsing such requests is used to define assertions. Such
+natures (i.e. a Java interface). To interpose on a service a system would lack the full proxying aspects of active
+that uses a method interface it is necessary to provide an certificates, and have a less general area of application
+implementation of each method. Message interfaces, on thanPolicyMaker,butitwouldcombineanumberoftheir
+the other hand, allow a certificate to operate as a message strengths.
+filter, with only partial or no knowledge of the interface. Proxy-basedsolutionscanbeusedtoimplementgeneral
+This makes expressing “vertical policies”, which are the delegation policies with complete transparency. Several
+same for every request type, very natural. (An example projects have used proxy technology to perform security
+of such vertical policy is a name certificate described in adaptation[32,12]. However,maintaininganonlineproxy
+Section5.5.) Request-dependent“horizontal”policies can imposes significant computational, connectivity, and man-
+also be easily represented using message interfaces by agementoverheadonits owner. Inaddition, prevalenceof
+branchingonthemessagetype. Eveninthiscase,message such proxies might put excessive bandwidth requirements
+interfaces have the advantage of being able to adapt to on the infrastructure because of the resulting inefficient
+anevolvingserviceinterfacebydenyinganyunrecognized routes. Most importantly, the proxy has to maintain its
+requesttypes.Apolicythathasbothhorizontalandvertical owner’s private key, which makes it an attractive attack
+components(thiswillbetrueofmanypoliciesinpractice) target.
+is also natural to represent in message interfaces; method Activecertificatesavoidallofthesepitfallsbyexecuting
+interfacesontheotherhandwouldrequirecodeduplication at the Resource. They are, however, less expressive than
+toimplementtheverticalcomponentsofpolicies. proxies,sincetheyareinstantiatedonlytemporarilyduring
+This experience suggests that in other systems that use accesstotheResource,andcannotmaintainpersistentstate.
+messagestoencoderemotecalls(e.g.RPCoverSOAP[7]), Toimplementpoliciesthatrequirepersistentstate,ahybrid
+activecertificatesshouldbeimplementedasmessagefilters solution is possible, wherein an online proxy stores the
+insteadofRPCwrappers. persistent state necessary and an active certificate is used
+tospecifypolicywithinputfromtheproxy.Theproxydoes
+notneedtostoreitsowner’spublickey,insteaditcanhave
+6 RelatedWork
+its own key recognized by the certificate. Such a solution
+A number of certificate systems have attempted to in- combinestheexpressivepowerofproxieswiththesecurity
+corporate the concept of delegation. For example, proxy advantages of active certificates, since the proxy is only
+certificates [34] are a proposed way to add delegation to trusted to maintain correct state, but not to authorize use
+X.509 [8]; SPKI [10] uses delegation as a central concept ofAlice’srights.
+in its operation. Both systems include a mechanism to
+restrict delegation: proxy certificates allow one to specify 7 Future Work
+arestrictionina(yet-to-be-specified)policylanguage,and
+Althoughactivecertificatesprovideaverypowerfuldel-
+SPKIsupportsapplication-specificrestrictiontags. Inboth
+egation mechanism, it is important to be able to manage
+cases, further standardization on application semantics is
+certificateseffectivelyinordertoexploittheirfullpotential.In a complicated system with a large pool of available refereesforinsightfulcommentsonearlierversionsofthis
+certificates,itisimportanttohaveautomatedsearchmech- paper.
+anisms to find a sequence of certificates that will allow
+Bob to use the Resource. There has been much research References
+into the problem of deciding authentication [20, 23, 5, 6]
+[1] M. Abadi, M. Burrows, B. Lampson, and G. Plotkin. A
+with varied results; however, it should be clear that the
+calculus for access control in distributed systems. ACM
+use of programs to specify policies makes this problem
+Transactions on Programming Languages and Systems,
+undecidable. Nonetheless, we hope to be able to attach
+15(4):706–734,September1993.
+attributes to certificates to make searches for a trust path
+[2] American National Standards Institute. Public key
+feasiblein practice, bytrying toexpress whichcertificates
+cryptography for the financial service industry: Certificate
+maybeusefultosolveaparticularauthenticationproblem.
+management. ANSIX9.57-1997,1997.
+Forexample,ifahigher-levelpolicylanguageistranslated
+into active certificates, such attributes could take the form [3] A.W.AppelandE.W.Felten. Proof-carryingauthentication.
+In5thACMConferenceonComputerandCommunications
+of the original high-level language source. This would
+Security, pages 52–62, Singapore, November 1999. ACM
+allowactivecertificatestobemanagedinthesamewayas
+Press.
+conventionalcertificates.
+Such “translation annotations” can also serve to check [4] M. Blaze, J. Feigenbaum, and J. Lacy. Decentralized trust
+management. In Proceedings of the IEEE Symposium on
+certaincertificateproperties,ifitispossibletoprovethatthe
+ResearchinSecurityandPrivacy,Oakland,CA,May1996.
+certificatecodeisindeedasemanticallyequivalenttransla-
+IEEEComputerSocietyPress.
+tionoftheannotation[30]. Suchaproofwouldensurethat
+thecertificateprogramisboundbyanyrestrictionsthatare [5] M. Blaze, J. Feigenbaum, and M. Strauss. Compliance
+checking in the PolicyMaker trustmanagement system. In
+inherentinthesourcelanguage. Forexample,atranslation
+Hirschfeld[21],pages254–274.
+from a policylanguage that has a bounded execution time
+caneaseconcernsofresourcemisusebythecertificate. We [6] D.Clarke, J.-E.Elien, C.Ellison, M. Fredette, A. Morcos,
+arealsoinvestigatingotherpropertiesthatmaybeusefulto andR.L.Rivest. CertificatechaindiscoveryinSPKI/SDSI.
+http://theory.lcs.mit.edu/˜rivest/
+prove about active certificates, and other ways of proving
+publications.html.
+them.
+Finally, we are evaluating the performance impact of [7] WWWConsortium. Simpleobjectaccessprotocol(SOAP)
+using active certificates. One promising feature of active 1.1. http://www.w3.org/TR/SOAP/.
+certificates is that complex functions such as interpreting [8] Consultative Committee on International Telegraphy and
+high-level policies or finding a trust path are shifted from Telephony. Recommendation X.509: The Directory—
+servers onto clients; this allows us to exploit the vast AuthenticationFramework,1988.
+disparities in the aggregate computing power of services [9] T. Dierks and C. Allen. The TLS prtocol version 1.0.
+andtheirlargeuserbasestoimproveperformance. RFC2246,January1999.
+[10] C.M. Ellison, B. Frantz, B. Lampson, R. Rivest, B.M.
+8 Conclusions Thomas, and T. Ylonen. SPKI certificate theory. Internet
+Draft,March1998. Expires:16September1998.
+Inthispaperwepresentedanovelapproachtodelegation
+[11] A. Fox, S. D. Gribble, Y. Chawathe, and E. A. Brewer.
+based on active certificates. It combines the strengths of
+Adapting to network and client variation using active
+previous approaches, including expressivity, transparency,
+proxies: Lessons and perspectives. Special Issue of IEEE
+offline operation, and convenience; these features make
+PersonalCommunicationsonAdaptation,August1998.
+active certificates useful tools for expressing delegation.
+[12] A. Fox and S.D. Gribble. Security on the move: Indirect
+We also explained how to use active certificates as a
+authentication using Kerberos. In 2nd ACM International
+platform to build larger systems; this approach has im-
+ConferenceonMobileComputingandNetworking,Novem-
+portant advantages such as extensibility. We performed a
+ber1996.
+formal security analysis of active certificates and built a
+[13] G.Back, W.C. Hsieh, and J. Lepreau. Processes in
+prototypeimplementationvalidatingourtechniques.Active
+KaffeOS: Isolation, resource management, and sharing in
+certificatesareanexcitingnewdirectionindelegationand
+Java. In Fourth Symposium on Operating Systems Design
+presentmanydirectionsforfurtherresearch.
+andImplementation(OSDI),October2000.
+[14] I. Goldberg, S. Gribble, D. Wagner, and E. Brewer. The
+9 Acknowledgments
+NinjaJukebox. InSecond USENIXSymposium onInternet
+Technologies and Systems (USITS), Boulder, CO, October
+WewouldliketothankAdrianPerrig,MarkMiller,David
+1999.
+Wagner,DawnSong,OlegKolesnikov,andtheanonymous[15] L.Gong. InsideJava2PlatformSecurity. Addison-Wesley, [32] S. Ross, J. Hill, M. Chen, A. Joseph, D. Culler, and
+June1999. E. Brewer. A composable framework for secure multi-
+modalaccesstoInternetservicesfromPost-PCdevices. In
+[16] J. Gosling, B. Joy, and G. Steele. The Java Language
+Third IEEE Workshop on Mobile Computing Systems and
+Specification. AddisonWesley,1997.
+Applications(WMCSA),toappear,Monterey,CA,2000.
+[17] S. Gribble, M. Welsh, R. von Behren, E. Brewer,
+[33] A. Rudys, J. Clements, and D.S. Wallach. Termination
+D.Culler,N.Borisov, S.Czerwinski, R.Gummadi,J.Hill,
+in language-based systems. In Network and Distributed
+A. Josheph, R. Katz, Z. Mao, S. Ross, and B. Zhao.
+SystemsSecuritySymposium’01,2001.
+TheNinjaarchitectureforrobustInternet-scalesystemsand
+services. SpecialIssueofComputerNetworksonPervasive [34] S. Tuecke. Internet X.509 public key infrastructure proxy
+Computing,March2001. certificateprofile. InternetDraft,2001.
+[18] S.D. Gribble, M.Welsh, E.A. Brewer, and D.Culler. The [35] S.R.vandenBerg. Procmail-autonomousmailprocessor.
+MultiSpace:Anevolutionaryplatformforinfrastructuralser- http://www.procmail.org/.
+vices.InProceedingsofthe1999USENIXAnnualTechnical
+[36] J.R.vonBehren,S.Czerwinski,A.D.Joseph,E.A.Brewer,
+Conference (USENIX-99), pages 157–170, Berkeley, CA,
+and J. Kubiatowicz. NinjaMail: The design of a high
+June 6–111999.USENIXAssociation.
+performance clustered, distributed e-mail system. In First
+[19] P.Gutmann. X.509styleguide. InternationalWorkshoponScalableWebServices,Toronto,
+http://www.cs.auckland.ac.nz/˜pgut001/ Canada,August2000.
+pubs/x509guide.txt,October2000.
+[20] M.H.Harrison,W.L.Ruzzo,andJ.D.Ullman. Protectionin
+operatingsystems.CommunicationsoftheACM,19(8):461–
+471,1976.
+[21] R. Hirschfeld, editor. Financial Cryptography, Anguilla,
+BritishWestIndies,February1998.
+[22] J. Howell and D. Kotz. A formal semantics for SPKI. In
+6thEuropeanSymposiumonResearchinComputerSecurity,
+pages140–158,2000.
+[23] A.K. Jones, R.J. Lipton, and L. Snyder. A linear time
+algorithmfordecidingsecurity. In17hIEEESymposiumon
+theFoundationsofComputerScience,pages33–41,1976.
+[24] P. Kocher. On certificate revocation and validation. In
+Hirschfeld[21],pages172–177.
+[25] S.Micali. Efficientcertificaterevocation. TechnicalMemo
+MIT/LCS/TM-542b,MassachusettsInstituteofTechnology,
+LaboratoryforComputerScience,March1996.
+[26] Microsoft. Microsoft.NET.
+http://www.microsoft.com/net/.
+[27] SunMicrosystems. SunOpenNetEnvironment(SunONE).
+http://www.sun.com/software/sunone/.
+[28] M.NaorandK.Nissim.Certificaterevocationandcertificate
+update. In Proceedings of the 7th USENIX Security
+Symposium,pages217–228,Berkeley,January26–291998.
+UsenixAssociation.
+[29] F.Pfenning and C.Schurmann. Systemdescription: Twelf
+—ameta-logicalframework fordeductive sstems. In16th
+InternationalConferenceonAutomatedDeduction(CADE-
+16),Trento,Italy,June1999.
+[30] A. Puneli, M. Siegel, and E. Signerman. Translation
+validation. In 4th International Conference on Tools and
+Algorithms for the Construction and Analysis of Systems,
+Lisbon,Portugal,March1998.
+[31] R.Rivest. Canweeliminatecertificaterevocationlists? In
+Hirschfeld[21],pages178–183.

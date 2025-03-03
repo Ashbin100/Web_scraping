@@ -1,0 +1,1066 @@
+Consumable Credentials in Logic-Based Access-Control Systems
+KevinD. Bowers LujoBauer Deepak Garg Frank Pfenning Michael K. Reiter
+CarnegieMellonUniversity
+Pittsburgh,PA, USA
+{kbowers,lbauer, dg,fp, reiter}@cmu.edu
+Abstract hostingservicemightrequireaproofnotonlythataclient’s
+submittedjobissafetoexecute[43],butinadditionthatthe
+We present a method to implement consumablecreden- clientcommittedthe requiredfee to the service to execute
+tialsinalogic-baseddistributedauthorizationsystem.Such thejob. Existingdecentralizedaccess-controlframeworks,
+credentials convey use-limited authority (e.g., to open a whichexpressauthoritybywayofdigitallysignedcreden-
+dooronce) or authority to utilize resources thatare them- tials thatare easilycopied, wouldpermita clienttoutilize
+selveslimited (e.g.,concerttickets). We designandimple- thesamecredential(andhencethesamefunds)forexecut-
+mentmechanismstoenforcetheconsumptionofcredentials ingmultiplejobs.
+inadistributedsystem,andtoprotectcredentialsfromnon- Inlookingtoextendpriorworkonaccess-controllogics
+productive consumption as might result from misbehavior to support consumption of authority, one is quickly led to
+orfailure.Weexplainhowthesemechanismscanbeusedto linearlogic,atypeoflogicinwhichaninferenceexpends
+supportadistributedauthorizationsystemthatusesalinear thepremisesthatenabledit[32]. Forexample,aproofcon-
+access-controllogic. Finally, we giveseveralusageexam- structedinlinearlogicthataclient’sjobissafetoexecute,
+plesintheframework,andevaluatetheperformanceofour whichisdependentontheclientsubmittingpayment,would
+implementationfor use in a ubiquitouscomputing deploy- consume the payment credentials. Once the credential is
+mentatourinstitution. usedinaproof,itisconsumed,thusmakingitunavailable
+foruseinfutureproofs.Thisaccuratelydescribesthecorre-
+spondingreal-worldscenario:money,oncewithdrawnfrom
+1.Introduction anaccountandappliedtoapurchase,isspentandcannotbe
+usedagain.
+The use of formal logics to model (e.g., [18, 38]) or Usinglinearlogictomodelaccess-controlsystemsisan
+implement (e.g., [10]) distributed access-control decision interesting but relatively straightforward exercise. Recent
+proceduresprovidesassurancethataccesscontrolisimple- work has conclusively argued, however, that implement-
+mentedcorrectly[2].Suchassuranceisbeneficialinlightof ingdistributedaccess-controlsystemsusinglogicalframe-
+thecomplexinteractionsthatsuchsystemsaredesignedto worksprovidesasignificantlygreaterlevelofassuranceof
+accommodate, which may involve policies constructed in the systems’ correctness than merely modeling these sys-
+a decentralized way and that utilize delegations, roles and temsusinglogic[6,10].Thisgreaterassuranceisaproduct
+groups. Logic-based access-control systems typically ex- ofbridgingthegapbetweenasystem’sspecification(which
+press these policy elements in digitally signed credentials, can be easily modeled)and its implementation(which de-
+andusethecredentialsaspremisesinaformalproofthata parts from the specification and therefore the model). To
+referencemonitor’spolicyissatisfiedbythecredentials. benefitfromthisgreaterassuranceofcorrectnessforanim-
+Despite significantattentionto thesesystemsin thelast plemented access-control system, we need to tightly inte-
+decade[41,39,4,5],anaturalformofaccess-controlpolicy gratelinearlogicwiththebasisofthisdistributedsystem.
+remainslargelyunexploredbythislineofresearch:policies This task is more complicated than buildingdistributed
+that use consumable authority that can be exercised only systemsaroundclassicalorintuitionisticlogic,ashasbeen
+a limited number of times. Numerous types of authority doneheretofore. In these previoussystems, as longas the
+are consumable, typically because the real-world resource appropriatecredentialscanbelocated,proofscanbecreated
+affected by exercising the authority is itself consumable: and verified on different nodes and at different times. In
+e.g.,theauthoritytospendmoney,ortoselltheatertickets, linearlogic,however,acredentialistransient,inthatitsuse
+wouldfallintothiscategory. Asa tangibleexample,ajob ononenodemustcauseittobecomeunavailablethroughouttheentiresystem. Hence, thetask ofimplementingsucha design and implementation of a mechanism that allows a
+linear-logicbaseddistributedsystemismoredifficult. decentralized logic-based authorization system to support
+In this paper we develop the mechanisms that permit a theconsumptionofcredentials. Forillustration,wepresent
+decentralized logic-based authorization system to enforce a linear access-controllogic that uses this mechanism and
+theconsumptionofcredentials,andshowhowthesemech- showhowitcanencodeseveralscenariosthatmakeuseof
+anismscanbeusedtoeffectivelyenforcetheabstractionsof consumable credentials. We also empirically evaluate the
+linearlogicinadistributedsetting. Oursystemisveryflex- keyfacetsofourimplementationthataffectitsperformance.
+ible in that it permits the enforcementand straightforward
+specificationofarbitrary,evendynamicallydeterminedlim-
+2. RelatedWork
+its on the use of credentials. For example, in a Chinese
+wallpolicy[17],aclientthataccessesoneresourceisthen
+The study of logics for access-control gained promi-
+precluded from accessing another for which the client, by
+nencewiththeworkontheTaosoperatingsystem[3].Since
+virtue of accessing the first resource, now has a conflict
+then,significantefforthasbeenputintoformulatingformal
+of interest. This policy can be specified in linear logic
+languagesand logics(e.g.,[3, 5, 15, 41]) thatcan be used
+andenforcedbyourmechanism,whichwouldconsumethe
+to describe a wide range of practical scenarios. Initially,
+client’scredentialforthesecondresourceupontheclient’s
+the focus was on formulatinglogics that would be able to
+useofthefirstone.
+describe common abstractions such as roles, groups, and
+The high-level strategy for enforcing credential con-
+delegation without admitting any counter-intuitive behav-
+sumptioninourframeworkistoissueeachconsumablecre-
+ior [2, 36, 37, 38]. In many cases, these logics were de-
+dential in such a manner that the credential’s use requires
+signed to model an implemented access-controlsystem or
+the consent of another entity, its ratifier. The credential’s
+policy-specificationlanguage [1, 3, 33, 34, 40]; the logics
+ratifier,whichisnamedinthecredentialitself,trackstheuse
+often included modality (to express the viewpoints of dif-
+of the credential and limits that use accordingly. Though
+ferent actors), the law of the excluded middle, and some
+thishigh-levelapproachisunsurprising,itsconceptualsim-
+high-order features (typically, limited quantification over
+plicityissomewhatdeceptive,duetoseveralchallengesthat
+formulas).Theusefulnessofmechanicallygeneratedproofs
+itraises.
+(e.g., that access to a resource should be granted) led to
+1. Inasettingwherethestepsofconstructingaproofof various efforts to balance the decidability and expressive-
+authorityandcheckingthatproofaredistinct[4],itis nessofaccess-controllogics. Theseeffortsresultedinvar-
+unclearwhatconstitutesa credentialuse and thusthe ious first-order classical logics, each of which would de-
+moment at which a credential should be consumed. scribe a comprehensive but not exhaustive set of useful
+One possibility is consuming the credential upon the access-controlscenarios[5,35,39,41],andmorepowerful
+assemblyofaproofinwhichitisapremise. Another higher-order logics that served as a tool for defining sim-
+possibility is consuming it when a reference monitor pler,application-specificones[4]. Morerecently,intuition-
+checkstheproof. AswewillseeinSection3,neither isticlogicshavebeeninvestigatedasprovidingaclosertie
+of these alternativesis satisfactory, and we propose a betweenthepolicy(viaformulas)anditsenforcement(via
+thirdalternativethat,weargue,ismorecompelling. proofs)[19,31]. Anincreasingamountofattentionisspent
+onformallyprovingthatparticularaccess-controllogicsare
+2. For many types of consumable credentials, not only
+sound, not only with respect to some abstract model, but
+must the credential’s consumption be enforced, but
+also with respect to the reality the logics are intended to
+itsavailabilitymustbeprotectedagainstwasted“con-
+model[6,30,31].
+sumption”. Thatis,acredential’sconsumptionshould
+In this body of work on access-control logics, a cre-
+not occur until the authorized party commits to us-
+dential is typically created by digitally signing a formula
+ing it. (A failure to ensure such availability would
+(e.g., Alice digitally signs that she is delegating her au-
+beparticularlyofconcernfor,e.g.,authoritytospend
+thority to Bob). Upon verification of the signature, the
+money.) In particular, if a credential is “used” dur-
+credential is represented as a predicate in the logic (e.g.,
+ing the construction of a proof, but the proof cannot
+Alice signed (...)), after which its use is unencumbered
+be completed due to the lack of another permission,
+(i.e., the predicate can be used as a premise in arbitrarily
+then the credentialshould notbe consumed(since no
+manyproofsandcannolongerbemadeunavailable). This
+authority was, in fact, exercised). Our approach to
+leads to some difficulty in modeling standard revocation
+dealingwithavailabilitydrawsontechniquesfromfair
+and expiration. To overcome this deficiency, the logic is
+contractsigning[12].
+typicallyextendedwithmechanismsthatallowforenforce-
+Tosummarizethecontributionsofthispaper:Wediscuss menttooccuroutsidethelogic. Ourratificationframework
+ourapproachtoaddressingtheaboveissues,anddetailthe shareselementsofthisapproach,thoughextendsthisideatotighterintegrationwith logic-basedauthorization,enforce- To allow for unique resource requests, the last param-
+ment of arbitrary consumption of credentials, and does so eter of the action() constructor is a nonce. The for-
+whilepreventingthecapriciousconsumptionofcredentials. mula action(action,parameters,nonce) denotes that it
+Thoughnotpreviouslyresearchedinthecontextoflogic- is OK to perform action during the session identified by
+based access control, consumability has been extensively nonce. We will usually omit the nonce in informal dis-
+studiedin applicationssuch aselectroniccash [22, 23, 24, cussion and simply say action(action,parameters) or
+45, 47]. Preventing double-spendingis an instance of our action(action)ifthequalificationsareirrelevant.Forsim-
+probleminwhichtherulesregardingconsumptionaresim- plicity, we assume that these are the onlyatomic formulas
+ple: moneycanbespentonlyonce. Assuch, itis notsur- inthelogic,butthisisnotanecessaryrestriction.
+prising that our solution has certain elements in common Our logic extends linear logic, which is a logic of re-
+with these proposals, notably the use of an online server sources. The primary judgment in linear logic is F true
+(the ratifier) to enforce the consumption of a credential.1 whichmeansthatthere isexactlyonecopyof resourceF.
+While the technique we developed can be used to imple- In order to model resources that may be used more than
+mentanelectronicpaymentsystem,thatisbynomeansthe once, we use the judgmentF valid, which means that F
+onlyapplicationof consumablecredentials, nor is such an maybeusedanynumberoftimes,includingnever.Logical
+application meant to compete with work already done in reasoningisdoneusinghypotheticaljudgmentsoftheform
+electronic paymentsystems. The novelty of our approach Γ;∆ ` F true, where Γ and ∆ are multisets of assump-
+is the development of this technique within a logic-based tions of the form F valid and F true, respectively. The
+access-controlsystem,andinimplementingageneralprim- intuitive meaning of this judgment is that “by using each
+itiveforenforcingarangeofconsumptionpoliciesforarbi- formulain∆exactlyonceandusingtheformulasinΓany
+traryconsumableresources.Anearlierversionofthiswork numberoftimes,onecanobtainonecopyofF”.
+canbefoundin[7]. Thisintuitivemeaningiscapturedbythefollowingrules
+oflinearlogic. TherulehypsaysthatwecanproveF if∆
+3.Preliminaries and Goals containsF andnothingelse. Readbottomup,therulecopy
+says that we can copy resources from Γ into ∆ as many
+timesasrequired.
+Inthissectionwe describethegoalsofourconsumable
+credential system. To be able to discuss the enforcement (hyp)
+Γ;F true`F true
+mechanism in concrete terms, we first present an illustra-
+tiveaccess-controllogic,discussextendingitwithconsum-
+Γ,F valid;∆,F true`Gtrue
+ablecredentials,andthendescribewhatitmeanstohavea (copy)
+systemthatimplementsit. Γ,F valid;∆`Gtrue
+Inordertoreasonaboutaccess-controlpoliciesweneed
+3.1. Logic-Based Access Control
+to be able to expressthe intentof a principal. This is rep-
+resented using the judgment A affirms F, which reads
+We introduce an illustrative logic which extends linear “principalAaffirmsthetruthofformulaF”. Affirmationis
+logic [32] with constructs for access control. It is based differentfromtruthbecauseprincipalsarenotrestrictedin
+on[30]. Thesyntaxofthelogiccontainstermsandformu- whattheyaffirm.Theymayevenaffirmcontradictorystate-
+las. Termsarestringsor principals(denotedby A), which ments, without making the logic inconsistent. We assume
+arethebasetypesinthelogic. Generally,werefertoprin- thatprincipalsarerationalinthattheywillnotrefusetoaf-
+cipals by name such as Alice or Bob. Principals may in firmaformulathatistrue. Thisgivesusthefollowingrule
+turnwanttorefertootherprincipalsortocreatelocalname foraffirmations.
+spaces which gives rise to compound principals. We will
+Γ;∆`F true
+write Alice.secretary to denote the principal whom Alice (aff)
+calls“secretary.”
+Γ;∆`AaffirmsF
+To talk about a resource that a client wants to access, To beable to write affirmationsinside formulas,we in-
+we introduce the action() predicate that takes three pa- ternalize A affirms F as a connective A says F. This
+rameters as arguments. The first parameter to this pred- connectiveisdefinedbythefollowingrules.
+icate is a string that describes the desired action (e.g.,
+Γ;∆,F true`AaffirmsG
+“open”). The second parameter is a list of qualifica-
+(saysL)
+tions of the desired action (e.g., what should be opened). Γ;∆,(AsaysF)true`AaffirmsG
+1Merely detecting double-spenders does not require an online
+Γ;∆`AaffirmsF
+server[21,25,44,49]. However,detectingthemisuseofauthorityisnot (saysR)
+sufficientforaccesscontrolmoregenerally. Γ;∆`(AsaysF)trueThe saysR rule states that A says F is true whenever Γ;∆ 1 `B says(action(U,P,N))true
+A affirms F. ThesaysLrulestatesthatifwehaveanas- Γ;∆ 2,Asays(action(U,P,N))true`G
+(speaksfor)
+sumption(AsaysF)true,thenwearejustifiedinassum- Γ;∆ ,∆ ,(B speaksforA)true`G
+1 2
+ingA true whilewe aretryingtoprovesomeaffirmation
+Thespeaksforrulestates thatif we canconcludethat
+madebyA. Itturnsoutthatweneverneedassumptionsof
+B says F, and assuming A says F we can concludeG,
+theformA affirms F inΓor∆becausethesecanimme-
+then assuming A says (B speaksfor A), we can also
+diatelybereplacedbyassumptions(AsaysF)true.
+concludeG. Thedelegateruleisverysimilar,exceptthe
+WhileitisusefultoreasonaboutwhatAlicesays,there
+U variablemustmatchinallthreeexpressions.
+are times when we would like to enforce that a statement
+actuallycamedirectlyfromAliceratherthanastheconclu-
+3.2. Consuming Credentials
+sion of some other statements. This direct affirmation is
+written as Alice signed F. This can also be thought of
+We would now like to consider how to utilize this lin-
+asthesequenceofbitsresultingfromAlicesigningthefor-
+ear access-controllogic in a distributed system implemen-
+mulaF withherprivatekey,usingastandardcryptographic
+tation. In the access-control context, the hypotheses of a
+signature.
+proofarecredentials,andtheproofshowsthatapolicy(the
+Since A signed F stands for direct evidence of A af-
+provedformula)issatisfiedbythecredentials.Theprimary
+firming F, it cannot be established by means of a proof.
+challengeintroducedwhenthisproofinvolvesconsumable
+Henceitneveroccurstotherightof`. Therearetworules
+hypothesesisenforcingtheirconsumption.Withinthecon-
+governingthisjudgment.
+textofasingleproofthisisstraightforward,asthereference
+Γ;∆,F true`AaffirmsG monitorthatischeckingtheproofcanemployalinearproof
+(signed) checkerwhichunderstandsthedistinctionbetweenenviron-
+Γ;∆,AsignedF `AaffirmsG
+mentsandtreatsthemappropriately.
+In the scenarios that motivate our study, however, con-
+Γ,AsignedF;∆,AsignedF `Gtrue
+(copy0) sumption of resources should not be limited to one proof,
+Γ,AsignedF;∆`Gtrue
+but rather should be global. In particular, these scenarios
+arepopulatedbyprincipalswhoissuecredentials,generate
+The rule signed is best thought of as saying that if A
+proofs, and verify proofs that they have communicated to
+digitallysignsthestatementF,thenwecanassumethatF
+eachother. Aproofgeneratedbyoneprincipalistypically
+istruewhilewearereasoningaboutanaffirmationmadeby
+sent to a second principal as part of a request to access a
+A. Thesecondruleissimilartotherulecopyandpermits
+resource controlled by that principal. In these scenarios,
+anindefinitenumberofcopiesofA signed F tobemade
+we mustpreventnotonlythe profligateuse of a particular
+ifAsignedF occursinΓ.
+consumablecredentialwithin a single proof,butalso such
+Delegationis discussed in termsof the speaksfor and
+a credential’s use in arbitrarily many different proofs that
+delegatepredicates. Alice speaksfor Bobindicatesthat
+maybecreatedorverifiedbydifferentprincipals.
+Bob has delegated to Alice his authority to make access-
+Thiscannotbeenforcedthroughlocallycheckingaproof
+controldecisions aboutany resource or action. delegate
+alone;somedistributedcoordinationmusttakeplace.More
+(Bob,Alice,action)transferstoAliceonlytheauthorityto
+fundamentally, the moment of “use” at which the creden-
+performtheparticularactioncalledaction. delegateand
+tialshouldbe“consumed”isa subtledesigndecisionwith
+speaksforcanbedefinedintermsofotherconnectivesas
+significant ramifications. One possibility is to consume a
+follows.
+credential when a proof containing it is verified by a ref-
+delegate(A,B,U)≡∀P.∀N.(B saysaction(U,P,N) erence monitor. However, this makes it impossible to de-
+termine whether a proof is valid or invalid by simple ex-
+−→Asaysaction(U,P,N))
+amination;rather,validitybecomesatemporalnotion. An-
+otheralternativewouldbetoconsumethecredentialduring
+AspeaksforB ≡∀U.∀P.∀N.(B saysaction(U,P,N) proofconstructionwhenthe linear inferencerule (hyp) is
+−→Asaysaction(U,P,N)) used. However, proof construction is a distributed search
+processthatexploresnumerouspotentialpathsforproving
+With these definitions we can derive the following rules aresult,2terminatingwhenoneofthesepathssucceeds[9].
+whichgoverntheiruse. Since most of the explored paths do not lead to success-
+fulproofs,consumingcredentialsuponeachapplicationof
+Γ;∆ `B says(action(U,P,N))true
+1 2Theproofsearchprocessisanecessaryingredientforsuchasystem,
+Γ;∆ ,Asays(action(U,P,N))true`F
+2 (delegate) thoughsincetractable,application-specificsolutionstothesearchproblem
+Γ;∆ ,∆ ,delegate(A,B,U)true`F insuchsystemsexists(e.g.,[26]),wedonotdiscussitfurtherhere.
+1 2linear inferencerulesin this search processwouldquickly WhileBoundedUsedealswithboundingfromabovethe
+consume most credentials without any benefit being real- number of uses of a consumable credential, we must also
+izedfromthem. worry about ensuring the availability of valid consumable
+Forthesereasons,werejectbothofthesedesignoptions, credentials. By this we mean to say that the system can-
+andexploreathirdoptioninthispaper. Inthisdesign,hy- not waste consumable resourcesin a non-productiveman-
+pothesisconsumptionoccursasastepafterthemainsearch ner. Thisbecomesimmediatelyobviousinasystemwhere
+processforconstructingaproofiscompleted,butbeforethe consumable credentials are used to implement a form of
+proof is checked. Intuitively, the proving process prior to currency. If money just disappeared out of your bank ac-
+this step proceededunder the implicit assumption that the countbecausethesystemwasabletowasteresources,you
+consumable credentials ∆ used in the proof are true. The wouldveryquicklyfindanewsystem.
+laststageoftheprovingprocessisthentoexplicitlyverify Inadistributedprovingenvironment,theriskofresource
+thattheconsumablecredentialsareinfactavailableandto waste occurs after a proof has been completed, but before
+mark their uses, and, if appropriate, render the credentials it has been ratified or checked. Suppose you construct a
+unavailableforfutureproofs.Wecallthisstepratification. prooftopurchaseatickettothemovies. Themovietheater
+promised you a seat and you promised the money to pay
+4.Ratification for that seat. However, during ratification, your money is
+consumed,buttherearenolongeranyseatsavailableinthe
+theater. Clearly,ratificationmustalsoenforcesomesortof
+Ratificationisanextra-logicalstepwhichweusetoen-
+atomicity to ensure the previous scenario does not occur.
+forcethelinearityofourconsumablecredentials.Insteadof
+Thisiscapturedinoursecondcondition.
+thestandardcertificates,consumablecredentialsarecreated
+withrespecttoaratifierthatmonitorstheiruseandenforces
+Atomicity The ratification protocol is atomic, in that ei-
+theirconsumption. Whilethecryptographicsignaturedoes
+thertheratifierforeachconsumablecredentialδ ∈ ∆
+notdifferbetweenregularcredentialsandconsumablecre-
+records each of the uses of δ in the proof of F—and
+dentials, we denote consumablecredentials in the logic as
+inthiscasetheverificationofF succeeds—ornoneof
+A signed F. Theratifier(A0)whoisnamedinthelog-
+A0 theratifiersrecordsanysuchuses.
+icalrepresentation,willlaterneedtobecontactedinorder
+toratifytheconsumablecredential. Naturallythereisalso Again,informally,theprocessofratificationmusteither
+anewinferencerulefordealingwithsuchcredentials. occurfor all credentials, or noneof them. Eitheris an ac-
+ceptable output from the system designer perspective, but
+Γ;∆,F true`AaffirmsG
+(signed L) thereisnomiddlegroundonwhichtostand.
+Γ;∆,Asigned F `AaffirmsG
+A0
+This rule can be used along the followinglines of reason- 4.2. Implementation
+ing: if A signed F is available as a certificate, we can
+A0
+assume that F is true as long as we are reasoning about BoundedUse Whileratificationisanextra-logicalmech-
+affirmationsbyA. Whethertheresultingproofcanactually anism, it is intrinsically tied to the logic. After the proof
+beusedincontingentuponthelaterratificationbyA0. has been completedusing consumable credentials, it must
+be sent to the applicable ratifiers who will certify that the
+4.1. Ratification Properties consumable credentials are still valid. This is done by is-
+suingratificationcredentialswhichtheratifierssign. These
+Therearetwopropertieswhichmustbeenforcedbyour credentialsare thenappendedto thereusableandconsum-
+ratificationmechanism.Supposethateachconsumablecre- ablecredentialsgatheredduringproofsearchandsenttothe
+dential δ is created with an allowed number of uses #δ. referencemonitorwiththeproofforverification.
+Thenthefollowingsafetyconditionmusthold. Once the reference monitor receives the proof and cor-
+responding digitally signed certificates, it first checks the
+BoundedUse LetformulasF , F , ... be those formulas
+1 2 cryptographic signatures on each credential. If the signa-
+provedinthesystem,andlet∆ ,∆ ,...bethelinear
+1 2 tures are correct, it then populates both the reusable and
+environmentsusedinthoseproofs. Then,themultiset
+linearenvironments,ensuringthat∆isonlypopulatedwith
+S ∆ containsatmost#δinstancesofδ.
+i i consumablecredentialsifthecorrespondingratificationcre-
+Informally,thesystemmustenforcethattheglobalnum- dentialsareavailable.
+berofusesofaconsumablecredentialdoesnotexceedthe Because of the Bounded Use requirementabove, ratifi-
+allowable uses as specified by the ratifier. How this is ac- cation credentialscannotbe madewith respectto onlythe
+complishedinadistributedsettingwillbediscussedinmore credential they are ratifying. If that were the case, once a
+detaillater. credential was ratified, the consumable credential and theratificationcredentialcouldbecopiedandusedinthecon- has the power to either “force” a signature from a partici-
+struction of a later proof without contacting the ratifier to pantwhohaspromisedinpreviousroundstosignthecon-
+register another use. This is clearly unacceptable as the tract, or terminatethe protocoland ensureno onereceives
+numberofusescouldnotbecontrolled. a signedcontract. So-called“optimistic”protocolsseekto
+To overcome this, the ratification credential is not only avoidcontactingthethirdpartyexceptinexceptionalcases.
+createdwithrespecttotheconsumablecredentialitisratify- Suchcontract-signingprotocolscanbedistinguishedby
+ing,butalsowithrespecttotheproofinwhichitisincluded. whether or notthe contractoutputby the protocolenables
+Tothisend,theproofgenerator,aftercompletingtheproof, a verifier to determineif a party’ssignaturewas forcedby
+sendstheentireproofterm,M,theprovedformulaF,and the third party. If so, then the third party is visible in the
+thecredentialsinbothΓand∆totheratifiers. protocol(e.g.,[11]);ifnot,itisinvisible(e.g.,[29]4). Ifthe
+Since each ratification credential is issued with respect protocol ensures an invisible third party, then the verifier
+tothecurrentproofandproofgoal,eachratifiercaninspect need not separately accommodate runs in which the third
+theproofbeforeconsentingtotheuseofaconsumablecre- partyis consultedand runsin whichit is not. However,if
+dential within that proof. The ratifier can also count and thethirdpartyisvisible,thentheverifiermustbewillingto
+recordthenumberofusesofaconsumablecredentialinthe acceptoneoftwopossiblesignatures,oneforthecasewhen
+proof,and giveor withholdits consentaccordingly. If the thethirdpartyisnotconsultedandoneforthecaseinwhich
+ratifieriswillingtosignoffontheusesoftheconsumable itis. Thislatterdisjunctisprotocol-dependentandsowedo
+credentialforwhichitisresponsibleitwillissuearatifica- notdetailthealternativeshere,butformulatingthisdisjunct
+tioncredentialwithrespecttobothM andF. is straightforward for the third-party-visiblecontract sign-
+The ratification credential then has the form ingprotocolsofwhichweareaware.
+hC,F,Mi A0, denotingthe signatureby A0 on the consum- An issue in the use of a contract-signing protocol that
+ablecredentialC,theproofstatementF,andtheproofterm employsathirdpartyisthequestionofwhatthirdpartyto
+M. Because the proof formula F contains a nonce, the use. Whilethischoiceisorthogonaltoourtechniques,we
+returned ratification credential uniquely identifies a proof cautionthereaderagainstusingtheproverinthisrole,i.e.,
+instanceandcannotbereused,eitherinthesameproofata the component requesting access in the context of assem-
+latertime,orasapieceofadifferentproof. blingaproof. Inmostapplications,thiscomponentwould
+gaingreaterauthority(e.g.,unlimiteduseofaconsumable
+credential)bymisbehavinginthe roleofthe thirdpartyin
+Atomicity TodealwiththeissueofAtomicity,weborrow
+thecontractsigningprotocol.Forthisreason,betterchoices
+fromworkincontractsigning.Recallthateachratifierpro-
+include utilizing the reference monitor that will check the
+ducesadigitallysignedratificationcredentialtoratifyeach
+proof,oralternativelyimplementingthethirdpartyusinga
+useoftheconsumablecredentialforwhichitisresponsible.
+multipartyimplementationamongthe ratifiers themselves.
+Implementing the contribution of these digital signatures
+Thislatteralternativerequiresanassumptionthatamajority
+atomicallyforthegoalF canbeachievedbyrunningamul-
+oftheratifiersbehavehonestly,butinthiscasethecontract-
+tipartycontract-signingprotocol(e.g.,[12,29])amongthe
+signingprotocolcanbeparticularlyefficient[11].
+ratifiersfortheconsumablecredentialsusedintheproofof
+F. Informally,a contract-signingprotocolis onein which
+eitherallhonestsigningpartiesobtainacontractbearingall
+Summary To summarize, a proof of access is con-
+parties’signatures,ornoonedoes.Inourcontext,eachrati-
+structed as follows. First, a client Alice requests from
+fierparticipatesinacontract-signingprotocolwiththeother
+Bob that he grant her access to a resource. Bob re-
+ratifierstocontributeitsratificationcredential.Eachratifier
+sponds with the statement of the theorem Alice must
+engages in the protocol only if the consumable credential
+prove; typically, the statement is of the form Bob says
+for which it is responsibleis notyetconsumed, and regis-
+action(action). Alice proceeds to construct a proof of
+tersauseofthecredentialifandonlyifthecontract-signing
+Bob says action(action) using consumable credentials
+protocolsucceeds.
+Charlie signed F and Danielle signed F . Once
+RC 1 RD 2
+There are many contract-signing protocols that can
+Alicehascompletedthisproof,shecontactstheratifiersof
+achieveourrequirements.Thatsaid,theparticularprotocol
+Charlie’sandDanielle’scredentials,sendingthemtheproof
+in use may require that the verifier know somethingabout ofBob says action(action)andrequestingthateachrat-
+the protocol. In particular, deterministic contract signing
+ifythe credentialforwhichitisresponsible. Uponverify-
+protocols typically employ a trusted third party to settle
+disputes among the signers.3 The trusted party generally 4This example invisible protocol has been shown to not be abuse
+free[20]: someoneinvolvedintheprotocolcanprovetoanoutsiderthat
+3Thereareprobabilisticprotocolsforperformingcontractsigningthat hehas thepower toforcethe theprotocol tocomplete orabort. While
+donotemployatrustedthirdparty,buttheyhaveanerrorboundatleast undesirableinthecaseofgeneralcontractsigning,abusefreedomisnot
+linearinthenumberofrounds[14]. necessaryinthecurrentapplication;wesimplyrequireatomicityhere.ingthatthecredentialsubmittedforratificationhasnotbeen possibletohavemultipleenforcementmechanismsthatall
+consumed, each ratifier recordsthe use of the consumable implementthesameabstractionofconsumablecredentials.
+credentialandproducestheappropriateratificationcreden- Second,anyenforcementmechanismthatwepickmust
+tial,whichtheysendtoAlice. Alicethensendstheproofto be able to enforceconsumptionnotonly in the distributed
+Bob,alongwithalltherelevantconsumablecredentialsand sense, but also within individualproofs (e.g., to prevent a
+their ratification credentials, which she just received. Bob consumable credential representing $10 from being used
+then checks all of the cryptographic signatures and popu- twice withinthe same proof). Althoughlinear logic is not
+lateshisreusableenvironmentwiththereusablecredentials. the onlyformalismthatpermitsthissortofreasoning,any
+Foreveryconsumablecredential,Bobchecksthatamatch- enforcement mechanism that we use will require similar
+ingratificationcredentialissuppliedandthattheratification logicalmachinery. Sincelinearlogichasbeenwidelystud-
+credentials correspond to the current proof before adding iedandiswellunderstood,thereseemstobelittlebenefitin
+the credentialto his linear environment. Bob then verifies usingadifferentformalism.Asimilarlyestablishedtypeof
+the proof and if successful, grants Alice access to the de- logic that could instead be used to enforcecredentialcon-
+siredresource. sumptionisaffinelogic.Bothaffineandlinearlogicexpend
+hypothesesin ∆ as they are used, but linear logic also re-
+quires that all the restricted hypotheses be used, whereas
+5.Discussion
+affinelogicallowsunusedhypothesesin∆tobediscarded.
+Either type of logic would prevent over-consumption, but
+Unsatisfied Requests The Atomicity property prevents wechoselinearlogictopreventthesilentdisappearanceof
+capriciousconsumptionofcredentialsduringtheproofpro- consumablecertificatesinlogicalreasoning.
+cess. However, once completed, even a valid and com-
+pleteproofmaynotbeaccepted,inwhichcaseextra-logical Alternatives to Consumable Credentials Our imple-
+meanscanbeusedtorestoreanyconsumedcredentials.(As mentation of consumable credentials uses on-line servers
+inthecasewhereaticketholderisrefusedentrytoabase- (theratifiers)tovalidatecredentials,whichraisestheques-
+ball game due to a rainout, she should expect reimburse- tion of whether the consumable credentials themselves
+ment.) Tominimizethefrequencyofsuchoccurrencesand could simply be issued immediately prior to the time they
+toaidtheirresolutionwhentheydooccur,thepolicyproved are needed. Such an approach, however, would pro-
+by a party requesting access could include a statement is- hibitivelycurtailtheabilitytoreasonaprioriaboutconsum-
+suedbytheresourcemonitorindicatingboththeavailability ablecredentialsduringtheconstructionofproofs.Ourtech-
+oftheresourceandthatavalidproofwillberewardedwith niquesare also relatedto countersigning;the advantageof
+access. Ifthisstatement(itselfacredential)isconsumable ourapproachliesinthatwecarefullyaddresswhatitmeans
+whenthe resourceis, proofconstructionwouldfail during to consume multiple different credentials in the course of
+ratificationstepiftheresourcemonitorisn’tabletopromise creatingasingleproof.Thisisdoneinsuchawaytoprevent
+deliveryof the resource. Moreover,a ratified proofis evi- boththereuseofthesecredentialsinotherproofsandtheir
+dence that can be presented to an arbiter in the event of a needless consumptionin the courseof constructingproofs
+dispute. thatwillultimatelyfail.
+Alternatives to Linear Logic Ratification is an extra- RatifierCosts Tohelpitdeterminewhetherornottorat-
+logicalmechanismthatweusetoenforcetheconsumption ifyaparticularcredential,aratifierwilltypicallykeepstate
+ofcredentials,overandabovethelinearlogicinwhichthose ona per-credentialbasis(e.g.,theusecount). Thoughthis
+credentialsareexpressedandused. Thisbegsthequestion is an additional burden on the ratifier, it is no more than
+as to whether ratification or a similar mechanism should theburdenthatistypicallyplacedonnormalcredentialis-
+be modeled directly in the security logic, perhaps entirely suers. Additionally, in many cases the per-credentialstate
+avoidingtheneedtospecifypoliciesinlinearlogic,andin- willhaveto bekeptonlyaslongasthe credentialremains
+steadpermittingtheuseofamorestandardorsimplerlogic. unconsumed and has not yet expired. Because of this, in
+thescenariosweenvision,weexpecttheburdenofkeeping
+Webelievenot,fortworeasons. First,linearlogicgives
+statetobelight.
+usacleanandintuitiveabstractionforreasoningaboutcon-
+sumablecredentials. Thespecificdetailsofhowconsump-
+tionisenforcedareseparatefromtheideathataparticular 6. Example
+credential will be consumed after a fixed number of uses;
+hence,itismoststraightforwardforsecuritypoliciestotalk Using the concepts described in this paper it is easy to
+abouttheideawhileremainingunencumberedbythedetails implementanumberofapplicationsthatuseconsumablere-
+oftheenforcementmechanism.Thisapproachalsomakesit sources. Moneyisoneoftheeasiestconsumableresourcesto think about, and indeed these techniques can be used delegations,anypaystatementmadebyBankAhastheau-
+to develop a payment system within a logic-based access- thorityofbeingmadebytheACH,i.e.,BankAisaccredited
+control framework. While we are not proposing this sys- bytheACH.
+tem as an alternative to iKP [13], SET [46], NetBill [48] Alicemustnowfindadelegationstatementallowingher
+and other electronic commerce protocols, it does serve to tospendmoneyfromheraccount.
+illustrate the expression and manipulation of consumable
+resourcesinalogic-basedaccess-controlframework. C5=BankA signed RBankA(delegate(BankA,BankA.Alice,pay))
+Asanexample,imagineAlicewalksintoastore,fillsher
+This credential differs from the others in that it is
+shoppingcartwithitemsandproceedstocheckout.Instead
+consumable—Alice is allowed to withdraw money only
+ofgivingtheclerkcashoracreditcard,sheinsteadpresents
+whileheraccounthasapositivebalance. Withthiscreden-
+himwithaproofthatthestorewillbegivenitsmoney.
+tial,Alicecanconstructaproofof
+In this scenario, Bob, the store owner, is the reference
+monitor.Hecontrolstheitemsinhisstore,andwillonlyre- M:ACH saysaction(pay,hBob,$100i,nonce)true
+leasethemoncehehasbeengivenaproofofpayment.Just
+All that remains is to ratify credential C . To obtain the
+aswithcreditcardpayments,Bobdoesn’tneedthemoney 5
+ratification credential for C , Alice submits the proof to
+immediately, but he needs to be convinced that when he 5
+BankA’s ratifier, RBankA, which is named in that creden-
+latersubmitstheproofAlicegavehimtohisbank,hewill
+tial. The ratifier deducts $100 from Alice’s account and
+bepaid.
+transfers that money to the ACH. He also creates the fol-
+WhenAliceapproachesthecounterandbeginstocheck
+lowingratificationcredential.
+out,Bobissuesherachallengedescribingtheproofofpay-
+mentthatshemustproduce.
+C6=RBankAsignedhdelegate(BankA,BankA.Alice,pay),M,
+ACHsaysaction(pay,hBob,$100i,nonce)i
+G =ACHsaysaction(pay,hBob,$100i,nonce)true
+Withthiscredentialinhand,Alicenowhasaratifiedproof
+Thechallengecontainsanoncethatisusedtoensurefresh-
+whichshesubmitstoBobforverification. Bob,convinced
+ness, enforcethattheconsumablecredentialswereratified
+hewillbepaidfortheitemsinAlice’scart,releasesthemto
+with respect to this proof, and also to serve as a transac-
+Alice. Bobwilllatershowthe proofto hisbank,whichin
+tion identifier. Since Bob cares chiefly that he is paid and
+turnwillhanditovertotheACH,whichwillactuallytrans-
+not who will pay him, the challenge requires the payment
+ferthefundstoBob’saccount.TheBankrecordsthenonce
+tobeauthorizedbytheAutomatedClearingHouse(ACH),
+inthestatementofBob’sprooftopreventBobfromcashing
+a trusted authoritythatfacilitates transfersbetween banks.
+theproofagain.ThefullproofcanbeseeninAppendixB.2.
+Alice’s task is now to construct a proof of payment. She
+startstheprovingprocessbystatingherwillingnesstopay
+7. Implementation
+Bob.
+C0=Alicesignedaction(pay,hBob,$100i,nonce)
+At the time of this writing, we are in the process
+of deploying a distributed authorization framework called
+Alice must now demonstrate that there exists a chain of
+Grey[8]tocontrolaccesstoofficesandotherphysicalspace
+delegate and speaksfor relations from herself to the
+ontwofloors(morethan30,000squarefeet)ofanewbuild-
+ACH.Shehasreasontobelievesuchachainexistsbecause
+ingatourinstitution. Tosupportthis,duringbuildingcon-
+she has an account in good standing with a bank that has
+struction each door was equipped with an electric strike
+beencertifiedbytheACH.
+controlledbyanembeddedcomputer. Auserexercisesher
+DuringproofgenerationAliceobtainsthefollowingfour
+authoritytoopenadoorviahersmartphone,whichconnects
+credentials.
+totheembeddedcomputerusingBluetooth,andreceivesa
+goaltoprove(includinganonce). Thesmartphoneutilizes
+C1 = BankAsigned(AlicespeaksforBankA.Alice)
+a distributed proving system (similar to the one described
+C2 = ACH.BCsigned(BankAspeaksforACH.BC.BankA)
+in[9])togeneratetheproof,possiblywithhelpfromother
+C3 = ACHsigned(delegate(ACH,ACH.BC,pay))
+C4 = ACH.BCsigned(delegate(ACH.BC,ACH.BC.BankA,pay)) smartphonesthatholdnecessarycredentials,andshipsthis
+prooftotheembeddedcomputerinordertoopenthedoor.
+The first two credentialsdescribe the speaksforrelation- Our plansinclude deployingGrey-capablesmartphonesto
+shipsbetweenAliceandherbankandbetweenherbankand roughly100buildingresidents.
+theBankCertifier(BC)oftheACH.CredentialsC andC Wehavedevelopedtheenforcementmechanismforlin-
+3 4
+form a delegation chain from the ACH to its Bank Certi- ear logic presented here as a means to implement access-
+fier, and from there to Alice’s bank (BankA). Using these control policies that the current system presently cannot.2000
+1800
+1600
+1400
+1200
+1000
+800
+600
+400
+200
+0
+2 3 4 5
+Number of Ratifiers
+)sm(
+emiT
+Ratification Time vs. Number of Ratifiers
+2000
+1800
+1600
+1400
+1200
+1000
+800
+600
+400
+200
+0
+1 2 3 4 5
+Ratifier
+Figure 1. The latency of the ratification pro-
+tocol as a function of the number of rati-
+fiers, includes the cost of credential verifica-
+tion, proof checking, and the creation, verifi-
+cation and communication of non-interactive
+zero-knowledgeproofs.
+)sm(
+emiT
+Breakdown of Time Spent in Ratification Among 5 Ratifiers
+ZKP Creation
+ZKP Verification
+Network/Waiting
+Logic Verification
+Figure 2. Breakdown of costs involved in the
+ratification protocol for each of the five rati-
+fiersinvolvedin afive-ratifiercontractsigning
+protocol.
+This includes, for example, the ability to delegate author- suited for our system: it guarantees atomicity regardless
+ity to open an office once (see AppendixB.1). As we ex- of the number of ratifiers that fail or misbehave (provided
+pandthistestbedtoincludevendingmachines,theneedfor thatthetrustedthirdpartydoesnot), anditimplementsan
+a distributed authorization system supporting consumable invisiblethirdpartyT.5 To achievethese properties,how-
+credentials(e.g.,denotingmoney)willonlygrow. ever,theprotocolutilizessignificantmachinery: theproto-
+We have completed a prototype implementation of a col runningamongn ratifiers involvesO(n3) messagesin
+contract-signingprotocolviawhichconsumablecredentials O(n2) rounds. Each message is accompanied by an effi-
+are ratified (see Section 4). In our prototype implementa- cient non-interactivezero-knowledgeproof [16] regarding
+tion, proofsof accessare representedin the LolliMonlan- itscontents,thedetailsofwhichweomit. Thecostofeach
+guage [42], which supports the linear connectives crucial zero-knowledge proof in the protocol is dominated by 9
+for definingour consumablecredentials. To verifythe va- modularexponentiationsbytheprover,and12bytheveri-
+lidityofproofs—includingthateachconsumablecredential fier. TheformofthefinalcontractsignaturebyaratifierA0,
+in the environment ∆ is used exactly once—ratifiers and where F is the contentof the credentialbeingratified and
+reference monitors use a LolliMon interpreter as a logical M isaprooftermdescribingthederivationoftheproofgoal
+proof checker. For the scenarios that we consider, proofs Goftheproofofaccess,isazero-knowledgeproofthatan
+thatdependonconsumablecredentialscanbegeneratedby ElGamalciphertext[27],ifdecryptedusingT’sprivatekey,
+asyntax-drivenbackward-chainingalgorithm(e.g.,[9]). wouldyieldaparticulartargetplaintext. Thisproofcanbe
+As discussed in Section 4, a ratifier is invoked with a constructedeitherbytheratifierA0 whocreatedthecipher-
+proof term and a formula M and F. If the proof is valid, textorbythetrustedthirdpartyT;seeGarayetal.[28]for
+theratifierthenengagesinthecontract-signingprotocolto details.
+ratify the credentialsfor which it is responsible(assuming The common-case latency (i.e., when the third party is
+itconsentstotheiruse). Assuch,thecontract-signingpro- not invoked) of our current prototype as a function of the
+tocolandtheverifyingofproofsbytheratifiersaccountfor number of participating ratifiers is shown in Figure 1. In
+the primary additional costs incurred during proof gener- these tests, each ratifier executed on a separate 2.8 GHz
+ation in a distributed proving system such as the one we Pentium4computer.Thelatencyoftheratificationprotocol
+use[9]. TheLolliMoninterpreterthatweuseforproofver- includesthecostofverifyingthecorrectnessofthesubmit-
+ificationissufficientlyfastfortheproofsweconsiderthatit tedproof(includingthedigitalsignaturesonthecredentials
+isnotabottleneck,andwedonotdiscussitfurtherhere. contained therein) as well as the creation, verification and
+The contract-signing protocol that we have imple- 5Theprotocoldoesnotprovideabusefreedom,butasnotedearlier,this
+mented [29] offers strong properties that make it ideally isnotnecessaryinouruseoftheprotocol.communication among all ratifiers of the non-interactive [4] A.W.AppelandE.W.Felten.Proof-carryingauthentication.
+zero-knowledgeproofsused in the contract signing proto- InProceedingsofthe6thACMConferenceonComputerand
+col. A typical access-control proof involving consumable CommunicationsSecurity,pages52–62,1999.
+resourceswouldlikelydependonatmosttwoconsumable [5] D. Balfanz, D. Dean, and M. Spreitzer. A security infras-
+credentials(and a greater numberof reusable credentials), tructurefordistributedjavaapplications. InProceedingsof
+so the ratification cost for such a proof would be compar- the 2000 IEEE Symposium on Security and Privacy, pages
+atively low; e.g., the sample proofs in Appendix B.1 and 15–26,2000.
+AppendixB.2 each make use of only a single consumable
+[6] L. Bauer. Access Control for the Web via Proof-carrying
+credential. Authorization. PhDthesis,PrincetonUniversity,Nov.2003.
+A breakdown of the component costs of ratification as
+[7] L.Bauer,K.D.Bowers,F.Pfenning,andM.K.Reiter.Con-
+measured on each of five ratifiers engaging in a contract-
+sumable credentials in logic-based access control. Techni-
+signingprotocolisshowninFigure2. Theratificationpro-
+cal Report CMU-CyLab-06-002, Carnegie Mellon Univer-
+tocol we implemented is asymmetric in that certain rati-
+sity,Feb2006.
+fiers create and verify more zero-knowledge proofs than
+[8] L.Bauer,S.Garriss,J.M.McCune,M.K.Reiter,J.Rouse,
+other ratifiers; as a consequence, some ratifiers spend a
+and P.Rutenbar. Device-enabled authorization inthe Grey
+majority of their time waiting to receive messages (Net-
+system. InProceedingsofthe8thInformationSecurityCon-
+work/Waiting). Other major costs in the ratification pro-
+ference,pages431–445,Sept.2005.
+tocolare generatingthezero-knowledgeproofs(ZKPCre-
+[9] L. Bauer, S. Garriss, and M. K. Reiter. Distributed prov-
+ation) communicatedbetween the ratifiers, as well as ver-
+ing in access-control systems. In Proceedings of the 2005
+ifying them (ZKP Verification). Note that the cost of
+IEEE Symposium on Security and Privacy, pages 81–95,
+thecontract-signingprotocoldominatestheproof-checking
+May2005.
+timeof thesubgoalF: a proofofF containing5 reusable
+and5linearcredentialsisverifiedbyeachratifierinapprox- [10] L.Bauer,M.A.Schneider,andE.W.Felten. Ageneraland
+flexibleaccess-controlsystemfortheWeb.InProceedingsof
+imately50ms, withanadditional45msrequiredtoverify
+the11thUSENIXSecuritySymposium,pages93–108,2002.
+thevalidityofthedigitalcertificates.
+The costs shownin Figure 1 are somewhatpronounced [11] B. Baum-Waidner. Optimistic asynchronous multi-party
+becauseweimplementedtheprototypeofourcontractsign- contract signing with reduced number of rounds. In Pro-
+ceedingsofthe28thInternationalColloquiumonAutomata,
+ing primarily in Java, with only modular exponentiations
+LanguagesandProgramming,pages898–911,2001.
+optimizedbyanativeimplementation.Transitionofthere-
+mainingcryptographiccomputationstonativeimplementa- [12] B. Baum-Waidner and M. Waidner. Round-optimal and
+tionsshouldspeeduptheimplementationevenfurther. abuse free optimistic multi-party contract signing. In Pro-
+ceedingsofthe27thInternationalColloquiumonAutomata,
+LanguagesandProgramming,pages524–535,2000.
+Acknowledgments
+[13] M.Bellare,J.Garay,R.Hauser,A.Herzberg,H.Krawczyk,
+M.Steiner,G.Tsudik,E.V.Herreweghen,andM.Waidner.
+We gratefully acknowledge support from the National Design, implementation, anddeployment oftheiKPsecure
+Science Foundation grant number CNS-0433540, the Of- electronicpaymentsystem. IEEEJournalonSelectedAreas
+ficeofNavalResearch(ONR)grantnumberN00014-04-1- inCommunications,18(4):611–627,Apr2000.
+0724,andtheU.S.ArmyResearchOfficecontractnumber
+[14] M. Ben-Or, O. Goldreich, S. Micali, and R. L. Rivest. A
+DAAD19-02-1-0389. fair protocol for signing contracts. IEEE Transactions on
+InformationTheory,36(1):40–46,1990.
+References [15] M.Blaze,J.Feigenbaum,J.Ioannidis,andA.D.Keromytis.
+TheKeyNotetrust-managementsystem,version2. Request
+ForComments(RFC)2704,Sept.1999.
+[1] M.Abadi. OnSDSI’slinkedlocalnamespaces. Journalof
+ComputerSecurity,6(1–2):3–21,Oct.1998. [16] M. Blum, A. DeSantis, S. Micali, and G. Persiano. Non-
+interactive zero-knowledge. SIAM Journal of Computing,
+[2] M. Abadi, M. Burrows, B. Lampson, and G. D. Plotkin.
+20(6):1084–1118,1991.
+A calculus for access control indistributed systems. ACM
+Transactions on Programming Languages and Systems, [17] D.F.C.BrewerandM.J.Nash. TheChinesewallsecurity
+15(4):706–734,Sept.1993. policy. InProceedingsoftheIEEESymposiumonSecurity
+andPrivacy,pages206–214,1989.
+[3] M. Abadi, E.Wobber, M. Burrows, and B.Lampson. Au-
+thenticationintheTaosOperatingSystem. InProceedings [18] M.Burrows,M.Abadi,andR.Needham. Alogicofauthen-
+of the 14th ACM Symposium on Operating System Princi- tication. ACMTransactionsonComputerSystems,8(1):18–
+ples,pages256–269,Dec.1993. 36,1990.[19] J.G.Cederquist,R.J.Corin,M.A.C.Dekker,S.Etalle,J.I. [35] J. Y. Halpern and V. Weissman. Using first-order logic to
+den Hartog, and G. Lenzini. Theaudit logic: Policycom- reasonaboutpolicies.InProceedingsofthe16thIEEECom-
+plianceindistributedsystems. TechnicalReportTR-CTIT- puterSecurityFoundationsWorkshop,pages187–201,June
+06-33, Centre for Telematics and Information Technology, 2003.
+UniversityofTwente,2006.
+[36] J.Howell.Namingandsharingresourcesacrossadministra-
+[20] R. Chadha, S. Kramer, and A. Scedrov. Formal analysis tiveboundaries. PhDthesis,DartmouthCollege,May2000.
+ofmulti-partycontractsigning. InProceedingsofthe17th
+IEEEComputerSecurityFoundationsWorkshop,pages266– [37] J. Howell and D. Kotz. A formal semantics for SPKI. In
+279,2004. Proceedingsofthe6thEuropeanSymposiumonResearchin
+ComputerSecurity,pages140–158,2000.
+[21] A.H.Chan,Y.Frankel,andY.Tsiounis. Easycome-easy
+godivisiblecash. InAdvancesinCryptology-Proceedings [38] B. Lampson, M. Abadi, M. Burrows, and E. Wobber. Au-
+ofEurocrypt’98,pages561–575,1998. thentication in distributed systems: Theory and practice.
+ACM Transactions on Computer Systems, 10(4):265–310,
+[22] D. Chaum. Blind signatures for untraceable payments. In
+Nov.1992.
+Advances in Cryptology, Proceedings of Crypto ’82, pages
+199–203.1983. [39] N. Li, B. N. Grosof, and J. Feigenbaum. Delegation
+[23] D.Chaum. Securitywithoutidentification: Transactionsys- logic: a logic-based approach to distributed authorization.
+temstomakebigbrotherobsolete. Communicationsofthe ACM Transactions on Information and Systems Security,
+ACM,28(10):1030–1044,1985. 6(1):128–171,Feb.2003.
+[24] D.Chaum. Onlinecashchecks. InAdvancesinCryptology, [40] N. Liand J.C. Mitchell. Understanding SPKI/SDSIusing
+ProceedingsofEurocrypt’89,pages288–293,1990. first-orderlogic. InProceedingsofthe16thIEEEComputer
+[25] D. Chaum, A. Fiat, and M. Naor. Untraceable electronic SecurityFoundationsWorkshop,pages89–103,June2003.
+cash.InAdvancesinCryptology,ProceedingsofCrypto’88,
+[41] N.Li,J.C.Mitchell,andW.H.Winsborough. Designofa
+pages319–327,1990.
+role-basedtrustmanagementframework. InProceedingsof
+[26] D. E. Clarke, J.-E. Elien, C. M. Ellison, M. Fredette, the 2002 IEEE Symposium on Security and Privacy, pages
+A. Morcos, and R. L. Rivest. Certificate chain discovery 114–130,May2002.
+inSPKI/SDSI.JournalofComputerSecurity,9(4):285–322,
+[42] P.Lo´pez,F.Pfenning,J.Polakow,andK.Watkins. Monadic
+2001.
+concurrentlinearlogicprogramming. InProceedingsofthe
+[27] T. ElGamal. A public key cryptosystem and a signature 7thInternational Symposium onPrinciplesand Practiceof
+schemebasedondiscretelogarithm. IEEETransactionson DeclarativeProgramming,pages35–46,July2005.
+InformationTheory,31:465–472,1985.
+[43] G. C. Necula. Proof-carrying code. InProceedings of the
+[28] J.A. Garay, M. Jakobsson, and P.MacKenzie. Abuse-free
+24th ACMSymposium on Principlesof Programming Lan-
+optimisticcontractsigning. InAdvancesinCryptology,Pro-
+guages,pages106–119,Jan.1997.
+ceedingsofCrypto’99,pages449–466,1999.
+[44] T.OkamotoandK.Ohta. Universalelectroniccash. InAd-
+[29] J. A. Garay and P. D. MacKenzie. Abuse-free multi-
+vancesinCryptoloty,ProceedingsofCrypto’91,pages324–
+party contract signing. In Proceedings of the 13th Inter-
+337.1992.
+nationalSymposiumonDistributedComputing,pages151–
+165,1999. [45] B. Pfitzmann and M. Waidner. How to break and repair a
+[30] D. Garg, L. Bauer, K. D. Bowers, F. Pfenning, and M. K. “provablysecure”untraceablepaymentsystem.InAdvances
+Reiter. A linear logic of authorization and knowledge. In in Cryptoloty, Proceedings of Crypto ’91, pages 338–350.
+Proceedingsof the11thEuropean Symposium onResearch 1992.
+inComputerSecurity,pages297–312,Sept.2006.
+[46] SETSecureElectronicTransactionLLC. TheSETStandard
+[31] D. Gargand F.Pfenning. Non-interference inconstructive Specification,May1997.
+authorizationlogic. InProceedingsofthe19thIEEECom-
+puterSecurityFoundationsWorkshop,pages283–296,2006. [47] D.R.Simon. Anonymous communication andanonymous
+cash.InAdvancesinCryptology,ProceedingsofCrypto’96,
+[32] J.-Y. Girard. Linear logic. Theoretical Computer Science,
+pages61–73,1996.
+50:1–102,1987.
+[48] M. Sirbu and J. D. Tygar. Netbill: An internet commerce
+[33] J. Y. Halpern and R. van der Meyden. A logic for SDSI’s
+system optimized for network delivered services. In Pro-
+linkedlocalnamespaces. InProceedingsofthe12thIEEE
+ceedings of the 40th IEEE Computer Society International
+ComputerSecurity Foundations Workshop, pages111–122,
+Conference,pages20–25,1995.
+June1999.
+[34] J.Y.HalpernandR.vanderMeyden. Alogicalreconstruc- [49] H.Tewari,D.O’Mahony, andM.Peirce. Reusableoff-line
+tion of SPKI. In Proceedings of the 14th IEEE Computer electroniccashusingsecretsplitting. Technicalreport,Trin-
+SecurityFoundationsWorkshop,pages59–70,2001. ityCollege,1998.Principals A
+Propositions F,G ::= action(U,P,N)|AsaysF | ...
+CategoricalJudgments J ::= F true|F valid|AaffirmsF |AsignedF
+|Asigned F
+A0
+Unrestrictedcontext Γ ::= ·|Γ,F valid|Γ,AsignedF
+Linearcontext ∆ ::= ·|∆,F true|∆,Asigned F |∆,AsignedF
+A0
+Conclusions γ ::= F true|AaffirmsF
+Hypotheticaljudgment Γ;∆`γ
+Γ,F valid;∆,F true`Gtrue
+(hyp) (copy)
+Γ;F true`F true Γ,F valid;∆`Gtrue
+Γ,AsignedF;∆,AsignedF `Gtrue Γ;∆`F true
+(copy0) (aff)
+Γ,AsignedF;∆`Gtrue Γ;∆`AaffirmsF
+Γ;∆`AaffirmsF Γ;∆,F true`AaffirmsG
+(saysR) (saysL)
+Γ;∆`(AsaysF)true Γ;∆,(AsaysF)true`AaffirmsG
+Γ;∆,F true`AaffirmsG Γ;∆,F true`AaffirmsG
+(signed) (signed )
+L
+Γ;∆,AsignedF `AaffirmsG Γ;∆,Asigned F `AaffirmsG
+A0
+Figure3.Summaryofthelogic
+A. Summary ofthe Logic involved, Bob and Alice, both carry smartphones capable
+ofgeneratingproofsofaccessandcommunicatingwiththe
+Thissectionsummarizesourlogicandacut-elimination embedded doorend computers. Bob is a graduate student
+theoremforit. See[30]fordetailsofacloselyrelatedlogic. workingfor Alice. Alice is outof town, but Bob needsto
+Thestandardconnectiveshavebeenomittedtosavespace. getintoherofficetoborrowabook.Alicewouldliketodel-
+egatetoBob theauthorityto openherdooronce, butonly
+Theorem1 (Admissibility of cut). The following hold in
+once.AfterBobhasusedthedelegationtoopenthedoor,he
+thelogicdescribedabove.
+cannotuseitagain.Inthecurrentsystem,suchadelegation
+1. If Γ;∆ 1 ` A true and Γ;∆ 2,F true ` γ, then isimpossible.
+Γ;∆ 1∆ 2 `γ. InordertoletBobgetintoheroffice,(CIC-2525),Alice
+createsaconsumablecredential.
+2. IfΓ;· ` F trueandΓ,F valid;∆ ` γ,thenΓ;∆ `
+γ.
+C0=Alicesigned RAlicedelegate(Alice,Bob,CIC2525)
+3. If Γ;∆ ` A affirms F and Γ;∆ ,F true `
+1 2 BobnowwalksuptoAlice’sdoorandasksittoopen. The
+AaffirmsG,thenΓ;∆ ∆ `AaffirmsG.
+1 2 doorrespondswithachallenge.
+Proof. Bynestedinduction,firstonthesize ofthecutfor-
+G =Alicesays(action(CIC 2525,hopeni,nonce))true
+mulaandthenonthesizeofthetwogivenderivations.
+The challengeincludesa nonce, generatedby the doorend
+B. SampleProofs computer, that will be used to ensure freshness of the re-
+sponse. Bobthengeneratesthefollowingcredential.
+B.1. One-Time Delegation
+C1=Bobsignedaction(CIC2525,hopeni,nonce)
+FromC andC ,Bobcanconstructaproofof
+This exampleextendsthe currentframeworkalreadyin 0 1
+place at our institution (see Section 7). The two parties M:Alicesays(action(CIC 2525,hopeni,nonce))truehyp
+C1;action(...)true`action(...)true
+aff
+C1;action(...)true`Bobaffirmsaction(...)
+signed hyp
+C1;C1`Bobaffirmsaction(...)
+copy0
+C1;action(...)true`action(...)true
+aff
+C1;·`Bobaffirmsaction(...) C1;action(...)true`Aliceaffirmsaction(...)
+saysR saysL
+C1;·`Bobsaysaction(...)true C1;Alicesaysaction(...)true`Aliceaffirmsaction(...)
+delegate
+C1;delegate(Alice,Bob,CIC2525)true`Aliceaffirmsaction(...)
+signedL
+C1;C0`Aliceaffirmsaction(CIC2525,hopeni,nonce)
+saysR
+C1;C0`Alicesaysaction(CIC2525,hopeni,nonce)true
+Figure4.ProofofAlicesaysaction(...) true
+whichhesubmitsforratification.IfthisisthefirsttimeBob allconsumablecredentialshaveratificationcredentialsand,
+has tried to use the delegation,his request will be ratified, afterpopulatinghisenvironments,thattheproofiscorrect.
+andhewillreceivearatificationcredential. Iftheverificationsucceeds,Bobwillreleasethearticlesin
+Alice’sshoppingcart.
+C2=RAlicesigned(delegate(Alice,Bob,CIC2525),M,
+Alicesaysaction(CIC2525,hopeni,nonce)) C0 = Alicesigned(action(pay,hBob,$100i,nonce))
+Bobcanthenappendthiscredentialtotheothershecol-
+C1 = BankAsigned(AlicespeaksforBankA.Alice)
+C2 = ACH.BCsigned(BankAspeaksforACH.BC.BankA)
+lected during proof construction and submit them, along
+C3 = ACHsigned(delegate(ACH,ACH.BC,pay))
+withtheproof,tothedoorendcomputer. Thecomputer,af-
+C4 = ACH.BCsigned(delegate(ACH.BC,ACH.BC.BankA,pay))
+tercheckingthesignaturesandpopulatingitsenvironments C5 = BankAsigned RBankA(delegate(BankA,BankA.Alice,pay))
+willcheckthattheproofgoalisinfactsatisfiedbythecre- C6 = RBankAsignedhdelegate(BankA,BankA.Alice,pay),M,
+dentialssubmitted,andifsowillopenthedoorforBob. KACHsaysaction(pay,hBob,$100i,nonce)i
+C0=Alicesigned RAlicedelegate(Alice,Bob,CIC2525) Credential C 0, signifies Alice’s willingness to pay Bob.
+C1=Bobsignedaction(CIC2525,hopeni,nonce) CredentialsC 1, andC
+2
+createspeaksforrelationshipsbe-
+C2=RAlicesignedhdelegate(Alice,Bob,CIC2525),M, tween Alice and her bank, and between the bank and the
+Alicesaysaction(CIC2525,hopeni,nonce)i Bank Certifier (BC) of the ACH. CredentialC and C es-
+3 4
+tablishthedelegationchainfromtheACHthroughitsBank
+Asimplifiedversionoftheproofderivationispresentedin
+CertifiertoAlice’sbank(BankA),theauthoritytomakepay
+Figure4. Itiseasiestreadfrombottomup.
+statements.
+CredentialC isaconsumabledelegationfromthebank
+B.2. Commerce 5
+toAlice. Thiscredentialrequiresratificationwithrespectto
+theproofof
+ThefollowingisanexampleproofofAlicepayingBob
+$100. Inorderforthepaymenttobeaccepted,Alicemust M:ACHsaysaction(pay,hBob,$100i,nonce)true
+generateaproofthattheAutomatedClearingHouse(ACH)
+saysaction(pay,hBob,$100i,nonce). after which Alice will get ratification credentialC 6, which
+Inordertoinitiateapurchase,thebuyer(Alice)requests shesubmitsalongwiththeprooftoBobforverification.
+fromthe seller (Bob), the items in her shoppingcart. Bob Again, the proof in Figure 5 is easiest to read from the
+respondswithachallengetoprovethegoal bottomup,startingwiththeunlabeledprooftree.
+G =ACHsaysaction(pay,hBob,$100i,nonce)true
+B.3. Registration
+Bobgeneratesthenoncetoensurefreshness,ensurethatthe
+ratificationcredentialsareissuedwithrespecttothisproof, Here we present an example utilizing consumable cre-
+andalso to actasa transactionidentifier. First, Alice gen- dentialsintheframeworkofclassregistration.Consumable
+eratescredentialC . Duringproofgeneration,Aliceobtains credentials are used both to limit the number of students
+0
+credentials C –C . Using these she will generate a proof, signingupforaclass,andtoensurethatanyclassastudent
+1 5
+whichshewillsubmittoBankA’sratifierforhimtogenerate istryingtoregisterfordoesnotconflictwith otherclasses
+thefinalnecessarycredential(C ). OnceAlicehasallofthe heisalreadytaking.Thisisdonebymodelingboththeseats
+6
+credentials, she submits the proof and credentials to Bob. in a class and the timeslots in a weekly schedule as con-
+Bobwillverifythatthecredentialsarevalid,andcheckthat sumable resources. Additionally, students are allowed toD4:
+hyp
+C0−4;action(...)true`action(...)true
+aff
+C0−4;action(...)true`Aliceaffirmsaction(...)
+signed hyp
+C0−4;C0`Aliceaffirmsaction(...)
+saysR
+C0−4;action(...)true`action(...)true
+aff
+C0−4;C0`Alicesaysaction(...)true
+copy0
+C0−4;action(...)true`BankA.Aliceaffirmsaction(...)
+saysL
+C0−4;·`Alicesaysaction(...)true C0−4;BankA.Alicesaysaction(...)true`BankA.Aliceaffirmsaction(...)
+speaksfor
+C0−4;A1`BankA.Aliceaffirmsaction(...)
+D3:
+hyp
+D4 C0−4;action(...)true`action(...)true
+aff
+C0−4;A1`BankA.Aliceaffirmsaction(...)
+saysR
+C0−4;action(...)true`BankAaffirmsaction(...)
+saysL
+C0−4;A1`BankA.Alicesaysaction(...)true C0−4;BankAsaysaction(...)true`BankAaffirmsaction(...)
+delegate
+C0−4;A1,delegate(BankA,BankA.Alice,pay)true`BankAaffirmsaction(...)
+signedL
+C0−4;C5,A1≡(AlicespeaksforBankA.Alicetrue)`BankAaffirmsaction(...)
+signed
+C0−4;C5,C1`BankAaffirmsaction(...)
+D2:
+D3
+hyp
+C0−4;C5,C1`BankAaffirmsaction(...)
+saysR
+C0−4;action(...)true`action(...)true
+aff
+C0−4;C5,C1`BankAsaysaction(...)true
+copy0
+C0−4;action(...)true`ACH.BC.BankAaffirmsaction(...)
+saysL
+C0−4;C5`BankAsaysaction(...)true C0−4;ACH.BC.BankAsaysaction(...)true`ACH.BC.BankAaffirmsaction(...)
+speaksfor
+C0−4;C5,A2`ACH.BC.BankAaffirmsaction(...)
+D1:
+hyp
+D2 C0−4;action(...)true`action(...)true
+aff
+C0−4;C5,A2`ACH.BC.BankAaffirmsaction(...)
+saysR
+C0−4;action(...)true`ACH.BCaffirmsaction(...)
+saysL
+C0−4;C5,A2`ACH.BC.BankAsaysaction(...)true C0−4;ACH.BCsaysaction(...)true`ACH.BCaffirmsaction(...)
+delegate
+C0−4;C5,A2,delegate(ACH.BC,ACH.BC.BankA,pay)true`ACH.BCaffirmsaction(...)
+signed
+C0−4;C5,C4,A2≡(BankAspeaksforACH.BC.BankAtrue)`ACH.BCaffirmsaction(...)
+signed
+C0−4;C5,C4,C2`ACH.BCaffirmsaction(...)
+D1
+C0−4;C5,C4,C2`ACH.BCaffirmsaction(...)
+saysR hyp
+C0−4;C5,C4,C2`ACH.BCsaysaction(...)true
+copy0
+C0−4;action(...)true`action(...)true
+aff
+C0−4;C5,C4`ACH.BCsaysaction(...)true
+copy0
+C0−4;action(...)true`ACHaffirmsaction(...)
+saysL
+C0−4;C5`ACH.BCsaysaction(...)true C0−4;ACHsaysaction(...)true`ACHaffirmsaction(...)
+delegate
+C0−4;C5,delegate(ACH,ACH.BC,pay)true`ACHaffirmsaction(...)
+signed
+C0−4;C5,C3`ACHaffirmsaction(pay,hBob,$100i,nonce)
+saysR
+C0−4;C5,C3`ACHsaysaction(pay,hBob,$100i,nonce)true
+copy0
+C0−4;C5`ACHsaysaction(pay,hBob,$100i,nonce)true
+Figure5.ProofofACHsaysaction(...) true0
+C0 = Calendarsigned
+RCal
+action(timeslot,hAlice,F 05,Monday,0800–0900i)
+0
+C1 = Calendarsigned
+RCal
+action(timeslot,hAlice,F 05,Wednesday,0800–0900i)
+0
+C2 = Calendarsigned
+RCal
+action(timeslot,hAlice,F 05,Friday,0800–0900i)
+0
+C3 = Registrarsigned
+RSeat
+action(seat,hF 05,CS101i,nonce)
+C4 = Registrarsigned RCreditdelegate(Registrar,Alice,credit hours)
+0
+C5 = Alicesignedaction(credit hours,hAlice,F 05,4creditsi,nonce)
+0
+C6 = Registrarsigned(∀A.(Calendar saysaction(timeslot,hA,F 05,Monday,0800–0900i)
+0
+∧Calendarsaysaction(timeslot,hA,F 05,Wednesday,0800–0900i)
+0
+∧Calendarsaysaction(timeslot,hA,F 05,Friday,0800–0900i)
+0
+∧Registrarsaysaction(seat,hF 05,CS101i,nonce)
+0
+∧Registrar saysaction(credit hours,hA,F 05,4creditsi,nonce))
+→action(register,hA,CS101,F0 05,4creditsi,nonce))
+0
+C7 = RCalsignedhaction(timeslot,hAlice,F 05,Monday,0800–0900i),M,
+0
+Registrarsaysaction(register,hAlice,CS101,F 05,4creditsi,nonce)i
+0
+C8 = RCalsignedhaction(timeslot,hAlice,F 05,Wednesday,0800–0900i),M,
+0
+Registrarsaysaction(register,hAlice,CS101,F 05,4creditsi,nonce)i
+0
+C9 = RCalsignedhaction(timeslot,hAlice,F 05,Friday,0800–0900i),M,
+0
+Registrarsaysaction(register,hAlice,CS101,F 05,4creditsi,nonce)i
+0
+C10 = RSeatsignedhaction(seat,hF 05,CS101i,nonce),M,
+0
+Registrarsaysaction(register,hAlice,CS101,F 05,4creditsi,nonce)i
+C11 = RCreditsignedhdelegate(Registrar,Alice,credit hours),M,
+0
+Registrarsaysaction(register,hAlice,CS101,F 05,4creditsi,nonce)i
+Figure6.CredentialsthatallowAlicetoregisterforaclass
+takeonlyalimitednumberofcredithoursineachsemester. This last credential can be thought of as requiring the
+Eachstudentmust,therefore,alsoprovethatbyaddingthis studenttobefreeonMonday,Wednesday,andFridayfrom
+classtotheirschedule,theywillnotsurpassthatlimit. As- 8:00 to 9:00 AM, a free seat to be available in the class,
+sumingallthesethingsaretrue,thestudentshouldbeable and the student to have 4 available credit hours for which
+togeneratethenecessaryprooftoregisterforaclass. theymaysignup.Notethatweomitnoncesfromaction()
+AlicewantstoregisterforCS101,whichmeetsonMon- statementswheretheyareunnecessary(e.g.,C –C ).
+0 2
+day, Wednesday,and Fridayfrom8:00to 9:00AM. To do Alicenowhasenoughcredentialstoprove
+so, shecontactstheregistrar,requestingthatshebeplaced
+M:Registrarsaysaction
+in the class. The registrar responds with a challenge to
+0
+prove: (register,hAlice,CS101,F 05,4creditsi,nonce)true
+G =Registrarsaysaction She then submitsthisprooffor ratificationof the consum-
+(register,hAlice,CS101,F0 05,4creditsi,nonce)true able credentials it contains. Assuming all of the ratifiers
+consent to the use of their credentials, Alice will receive
+When Alice’s registration period began, she was given
+credentialsC –C ,allowinghertocompletetheproof.
+7 11
+credentials C –C , (see Figure 6) along with similar ones
+0 2 ThefullproofissimilartothosedoneinAppendicesB.1
+for all weekly timeslots. The registrar, being in charge of
+andB.2,thoughmuchlarger.Wedonotshowthefullproof
+seat assignments, also gave Alice credential C . She ob-
+3 here. Upon checking the proof, the registrar would then
+tainedcredentialC duringproofgeneration,andgenerated
+4 registerAliceforCS101,asdesired.
+credential C herself. The registrar also gave her creden-
+5
+tial C , specifying a subgoal that Alice must prove before
+6
+registration.

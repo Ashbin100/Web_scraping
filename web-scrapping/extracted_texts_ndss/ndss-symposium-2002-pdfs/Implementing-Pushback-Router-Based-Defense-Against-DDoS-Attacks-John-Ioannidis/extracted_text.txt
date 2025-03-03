@@ -1,0 +1,646 @@
+Implementing Pushback: Router-Based Defense AgainstDDoSAttacks
+JohnIoannidis StevenM. Bellovin
+ji@research.att.com smb@research.att.com
+AT&TLabs Research AT&TLabsResearch
+Abstract interfereswithothertrafficthatmayhappentoshareapor-
+tionofthenetworkthatisbeingheavilycongested.
+Mahajanetal. [13, 14]introduceanetwork-basedsolu-
+Pushback is a mechanism for defending against dis- tion, called Pushback, to address the question of whether
+tributed denial-of-service (DDoS) attacks. DDoS attacks anythingcan bedoneinside thenetworkto defendagainst
+are treated as a congestion-control problem, but because DDoSattacks,andevaluatethesolutionwithextensivesim-
+mostsuchcongestioniscausedbymalicioushostsnotobey- ulations. In this paper, we present an implementation of
+ing traditionalend-to-endcongestion control, the problem theseconceptsunderUnix,alongwithexperimentalresults
+must be handled by the routers. Functionalityis added to from our laboratory testbed. In the rest of this section we
+each router to detect and preferentially drop packets that giveaverybriefoverviewofthePushbackmechanism;the
+probably belong to an attack. Upstream routers are also reader should refer to [14] for all the details. Section 2
+notifiedtodropsuchpackets(hencethetermPushback)in presentsthearchitectureofa routerthatcansupportPush-
+orderthattherouter’sresourcesbeusedtoroutelegitimate back;Section3givesimplementationandperformancede-
+traffic. In this paper we present an architecture for Push- tails;weconcludewithadiscussionofdeploymentoptions,
+back, its implementation under FreeBSD, and suggestions aswellasrelatedwork.
+forhowsuchasystemcanbeimplementedincorerouters.
+1.1.OverviewofPushback
+Ifwecouldunequivocallydetectpacketsbelongingtoan
+1. Introduction
+attack and drop just those, the DDoS problem would be
+Distributed Denial of Service (DDoS) attacks have be- solved. However, routers cannot tell with total certainty
+come an increasingly frequent disturbance of the global whether a packet actually belongs to a ‘good’ or a ‘bad’
+Internet[15]. Theyareveryhardtodefendagainstbecause flow;ourgoalwillbetodevelopheuristicsthattrytoiden-
+they do not target specific vulnerabilities of systems, but tify most of the bad packets, while trying not to interfere
+rather the very fact that the target is connected to the net- with the good ones. Again, Mahajan et al. introduce the
+work. AllknownDDoSattackstakeadvantageofthelarge conceptofAggregate-basedCongestionControl(ACC);in
+number of hosts on the Internet that have poor or no se- thiscontext,anaggregateisdefinedasasubsetofthetraf-
+curity; the perpetratorsbreak into such hosts, install slave fic with an identifiable property. For example, “packetsto
+programs,andattherighttime instructthousandsofthese destination
+slaveprogramstoattackaparticulardestination.Theattack
+doesnothavetoexploitasecurityholeatthetargettocause
+aproblem(althoughthatwouldexacerbatetheproblem,to
+the attacker’sbenefit), andthere isalmostnothingthe vic-
+timcandotoprotectitself.
+Under normal operating conditions, and assuming that
+networklinksandrouterprocessingcapacityhavebeenade-
+quatelyprovisioned,thestandard,TCP-likecongestioncon-
+trol ensures fair use of the available resources. Under a
+DDoS attack, the arriving packets do not obey end-to-end
+congestioncontrolalgorithms;rather,theyincessantlybom-
+bardthevictim,causingthewell-behavedflowstobackoff
+and eventually starve. In addition, a large-scale DDoS at-
+tacknotonlycausestroubletoitsintendedvictim,butalso
+D
+,” “TCP SYN packets,” or even “IP packets
+with a bad checksum” are all descriptions of aggregates.
+The task is to identify aggregates responsible for conges-
+tion,andpreferentiallydropthemattherouters.
+To illustrate Pushback, consider the network in Fig-
+ure 1.1. The server D is under attack; the routers
+R n
+are
+the last few routers by which traffic reaches D. The thick
+linesshowlinksthroughwhichattacktrafficisflowing;the
+thin lines show links with no attack traffic. Only the last
+linkisactuallycongested,astheinnerpartofthenetworkis
+adequatelyprovisioned.Intheabsenceofanyspecialmea-
+sures, hardly any non-attack traffic would be reaching the
+destination. Somenon-attacktrafficisflowingthroughthe
+linksbetweenR2-R5,R3-R6,R5-R8,R6-R8,andfromR8
+toD,butmostofitisdroppedduetocongestioninR8-D.R1 R2 R3 R4
+R5 R6 R7
+R8
+D
+Figure1.ADDoSattackinprogress.
+Throughout this paper we shall be referring to ‘good,’
+‘bad,’and‘poor’trafficandpackets. Badpacketsarethose
+sentbytheattackers. Badtrafficischaracterizedbyanat-
+tacksignature,whichwestrivetoidentify;whatcanbere-
+allyidentifiedisthecongestionsignature,whichisthesetof
+propertiesofthe aggregateidentifiedas causingproblems.
+Poor traffic consists of packets that match the congestion
+signature, butare notreally partof anattack; theyare just
+unluckyenoughtohavethesamedestination,orsomeother
+propertiesthat cause them to be identified as belongingto
+theattack. Goodtrafficdoesnotmatchthecongestionsig-
+nature, but shares links with the bad traffic and may thus
+suffer.Whethertrafficisconsidered‘good,’‘bad,’or‘poor’
+(orsimplyunaffected)dependsonthecongestionsignature
+employed;in theexamplesthatfollow,thecongestionsig-
+naturewillbe“UDPtrafficdestinedforD.”
+Good traffic in Figure 1.1 is, for example, TCP traffic
+entering from any of the links on top and destined for D;
+because the link R8-D is congested, that traffic suffers. If
+thelinkR2-R5werealsocongested,trafficexitingfromthe
+lower-left link of R5 might also suffer: according to our
+definition, this would still constitute ‘good’traffic (it goes
+throughalinkcongestedbytheattack);theterm“collateral
+damage” has been used to describe it, in order to empha-
+sizethatsuchtrafficisnotgoingtothetargetoftheattack.
+One of the benefitsof Pushback, that no other mechanism
+offers,istheabilitytopreventsuchcollateraldamagefrom
+happening. Returning to the example, some of the traffic
+enteringR4isgood(non-UDPtrafficdestinedforD),some
+is poor (legitimate UDP traffic to D), and some is simply
+unaffected(thefractionoftrafficexitingR7 thatisnotgo-
+ing to R8), but none is bad (there is no attack coming in
+fromthatsubtree). TrafficenteringfromR1throughR3is
+a mixture of all four kindsof traffic. Now, no matter how
+smartfilters R8 couldemploy,it cannotdo anythingto al-
+lowmoregoodorpoortrafficoriginatingfromtheleftside
+ofthegraphtoreach
+D
+trafficarrivingfromR5andR6, hopingthatmorenon-bad
+traffic would flow in from R7. With Pushback, R8 sends
+messagestoR5andR6tellingthemtorate-limittrafficfor
+D.EventhoughthelinksdownstreamfromR5 andR6 are
+notcongested,whenpacketsarriveatR8theyaregoingto
+bedroppedanyway,sotheymayaswellbedroppedatR5
+and R6. These two routers, in turn, propagatethe request
+uptoR1,R2,andR3,tellingthemtorate-limitthebadtraf-
+fic,allowingsomeofthepoortraffic,andmoreofthegood
+traffic,toflowthrough.
+2. Architecture
+Consideratypicalrouter;Figure2givestheviewofthe
+routing mechanism from one output interface. There are
+severalincominglinks,andtheroutingsubsystemisimplic-
+itlyshowninthechoiceoftheoutputinterface. Aratelim-
+iterisintroducedbeforetheoutputqueue. IntheFreeBSD
+operatingsystem[8], theIPFWfirewallpackagealso does
+traffic shaping and is in fact used in our prototype as the
+rate limiter. Some form of rate limiting or traffic shap-
+ingisalreadyinplaceinmanycommercialrouters,sothis
+approach is not restricted to Unix-based routers only The
+simplest way to view the rate limiter is as a predicatethat
+decides whether a packet is droppedor forwarded. In our
+architecture,droppedpacketsaresenttothePushbackdae-
+mon, pushbackd. The daemon,in turn, periodicallyup-
+dates the parameters of the rate limiter, and also informs
+the upstream daemonsto update theirs. It is interesting to
+point outthat the actual Pushback daemonmay not reside
+ontherouteritself,butratheronanexternalancillarypiece
+ofequipment.
+Input queues
+Match output queue
+Congestion N
+Signature? P . . . D
+Y
+rate limiter P
+D
+adjust local ACC
+pushbackd
+update congestion signature
+pushback
+Figure2.Partialviewofarouter.
+Packets that are not droppedby the rate limiter are sent
+to the output queue, and may be dropped then if there is
+noavailablebandwidthforthemtobetransmitted.Thishas
+the(desired)effectthatpacketsthatmatchedthecongestion
+signature but were not dropped by the rate limiter are not
+. Allitcandoispreferentiallydrop treatedpreferentiallyoverpacketsthatdidnot.The Pushback daemon receives dropped packets from arecomingfromtheoutputqueue,congestionexistsonthe
+both the rate limiter and the output queue, as it needs to link between this router and the next. If all drops are the
+knowbothhowwelltheratelimiterisperformingandhow workoftheratelimiter,thiscouldindicatethatrate-limiting
+many other packets are still being dropped in the output isworkingtoowell,perhapsthelimitsshouldbereduced.
+queue. The information sent to the Pushback daemon is The Pushback daemon now has to determine if there is
+showninFigure2. Mostofthefieldshavetheobviouspur- anattackgoingon,andwhethertorespondtoit. Theexact
+pose. Themagicnumberprovidessomeprotectionagainst algorithm(s)to run are willbe an importantresearchtopic
+synchronizationproblemsbetweenthekernelandtheuser- forsometimetocome. Wepresentsuchanalgorithmhere;
+levelprocess. The timestamp is expressedin nanoseconds anothercanbefoundin[14].
+since the router was last booted, and its purpose, along We start by considering the drop set, that is, the set of
+with the packet size, is to allow the code to estimate the packets that are dropped by the rate limiter. These may
+bandwidththatwouldhavebeenconsumedbythedropped includepacketsdroppedbecauseofalready-existingPush-
+packets. The ‘reason’ field indicates whether this was a back activity, but as we shall see, this does not affect the
+rate-limiter drop or an output queue drop, and if the lat- outcomeof the algorithm. The size of the dropset should
+ter, whether it was a tail-queue drop, a RED drop, and so belargeenoughtoallowmeaningfulresults,butalsosmall
+on. Only packets dropped because of queue discipline re- enoughto be processedin a small amountof time. Fortu-
+strictions are logged; packets dropped because, for exam- nately,itisnotnecessarytokeepallthedroppedpackets;a
+ple,theywerenotroutable,orevenbecausenobufferspace representativesampleofthemsuffices,asitisthemostfre-
+couldbeallocatedforthematthedrivermaynotevenreach quentpacketsthatwillaffecttheoutcomeofthealgorithm,
+thispartofthecode,sotheyarenotreportedatall. Thisis andthese willbe themostrepresentedonesinthe sample.
+thedesiredbehavior,astheseotherpacketswouldnothave The important feature is that the algorithm should run in
+lefttherouteranywayandthuswouldnothaveaffectedthe lesstimethatittakestocollectthepackets.
+congestionofdownstreamlinks. ThisalgorithmdetectsaggregatesbasedonlyonIPdesti-
+nationaddress; theassumptions(themostpessimistic pos-
+Magicnumber sible) are that source addresses cannot be trusted anyway,
+IPDestinationaddress andthattheattackersarejustsendingIPpacketswithran-
+Inputinterface domcontentstoattempttocongestthetargetlink. Itstarts
+Outputinterface by deciding whether the congestion level is high enough,
+Timestamp that is, the drop rate is high enough, to warrant attempt-
+Packetsize ing to do preferential dropping. A simple test is whether
+Reason thebandwidth
+Figure3.Droppedpacketreport.
+Itisimportanttonotethatthedesigndecisiontoseparate
+therate-limitingandpacket-droppingfunctionalityfromthe
+rest of the Pushback mechanism has implications for the
+eventual deployment of such a mechanism in the Inter-
+net. Routerscan be designed1 to reportinformationabout
+droppedpackets, either to a process runningon the router
+CPU,oronacomputerattachedtotherouterusingalocal
+interface. Alltheintelligence,whichwouldhavetoevolve
+rapidlyas DDoSattackschangein nature, wouldresidein
+easytoreplace,genericPCs,andscarcerouterresourcesdo
+nothavetobeallocatedtothePushbacktask.
+2.1.AggregateDetection
+Periodically, pushbackd processes the saved drop set
+(i.e., the set of packetsdroppedby the rate limiter andthe
+outputqueue)totrytodetectcongestion.Alargeamountof
+droppedpacketsobviouslyindicatescongestion. Iftherate
+limiter has not been engaged yet, and all dropped packets
+1infact,somehigh-endroutersalreadydothat.
+w o
+oftheoutputlinkwouldbeexceededby
+morethananacceptabledroprate,say,20%ofthetraffic,in
+otherwords,if
+w i > 1 2: (cid:2) w o
+,where
+w i
+isthetotalincom-
+ing bandwidth from all input links. If this is the case, the
+algorithmstartsbymatchingthedestinationaddressofeach
+droppedpacketagainstthe routingtable, and selecting the
+longest matching prefix. This groups the dropped packets
+accordingto their eventualdestinationlinkin some down-
+stream router(or eventhe target, if the targethas multiple
+IP addresses). The drop set is then sorted with the prefix
+asthekey. Wenowwanttofindtheprefixwiththehighest
+count. This can be done in a single pass. The sorting has
+complexity
+O ( n lo g n )
+,where
+n
+isthesizeofthedropset.
+Thecountinganddeterminationofthemostfrequentprefix
+is,ofcourse,linearin
+n
+. Now,forthesubsetofthedropset
+thatmatchesthisselectedprefix,weperformanotherscanto
+seeifthedestinationsofthedroppedpacketsmatchalonger
+prefixthantheroutingprefix. If,forexample,asinglema-
+chine has been targeted, even though the prefix garnered
+from the routing table will be shorter than 32 (or 128, in
+thecaseofIPv6)bits,theaddressoftheselectedaggregate
+willbethefull32(or128)bits. Theselectedprefixconsti-
+tutesthecongestionsignature;wedenotethebandwidthforwhichthistrafficisresponsibleas
+w b
+.
+Itis likely thatmorethanone attack ishappeningatthe
+sametime. Ifremovingthetrafficidentifiedthecongestion
+signature does not bring the output traffic below the pre-
+viously described acceptable level, that is, if
+1 2: (cid:2) w o
+w i (cid:0) w b > stillholds,thealgorithmisrepeatedinthehopeof
+addingmoreprefixestothecongestionsignatures.Thepre-
+ciseparameterswouldbetunabletospecificinstallations.
+In some case we may not be able to find a second pre-
+fix (orevena first) responsiblefora significantfractionof
+the traffic; that would be the case where congestion is not
+causedbyanattack, ortrafficto aspecific destination,but
+by a generalincrease in backgroundtraffic. We then rate-
+limit what we can, and let the queue management of the
+outputlink,whateveritis,handletherestofthecongestion.
+It is also possible to run multiple detection algorithms
+concurrently,each lookingfor differentproperties; for ex-
+ample,itmaybedesirabletodetectbothrandomtrafficand
+particularkindsofattacksuchasaTCPSYNattack.Inthat
+case,twocongestionsignaturesaregiventotheratelimiter,
+andpacketsmatchingeithersignaturearedropped.
+2.2.RateLimiting
+Once the congestion signature has been identified, the
+codemustdecidewhattorate-limititto.If
+w b > w l
+,where
+w l = w i (cid:0) 1 2: (cid:2) w o
+,thenwesimplyrate-limittheaggregate
+downto
+w l
+,andpasstherestofthetrafficon. If
+w b < w l
+to its upstream links. The messages exchangedby routers
+implementingPushbackaredescribedindetailin[10]. The
+mostimportantmessageisthePushbackRequest,shownin
+Figure2.3.
+Variousheaderfields
+RLS-ID
+Maximumdepth
+DepthofRequestingNode
+BandwidthLimit
+ExpirationTime
+CongestionSignature
+Figure4.PushbackRequest.
+Each request has a Rate-Limiting Session Identifier
+(RLS-ID), which is used to match responses (status mes-
+sages, describedlater)torequests. TheDepthfieldisused
+to set a limit to the propagationof the Pushback requests.
+Thedepthoftheoriginatoris0;wheneveraPushbackdae-
+monreceivesa request,it passesitonto its upstreamdae-
+mons, adding 1 to the depth before propagating the mes-
+sage. Themaximumdepthofpropagationissetbytheorig-
+inatingrouterandpassedalongbyeachsubsequentrouter.
+Pushback uses soft state; there is no explicitrevocationof
+a Pushbackrequest, and noeffortis made to recapturethe
+,
+stateafterarouterreset.Theexpirationtimeisusedtoman-
+we eliminate all traffic belonging to the congestion signa-
+age this soft state – if a Refresh message does not arrive
+ture, and let the rest of the excesstraffic be limited by the
+beforetheexpirationtimehaselapsed,theentryisdeleted.
+output queue. Also, remember that the traffic that passes
+Finally,thecongestionsignatureisalistofdestinationpre-
+through the rate limiter and is not dropped is not treated
+fixesthatthebandwidthlimitappliesto.
+preferentially;itisalsosenttotheoutputqueueoftheinter-
+Authentication of Pushback requests is an obviouscon-
+faceandtreatedjustliketherestoftheoutputtraffic. That
+cern.IftheroutersparticipatinginPushbackareneighbors,
+is,justbecauseapacketwasnotdroppedbytheratelimiter
+simply sending the request out with a TTL (or hop count
+doesnotmeanthatitwill be preferentiallytreatedand not
+for IPv6)of 255 is sufficient; any requestcomingfrom an
+droppedifitmustattheoutputqueue.
+attacker would have a lower TTL, and if an attacker has
+The Pushback daemon gets dropped packets from both
+compromisedarouter,therearemoreseriousconcernstobe
+the rate limiter and the output queue; if the rate of the at-
+resolved. While ordinaryauthentication mechanismssuch
+tack stays constant, the daemon will get the same number
+asIPseccanbeused,itisnotnecessarytodosointhecase
+ofdroppedpackets,butitwillbegettingmoreofthemfrom
+ofadjacentroutersundercommonadministrativecontrol.
+theratelimiter. Thismeansthat,aslongastheattackisgo-
+A specialtypeofrequestisa cancelmessage, whichin-
+ingon,thePushbackdaemonwillkeeptellingtheratelim-
+structstheupstreamroutertostoprate-limiting. Itisuseful
+itertodroppackets;whenitstops,nospecialactionneedsto
+whenlongexpirationtimesarespecifiedbydefault,andthe
+betaken;atthenextupdate,noattackwillbeidentified,and
+originating router has decided that it no longer needs pro-
+theratelimitingwillstop.Naturally,somedampingmaybe
+tectionfromupstream.
+necessarytoavoidoscillations;experiencewiththesemech-
+ThePushbackdaemonnotonlysendsrequests,butitalso
+anismsinproductionnetworkswillbenecessarybeforeall
+listens for requests from its downstream routers. Once it
+thedetailscanbeworkedout.
+receivesaPushbackrequest(orrefresh),itaddstheappro-
+priateruletotheratelimiter,andkeepstrackofthedropped
+2.3.Pushback
+packetsitgetsfromit.
+SofarwehavedescribedthelocalversionofACC.Thisis Inadditiontorequestssentupstream,thePushbackdae-
+notenough,however.OncethePushbackdaemonhasiden- mon also sends status messages downstream. These sta-
+tifiedaprefixtorate-limit,itcommunicatesthatinformation tus messages contain a depth field; if it is non-zero, theresponse is simply passed along downstream (remember routersare10Mbpsforthefirstlayer,5Mbpsfornextlayer,
+that Pushback request messages are passed only between and2Mbpsbetweenthelastrouterandthedestination.The
+adjacent routers, possibly using non-globally-routable ad- test hardwarebeingused (300MHzPentiumIIgenericPCs
+dresses;hence,thestatusmessageshavetofollowthesame with 100Mbps Ethernet interfaces, running FreeBSD 4.2)
+hop-by-hoppaths). Since many Pushback operations may can easily route at least 30Mbpsof aggregate traffic with-
+be happening at the same time, the downstream direction outdroppinganypackets;inourexperiments,substantially
+foranyparticularonecanbedeterminedbyexaminingthe slowerrateswereused,bothtogiveamarginofsafety,and
+localsettomatchthecongestionsignatureandRLS-ID,and tomaketheactualmeasurementseasier.
+determinewhichinterfaceitpertainsto.Beforepropagating We use the IPFW packet filter functionality present in
+arequestdownstream,1issubtractedfromthenodedepth. FreeBSD to both simulate links of particular bandwidth-
+Whenadaemonreceivesaresponse(withdepth0),itcan delay characteristics, and to implementthe rate limiter for
+use the informationin it to determine whether to continue theactualPushbackoperations.For,examplethefollowing
+the Pushback, or how to modify it. For example, it may two commandsspecify that the link outgoing on interface
+determine that a larger fraction of traffic that was was re- xl2 has a bandwidth of 10 megabits per second, and its
+questedisbeingdroppedonthesubtreeupstreamfromone queuecanhold50packets(whichistheusualqueuelength
+link,andmuchlesstrafficfromthesubtreesupstreamfrom ofEthernetinterfaces).
+therestofthe links. Suchinformationmaybeused tody-
+namically adapt the requests to match the evolving traffic # ipfw add 999 pipe 999
+patterns. ip from any to any
+In the following section, we describe how this architec- out xmit xl2
+tureisactuallyimplementedunderFreeBSD. # ipfw pipe 999
+config bw 10Mbits/s
+3. Implementation queue 50packets
+Encouragedbythesimulationresultsin[14,13],weim-
+The link speeds are configured by setting up the output
+plementedPushbackunderFreeBSD.Thetestswerecarried
+speeds of the corresponding interfaces. No input speeds
+outonthenetworkshowninFigure3.
+needtobeconfigured.TheratelimitingcodeinIPFWmay
+apply various queue disciplines, such as RED; the default
+b p b g g g discipline is tail-drop, andit is whatis used in ourexperi-
+ments.
+The kernel has been modified so that when a packet is
+R1 R2 R3
+dropped in the queue management code, the information
+described in Figure 2 is sent to pushbackd. Any num-
+ber of mechanisms can be used to pass information from
+10Mbps
+thekerneltotheuser; we choseto usethetunnelinterface
+R4 R5 driver (tun(4)). When the output routine of the tunnel
+driver (tunoutput()) is called by the networking code
+in the kernel, the packet can be read from the user level
+5Mbps
+byreadingthecorresponding/dev/tunndevice. Weuse
+/dev/tun63.Theuser-leveldaemon,pushbackd,may
+R6
+keeponlyasampleofthedroppedpackets.Theprobability
+of keepinga packetisinverselyproportionalto itssize, so
+2Mbps
+thataconstantfractionofthebandwidth,ratherthanofthe
+packetcount,iskept.Atthetrafficlevelsintheexperiment,
+D thecodehasnotroublekeepingup. Pushbackdsamples
+the droppedpacketsitreceives, andperiodically(every60
+seconds) runs the aggregate-detectionalgorithm described
+Figure5.Testbednetwork.
+inSection2.1.Evenforadropsetof
+Thesourcesofbad(attack),poor(legitimatebutsharing
+acongestionsignature),andgood(legitimatebutsuffering)
+traffic are shownasb, p, andg, respectively. The destina-
+tion of all traffic is the subnet where D is connected, but
+onlyDisunderattack. Rnarerouters;thelinksbetweenthe
+1 0
+5
+packets,thealgo-
+rithmrunsinwellunderasecond.
+Foreachprefixthatthedaemonisrate-limiting,whether
+itisbecauseoflocally-detectedcongestion,orbecauseofa
+Pushbackrequest,itkeepsanentrywithallthefieldsshown
+inFigure2.3,plusastartingtime,inalinkedlist,orderedbyexpiration time. As an implementationoptimization, only 4. RelatedWork
+the differencebetween expiration times is kept in the cor-
+Distributed Denial of Service attacks have been a real
+respondingfields, sothatforeachclocktick, onlythe first
+problemforless than three years, andnotmuchpublished
+one has to be decremented. When the detectionalgorithm
+workexistsonthesubject. Relatedworkfallsintotwocat-
+findsaprefixtorate-limit,itsearchesthelist;ifitisalready
+egories:oldworkthatcanalsobeusedincounteringDDoS
+there,anditisaprefixthatwasoriginatedwiththecurrent
+attacks,andnewworkspecificallyaimedatthistask.
+node, it updates the expiration time, potentially moving it
+Originally, it was suggestedthat DDoSattacks could be
+furtherbackinthelinkedlist.
+countered by applying resource allocation techniques on
+WhenR6detectscongestiononitsoutgoinglinktoD,it
+network bandwidth. Integrated Services [5] and Differen-
+runstheaggregate-detectionalgorithm,anddecidesthatthe
+tiated Services [2] are two approaches aimed at isolating
+targetis10.102.0.31(theIPaddressofD).Itthenexamines
+flows with specific quality of service (QoS) requirements
+thetrafficforDitisgettingfromR4andR5,anditfindsthat
+from lower-priority traffic. It is not clear if this approach
+R4issendingit5Mbps,butnotrafficforDisarrivingfrom
+would help; Web traffic, which is a significant fraction of
+R5(the‘g’trafficcominginfromR3isforanotherhostin
+networktraffic,islikelytoremainbest-effort,soitwillnot
+D’ssubnet).Theoutgoinglinkisonly2Mbps,itisgoingto
+be protected by QoS requirements. It is also not clear to
+requestR4 to limit the traffictheyare sendingto 2.4Mbps
+whatextentcompromisedsourcescouldfaketraffictoshow
+(20%morethantheoutputrate,sothatsometraffic. When
+itbelongedtoQoS-protectedflows.
+thishappensR4insertsafirewallrulesuchasthis:
+There are many congestion-controlmechanisms, which,
+if only they were globally deployed, might alleviate some
+# ipfw add 101 pipe 101 ip
+oftheeffectsofcongestionduetoDDoSattacks. Random
+from any to 10.102.0.31/32
+EarlyDetect(RED)[11]anditsvariantstrytoidentifyflows
+out xmit xl2
+that do notobey TCP-friendlyend-to-endcongestioncon-
+# ipfw pipe 101 config bw 2400Kbps
+trol,andpreferentiallydropthem.Thereisalsoalargebody
+of work (e.g., Fair Queuing[7], Class-Based Queuing[12])
+Since there is no traffic coming in from R5 for D, no
+aimedatallocatingspecificfractionsoftheavailableband-
+Pushback is sent to R5. Note that already we have a bet-
+width to each flow so that they all get served. The main
+tersituation;only2.4MbpsarearrivingfromR4;therefore,
+problemwiththeseapproachesisthatpacketsbelongingto
+ifthe‘g’sourcesupstreamfromR5aresendingtrafficcom-
+DDoS attacks do not have readily-identifiable flow signa-
+parableto that, moreof it will getthroughthan beforeR4
+tures, and thus cannot be identified by these mechanisms.
+startsrate-limiting. However,thiscouldhavebeenaccom-
+ThisisthereasonwhytheconceptofAggregate-basedCon-
+plishedbycleverinputfilteringonR6,soletusproceedone
+gestionControlwasdeveloped[14]andwhichiswherethe
+stepfurther.
+workinthepresentpaperisbasedupon.
+R4willnowtellR1andR2torate-limittraffictoD.Ina
+AdifferentstyleofapproachtocombatingDDoSattacks
+similarfashion,moreofthebadtrafficfromthe‘b’sources
+focuses on trying to detect a DDoS attack in progressand
+enteringeachofR1andR2willbedropped,andsomeofthe
+thenrespondtothespecificattack.Variousformsofpacket
+traffic fromthe ‘g’ (good)sourcesdestined for D’s subnet
+trackinghavebeensuggested. Sometrytoconstructapar-
+makesitthrough. InitialmeasurementsindicatethatPush-
+tialmapofthepathsthattheattackistaking;thetwomain
+backisrate-limitingsuccessfully,sothatmoregoodtraffic
+variantsaretraceback[1]andpacketmarking[16,6]. Oth-
+isgettingthrough. Furtherstudyisneededtofine-tunethe
+ers,suchas[18]requirealledgerouterstolog(asampleof
+samplingrates, detectionintervals,andalso considerfeed-
+all) packets, andthenanalyzethe logsin orderto identify,
+backinformationinadjustingthePushbackparameters.
+and hopefullyblock, sources of the attack. An interesting
+Itwasnosurprisethatthesystemworked. Themostin-
+approach is that of [3] where, starting with a partial map
+terestingobservationisthateventhoughthehardwareused
+of the network, they can locate routers where attack traf-
+isfairlyold(abenefitinthiscase,asitismoreeasilyover-
+fic is passing through by flooding them and watching the
+loaded),therewasnonoticeablesystemperformancedegra-
+attack traffic decrease; while intellectually appealing, this
+dation. This also does not come as a surprise, since all
+techniqueislikelytocreatemuchcontroversyifitwereto
+the switching in the kernel is done in software and in the
+be appliedroutinely. In tracebacktechniques, routerspick
+sameaddressspace. Inarealrouterwithhardware-assisted
+outgoing packets with a small probability (e.g.
+fastswitchingpathsforthecommoncases,theoverheadof
+imposinga numberof rate limiting sessions may be much
+higher.
+1 = 2 0 0 0 0
+),
+and send a tracebackpacket(a new kind of ICMP packet)
+to the same destination as the sampled packet. The trace-
+backpacketcontainstheIPaddressoftheroutersendingit,
+andisalwayssentoutwithaTTL(orHopLimit)of255(as
+arudimentaryformofauthentication). Duringanattack,asufficientnumberofthesepacketswillreachthetargetforit issues),saidISPwillhavetotakeadvantageofPushbackas
+toformanapproximatemapofthepaththeattackistaking. bestasitcaninsideitsownnetwork. Oneeasystep,which
+Of course, the attacker can inject its own traceback pack- effectivelyextendsPushbackbyonemorehopwithoutthe
+ets, but unless it has compromised a router fairly close to coo¨perationof the upstream (belongingto a differentISP)
+the target (to inject packets with a sufficiently high TTL), router,istoperforminputrate-limitingontheborderrouters
+all it will achieve is create a fictitious subtree from where (alongwiththenormaloutputrate-limiting).Ofcourse,this
+partoftheattackmaybeoriginating. Packetmarkingdoes isonlyusefuliftheborderrouterconnectstomorethanone
+not send additional packets, but rather modifies the IP ID otherborderrouters.Applyinginputrate-limitingpenalizes
+field in each packet to carry partial information about the badtrafficcominginontherate-limitedinputlinkwithout
+router that marked the packet. Clever techniquesare used affecting incoming traffic from other links (which output-
+toreconstructtheoriginaldata. Thisapproachhasitsown only rate-limiting would). Conceptually, this is the same
+set of failures (e.g., it is hard to get it to work with IPv6). as the border router having one additional router between
+Thequestionofwhatto doevenwhenthepathstheattack itselfandeachpeeringlink,andsendingpushbackrequests
+is taking are identified remains largelyunanswered, and it tothoseconceptualrouters.
+maystillinvolvehumanoperators,especiallywhenadmin- Now,ingeneral,anISP’snetworkcanbethoughtofasa
+istrativeboundariesarecrossed. cloudwhereclientsattach(onedgerouters)andwhichcon-
+Thecommonproblemthatallthetrackingtechniquesare nectstootherISPsatpeeringpoints(privateorpublic). An
+tryingtosolveisthatsourceaddressesinattackpacketscan- ISP’snetworkcanthusbeviewedasasinglevirtualrouter,
+not be trusted, because they are very easy to forge. If all withmultipleinputsandmultipleoutputs. If,inadditionto
+edgeroutersintheentireInternetwereimplementingsource outputratelimiting,weweretoimplementinputratelimit-
+address filtering[9], this task would be greatly simplified. ing,thenthefollowingvariationofPushbackcouldbecon-
+Ofcourse,mostmachineswherethepacketsareoriginating sidered: whenan edgerouterdetectsanattack towardone
+havebeencompromisedbyanattacker,andtheirownersdo of its attached customers, it tries to determine what frac-
+notevenknowthattheyarebeingusedforanattack.More- tions of the attack traffic are coming through the border
+over,evenifthehundredsorthousandsofmachinesthatan routersoftheISP.Thiscouldbedonewith somevariation
+attackiscomingfromwereknown,itisnotclearwhatcould of ITRACE or packet-marking by the border routers that
+bedoneaboutthem. Ithasalsobeensuggested[17]thatin- would be caught and examined at the edge routers. The
+trusiondetectionsystemsorfirewallsbeusedtodetectanat- edgerouterswouldthenask(withproperauthentication,of
+tackinprogress,andnotifyupstreamelementsaccordingly. course)theborderrouterstoapplyinputratelimitingtothe
+Finally,thereisanapproachthatissimilartoPushbackthat requestedaggregate.
+wasdescribedin[19]inanActive-Networks-baseddefense ThedetectionalgorithmsinthePushbackarchitectureare
+againstfloodingattacks. not necessarily limited to information they get from just
+the drop set. Rather, Pushback should be viewed as com-
+5. Discussion plementarytomanyoftheDDoSdetectionapproachesde-
+scribedinSection4. Forexample,thedropsetcanbecom-
+LetusdiscusssomeissuesthatmayaffectthewayPush-
+paredwithinformationgatheredwithITRACEinaneffort
+back could be deployed. First off, it is fairly obviousthat
+toadjustthecongestionsignaturesoastoreducetheamount
+the Pushbackapproachis mosteffectivewhenan attack is
+oftrafficbeingpenalized(‘poor’and‘good’traffic). More-
+non-isotropic;inotherwords,whenthereareroutersfairly
+over, a good map of the network with reliable historical
+closetothetargetwheremostoftheattacktrafficisarriving
+traffic profiles from traces can be used to determine sud-
+froma subset of the inputlinks. Thatis a reasonablysafe
+denchangesintrafficprofilesthatcouldsignalanattack,or
+assumption; even the largest attacks do not involve more
+helpdeterminehowtobestallocateratelimitsinpushback
+thanafewthousandcompromisedmachines,andthereare
+messages.
+manymillionsofmachineontheInternet. Itwouldbepar-
+ticularlyhardforanattackertoensurethattheattackslaves
+6. Summary and Future Work
+areevenlydistributedwithrespecttothetarget.
+Another issue to examine is what fraction of the attack We presented the implementation of a mechanism that
+trafficoriginatesfromhostsservedbythe same ISPasthe treatsDistributedDenialofServiceattacksasacongestion-
+target.ThesmallertheISP,thesmallerthatfractionwillbe, controlproblem,andactsbyidentifyingandpreferentially
+andeventhelargestofthetop-tierISPswillhaveasizeable droppingtrafficaggregatesresponsibleforsuchcongestion.
+fraction of attacks originating from the outside. While an Thepurposeofthisworkistwofold;toshowthepractical-
+ISP can unilaterally deployPushbackin its routers, unless ity of suchan approach,andto explorewaysof deploying
+agreementswithitspeeringISPsaremadeonhowtohonor itincrementallyinanoperationalenvironment. Wealready
+pushbackrequests(anissuefraughtwithsecurityandpolicy know from simulations[14] that Pushback is a promisingway of combating DDoS attacks and flash crowds. There
+are some aspects that are easy to simulate, but real code
+running on real machines allows us to explore the details
+ofarealsystem. Wealsoneededtoseehowmuchmemory
+andcomputingpowerisneededtoactuallyrunPushback,in
+thehopeofinfluencingcommercialrouterdesignerstoward
+implementingPushbackintheircode. Apromisinghybrid
+solution, which we plan to investigate over the next few
+months, is to use features such as the Committed Access
+Rate[4] in ciscoR
+(cid:13)
+[6] D. Dean, M. Franklin, and A. Stubblefield. An Algebraic
+Approach to IP Traceback. In Proceedings of NDSS ’01,
+February2001.
+[7] A.Demers,S.Keshav,andS.Shenker. AnalysisandSimu-
+lationofaFairQueueingAlgorithm. InACMSIGCOMM,
+1989.
+[8] TheFreeBSDProject. http://www.freebsd.org.
+[9] P.FergusonandD. Senie. NetworkIngress Filtering: De-
+featingDenialofServiceAttackswhichemployIPSource
+AddressSpoofing. RFC2267,January1998.
+routers to implement the rate-limiting, [10] S.Floyd,S.Bellovin,J.Ioannidis, K.Kompella, R.Maha-
+while sniffing traffic on both incomingand outgoinglinks jan,andV.Paxson. PushbackMessagesforControllingAg-
+gregatesintheNetwork. InternetDraft,workinprogress.
+of each router to detect congestion and dropped packets,
+[11] S. Floyd and V. Jacobson. Random Early Detection gate-
+even if the router itself cannot report those. Such experi-
+ways for Congestion Avoidance. IEEE/ACMTransactions
+mentsmayallowrapiddeploymentofPushbackeveninthe
+onNetworking,Vol.1(4):pp.397–413,August1993.
+absenceofexplicitsupportfromroutervendors.
+[12] S.FloydandV.Jacobson. Link-sharingandResourceMan-
+agementModelsforPacketNetworks. IEEE/ACMTransac-
+Acknowledgments
+tionsonNetworking,Vol.3(4):pp.365–386,August1995.
+[13] R.Mahajan,S.M.Bellovin,S.Floyd,J.Ioannidis,V.Pax-
+The original idea for Pushback came from an informal
+son, and S. Shenker. Controlling High Bandwidth Aggre-
+DDoS research group consisting of Steven M. Bellovin,
+gatesintheNetwork. SubmittedtoComputerCommunica-
+Matt Blaze, Bill Cheswick, Cory Cohen, Jon David, Jim
+tionsReview.
+Duncan, Jim Ellis, Paul Ferguson,John Ioannidis, Marcus [14] R. Mahajan, S. M. Bellovin, S. Floyd, J. Ioannidis,
+Leech,PerryMetzger,RobertStone,VernPaxson,EdViel- V. Paxson, and S. Shenker. Controlling High Band-
+metti,andWietseVenema.Arecentpaper[14]presentsthe width Aggregates in the Network – Extended Version.
+theoreticalbasisanddetailedsimulationresultsuponwhich http://www.aciri.org/pushback/.
+this work has been based. We also thank the anonymous [15] D.Moore,G.M.Voelker,andS.Savage. InferringInternet
+reviewersformanyvaluableandinsightfulcomments. Denial-of-ServiceActivity. In10thUsenixSecuritySympo-
+sium,August2001.
+[16] S.Savage,D.Wetherall,A.Karlin,andT.Anderson. Practi-
+References
+calNetworkSupportforIPTraceback. InACMSIGCOMM,
+[1] S. M. Bellovin. ICMP Traceback Messages. Work in August2000.
+Progress, Internet Draft draft-bellovin-itrace-00.txt, March [17] D. Schnackenberg, K. Djahandari, and D. Sterne.
+2000. Infrastructure for intrustion detection and response.
+[2] S.Blake,D.L.Black,M.A.Carlson,E.Davies,Z.Wang, In Proceedings of the DARPA Information Surviv-
+andW.Weiss. AnArchitectureforDifferentiatedServices. ability Conference and Exposition 2000, March
+RFC2475,December1998. 2000. ftp://ftp.tislabs.com/pub/IDIP/DISCEXIDR-
+[3] H. Burch and B. Cheswick. Tracing Anonymous Packets Infrastructure.pdf.
+to Their Approximate Source. In Usenix LISA, December [18] R.Stone. CenterTrack: AnIPOverlayNetworkforTrack-
+2000. ingDoSFloods. In9thUsenixSecuritySymposium,August
+[4] Cisco Web Pages: Committed Access Rate.
+2000.
+http://www.cisco.com / univercd / cc / td / doc / prod-
+[19] V.C.Van. ADefenseAgainstAddressSpoofingUsingAc-
+uct/software/ios111/cc111/car.htm,February1998.
+tiveNetworks. Batchelor’sThesis,MIT,1997.
+[5] D. D. Clark, S. Shenker, and L. Zhang. Supporting Real-
+TimeApplicationsinanIntegratedServicesPacketNetwork
+ArchitectureandMechanism. InACMSIGCOMM,1992.

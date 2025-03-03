@@ -1,0 +1,850 @@
+A Comparison of Publicly Available Tools for Dynamic Buffer Overflow
+Prevention (cid:0)
+JohnWilanderandMariamKamkar
+Dept. ofComputerandInformationScience,Linko¨pingsuniversitet
+(cid:1) johwi,marka
+(cid:2)
+@ida.liu.se
+Abstract
+Thesizeandcomplexityofsoftwaresystemsisgrowing,
+increasingthenumberofbugs.Manyofthesebugsconsti-
+tutesecurityvulnerabilities. Most commonofthesebugs
+is thebuffer overflow vulnerability. In this paperwe im-
+plement a testbed of 20different buffer overflow attacks,
+and use it to compare four publicly available tools for
+dynamic intrusionpreventionaimingto stopbuffer over-
+flows. The tools are compared empirically and theoreti-
+cally. The best tool is effective against only 50% of the
+attacks and there are six attack forms which none of the
+toolscanhandle.
+Keywords: securityintrusion; bufferoverflow; intrusion
+prevention;dynamicanalysis
+1 Introduction
+The size and complexity of software systems is grow-
+ing,increasingthenumberofbugs.Accordingtostatistics
+fromCoordinationCenteratCarnegieMellonUniversity,
+CERT,thenumberofreportedvulnerabilitiesinsoftware
+hasincreasedwithnearly500%intwoyears[5]asshown
+infigure1.
+Now there is good news and bad news. The good
+news is that there is lots of information available on
+how these security vulnerabilities occur, how the attacks
+against them work, and most importantly how they can
+beavoided. Thebadnewsisthatthisinformationappar-
+entlydoesnotleadtofewervulnerabilities.Thesamemis-
+takesaremadeoverandoveragainwhich,forinstance,is
+shown in the statistics for the infamous buffer overflow
+vulnerability. DavidWagneretalfromUniversityofCal-
+iforniaatBerkeleyshowthatbufferoverflowsalonestand
+for about 50% of the vulnerabilities reported by CERT
+[35].
+(cid:3)
+Figure 1. Software vulnerabilities reported to
+CERT1995–2001.
+InthemiddleofJanuary2002thediscussionaboutre-
+sponsibility for security intrusions took a new turn. The
+US National Academies released a prepublication rec-
+ommending that policy-makers create laws that would
+holdcompanies accountable forsecuritybreaches result-
+ingfromvulnerableproducts[30],whichreceivedglobal
+media attention [3, 28]. So far, only the intruder can be
+charged incourt. In the future, software companies may
+be charged for not preventing intrusions. This stresses
+the importance of helping software engineers to produce
+moresecure software. Automated developmentandtest-
+ingtoolsaimedforsecuritycouldbeoneofthesolutions
+forthisgrowingproblem.
+Onestartingpointwould,orcouldbetoolsthatcanbe
+applieddirectlytothesourcecodeandsolveorwarnabout
+security vulnerabilities. This means trying to solve the
+problemsintheimplementationandtestingphase.Apply-
+ing security related methodologies throughout the whole
+development cycle would most likely be more effective,
+butgiventheamountofexistingsoftware(“legacycode”),
+thedesireformodulardesignusingsoftwarecomponents
+programmed earlier, and the time it would take to edu-
+Thiswork hasbeen supported bythe national computergraduate
+catesoftwareengineersinsecureanalysisanddesign,we
+schoolincomputerscience(CUGS),commissionedbytheSwedishgov-
+ernmentandtheboardofeducation. argue that security tools that aim to clean up vulnerablesourcecodearenecessary.Afurtherdiscussionofthisis- 2.1 ChangingtheFlowofControl
+sue can be found in the January/February 2002 issue of
+Changing the flow of control and executing arbitrary
+IEEESoftware[18].
+codeinvolvestwostepsforanattacker:
+In this paper we investigate the effectiveness of four
+publiclyavailable toolsfordynamic preventionof buffer 1. Injectingattackcodeorattackparametersintosome
+overflow attacks–namely the GCC compiler patches memory structure (e.g. a buffer) of the vulnerable
+StackGuard,StackShield,andProPolice,andthesecurity process.
+library Libsafe/Libverify. Ourapproach has beento first
+developanin-depthunderstandingofhowbufferoverflow 2. Abusing some vulnerable function that writes to
+attacksworkandfromthisknowledgebuildatestbedwith memoryoftheprocesstoalterdatathatcontrolsex-
+all the identified attack forms. Then the four tools are ecutionflow.
+compared theoretically and empirically with the testbed.
+Attack code could mean assembly code for starting a
+Thisworkisafollow-upofJohnWilander’sMaster’sThe-
+shell(lessthan100bytesofspacewilldo)whereasattack
+sis“SecurityIntrusionsandIntrusionPrevention”[36].
+parameters are used as input to code already existing in
+the vulnerable process, for example using the parameter
+1.1 Scope
+"/bin/sh"asinputtothesystem()libraryfunction
+Wehavetestedpubliclyavailabletoolsforrun-timepre- wouldstartashell.
+ventionofbufferoverflowattacks. Thetoolsallapplyto Our biggest concern is step two—redirecting control
+C source code, butusingthem requires nomodifications flow by writing to memory. That is the hard part and
+of the source code. We do not consider approaches that thepossibilityofchangingtheflowofcontrolinthisway
+usesystemspecificfeatures,modifiedkernels, orrequire is the most unlikely condition of the two to hold. The
+theusertoinstallseparaterun-timesecuritycomponents. possibility of injecting attack code or attack parameters
+Thetwentybufferoverflowsrepresentasampleofthepo- ishighersinceitdoesnotnecessarilyhavetoviolateany
+tentialinstancesofbufferoverflowattacksandnotonthe rulesorrestrictionsoftheprogram.
+likelihoodofaspecificattackusingthesampleinstance. Changingtheflowofcontroloccursbyalteringacode
+pointer. A code pointer is basically a value which gives
+1.2 PaperOverview theprogramcounter anewmemoryaddress tostart exe-
+cutingcodeat. Ifacodepointercanbemadetopointto
+Therestofthepaperisorganizedasfollows. Section2
+attackcodetheprogramisvulnerable. Themostpopular
+describesprocessmemorymanagementinUNIXandhow
+targetisthereturnaddressonthestack. Butprogrammer
+bufferoverflowattackswork. Section3presentsthecon-
+definedfunctionpointersandsocalledlongjmpbuffersare
+ceptofintrusionpreventionanddescribesthetechniques
+equallyeffectivetargetsofattack.
+used in the four analyzed tools. Section 4 defines our
+testbed of twenty attack forms and presents our theoret- 2.2 MemoryLayoutinUNIX
+ical and empirical comparison of the tools’effectiveness
+against the previously describedattack forms. Section 5 To get a picture of the memory layout of processes in
+describes the common shortcomings of current dynamic UNIX wecanlookat twosimplifiedmodels(fora com-
+intrusionprevention. Finallysections6and7presentre- plete description see “Memory Layout in Program Exe-
+latedworkandourconclusions. cution” by Frederick Giasson [19]). Each process has a
+(partial)memorylayoutasinthefigurebelow:
+2 Attack Methods
+Highaddress Stack
+Theanalysisofintrusionsinthispaperconcernsasub-
+set of all violations of security policies that would con-
+stituteasecurityintrusionaccordingtodefinitionsin,for
+example,theInternetSecurityGlossary[31]. Inourcon-
+textanintrusionorasuccessfulattackaimstochangethe
+flowofcontrol,lettingtheattackerexecutearbitrarycode.
+We consider this class of vulnerabilities the worst possi-
+blesince“arbitrarycode”oftenmeansstartinganewshell.
+Thisshell willhavethesameaccess rightstothesystem
+astheprocessattacked. Iftheprocesshadrootaccess,so
+willtheattackerinthenewshell,leavingthewholesystem
+openforanykindofmanipulation.
+(cid:0)
+(cid:1)
+Heap
+BSSsegment
+Datasegment
+Lowaddress Textsegment
+Figure2.MemorylayoutofaUNIXprocess.
+Themachinecodeisstoredinthetextsegmentandcon-
+stants, arguments, andvariables defined bytheprogram-mer are stored in the other memory areas. A small C- LongjmpinCallowstheprogrammertoexplicitlyjump
+programshowsthis(thecommentsshowwhereeachpiece back to functions, not going through the chain of return
+ofdataisstoredinprocessmemory): addresses. Let’s say function A first calls setjmp(),
+static int GLOBAL_CONST = 1; // Data segment thencallsfunctionBwhichinturncallsfunctionC.IfC
+static int global_var; // BSS segment nowcallslongjmp()thecontrolisdirectlytransferred
+backtofunctionA,poppingbothC’sandB’sstackframes
+// argc & argv on stack, local
+ofthestack.
+int main(argc **argv[]) {
+int local_dynamic_var; // Stack
+static int local_static_var; // BSS segment 2.4 BufferOverflowAttacks
+int *buf_ptr=(int *)malloc(32); // Heap
+... } Bufferoverflow attacks are the most common security
+For each function call a new stack frame is set up on intrusion attack [35, 16] and have been extensively ana-
+top of the stack. It contains the return address, the call- lyzed and described in several papers and on-line docu-
+ingfunction’sbasepointer,locallydeclaredvariables,and ments[29,24,7,14].Buffers,wherevertheyareallocated
+more.Whenthefunctionends,thereturnaddressinstructs inmemory,maybeoverflownwithtoomuchdataifthere
+the processor where to continue executing code and the is nocheckto ensurethat thedata beingwrittenintothe
+storedbasepointergivestheoffsetforthestackframeto buffer actually fits there. When too much data is writ-
+use. ten into a buffer the extra data will “spill over” into the
+adjacent memory structure, effectively overwriting any-
+Loweraddress thingthatwasstoredtherebefore. Thiscanbeabusedto
+Localvariables overwrite a code pointer and change the flow of control
+eitherbydirectlyoverflowingthecodepointerorbyfirst
+Oldbasepointer overflowinganotherpointerandredirectthatpointertothe
+Returnaddress codepointer.
+Arguments The most common buffer overflow attack is shown in
+Higheraddress the simplified example below. A local buffer allocated
+onthestackisoverflownwith’A’sandeventuallythere-
+Figure3.TheUNIXstackframe. turn address is overwritten, in this case with the address
+0xbffff740.
+2.3 AttackTargets
+As stated above the target for a successful change of Localbuffer AAAAAAAA
+control flow is a code pointer. There are three types of AAAAAAAA
+code pointers to attack [11]. But Hiroaki Etoh and Ku- Oldbasepointer AAAAAAAA
+nikazuYoda proposeusingtheoldbasepointeras anat- Returnaddress 0xbffff740
+tacktarget[15]. Wehaveimplementedtheirproposedat- Arguments Arguments
+tack form and proven that the old base pointer is just as
+dangerous a target as the return address (see section 2.4
+and4).Sowehavefourattacktargets: Figure 4. A buffer overflow overwriting the re-
+turnaddress.
+1. Thereturnaddress,allocatedonthestack.
+2. Theoldbasepointer,allocatedonthestack. Ifanattackercansupplytheinputtothebufferheorshe
+candesignthedatatoredirectthereturnaddresstohisor
+3. Functionpointers,allocatedontheheap,intheBSS
+herattackcode.
+ordatasegment,oronthestackeitherasalocalvari-
+The second attack target, the old base pointer, can be
+ableorasaparameter.
+abused by building a fake stack frame with a return ad-
+dresspointingtoattackcodeandthenoverflowthebuffer
+4. Longjmpbuffers,allocatedontheheap,intheBSSor
+to overwrite theoldbase pointerwiththe address of this
+datasegment,oronthestackeitherasalocalvariable
+fake stack frame. Upon return, control will be passed
+orasaparameter.
+to the fake stack frame whichimmediatelyreturns again
+A function pointer in C is declared as redirectingflowofcontroltotheattackcode.
+int (*func_ptr) (char), in this example a Thethirdattacktargetisfunctionpointers. Ifthefunc-
+pointerto a functiontakinga char as input and returns tionpointerisredirectedtotheattackcodetheattackwill
+anint.Itpointstoexecutablecode. beexecutedwhenthefunctionpointerisused.The fourth and last attack target is longjmp buffers.
+They contain the environment data required to resume
+execution from the point setjmp() was called. This
+environment data includes a base pointer and a program
+counter.Iftheprogramcounterisredirectedtoattackcode
+theattackwillbeexecutedwhenlongjmp()iscalled.
+Combining all these buffer overflow techniques, loca-
+tionsinmemoryandattacktargetsleavesuswithnoless
+thantwentyattackforms. Theyarealllistedinsection4
+andconstituteourtestbedfortestingoftheintrusionpre-
+ventiontools.
+3 Intrusion Prevention
+Thereareseveralways oftryingtoprohibitintrusions.
+Halme and Bauer present a taxonomy of anti-intrusion
+techniquescalledAINT [20]wheretheydefine:
+Intrusionprevention. Precludes or severely handicaps
+thelikelihoodofaparticularintrusion’ssuccess.
+Wedivideintrusionpreventionintostaticintrusionpre-
+ventionanddynamicintrusionprevention. Inthissection
+we will first describe the differences between these two
+categories. Secondly,wedescribefourpubliclyavailable
+tools for dynamic intrusion prevention, describe shortly
+how they work, and in the end compare their effective-
+ness against the intrusions and vulnerabilities described
+insection2.4. Thisisnotacompletesurveyofintrusion
+preventiontechniques, ratherasubsetwiththefollowing
+constraints:
+(cid:0)
+Techniquesusedintheimplementationphaseofthe
+software.
+(cid:0)
+Techniquesthatrequirenoalteringofsourcecodeto
+disarmsecurityvulnerabilities.
+(cid:0)
+the security bugs. The two main drawbacks of this ap-
+proach is that someone has to keep an updated database
+ofprogrammingflawstotestfor,andsincethetoolsonly
+detect vulnerabilitiestheuserhastoknowhowtofixthe
+problemonceawarninghasbeenissued.
+3.2 DynamicIntrusionPrevention
+Thedynamicorrun-timeintrusionpreventionapproach
+istochangetherun-timeenvironmentorsystemfunction-
+alitymakingvulnerableprogramsharmless,oratleastless
+vulnerable. This means that in an ordinary environment
+the program would still be vulnerable (the security bugs
+are still there) but in the new, more secure environment
+thosesamevulnerabilitiescannotbeexploitedinthesame
+way—itprotectsknowntargetsfromattacks.
+Dynamic intrusion prevention, as we will see, often
+endsupbecominganintrusiondetectionsystembuilding
+onprogramand/orenvironmentspecificsolutions,termi-
+natingexecutionincaseofanattack. Thetechniquesare
+often complete in the way that they can provably secure
+thetargetstheyaredesignedtoprotect(oneproofcanbe
+found in a paper by Chiueh and Hsu [6]) and will pro-
+ducenofalsepositives. Theirgeneralweaknessliesinthe
+factthattheyalltrytosolveknownsecurityproblems,i.e.
+howbugsareknowntobeexploitedtoday,whilenotget-
+tingridoftheactualbugs intheprograms. Wheneveran
+attacker has figured out a new way of exploiting a bug,
+these dynamic solutions often stand defenseless. On the
+other hand they will be effective against exploitation of
+anynewbugsusingthesameattackmethod.
+3.3 StackGuard
+TheStackGuardcompilerinventedandimplementedby
+Crispin Cowan et al [10] is perhaps the most well refer-
+enced of the current dynamic intrusion prevention tech-
+Techniques that are generic, implemented and pub- niques. It is designed for detecting and stopping stack-
+licly available, not prototypes or system specific basedbufferoverflowstargetingthereturnaddress.
+tools.
+Ourmotivationforthisistoevaluateandcomparetools 3.3.1 TheStackGuardConcept
+that could easily and quickly be introduced to software
+ThekeyideabehindStackGuardisthatbufferoverflowat-
+developers and increase software qualityfrom a security
+tacksoverwriteeverythingontheirwaytowardstheirtar-
+pointofview.
+get.Inthecaseofabufferoverflowonthestacktargeting
+thereturnaddress, theattackerhastofill thebuffer, then
+3.1 StaticIntrusionPrevention
+overwrite anyotherlocalvariables below(i.e. onhigher
+Static intrusion prevention tries to prevent attacks by stackaddresses),thenoverwritetheoldbasepointeruntil
+findingthesecuritybugsinthesourcecodesothatthepro- itfinallyreachesthereturnaddress. Ifweplaceadummy
+grammer can remove them. Removing all security bugs value in between the return address and the stack data
+fromaprogramisconsideredinfeasible[23]whichmakes above, andthen checkwhetherthis valuehas beenover-
+the static solution incomplete. Nevertheless, removing written or not before we allow the return address to be
+bugsknowntobeexploitablebringsdownthelikelihood used,wecoulddetectthiskindofattackandpossiblypre-
+ofsuccessfulattacksagainstallpossibletargets. Staticin- vent it. The inventors have chosen to call this dummy
+trusionpreventionremovestheattacker’smethodofentry, valuethecanary.Loweraddress turn address values. Therefore, we dropped support for
+Localvariables randomcanaries[8]”. Weagreethatthereturnaddressis
+nottheonlyattacktargetbutitisthemostpopularandun-
+Oldbasepointer likefunctionpointersandlongjmpbuffers,thereturnad-
+Canaryvalue dressisalwayspresent.AccordingtoCowan’se-mailand
+Returnaddress aWireXpaperabettersolutionisonitswaycalledPoint-
+Arguments Guardwhichwillprotecttheintegrityofpointersingen-
+Higheraddress eralwiththesamekindofcanarysolution[11]. Thisim-
+pliesthatPointGuardwillprotectagainstallattackforms
+Figure5.TheStackGuardstackframe.
+overflowing pointers (See attack forms 3a–f and 4a–f in
+section4).
+A potentially successful attack against such a system StackGuard is available for download at http://
+wouldbetosomehowleavethecanaryintactwhilechang- www.immunix.org/
+ing the return address, either by overwriting the canary
+withitscorrectvalueandthusnotchangingit,orbyover- 3.4 StackShield
+writingthereturnaddressthroughapointer,nottouching
+thecanary.Tosolvethefirstproblem,twocanaryversions StackShieldisacompilerpatchforGCCmadebyVen-
+have been suggested—firstly the random canary which dicator [33]. In the current version 0.7 it implements
+consists of a random 32-bitvaluecalculatedat run-time, three types of protection, two against overwriting of the
+andsecondlytheterminatorcanarywhichconsistsofall return address (both can be used at the same time) and
+fourkindsofstringterminationsequences,namelyNull, oneagainstoverwritingoffunctionpointers.
+Carriage Return,-1andLine Feed. Intheran-
+dom canary case the attacker has to guess, or somehow
+retrieve, the random valueat run-time. In the terminator 3.4.1 GlobalRetStack
+canary case the attacker has to input all the termination
+The Global Ret Stack protection of the return address is
+sequences to keep the canary intact during the overflow.
+thedefaultchoiceforStackShield. Itis aseparatestack
+Thisisnotpossiblesincethestringfunctionreceivingthe
+forstoringthereturnaddressesoffunctionscalledduring
+inputwillterminateononeofthesequences.
+execution. The stack is a global array of 32-bit entries.
+Note that these techniques only stop overflow attacks
+Wheneverafunctioncallismade,thereturnaddressbeing
+thatoverwriteeverything alongthestack, notgeneral at-
+pushedonto the normal stack is at the same time copied
+tacks against the return address. The attacker can still
+into the Global Ret Stack array. When the function re-
+abuseapointer,makingitpointatthereturnaddressand
+turns, the return address on the normal stack is replaced
+writing a new address to that memory position. This
+by the copy on the Global Ret Stack. If an attacker had
+shortcoming of StackGuard was discovered by Mariusz
+overwritten the return address in one way or anotherthe
+Woloszyn, alias “Emsi” and presented by Bulba and
+attack wouldbe stoppedwithout terminating the process
+Kil3er[4].TheStackGuardteamhasaddressedthisprob-
+execution. Notethatnocomparisonismadebetweenthe
+lem by not only saving the canary value but the XOR of
+returnaddressonthestackandthecopyontheGlobalRet
+thecanaryandthecorrect returnaddress. Inthiswayan
+Stack. Thismeansonlypreventionandnodetectionofan
+abused return address with an intact canary preceding it
+attack. The Global Ret Stack has by default 256 entries
+would still be detected since the XOR of the canary and
+which limits the nesting depth to 256 protected function
+thereturnaddresshaschanged.IftheXORschemeisused
+calls. Further function calls will beunprotectedbutexe-
+the canary has to be random since the terminator canary
+cutenormally.
+XORed with an address would not terminate strings any-
+more.
+3.4.2 RetRangeCheck
+3.3.2 RandomCanariesUnsupported
+A somewhat simpler but faster version of Stack Shield’s
+WhiletestingStackGuardwenoticedthatthecompilerdid protectionofreturnaddresses istheRetRangeCheck. It
+notrespondtotheflagsetforrandomcanary.Wee-mailed uses a global variable to store the return address of the
+CrispinCowanandaccordingtohim: “Thereisonlyone current function. Beforereturning, the return address on
+threatthattheXORcanarydefeats,andtheterminatorca- the stack is compared with the stored copy in the global
+narydoesnot: Emsi’sattack. However,ifyouhaveavul- variable. If there is a difference the execution is halted.
+nerability that enables you to deploy Emsi’s attack, then Note that the Ret Range Check can detect an attack as
+youhavemanyothertargetstoattackbesidesfunctionre- opposedtotheGlobalRetStackdescribedabove.3.4.3 ProtectionofFunctionPointers Loweraddress
+Localvariables
+Stack Shield also aims to protect function pointers from
+andpointers
+beingoverwritten. Theideaisthatfunctionpointersnor-
+Localcharbuffers
+mally should point into the text segment of the process’
+memory. That’s where the programmer is likely to have
+Guardvalue
+implementedthefunctionstopointat. Iftheprocesscan
+Oldbasepointer
+ensure that no function pointer is allowed to point into
+Returnaddress
+otherpartsofmemorythanthetextsegment,itwillbeim-
+Arguments
+possible foran attackerto makeit point at code injected
+Higheraddress
+intotheprocess,sinceinjectionofdataonlycanbedone
+intothedatasegment, theBSSsegment,theheap,orthe Figure6.TheProPolicestackframe.
+stack.
+Stack Shield adds checking code before all function
+calls that make use of function pointers. A global vari-
+bedetected.Whenanattackisdetectedtheprocessister-
+able is then declaredin the data segment and its address
+minated.
+is used as a boundary value. The checking function en-
+When testingProPolicewe noticedsome irregularities
+sures that any function pointer about to be dereferenced
+in when and was not the buffer overflow protection was
+pointstomemorybelowtheaddressoftheglobalbound-
+included. It seems like small char buffers (e.g. 5 bytes)
+ary variable. If it points above the boundarythe process
+confuse ProPolice, causingit to skip the protection even
+is terminated. This protection will givefalse positives if
+iftheuserhassettheprotectorflag.Thisgivestheoverall
+theprogrammerhasintendedtousedynamicallyallocated
+impressionmaybethatProPoliceissomewhatunstable.
+functionpointers.
+ProPoliceisavailablefordownloadathttp://www.
+Stack Shield is available for download at http://
+trl.ibm.com/projects/security/ssp/
+www.angelfire.com/sk/stackshield/
+3.5 ProPolice
+3.6 LibsafeandLibverify
+HiroakiEtohandKunikazuYodafromIBMResearchin
+Tokyo have implemented the perhaps most sophisticated
+Anotherdefenseagainst bufferoverflows presented by
+compilerprotectioncalledProPolice[15].
+Arash Baratloo et al [1] is Libsafe. This tool actually
+provides a combination of static and dynamic intrusion
+3.5.1 TheProPoliceConcept prevention. Statically it patches library functions in C
+thatconstitutepotentialbufferoverflowvulnerabilities. A
+Etoh’sandYoda’sGCCpatchProPoliceborrowsthemain
+rangecheckismadebeforetheactualfunctioncallwhich
+ideafromStackGuard(seesection3.3)—theyusecanary
+ensuresthatthereturnaddressandthebasepointercannot
+values to detect attacks on the stack. The novelty is the
+beoverwritten. Furtherprotection has beenprovided[2]
+protectionofstackallocatedvariables byrearrangingthe
+withLibverifyusingasimilardynamicapproachtoStack-
+localvariables sothatcharbuffersalwaysareallocated
+Guard(seeSection3.3).
+at the bottom, next to the old base pointer, where they
+cannotbeoverflowntoharmanyotherlocalvariables.
+3.5.2 BuildingaSafeStackFrame 3.6.1 Libsafe
+After a program has been compiled with ProPolice the ThekeyideabehindLibsafeistoestimate asafebound-
+stackframeoffunctionslooklikethatshowninfigure6. ary for buffers on the stack at run-time and then check
+No matter in what order local variables, pointers, and this boundary before any vulnerable function is allowed
+buffers are declared by the programmer, they are rear- towritetothebuffer. Vulnerablefunctionstheyconsider
+ranged in stack memory to reflect the structure shown tobetheonesintable1below.
+above. Inthiswayweknowthatlocalcharbufferscan As a boundaryvalue Libsafeuses the oldbase pointer
+onlybeoverflowntoharmeachother,theoldbasepointer pushed onto the stack after the return address. No local
+and below. No variables can be attackedunless theyare variable should be allowed to expand further down the
+partof acharbuffer. Andbyplacingthecanarywhich stack than the beginning of the old base pointer. In this
+theycalltheguardbetweenthesebuffersandtheoldbase way a stack-based buffer overflow cannot overwrite the
+pointer all attacks outside the char buffer segment will returnaddress.Function Vulnerability
+strcpy(char *dest, const char *src) Mayoverflowdest
+strcat(char *dest, const char *src) Mayoverflowdest
+getwd(char *buf) Mayoverflowbuf
+gets(char *s) Mayoverflows
+[vf]scanf(const char *format, ...) Mayoverflowarguments
+realpath(char *path, char resolved_path[]) Mayoverflowpath
+[v]sprintf(char *str, const char *format, ...) Mayoverflowstr
+Table1.VulnerableCfunctionsthatLibsafeaddsprotectionto.
+Loweraddress quiteabit.Firsteachfunctioniscopiedwholetotheheap
+Localvariables (requires executable heap) whereit canbe altered. Then
+the saving andverifying of the returnaddress is injected
+Boundaryaddress Oldbasepointer intoeachfunctionbyoverwritingthefirstinstructionwith
+Returnaddress acalltowrapper entryandallreturninstructionswith
+Arguments acalltowrapper exit.Theneedforcopyingthecode
+Higheraddress totheheapisduetotheIntelCPUarchitecture. Onother
+platforms this could be solvedwithout copying the code
+Figure7.TheLibsafestackframe.
+[2].
+Libverifyisneededtogiveamorecompleteprotection
+Thisboundaryisenforcedbyoverloadingthefunctions ofthereturnaddresssinceLibsafeonlyaddressesstandard
+in table1with wrapping functions. Thesewrappers first Clibraryfunctions(aspointedoutbyIstvanSimon[32]).
+compute the length of the input as well as the allowed With Libsafe vulnerabilities could still occur where the
+buffersize(i.e. fromthebuffer’sstartingpointtotheold programmer has implemented his/her own memory han-
+basepointer)andthenperformsaboundarycheck. Ifthe dling.
+input is within the boundary the original functionality is Libsafe and Libverify are available for download
+carriedout. Ifnotthewrapperwrites analerttothesys- at http://www.research.avayalabs.com/
+tem’s log file and then halts the program. Observe that project/libsafe/
+overflowswithinthelocalvariablesonthestack,suchas
+3.7 OtherDynamicSolutions
+functionpointers,arenotstopped.
+Thedynamicintrusionpreventiontechniquespresented
+aboveare notthe onlyones. Otherresearchers havehad
+3.6.2 Libverify
+similarideasandimplementedalternatives.
+LibverifyisanenhancementofLibsafe,implementingre- Tzi-ckerChiuehandFu-HauHsufromStateUniversity
+turnaddressverificationsimilartoStackGuard. Butsince of New York at Stony Brook have presented a compiler
+this is a library it does not require recompilation of the patch for protection of the return address [6]. They call
+software. As with Libsafe the library is pre-loaded and their GCC patch Return Address Defender, or RAD for
+linkedtoanyprogramrunningonthesystem. short.ThekeyideabehindRADisquitesimilartothere-
+ThekeyideabehindLibverifyistoalterallfunctionsin turnaddress protectionofStackShielddescribedinSec-
+aprocesssothatthefirstthingdoneineveryfunctionisto tion 3.4. Every time a function call is made and a new
+copythereturnaddressontoacanarystacklocatedonthe stackframeiscreated,RADstoresacopyofthenewre-
+heap,andthelastthingdonebeforereturningistoverify turnaddress. Whenafunctionreturns,thereturnaddress
+thereturnaddressbycomparingitwiththeaddresssaved abouttobedereferencedisfirstcheckedagainstitscopy.
+onthecanarystack.Ifthereturnaddressisstillcorrectthe RADisnotpubliclyavailable.
+processisallowedtocontinueexecuting.Butifthereturn TheGCCpatchStackGhost[25]byMikeFrantzenand
+addressdoesnotmatchthesavedcopy,executionishalted MikeShueymakesuse ofsystemspecificfeaturesofthe
+and a security alert is raised. Libverify does not protect Sun Sparc Station to implement a sophisticated protec-
+theintegrityofthecanarystack. Theyproposeprotecting tionof the return address. TheyproposebothXORing a
+itwithmprotect()asinRAD(seesection3.7)butas randomvaluewiththereturnaddress(asStackGuard) as
+in the RAD case this will most probably impose a very well as keeping aseparatereturnaddress stack (asStack
+seriousperformancepenalty[6]. Shield, RAD and Libverify). They also suggest using
+Tobeabletodothis,Libverifyhastorearrangethecode cryptographicmethods insteadofXOR toenhance secu-rity. David Wagner and Drew Dean have presented an in-
+CCured and Cyclone are two recent research projects teresting approach for intrusion detection that relates to
+aimingtosignificantlyenhancetypeandboundschecking thefunctionalityofthetoolsdescribedinthispaper[34].
+in C. Theybothuse a combinationof static analysis and Theymodeltheprogram’scorrectexecutionbehaviorvia
+run-timechecks. static analysisof thesourcecode, buildingupcallgraphs
+CCured [27, 26] is an extension of the C program- orevenequivalentcontext-freelanguagesdefiningtheset
+ming language that distinguishes between various kinds ofpossiblesystemcalltraces.Thenthesemodelsareused
+of pointers depending on their usage. The purpose of forrun-timemonitoringofexecution.Anydeviationfrom
+thisdistinctionistobeabletopreventimproperusageof thedefined’good’behaviorwillmakethemodelenteran
+pointersandthustoguaranteethatprogramsdonotaccess unacceptingstate andtriggertheintrusionalarm. As the
+memoryareastheyshouldn’taccess. CCuredwillchange metric for precision in intrusion detection they propose
+C programs slightly so that they are type safe. CCured thebranchingfactorofthemodel.Alowbranchingfactor
+doesnotchangecodethatdoesnotusepointersorarrays. meansthattheattackerhasfewchoicesofwhattodonext
+Cyclone [21] is a C dialect that prevents safety vio- ifheorshewantstoevadedetection.
+lations such as buffer overflows, dangling pointers, and
+format string attacksbyrulingoutcertainpartsof ANSI 4 Comparisonofthe Tools
+C and replacing them with safer versions. For instance
+setjmp() and longjmp() are unsupported (in some Herewedefineourtestbedoftwentybufferoverflowat-
+cases exceptions are used instead). Also pointer arith- tackformsandthenpresenttheoutcomeofourempirical
+meticisrestricted.Anaverageof10%ofthelinesofcode andtheoreticalcomparisonofthetoolsfromsection3.2.
+havetobechangedwhenportingprogramsfromCtoCy- We define an attack form as a combination of a tech-
+clone. nique, a location, and an attack target. As described in
+Richard Jones and Paul Kelly 1997 presented a GCC section 2.3 we haveidentifiedtwo techniques, twotypes
+compiler patch in which they implemented run-time oflocationandfourattacktargets:
+boundscheckingofvariables[22].Foreachdeclaredstor-
+Techniques. Eitherweoverflowthebufferallthewayto
+age pointer they keep an entry in a table where the base
+theattacktargetorweoverflowthebuffertoredirect
+andlimitofthestorageiskept. Beforeanypointerarith-
+apointertothetarget.
+meticorpointerdereferencingismade,thebaseandlimit
+ischeckedinthetable. Whilenotexplicitlyaimedforse- Locations. Thetypesoflocationforthebufferoverflow
+curity, this technique would effectively stop all kinds of arethestackortheheap/BSS/datasegment.
+bufferoverflowattacks.Sadlytheirsolutionsufferedboth
+fromperformancepenaltiesofmorethan400%,aswellas AttackTargets. We have four targets—the return ad-
+incompatibilities with real-world programs (accordingto dress, the old base pointer, function pointers, and
+CrispinCowanetal[9]).Becauseofthebadperformance longjmpbuffers. Thelasttwocanbeeithervariables
+and compatibility we considered Jones’ and Kelly’s so- orfunctionparameters.
+lution less interesting for software development and ex-
+Consideringallpracticallypossiblecombinationsgives
+cludeditfromourtest.
+usthetwentyattackformslistedbelow.
+It is also possible to have support for dynamic in-
+trusion prevention in the operating system. A popular 1. Bufferoverflowonthestackallthewaytothetarget:
+idea is the non-executable stack. This would make in-
+jection of attack code into the stack useless. But there (a) Returnaddress
+are many ways around this protection. A few exam-
+(b) Oldbasepointer
+ples include using code already linked into the program
+(c) Functionpointeraslocalvariable
+from libraries (for instance calling system() with the
+parameter "/bin/sh"), injecting the attack code into (d) Functionpointerasparameter
+other memory structures such as environment variables,
+(e) Longjmpbufferaslocalvariable
+or by exploiting buffer overflows on the heap or in the
+(f) Longjmpbufferasfunctionparameter
+BSS/data segment. The Linux kernel patch from the
+Openwall Project is publiclyavailable and implements a
+2. Bufferoverflowontheheap/BSS/dataallthewayto
+non-executablestackaswellasprotectionagainstattacks
+thetarget:
+usinglibraryfunctions[13].Sinceitisakernelpatchitis
+uptotheuserandnottheproducerof softwaretoinstall (a) Functionpointer
+it. Thereforewedidnotincludeitinourtest.
+(b) LongjmpbufferAttacks Attacks Attacks Abnormal
+DevelopmentTool prevented halted missed behavior
+StackGuardTerminatorCanary 0(0%) 3(15%) 16(80%) 1(5%)
+StackShieldGlobalRetStack 5(25%) 0(0%) 14(70%) 1(5%)
+StackShieldRangeRetCheck 0(0%) 0(0%) 17(85%) 3(15%)
+StackShieldGlobal&Range 6(30%) 0(0%) 14(70%) 0(0%)
+ProPolice 8(40%) 2(10%) 9(45%) 1(5%)
+LibsafeandLibverify 0(0%) 4(20%) 15(75%) 1(5%)
+Table2.Empiricaltestofdynamicintrusionpreventiontools. 20attackformstested. “Prevented”means
+that the process execution is unharmed. “Halted” means that the attack is detected but the process is
+terminated.
+3. Buffer overflow of a pointer on the stack and then bufferoverflowcannotbeabusedinanotherattackform.
+pointingattarget: All of these attack forms have been implemented on the
+Linuxplatformandthesourcecodeisavailablefromour
+(a) Returnaddress
+homepage:http://www.ida.liu.se/˜johwi.
+(b) Basepointer To set up the test, the source code was compiled with
+(c) Functionpointerasvariable StackGuard, Stack Shield, or ProPolice, or linked with
+Libsafe/Libverify. Theoverall results are shownintable
+(d) Functionpointerasfunctionparameter
+2. We also made a theoretical comparison to investigate
+(e) Longjmpbufferasvariable the potential of the ideas and concepts used in the tools.
+(f) Longjmpbufferasfunctionparameter Theoverallresultsofthetheoreticalanalysisareshownin
+table3.FordetailsofthetestsseeappendixAandB.
+4. Buffer overflow of a pointer on the heap/BSS/data
+Most interesting in the overall test results is that the
+andthenpointingattarget:
+most effective tool, namely ProPolice, is able to pre-
+vent only 50% of the attack forms. Buffer overflows on
+(a) Returnaddress
+theheap/BSS/datatargetingfunctionpointersorlongjmp
+(b) Basepointer
+buffers are not prevented or halted by any of the tools,
+(c) Functionpointerasvariable which means that a combination of all techniques built
+(d) Functionpointerasfunctionparameter intoonetoolwouldstillmiss30%oftheattackforms.
+Thishoweverdoesnotcomplywiththeresultfromthe
+(e) Longjmpbufferasvariable
+theoreticalcomparison. StackShieldwasnotabletopro-
+(f) Longjmpbufferasfunctionparameter tectfunctionpointersasstatedbyVendicator.Anotherdif-
+ferenceistheabnormalbehaviorofStackGuardandStack
+Note that we do not consider differences in the likeli-
+ShieldwhenconfrontedwithafakestackframeintheBSS
+hood of certain attack forms being possible, nor current
+segment.
+statistics onwhich attack forms are most popular. How-
+These poorresults are all evidence of the weakness in
+ever, we have observed that most of the dynamic intru-
+dynamicintrusionpreventiondiscussedinsection3.2,the
+sion prevention tools focus on the protection of the re-
+tested tools all aim to protect known attack targets. The
+turn address. Bulba and Kil3r did not present any real-
+returnaddresshasbeenapopulartargetandthereforeall
+life examples of their attack forms that defeated Stack-
+toolsarefairlyeffectiveinprotectingit.
+GuardandStackShield.AlsotheImmunixoperatingsys-
+Worth noting is that StackGuard halts attacks against
+tem(LinuxhardenedwithStackGuardandmore)camein
+the old base pointer although that was not mentioned as
+second place at the Defcon “Capture the Flag” competi-
+anexplicitdesigngoal.
+tionwherenearly100crackersandsecurityexpertstried
+Only ProPolice and Stack Shield offer real intrusion
+tocompromisethecompetingsystems[12]. Thisimplies
+prevention—theothertoolsaremoreorlessintrusionde-
+that the tools presented here are effective against many
+tectionsystems. Butstillthegeneralbehaviorofallthese
+of the currentlyused attackforms. Thequestionis: will
+toolsisterminationofprocessexecutionduringattack.
+thiswillchangeassoonasthiskindofprotectioniswide
+spread?
+Also worth noting is that just because a attack form
+is prevented or halted does not mean that the very sameAttacks Attacks Attacks
+DevelopmentTool prevented halted missed
+StackGuardTerminatorCanary 0(0%) 4(20%) 16(80%)
+StackGuardRandomXORCanary 0(0%) 6(30%) 14(70%)
+StackShieldGlobalRetStack 6(30%) 7(35%) 7(35%)
+StackShieldRangeRetCheck 0(0%) 10(50%) 10(50%)
+StackShieldGlobal&Range 6(30%) 7(35%) 7(35%)
+ProPolice 8(40%) 3(15%) 9(45%)
+LibsafeandLibverify 0(0%) 6(30%) 14(70%)
+Table3.Theoreticalcomparisonofdynamicintrusionpreventiontools. 20attackformsused. “Prevented”
+meansthattheprocessexecutionisunharmed. “Halted”meansthattheattackisdetectedbuttheprocess
+isterminated.
+5 CommonShortcomings 5.4 LimitedNestingDepth
+There are several shortcomings worth discussing. We
+Whenkeepingaseparatestackwithcopiesofreturnad-
+haveidentifiedfourgenericproblemsworthhighlighting,
+dresses,thenestingdepthoftheprocessislimited. Only
+especiallywhenconsideringfutureresearchinthisarea.
+Vendicator,authorofStackShield,discussesthisissuebut
+offersnorealsolutiontotheproblem.
+5.1 DenialofServiceAttacks
+Since three outof fourtools terminate execution upon 6 RelatedWork
+detecting an attack they actually offer more of intrusion
+detection than intrusion prevention. More important is
+Threeotherstudiesofdefensesagainstbufferoverflow
+thatthevulnerabilitiesstillallowforDenialofServiceat-
+attackshavebeenmade.
+tacks. Terminating a web service process is a common
+In late2000CrispinCowanetalpublishedtheirpaper
+goal in security attacks. Process terminationresults in a
+“BufferOverflows:AttacksandDefensesfortheVulnera-
+muchlessseriousattackbutwillstillbeasecurityissue.
+bilityoftheDecade”[11].Theyimplicitlydiscussseveral
+ofourattackformsbutleaveouttheoldbasepointerasan
+5.2 StorageProtection attacktarget.Comparisonofdefensesisbroaderconsider-
+ingalsooperatingsystempatches,choiceofprogramming
+Canaries or separate return address stacks have to be languageandcodeauditingbutthereisonlyatheoretical
+protectedfromattacks.Ifthecanarytemplateorthestored analysis,nocomparativetestingisdone.Alsotheonlydy-
+copyofthereturnaddresscanbetamperedwith,thepro- namictoolsdiscussedaretheirownStackGuardandtheir
+tectionisfooled.OnlyStackGuardwiththeterminatorca- forthcomingPointGuard.
+naryoffersprotectioninthissense. Theothertoolshave Only a month later Istvan Simon published his paper
+no protection implemented and the performance penalty “AComparativeAnalysisofMethodsofDefenseagainst
+of such protection can be very serious—up to 200times BufferOverflowAttacks”[32].Itdiscussesprosandcons
+[6]. withoperatingsystempatches, StackGuard,Libsafe,and
+similar solutions. The major drawback in his analysis is
+5.3 RecompilationofCode thelackofcategorizationofbufferoverflowattackforms
+(onlythreeof our attackforms are explicitlymentioned)
+The three compiler patches have the common short- andanystructuredcomparisonofthetool’seffectiveness.
+coming of demanding recompilation of all code to pro- Notestingisdone.
+videprotection.Forsoftwarevendorsshippingnewprod- In March 2002 Pierre-Alain Fayolle and Vincent
+ucts this is a natural thing butforrunningoperating sys- Glaume published their lengthy report “A Buffer Over-
+temsandlegacysystemsthisisaseriousdrawback. Lib- flowStudy,Attacks&Defenses”[17]. Theydescribeand
+safe/Libverifyoffersamuchmoreconvenientsolutionin compareLibsafewithanon-executablestackandanintru-
+thissense. TheStackGuardandProPoliceteamshavead- siondetectionsystem. Testsareperformedfortwoofour
+dressedthisissuebyofferingprotectedversionsofLinux twenty attack forms. No proper categorization of buffer
+andFreeBSD. overflowattackformsismadeorusedfortesting.7 Conclusions [11] C. Cowan, P. Wagle, C. Pu, S. Beattie, and J. Walpole.
+Bufferoverflows:Attacksanddefensesforthevulnerabil-
+Thereare several run-time techniques forstopping the
+ityofthedecade. InProceedingsoftheDARPAInforma-
+most common of security intrusion attack—the buffer
+tionSurvivabilityConferenceandExpo(DISCEX),pages
+overflow. Butwehaveshownthatnoneofthesecanhan- 119–129,HiltonHead,SouthCarolina,January2000.
+dle the diverse forms of attacks known today. In prac- [12] W.CrispinCowan. Nearly100hackersfailtocrackwirex
+tice at best 40% of the attack forms were prevented and immunixserver,August2002.
+another 10% detectedandhalted, leaving50%of the at- [13] S.Designer.Linuxkernelpatchfromtheopenwallproject.
+tacksstillatlarge.Combiningallthetechniquesintheory http://www.openwall.com/linux/README.
+[14] DilDog. ThetaoofWindowsbufferoverflow. http://
+wouldstillleaveuswithnearlyathirdoftheattackforms
+www.cultdeadcow.com/cDc_files/cDc-351/,
+missed.Inouropinionthisisduetothegeneralweakness
+April1998.
+of the dynamic intrusion prevention solution—the tools
+[15] H. Etoh. GCC extension for protecting applications
+allaimatprotectingknownattacktargets, notalltargets.
+fromstack-smashingattacks.http://www.trl.ibm.
+Neverthelessthesetoolsandtheideastheyarebuiltonare com/projects/security/ssp/,June2000.
+effectiveagainstmanysecurityattacksthatharmsoftware [16] D. Evans and D. Larochelle. Improving security using
+userstoday. extensible lightweight static analysis. IEEE Software,
+19(1):42–51,February2002.
+8 Acknowledgments [17] P.-A. Fayolle and V. Glaume. A buffer overflow study,
+attacks & defenses. http://www.enseirb.fr/
+Wearegratefultothereaderswhohavepreviewedand ˜glaume/indexen.html,March2002.
+improvedourpaper,especiallyCrispinCowan. [18] A. K. Ghosh, C. Howell, and J. A. Whittaker. Building
+software securely from the ground up. IEEE Software,
+19(1):14–16,February2002.
+References
+[19] F. Giasson. Memory layout in program execu-
+[1] A. Baratloo, N. Singh, and T. Tsai. Libsafe: Pro- tion. http://www.decatomb.com/articles/
+tecting critical elements of stacks. White Paper memorylayout.txt,October2001.
+http://www.research.avayalabs.com/ [20] L. R. Halme and R. K. Bauer. AINT misbe-
+project/libsafe/,December1999. having: A taxonomy of anti-intrusion techniques.
+[2] A.Baratloo,N.Singh,andT.Tsai. Transparentrun-time http://www.sans.org/newlook/resources/
+defenseagainststacksmashingattacks. InProceedingsof IDFAQ/aint.htm,April2000.
+the2000USENIXTechnicalConference,SanDiego,Cali- [21] T.Jim,G.Morrisett,D.Grossman, M.Hicks,J.Cheney,
+fornia,USA,June2000. andY.Wang.Cyclone:AsafedialectofC.InProceedings
+[3] L. M. Bowman. Companies on the hook for security. of the USENIXAnnual Technical Conference, Monterey,
+http://news.com.com/2100-1023-821266. CA,June2002.
+html,January2002. [22] R. Jones and P. Kelly. Backwards-compatible bounds
+[4] Bulba and Kil3r. Bypassig StackGuard and Stack- checking for arrays and pointers in C programs. In
+Shield. Phrack Magazine 56 http://www.phrack. Proceedings of the ThirdInternationalWorkshop on Au-
+org/phrack/56/p56-0x05,May2000. tomatic Debugging AADEBUG’97, Linkoping, Sweden,
+[5] C. C. Center. Cert/cc statistics 1988-2001. http:// May1997.
+www.cert.org/stats/,February2002. [23] D. Larochelle and D. Evans. Statically detecting likely
+[6] T.ckerChiuehandF.-H.Hsu. RAD:Acompile-timeso- bufferoverflowvulnerabilities.InProceedingsofthe2001
+lution to buffer overflow attacks. In Proceedings of the USENIXSecuritySymposium,WashingtonDC,USA,Au-
+21thInternationalConferenceonDistributedComputing gust2001.
+Systems(ICDCS),Phoenix,Arizona,USA,April2001. [24] G. McGraw and J. Viega. An analysis of how buffer
+[7] M. Conover and w00w00 Security Team. w00w00 overflow attacks work. IBM developerWorks: Security:
+on heap overflows. http://www.w00w00.org/ Security articles http://www-106.ibm.com/
+files/articles/heaptut.txt,January1999. developerworks/security/library/smash.
+[8] C.Cowan. Personalcommunication,February2002. html?dwzon%e=security,March2000.
+[9] C. Cowan, S. Beattie, R. Day, C. Pu, P. Wagle, and [25] M. S. Mike Frantzen. StackGhost: Hardware facilitated
+E. Walthinsen. Protecting systems from stack smashing stackprotection. InProceedingsofthe10thUSENIXSe-
+attacks with StackGuard. Linux Expo http://www. curitySymposium,August2001.
+cse.ogi.edu/˜crispin/,May1999. [26] G.Necula, S.McPeak, and W.Weimer. CCured: Type-
+[10] C.Cowan,C.Pu,D.Maier,J.Walpole,P.Bakke,S.Beat- saferetrofittingoflegacycode.InProceedingsofthe29th
+tie,A.Grier,P.Wagle,Q.Zhang, andH.Hinton. Stack- Annual ACM Symposium on Principles of Programming
+Guard: Automatic adaptive detection and prevention of Languages,Portland,OR,January2002.
+buffer-overflowattacks.InProceedingsofthe7thUSENIX [27] G.Necula,S.McPeak,andW.Weimer. TamingCpoint-
+Security Conference, pages 63–78, San Antonio, Texas, ers. InProceedingsofACMConferenceonProgramming
+January1998. LanguageDesignandImplementation,June2002.[28] B. News. Software security law call. http:
+//news.bbc.co.uk/hi/english/sci/tech/
+newsid_1762000/1762261.stm,January2002.
+[29] A.One. Smashing the stack for fun and profit. http:
+//immunix.org/StackGuard/profit.html,
+November1996.
+[30] C. Science and N. R. C. Telecommunications Board.
+Cybersecurity today and tomorrow: Pay now or pay
+later (prepublication). Technical report, National
+Academies, USA, http://www.nap.edu/books/
+0309083125/html/,January2002.
+[31] R. W. Shirey. Request for comments: 2828, Internet
+security glossary. http://www.faqs.org/rfcs/
+rfc2828.html,May2000.
+[32] I. Simon. A comparative analysis of meth-
+ods of defense against buffer overflow attacks.
+http://www.mcs.csuhayward.edu/˜simon/
+security/boflo.html,January2001.
+[33] Vendicator. StackShieldtechnicalinfofilev0.7. http:
+//www.angelfire.com/sk/stackshield/,Jan-
+uary2001.
+[34] D.WagnerandD.Dean.Intrusiondetectionviastaticanal-
+ysis. InProceedingsoftheIEEESymposiumonSecurity
+andPrivacy,pages156–169,May2001.
+[35] D.Wagner,J.S.Foster,E.A.Brewer,andA.Aiken.Afirst
+steptowardsautomateddetectionofbufferoverrunvulner-
+abilities. InProceedingsofNetworkandDistributedSys-
+tem Security Symposium, pages 3–17, Catamaran Resort
+Hotel,SanDiego,California,February2000.
+[36] J.Wilander. Securityintrusionsandintrusionprevention.
+Master’s thesis, Linkopings universitet, http://www.
+ida.liu.se/˜johwi,April2002.A DetailsofEmpiricalTest
+AttackTarget Return OldBase FuncPtr FuncPtr LongjmpBuf LongjmpBuf
+DevelopmentTool address Pointer Variable Parameter Variable Parameter
+StackGuardTerminatorCanary Halted Halted Missed Missed Missed Missed
+StackShieldGlobalRetStack Prevented Prevented Missed Missed Missed Missed
+StackShieldRangeRetCheck Abnormal Missed Missed Missed Missed Missed
+StackShieldGlobal&Range Prevented Prevented Missed Missed Missed Missed
+ProPolice Halted Halted Prevented Abnormal Prevented Missed
+LibsafeandLibverify Halted Halted Missed Halted Missed Halted
+Table4.Preventionofbufferoverflowonthestackallthewaytothetarget.
+AttackTarget FuncPtr LongjmpBuf
+DevelopmentTool Variable Variable
+StackGuardTerminatorCanary Missed Missed
+StackShieldGlobalRetStack Missed Missed
+StackShieldRangeRetCheck Missed Missed
+StackShieldGlobal&Range Missed Missed
+ProPolice Missed Missed
+LibsafeandLibverify Missed Missed
+Table5.Preventionofbufferoverflowontheheap/BSS/dataallthewaytothetarget.
+AttackTarget Return OldBase FuncPtr FuncPtr LongjmpBuf LongjmpBuf
+DevelopmentTool address Pointer Variable Parameter Variable Parameter
+StackGuardTerminatorCanary Missed Halted Missed Missed Missed Missed
+StackShieldGlobalRetStack Prevented Prevented Missed Missed Missed Missed
+StackShieldRangeRetCheck Abnormal Missed Missed Missed Missed Missed
+StackShieldGlobal&Range Prevented Prevented Missed Missed Missed Missed
+ProPolice Prevented Prevented Prevented Prevented Prevented Prevented
+LibsafeandLibverify Missed Abnormal Missed Missed Missed Missed
+Table6.Preventionofbufferoverflowofpointeronthestackandthenpointingattarget.
+AttackTarget Return OldBase FuncPtr FuncPtr LongjmpBuf LongjmpBuf
+DevelopmentTool address Pointer Variable Parameter Variable Parameter
+StackGuardTerminatorCanary Missed Abnormal Missed Missed Missed Missed
+StackShieldGlobalRetStack Prevented Abnormal Missed Missed Missed Missed
+StackShieldRangeRetCheck Abnormal Missed Missed Missed Missed Missed
+StackShieldGlobal&Range Prevented Prevented Missed Missed Missed Missed
+ProPolice Missed Missed Missed Missed Missed Missed
+LibsafeandLibverify Missed Missed Missed Missed Missed Missed
+Table7.Preventionofbufferoverflowofapointerontheheap/BSS/dataandthenpointingattarget.B DetailsofTheoreticalTest
+AttackTarget Return OldBase FuncPtr FuncPtr LongjmpBuf LongjmpBuf
+DevelopmentTool address Pointer Variable Parameter Variable Parameter
+StackGuardTerminatorCanary Halted Halted Missed Missed Missed Missed
+StackGuardRandomXORCanary Halted Halted Missed Missed Missed Missed
+StackShieldGlobalRetStack Prevented Prevented Halted Halted Missed Missed
+StackShieldRangeRetCheck Halted Missed Halted Halted Missed Missed
+StackShieldGlobal&Range Prevented Prevented Halted Halted Missed Missed
+ProPolice Halted Halted Prevented Missed Halted Missed
+LibsafeandLibverify Halted Halted Missed Halted Missed Halted
+Table8.Preventionofbufferoverflowonthestackallthewaytothetarget.
+AttackTarget FuncPtr LongjmpBuf
+DevelopmentTool Variable Variable
+StackGuardTerminatorCanary Missed Missed
+StackGuardRandomXORCanary Missed Missed
+StackShieldGlobalRetStack Missed Missed
+StackShieldRangeRetCheck Missed Missed
+StackShieldGlobal&Range Missed Missed
+ProPolice Missed Missed
+LibsafeandLibverify Missed Missed
+Table9.Preventionofbufferoverflowontheheap/BSS/dataallthewaytothetarget.
+AttackTarget Return OldBase FuncPtr FuncPtr LongjmpBuf LongjmpBuf
+DevelopmentTool address Pointer Variable Parameter Variable Parameter
+StackGuardTerminatorCanary Missed Halted Missed Missed Missed Missed
+StackGuardRandomXORCanary Halted Halted Missed Missed Missed Missed
+StackShieldGlobalRetStack Prevented Prevented Halted Halted Missed Missed
+StackShieldRangeRetCheck Halted Missed Halted Halted Missed Missed
+StackShieldGlobal&Range Prevented Prevented Halted Halted Missed Missed
+ProPolice Prevented Prevented Prevented Prevented Prevented Prevented
+LibsafeandLibverify Halted Halted Missed Missed Missed Missed
+Table10.Preventionofbufferoverflowofpointeronthestackandthenpointingattarget.
+AttackTarget Return OldBase FuncPtr FuncPtr LongjmpBuf LongjmpBuf
+DevelopmentTool address Pointer Variable Parameter Variable Parameter
+StackGuardTerminatorCanary Missed Halted Missed Missed Missed Missed
+StackGuardRandomXORCanary Halted Halted Missed Missed Missed Missed
+StackShieldGlobalRetStack Prevented Prevented Halted Halted Missed Missed
+StackShieldRangeRetCheck Halted Halted Halted Halted Missed Missed
+StackShieldGlobal&Range Prevented Prevented Halted Halted Missed Missed
+ProPolice Missed Halted Missed Missed Missed Missed
+LibsafeandLibverify Halted Halted Missed Missed Missed Missed
+Table11.Preventionofbufferoverflowofapointerontheheap/BSS/dataandthenpointingattarget.

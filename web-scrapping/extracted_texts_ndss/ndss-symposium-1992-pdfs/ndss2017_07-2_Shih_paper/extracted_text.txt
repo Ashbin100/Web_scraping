@@ -1,0 +1,1325 @@
+T-SGX: Eradicating Controlled-Channel Attacks
+Against Enclave Programs
+Ming-Wei Shih†,⋆, Sangho Lee†, and Taesoo Kim Marcus Peinado
+Georgia Institute of Technology Microsoft Research
+{mingwei.shih, sangho, taesoo}@gatech.edu marcuspe@microsoft.com
+Abstract—Intel Software Guard Extensions (SGX) is a I. INTRODUCTION
+hardware-based trusted execution environment (TEE) that en-
+ables secure execution of a program in an isolated environ- Hardware-based trusted execution environments (TEEs)
+ment, an enclave. SGX hardware protects the running enclave have become one of the most promising solutions against
+against malicious software, including an operating system (OS), various security threats, including malware, remote exploits,
+a hypervisor, and even low-level firmwares. This strong security kernelexploits,hardwareTrojans,andevenmaliciouscloudop-
+propertyallowsthetrustworthyexecutionofprogramsinahostile
+erators [27]. ARM’s TrustZone [1] and Samsung’s KNOX [50]
+environment,suchasapubliccloud,withouttrustinganyone(e.g.,
+are now widely deployed on mobile phones and tablets. To
+a cloud provider) between the enclave and the SGX hardware.
+secure traditional computing devices, such as laptops, desktops,
+However,recentstudieshavedemonstratedthatenclaveprograms
+and servers, the trusted platform module (TPM) [60], Intel’s
+are vulnerable to an accurate controlled-channel attack: Since
+enclaves rely on the underlying OS, a curious or potentially TrustedExecutionTechnology(TXT)[16],andSoftwareGuard
+malicious OS can observe a sequence of accessed addresses by Extensions (SGX) [24] have been developed and are being
+intentionally triggering page faults. adopted into mainstream products. Among these hardware-
+basedTEEs,IntelSGXisgettingconsiderableattentionbecause
+In this paper, we propose T-SGX, a complete mitigation
+it can be the basis for practical solutions in an important
+solutiontothecontrolled-channelattackintermsofcompatibility,
+security domain: the trustworthy public cloud, which provides
+performance, and ease of use. T-SGX relies on a commodity
+strong guarantees of both confidentiality and integrity, which
+component of the Intel processor (since Haswell), Transactional
+SynchronizationExtensions(TSX),whichimplementsarestricted are known to be the biggest obstacle to wider cloud adop-
+formofhardwaretransactionalmemory.AsTSXisimplemented tion[27,59].Homomorphicencryption[14]hasbeenproposed
+as an extension (i.e., snooping the cache protocol), any unusual as a software-only solution to this problem, but, so far, it is
+event,suchasanexceptionorinterrupt,thatshouldbehandledin too slow for practical uses. More critically, sensitive operations
+itscorecomponent,resultsinanabortoftheongoingtransaction. are often executed on potentially malicious clients [13, 36, 41],
+One interesting property is that the TSX abort suppresses the which significantly weakens the overall, end-to-end security of
+notification of errors to the underlying OS, which means that
+the system. In contrast, hardware-based Intel SGX provides
+the OS cannot know whether a page fault has occurred during
+strong security guarantees for running enclaves in combination
+the transaction. T-SGX, by utilizing such property, can carefully
+with Intel’s efforts on formal verification of the hardware spec-
+isolate effects of attempts to tap running enclaves, thereby
+ification and implementation of cryptographic operations [26].
+completely eradicating the known controlled-channel attack.
+The resulting security guarantees enable a variety of new
+We have implemented T-SGX as a compiler-level scheme applications, including data analytics [51], MapReduce [12],
+that automatically transforms a normal enclave program into machinelearning[46],Tor[31],networkfunctionvirtualization
+a secured one. We not only evaluate the security properties of (NFV) [53], and library OSs [4, 61, 62].
+T-SGX, but also demonstrate that it applies to all the previously
+demonstrated attack targets including libjpeg, Hunspell, and
+WhileIntelSGXdrawssignificantattentiontocommunities
+FreeType. In addition, we evaluate the performance of T-SGX
+because of its strong security guarantees, researchers have
+by porting ten benchmark programs of nbench to the SGX
+recently demonstrated two critical side-channel attacks against
+environment.Theresultsarepromising;thatis,T-SGXincurson
+SGX programs, namely, the page-fault- and cache-based
+average 50% runtime overhead, which is an order of magnitude
+faster than state-of-the-art mitigation schemes. side-channel attack [10, 54, 65]. The page-fault-based side-
+channel attack, also known as the controlled-channel attack,
+† Thetwoleadauthorscontributedequallytothiswork. is particularly dangerous because it gives the malicious OS
+⋆TheauthordidpartofthisworkduringanintershipatMicrosoftResearch. complete control over the execution of SGX programs. In
+contrast, the cache-based side-channel attack have to passively,
+thus non-interactively, monitor the execution from the outside.
+Permission to freely reproduce all or part of this paper for noncommercial Specifically,tolaunchacontrolled-channelattack,themalicious
+purposes is granted provided that copies bear this notice and the full citation
+OS can stop an enclave program, unmap the target memory
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author pages, and simply resume its execution. By using the leaked
+(for reproduction of an entire paper only), and the author’s employer if the addresses, researchers [65] could reconstruct input text and
+paper was prepared within the scope of employment. image files from running enclave programs [4]. Similarly,
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+the pigeonhole [54] attack could extract bits of encryption
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23193 keys from cryptographic routines in OpenSSL and libgcrypt.In response to the controlled-channel attack, two types of ingful information. Lastly, T-SGX ensures that no unexpected
+countermeasures have been proposed, namely, obfuscating transaction aborts caused by benign errors (e.g., transaction
+memory accesses [9, 49, 54] and isolating page faults [19, 54], buffer overflow and timer interrupts), by carefully splitting a
+but both are limited in terms of performance or compatibility. targetenclaveprogramintoanumberofsmallexecutionblocks
+First, memory access obfuscation suffers from huge perfor- satisfying the TSX cache constraints. A conservative splitting
+mance degradation: up to 4000× overhead without significant strategy(e.g.,secureindividualbasicblocks)significantlyslows
+developer effort [54]. Second, more efficient schemes, such as down T-SGX (§VIII). We develop compiler-level optimization
+self-paging [19] and contractual execution [54], require new techniquessuchasloopoptimizationsandcacheusageanalysis
+page-fault delivery mechanisms that do not exist in mainstream thatmaximizethesizeofexecutionblocks(§VI).Ourevaluation
+processors and are unlikely to be included in them in the results show the effectiveness of T-SGX in terms of security,
+foreseeable future. For example, Intel considers side-channel compatibility, and performance. We applied T-SGX to three
+attacks as out of scope for SGX [26] and is unlikely to disrupt previous controlled-channel attack targets including libjpeg,
+core processor components to accommodate such proposals. Hunspell, and FreeType and demonstrated that the attack can
+nolongerwork.Inaddition,applyingT-SGXtotheseprograms
+In this paper, we propose a new, practical enclave design,
+require no source code modifications. We also checked the
+T-SGX,thatcanprotectanyenclaveprogramagainstcontrolled-
+overall overhead of the programs. On average, the execution
+channel attacks. At a high level, T-SGX transforms an enclave
+time increased by 40% and the memory consumption increased
+program such that any exception or interrupt that occurs during
+by30%.Moreoever,weappliedT-SGXtoapopularbenchmark
+the execution is redirected to one specific page (see §V-B). We
+suite, nbench, and confirmed that the performance overhead of
+provide strong security guarantees against controlled-channel
+T-SGX was 50% on average.
+attacks under a conservative threat model (see §VII). T-SGX
+realizes this mechanism with a commodity hardware feature, In summary, this paper makes the following contributions:
+Intel Transactional Synchronization Extensions (TSX), that
+was introduced with the Haswell processor. The key enabling • New security mechanism.Wedevelopanewsecurity
+property of TSX is the way it aborts an ongoing transaction mechanism, T-SGX, that protects enclave programs
+when encountering an erroneous situation, such as a page from a serious threat: the controlled-channel attack.
+fault or interrupt. In particular, when a page fault occurs, TSX At compilation time, T-SGX transforms an enclave
+immediately invokes a user-space fallback handler without program into a secure version without requiring anno-
+notifying the underlying OS. The fallback handler recognizes tations or other manual developer efforts, and, most
+whethertheveryrecentattempttoexecuteacodepageoraccess important, it does not require hardware modifications.
+adatapagehastriggeredapagefault.Ifitdid,T-SGXcarefully • Novel usage of TSX. To the best of our knowledge,
+terminates the program. Further, TSX ensures that such traps T-SGX is the first attempt to use TSX to detect
+and exceptions are never exposed to system software including suspicious exceptions. Mimosa [18] was the first
+the OS and a hypervisor, implying that the controlled-channel application of TSX to establish a confidential memory
+attack relying on page-fault monitoring is no longer possible region, but it focuses on detecting read-write or write-
+with T-SGX because even the OS cannot know whether a page write conflicts, which is the original use case of TSX.
+fault has occurred. However, obtaining a working, efficient In contrast, we use TSX to isolate exceptions such as
+TSX-secured enclave binary requires careful program analysis. page faults and redirect them to a user space handler
+First, TSX is very sensitive to cache usage; it treats cache under our control.
+conflicts and evictions as errors [25, §15.3.8.2]. Thus, we have • Springboard and program analysis. The properties
+to carefully compose transactional code regions based on their of TSX (e.g., cache- and interrupt-sensitivity) limit
+memory access patterns. Second, TSX treats any interrupts developers apply TSX to only a small protion of a
+and exceptions as errors (e.g., timer and I/O interrupts), so we program.Ourspringboarddesignandprogramanalysis
+cannot run a code region for a long time even if it makes make a breakthrough: we can run any program in
+no memory accesses. Third, setting up a TSX transaction transactions without compatibility problems.
+is very expensive (around 200 cycles on our test machine • Evaluation and analysis. We evaluated the security
+with an Intel Core i7-6700K 4 GHz CPU), which implies a andperformanceofT-SGXbyapplyingittotworepre-
+naïve solution, wrapping individual instructions with TSX, is sentive groups of programs: three previous controlled-
+impractical. Finally, we need to carefully arrange transactional channel attack targets including libjpeg, Hunspell, and
+code regions in memory to hide transitions between them from FreeType and a benchmark suite, nbench. The results
+attackers (see §V-B). show a 40% and a 50% performance degradation on
+the first and the second group, respectively. T-SGX is
+T-SGX is based on a modified LLVM compiler satisfying also easy to use; that is, it transforms all the programs
+the following three important design requirements. One is that with no source code modification.
+T-SGX automatically transforms a normal enclave program
+into a secured version, all of whose code and data pages are The remainder of this paper is organized as follows. §II
+wrapped with TSX. Another requirment is that T-SGX isolates explains details about Intel SGX and TSX. §III describes
+the specific page for the fallback handler and other transaction controlled-channel attacks in depth. §IV provides the ideal
+control code, called springboard, from the original program’s system model. §V explains the design of T-SGX. §VI depicts
+code and data pages to ensure that exceptions including how we implemented T-SGX. In §VII we conduct a security
+page faults and timer interrupts can only be triggered on the analysis of T-SGX. §VIII shows our evaluation results. §IX
+springboard.TheOScanstillidentifywhetheranexceptionhas considerslimitationsofT-SGX.§Xdiscussesrelatedwork.§XI
+occurred at the springboard, but this does not reveal any mean- concludes this paper.
+21 unsigned status;
+II. HARDWAREPRIMITIVESANDMOTIVATION
+2
+3 // begin a transaction
+In this section, we explain two hardware primitives sup- 4 if ((status = _xbegin()) == _XBEGIN_STARTED) {
+ported by Intel CPUs: SGX for trusted computing and TSX 5 // execute a transaction
+for transactional memory. We also study how they handle 6 [code]
+7 // atomic commit
+CPU exceptions, since exceptions including page faults are the 8 _xend();
+controlled channels a malicious OS can use to attack enclave 9 } else {
+10 // abort
+programs [65]. 11 }
+Fig.1:AbasicexampleofIntelTSX._xbegin()initiatesatransaction
+A. Intel SGX
+regiontoexecute[code]and_xend()closestheregion.Anexception
+Intel Software Guard Extensions (SGX) is a set of exten- at [code] makes the control flow go to the else block.
+sions to the x86 instruction set architecture that aims to enable
+a hardware-based TEE, such that the Trusted Computing Base
+the code inside the if block (line 6). If there is no conflict,
+(TCB)consistsofonlythecodeanddatathatresideinasecure
+the program will eventually execute _xend() (i.e., XEND) to
+container (enclave) and the underlying hardware components.
+atomically commit all the intermediate results. However, if
+An SGX-enabled processor enforces new memory access
+there is a conflict or an exception (§II-C), the transaction is
+semantics over an enclave such that the code and data within
+rolled back and the program executes the else block (line 10)
+an enclave are inaccessible to all external software, including
+to handle the error.
+the operating system and the hypervisor. A dedicated physical
+memoryregionisallocatedatboottimeforenclaveinstantiation. Technical details. Understanding the technical details of the
+To prevent known memory attacks such as memory snooping, TSX implementation [34] is important because such details
+SGX relies on a Memory Encryption Engine (MEE) to encrypt can explain why TSX exhibits the described behavior (§II-C2).
+the enclave memory content. The enclave memory can only During a transaction, HTM needs a buffer to store intermediate
+be decrypted when entering the CPU package during enclave datareadorwritten,soitcancommitthemtomemoryattheend
+execution. SGX provides a flexible programming model that of the successful transaction. Instead of introducing a separate
+allows an application to instantiate an enclave as part of its buffer,TSXusestheL1cacheasabuffer.Thischoicewasmade
+address space via the SGX instruction set. The enclave code notonlytoavoidextrastoragerequirements,butalsotosimplify
+and data are measured during the enclave initialization process. theimplementationofTSX;itpiggybacksontheexistingcache
+This measurement forms an enclave’s identity, which a remote coherence protocol to detect memory read or write conflicts
+party can verify by means of remote attestation [23, 30]. In without introducing complex new logic. The cache coherence
+addition to the hardware-based protection mechanisms, SGX protocol maintains data consistency between the caches of
+reliesontheoperatingsystemtohelpwithenclaveinitialization, different cores such that TSX can detect data conflicts at the
+exception handling, and resource management. granularity of cache lines and roll back a transaction when a
+conflict occurs.
+B. Intel TSX
+In this section, we explain Intel Transactional Synchro- C. Exceptions inside SGX and TSX
+nization Extensions (TSX), which is Intel’s implementation
+During execution, a CPU can encounter various exceptions,
+of hardware transactional memory (HTM) [20]. HTM was
+such as page faults, general protection faults, and interrupts.
+originally proposed to reduce the overhead of acquiring locks
+When an exception occurs, the CPU calls the corresponding
+for mutual exclusion and to simplify concurrent programming.
+exception handler managed by the OS to resolve the problem
+With HTM, a thread can transactionally execute in a critical
+or gracefully terminate execution. The CPU handles exceptions
+section without any explicit software-based lock such as a
+thatoccurduringenclaveandtransactionalexecutiondifferently
+spinlock or mutex. If a transaction completes without conflict,
+from those that occur during normal execution.
+all of its read and write attempts are committed to memory.
+Otherwise, all of intermediate read and write attempts are 1)SGX: Asynchronous Enclave Exit (AEX): Although SGX
+rolled back (never exposed to the real memory) and a fallback assumes the underlying OS could be malicious, it relies on the
+(or abort) handler that was registered at the beginning of the OS for exception handling. SGX takes special provisions to
+transaction is invoked. The fallback handler decides whether to minimize information leakage during exception handling. Any
+retrythetransaction.IntelTSXsupportstwodifferentinterfaces, exception or interrupt that arrives during enclave execution
+namely,hardwarelockelision(HLE)andrestrictedtransactional causes an Asynchronous Enclave Exit (AEX). Figure 2 depicts
+memory (RTM). For the discussion of this paper, we focus how the AEX is conducted. The processor first stores the
+only on RTM. enclave’s register context and the exit reason (exception code)
+in a region of enclave memory called the state save area (SSA)
+Intel TSX provides four instructions: XBEGIN, XEND, XABORT,
+and loads synthetic values into the registers. In the case of
+and XTEST. A thread can initiate a transactional execution
+page faults, the processor provides the OS only with the base
+using XBEGIN and terminate it using XEND. It can use XABORT to
+address of the faulting page and not with the exact address.
+terminate a transaction and XTEST to test whether it is currently
+It then transfers control to the regular OS kernel exception
+executing in a transaction.
+handler. Eventually, the exception handler will return control to
+Figure1showsacodesnippetthatusesTSX.Itfirstexecutes ausermodetrampolinefunctionoutsidetheenclave,whichcan
+_xbegin() (i.e., XBEGIN) to begin a transaction. If it succeeds, call the ERESUME instruction. ERESUME will restore the enclave’s
+_xbegin() returns _XBEGIN_STARTED and continues to execute saved register context and resume enclave execution.
+3Enclave
+A. Threat Model
+Host program
+Application ✪ EENTER
+exception handler Weexplainthethreatmodelofthecontrolled-channelattack.
+❺ ERESUME Note that our system, T-SGX, assumes the same threat model.
+❷ synthetic
+Trampoline
+First, the attack assumes that an OS can manage (e.g., map
+❶ store Registers ❸exit and unmap) enclave memory pages although it cannot see their
+❹ return contents. Whenever an enclave program attempts to access an
+❻ restore
+SSA unmapped page, the OS will receive a page fault to handle
+User space
+it; then the handler either remaps the page and resumes the
+Exception Kernel space program or generates an access violation error. However, this
+handler
+attack does not assume that the OS knows the exact offset of
+Fig. 2: Steps of an SGX asynchronous enclave exit (AEX). 1 The a page fault because TEEs can hide this information from the
+processor stores register values and the exit reason into the state OS.
+save area (SSA) inside the enclave. 2 The processor loads synthetic
+data into registers. 3 The enclave exits directly to the kernel space Second, the attack assumes that an attacker knows the
+exceptionhandler. 4 Theexceptionhandlerhandlestheinterruptand detailed behavior of a target enclave program, especially its
+returns to the trampoline. 5 The trampoline resumes the enclave. 6 memory access patterns according to inputs. The attacker has
+The processor restores the stored register values and resumes enclave already analyzed a target enclave program’s source code and/or
+execution.Inaddition,thetrampolinecancallanapplicationexception binary in detail to obtain the information. Also, this attack
+handlerinsidetheenclavetohandleexceptionstheOScannotprocess. ignoresprogramswithobfuscatedmemoryaccesspatterns(e.g.,
+Oblivious RAM (ORAM) [40, 49]) because they do not have
+visible behavior characteristics.
+Limitation. Although the AEX hides the register context Third, the attack assumes that an attacker cannot arbitrarily
+and the exact address of an exception, information about the run a target enclave program. Due to remote attestation, a user
+exception still leaks to the OS. For example, after each page willknowhowmanytimeshis/herenclaveprogramisexecuted
+fault, the OS learns which page the enclave attempted to in the public cloud such that it is difficult to run the target
+access. This information is the basis for the controlled-channel enclave program many times without the user’s approval.
+attack [65].
+Fourth, the attack relies only on a noise-free side channel:
+2)TSX: Transaction Abort: When two transactions conflict page fault information. Other noisy side channels, including
+with each other (e.g., their read and write sets overlap), one cache and memory bus, are out of the scope for this paper.
+will be canceled, and thus aborted (see §II-B). TSX also aborts
+a transaction when encountering an exception because a ring B. Controlled-channel Attack
+transition is not possible while executing a transaction. In the
+The controlled-channel attack uses page faults as a control-
+case of synchronous exceptions that occur during the execution
+lable side channel. Since a malicious OS can manipulate the
+of a specific instruction (e.g., page fault, general protection
+page table of an enclave program, it can know which memory
+fault, divide-by-zero), the exception is not delivered to the
+pagestheenclaveprogramwantstoaccessbysettingareserved
+OS because TSX intentionally suppresses it ([25, §15.3.8.2]).
+bit in page table entries and monitoring page faults.
+On the other hand, an asynchronous exception (e.g., timer
+interrupt and I/O interrupt) will be delivered right after a Incontrasttoanormalexecutionenvironment,themalicious
+transactionisabortedandrolledback,becausesuppressingsuch OScannotseetheexactfaultingaddressbutonlythepageframe
+interrupts would make user-space processes non-preemptable, number because SGX masks the exact address, as explained
+which would interfere with OS scheduling. in §II-C1. To overcome this limitation, the controlled-channel
+attack analyzes sequences of page faults rather than individual
+D. Taking Control of Exception Handling page faults.
+The final step of thecontrolled-channel attack is correlating
+Using TSX inside SGX enclaves makes it possible to route
+the page fault sequences with the results of offline, in-depth
+exceptions such as page faults to TSX abort code inside the
+analysis of a target enclave program. This allows the attacker
+enclaveandnottothering-0exceptionhandleroftheuntrusted
+to infer the input to the enclave program if the memory access
+OS.Thisdeprivesattackersofallinformationaboutpagefaults
+pattern of the program varies sufficiently with the input.
+andallowstheenclavetoidentifypotentialattacks.Wedescribe
+a design based on this observation in §V.
+Effectiveness. The original controlled-channel attack was
+demonstrated against three popular libraries: FreeType, Hun-
+III. CONTROLLED-CHANNELATTACKREVISITED spell,andlibjpeg.Theevaluationresultsshowthattheattackcan
+accurately infer the input text and images to the libraries [65].
+In this section, we briefly explain the controlled-channel Shinde et al. [54] use a similar attack to extract bits of
+attack [65] (called pigeonhole attack in [54]) that allows a
+cryptographic keys from the OpenSSL and libgcrypt libraries.
+malicious OS to infer sensitive computation and data inside a
+TEEsuchasHaven[4]andInkTag[21].Welimitthediscussion
+C. Known Countermeasures
+to attacks against SGX, which is the focus of our paper and
+which provides stronger security guarantees than a trusted A few countermeasures against controlled-channel attacks
+hypervisor (e.g., InkTag). have been discussed, but most of them are neither practical nor
+4secure. Intel has revised its SGX specification to support an
+Enclave
+option for recording page faults and general protection faults
+Remote page fault Secured Secured
+in the SSA [24]. However, this countermeasure is incomplete
+control/attestation Host Controller code page data page
+because a malicious OS can cause the SSA to be overwritten Client
+Program page Secured
+(details in §III-D). Second, Intel has suggested static and
+code page page fault
+dynamic analysis to eliminate all feasible input-dependent code
+User space
+and data flows [26]. But, this requires significant developer
+Kernel space
+effort and incurs non-negligible performance overhead. Third, interrupt
+Shinde et al. [54] have proposed deterministic multiplexing,
+a software-only solution against the controlled-channel attack. Fig. 3: The uncontrollable enclave model. It consists of secured and
+However, its performance overhead is tremendous without controller pages. The secured page is not interrupted by the OS and
+developer-assisted optimizations. Finally, Shinde et al. also its page fault is delivered to the controller page instead of to the OS.
+have proposed a new execution model (contractual execution) The controller page manages control and data flows between secured
+pages and handles page faults generated by accessing secured pages.
+that makes a contract between the enclave program and the
+OS to ensure that a specified number of memory pages reside
+in the enclave. Their proposal, however, requires modifications
+to core processors components. Such changes appear difficult
+Toachievethesegoals,theuncontrollableenclaveallowsan
+and unrealistic.
+enclave program to have two kinds of memory pages: secured
+pages and controller pages, as shown in Figure 3. First, the
+D. Overwriting Exit Reason secured pages are unobservable pages containing all code and
+dataofanenclaveprogram.TheOScannotinterrupttheenclave
+As mentioned in §II-C1, the SSA stores the exit reason for
+program when it executes or accesses the secured pages, and it
+each AEX. However, we found that a malicious OS can easily
+cannot monitor page faults generated due to the execution or
+overwrite the exit reason by sending an arbitrary interrupt to
+access of these pages. Since secured pages are uninterruptible,
+an enclave program because the SSA stores only the last exit
+the uncontrollable enclave needs to ensure that execution with
+reason1.Thismakesanenclaveprogramunawareofpagefaults,
+secured pages is short (e.g., up to the interval of a timer
+even if it uses an option SECS.MISCSELECT.EXINFO=1 to record
+interrupt) to prevent a malicious enclave program from fully
+page faults and general protection faults.
+occupying a CPU core. Also, when the uncontrollable enclave
+We experimentally confirmed that a malicious OS can detects that any of the secured pages are unmapped, it treats
+overwrite the exit reason of a page fault by using a fake the OS as malicious.
+general protection fault. When a page fault is generated, a
+Second, the controller pages relay the control and data flow
+correspondingaddressisstoredinSSA.MISC.EXINFO.MADDRand
+betweenthesecuredpages,checkwhetheraccesstothesecured
+PFEC is stored in SSA.MISC.EXINFO.ERRCD for later use [24].
+pages is hindered by the OS (i.e., unmapped), and interact with
+However, a general protection fault could overwrite these
+the OS for scheduling and system calls. The OS can interrupt
+fields: it stores 0 in SSA.MISC.EXINFO.MADDR and GPEC in
+their execution and monitor page faults generated by accessing
+SSA.MISC.EXINFO.ERRCD. We have found that a malformed
+them. However, revealing their behavior does not leak much
+Advanced Programmable Interrupt Controller (APIC) interrupt
+information because they are just trampoline pages and the
+generates a general protection fault. The OS can program the
+actual execution of an enclave program is performed inside the
+APIC to generate such interrupts and thus general protection
+secured pages.
+faults during enclave execution. Therefore, if a malicious OS
+generates a malformed APIC interrupt for an enclave program The uncontrollable enclave ensures that no page fault
+right after handling a page fault, the fields in the SSA are sequence (i.e., inter-page accesses) is revealed to an OS. First,
+overwritten such that an enclave program cannot know whether when the uncontrollable enclave identifies that a secured page
+or not a page fault has occurred. Further, the OS can generate is unmapped, it stops its execution. This could reveal up to a
+another normal interrupt (e.g., a timer interrupt) later to even single page fault to the OS. Second, the enclave program can
+clear up the GPEC flag. Thus, we conclude that relying on let its remote client know whether or not it has successfully
+the exit reason cannot protect an enclave program from the terminated by sending an acknowledgment message. A lack
+controlled-channel attack. of acknowledgment also means that there was a problem.
+Third, theuncontrollable enclave prevents the OSfrom running
+the enclave program arbitrarily. To achieve this, the enclave
+IV. SYSTEMMODEL
+program checks whether its client allows the OS to run itself
+In this section we explain our ideal system model. An during a remote attestation process. The remote client would
+ideal enclave (uncontrollable enclave) protects any enclave completely disallow any further execution if the program did
+program from the security threats explained in §III. The basic not send acknowledgment messages before. Note that it is
+requirementoftheuncontrollableenclaveistoenableanenclave natural to assume that an enclave program runs in the cloud
+program to know every interrupt and page table manipulation, and its remote client controls its execution.
+and stop its normal execution when it detects that the OS has
+Based on these requirements, we implement a prototype
+unmapped any of its sensitive memory pages.
+scheme, T-SGX. T-SGX does not ensure perfect information
+leakage prevention, but we believe it is sufficient to make the
+1There is an SSA stack for handling nested exceptions. However, this
+known controlled-channel attacks impractical (see §VII for
+overwriting attack is not about nested exceptions because it sends a new
+interruptrightafterhandlingthepreviousinterrupt. details).
+51 // original code
+2 void foo(char *msg, size_t len) {
+3 const char *secret = "key";
+4 ...
+5 }
+6
+xbegin()
+7 // protected code ...
+8 void ecall_foo(char *msg, size_t len) { xend()
+9 if ((status = _xbegin()) == _XBEGIN_STARTED) { 10 foo(msg, len);
+11 _xend();
+12 } else {
+13 // abort: e.g., page fault detected
+14 abort_handler();
+15 }
+16 }
+Fig. 4: A straw man example that wraps the entire enclave code in a
+TSX transaction to prevent controlled-channel attacks.
+V. DESIGN
+In this section, we describe in detail the design of T-SGX,
+which is a practical realization of the uncontrollable enclave
+model(§IV).Inparticular,weexplainhowtorealizethemodel’s
+various components using Intel TSX.
+A. Overview of the TSX-based Design
+This section describes a working instantiation of our
+architecture that relies only on a widely deployed standard
+processor feature (TSX). This approach yields a practical and
+effective side-channel mitigation that can be used today.
+Intuitively, the main value of TSX as a side-channel
+mitigation lies in its ability to suppress page faults and other
+synchronous exceptions. A page fault that occurs during a TSX
+transaction will not be delivered to the untrusted ring 0 page
+fault handler. Instead, the processor will abort the transaction
+and transfer control to the transaction’s abort code. Thus, our
+strategy will be to run enclave code inside transactions and to
+place a trusted exception handler in the TSX abort code path.
+Figure4showsasimpleexampleofanenclaveprogramand
+its TSX-based transformation. The code between _xbegin and
+_xend is executed as a transaction. The else branch contains
+the abort code path. TSX guarantees that any page fault that
+occurswhileexecutingfoo(msg,len)issuppressedandcontrol
+is transferred directly to the abort_handler in the else branch.
+A simple design idea could be to wrap the entire enclave
+program in a single TSX transaction. However, for typical
+programs, such transactions will never complete because (a)
+TSX will abort a transaction if its write or read set is too large
+tofitintotheL1orL3cache,respectively,and(b)long-running
+transactions are highly likely to be aborted by interrupts. Thus,
+we have to partition the program into small execution blocks
+and wrap each execution block in a transaction.
+This requires the ability to perform detailed static analysis
+as well as a number of program transformations. For this
+reason, we integrate T-SGX into the compiler. As the source
+code is compiled into an enclave binary, T-SGX computes an
+appropriate partitioning into execution blocks and makes sure
+each execution block is protected by TSX by conservatively
+placing XBEGIN and XEND instructions (see §V-C for details).
+...
+xbegin()
+...
+xend()
+Page B (unmapped)
+...
+Page A
+Page fault
+Execution flow
+Fig. 5: CarelessusageofTSXrevealingapagefault.Anattackercan
+monitor the page fault at Page B because a transition between Page
+A and Page B is not in a transaction.
+B. The Springboard
+Using many small transactions entails a new problem. As
+page faults are not suppressed across transactions, an attacker
+may still see all page faults he/she is interested in, unless
+transactions are carefully arranged in memory. Figure 5 shows
+an example in which the transition between two transactions
+is leaked because they are at a page boundary. An attempt to
+execute the first instruction on page B causes an observable
+page fault outside a transaction.
+T-SGXsolvesthisproblembyplacingallcodethatexecutes
+outside transactions on a single page. We call this page the
+springboard. Figure 6 displays the code that performs the
+transitions between consecutive transactions. An important
+property of this code is that it does not access memory on
+any other page (e.g., stack, heap). Upon receiving an enclave
+functioncallfromthehost,theentryfunctionbeginsbyjumping
+to the springboard.begin block, which starts a transaction
+with an XBEGIN instruction followed by a jump to the start
+of first the block (call in this example). At the end of each
+block, the T-SGX compiler inserts two instructions that load
+the address of the next block into a register and jump to
+the springboard.next block. Code on the springboard then
+ends the current transaction (XEND), begins the next transaction
+(XBEGIN), and jumps to the start of the next block, as indicated
+by the register value provided by the previous block. Right
+before the end of execution, springboard.end ends the last
+transaction (XEND).
+T-SGX also places the transaction abort code on the
+springboard page. Like the code that transitions between
+transactions, the abort code also executes outside a transaction.
+It is thus subject to page faults, and we ensure that it does not
+access memory outside the springboard. With this code layout,
+the only enclave page for which access could possibly result
+in a page fault is the springboard. This could happen (a) at the
+transactiontransition(springboard.next,springboard.begin),
+and at springboard.end in Figure 6 and (b) in the transaction
+abort code (springboard.abort).
+Example. Figure 7 shows how a host program and an OS
+interact with an enclave program secured by T-SGX.
+1) The host program uses the SGX EENTER instruction
+to call a function inside the enclave.
+2) EENTER transfers control to the enclave’s springboard.
+The springboard starts the first transaction and jumps
+to the first execution block. As execution blocks
+completeandjumpbacktothespringboard,thespring-
+board completes and initiates transactions and jumps
+61 springboard: 1 # entry point to the function wrapper Enclave
+2 springboard.next: 2 entry_point: entry point
+3 4
+5
+spx xre bin end gg ib noa sr pd r. ib ne gg bi on a:
+rd.abort
+3 4
+5
+EBl j .e m sa p tq artE s :B p. rs it na gr bt o( a% rr di .p b) e, gi% nr15 prH ogo rs at m . m j. m. o pv be en gtr iny, r15 ❷ ex pe uc su
+h
+t ri bo pn
+entry
+6
+7
+jmpq *%r15 6
+7
+# ca( ll load _p fa ur na cm te it oe nrs) ❶ EENTER springboard (R-X) m . /. /. o jmv pr a Ex B, r 1bx
+8 9 sp xr ei nn dgboard.end: 8 9 # le( as qave EBr .e et nu dr (n %rv ia pl )u ,e) %r15 bn ee gx it n: : x x jme bn e pd g r( i 1n) 5() m jmo pv nE eB xt1, r15
+1 10 1 jmpq *%r15 1 10 1 EBj .m ep nd: springboard.end end: x jmen pd r( 1) 5 m ...ov rbx, rcx EB1
+1 1 1 1 12 3 4 5
+6
+sp # . # jr . mi ( . r pn a eg b sb o uo r ma t e sr pd h e r. a x ia n e nb d c go l u br e t ot r i a: o rc n do .d be e)
+gin
+1 1 1 1 12 3 4 5
+6
+# _f. e t u. n r n. c a cl n tu s i[ f oE o nE r :X mI eT d] function UserE E spX aI cT e/AEX abort handler ❸ abo/ m j/ m r oj tpm v np E e E B xB t2,2 r15
+17 subq $40, %rsp Kernel space
+18 ... ❹ terminate (or interrupted)
+19 leaq EB.1(%rip), %r15 Exception
+20 jmp springboard.next handler transactional regions
+21 EB.1: control flows
+22 ... Fig. 7: Overall procedure of T-SGX: 1 A host program calls an
+23 leaq EB.2(%rip), %r15
+24 jmp springboard.next enclaveprogram. 2 Enclaveexecutionismanagedbythespringboard
+25 EB.2: that jumps into execution blocks scattered across multiple pages.
+26 ... The execution blocks jump back to the springboard when they are
+Fig. 6: Transaction transition code on the springboard and at the end successfully executed. 3 When an exception occurs in a execution
+of each execution block (denoted EB). block, control goes directly to the abort handler on the springboard.
+4 The enclave program either terminates or is interrupted. The OS
+can only identify the page containing the springboard.
+tosubsequentexecutionblocks.Whiletheseexecution
+blocks may be distributed over many memory pages,
+8 ways
+onlythespringboardcontainscodethatisnotwrapped
+in a transaction.
+3) If an exception occurs inside an execution block, the 64 slots
+processortransferscontroldirectlytotheaborthandler
+whose address is specified at XBEGIN.
+4) The abort handler determines whether it has to restart
+the transaction or terminate the enclave program. The
+operating system will only see exceptions on the
+springboard page.
+C. Execution Blocks
+This section explains how the T-SGX compiler partitions
+a program into execution blocks that can be executed as
+transactions. We begin with a simple partitioning scheme that
+yieldscorrectandfunctionalprograms.Afterthat,weintroduce
+various optimization techniques that drastically reduce the
+overhead of the simple scheme.
+T-SGXcomputesthecontrolflowgraphoftheprogramand
+tests for each basic block if it satisfies the transaction limits
+imposed by TSX and an execution time bound we establish. In
+particular, T-SGX makes a conservative estimate of the write
+and read sets of the basic blocks with respect to a cache model,
+as explained in §V-C1. We approximate execution time by
+counting the number of instructions in the basic block. Most
+basic blocks satisfy the two constraints. The remaining basic
+blocks are split by T-SGX into smaller blocks until all split
+blocks satisfy the transaction constraints. The resulting set of
+blocks is the partitioning into execution blocks under the basic
+scheme.
+1)Transaction Constraints: TSX imposes strict bounds on
+the read and write sets of each transaction. The write set must
+fit into the L1 data cache. That is, the L1 data cache must be
+able to hold all memory writes of a transaction.
+For example, on Skylake processors, the L1 data cache
+has a size of 32kB. It is 8-way set associative with 64-byte
+...
+...
+...
+...
+...
+...
+0xc0000
+0xc0040
+0xc0080
+0xc00c0
+0xc0100
+0xc0140
+0xc0180
+0xc01c0
+0xc0200
+Main memory L1 cache
+Fig. 8: Mapping of memory addresses to L1 cache slots.
+cache lines. We can visualize this cache as eight copies (ways)
+of a 4kB page partitioned into 64 slots of size 64 bytes
+(see Figure 8). The 64-byte cache line size is the granularity
+at which cache space is assigned. Multiple write operations
+within a single 64-byte aligned 64-byte address range occupy
+a single cache line. This 64-byte line is mapped to the slot in
+the L1 cache at the same page offset. A memory access within
+the 64-byte line causes it to be loaded into one of the eight
+ways at the corresponding slot in the L1 cache. This will cause
+the previous content of the of the way to be evicted from the
+L1 cache.
+As the write set of a transaction must be kept in the L1
+cache until the end of the transaction, a transaction will fail if
+its write set includes more than eight cache lines that map to
+a single slot. The T-SGX compiler uses this cache condition
+to determine if the write set of an execution block is too large.
+If it is, it will split the execution block into smaller units (as
+explained above).
+Since the exact addresses of memory write operations may
+not be known at compile time, we have to use a conservative
+approximation.Thatis,givenuncertaintyabouttheaddressesof
+memory accesses at run time, we assume the worst possibility.
+This may cause T-SGX to split the program into unnecessarily
+small execution blocks. However, it guarantees that the write
+set will fit into the L1 cache.
+7a+b∗k, where a and b are constants known at compile time.
+1 # TSX Basic 1 # T-SGX We use data-flow analysis to determine such relationships.
+2 EB: 2 EB:
+3 ... 3 ...
+4 leaq loop.header(%rip), %r15 4 leaq loop.header(%rip), %r15 Given the write set of the loop, we perform the tests
+5 jmp springboard.next 5 jmp springboard.next of §V-C1 to determine if the optimization can be applied. If
+6 loop.body: 6 loop.body: the test fails because the number of loop iterations is too large
+7 ... 7 ...
+8 incq 32(%rsp) 8 incq 32(%rsp) or unknown, we can still apply the optimization by partially
+9 leaq loop.header(%rip), %r15 9 loop.header: unrolling the loop. For example, if for up to 100 iterations
+1 10
+1
+loj om pp .q hes ap dr ei rn :gboard.next 1 10
+1
+. c. m.
+pq $100, 32(%rsp)
+the write set of the loop fits into the L1 cache, we place a
+12 ... 12 jbe loop.body transaction around every 100 iterations of the loop. This allows
+13 cmpq $100, 32(%rsp) 13 leaq loop.end(%rip), %r15 us to amortize the transaction cost over possibly many loop
+14 leaq loop.body(%rip), %r15 14 jmp springboard.next
+15 jbe springboard.next 15 loop.end: iterations (see Figure 9).
+16 leaq loop.end(%rip), %r15 16 ...
+17 jmp springboard.next 2)Functions and if-statements: This optimization attempts
+18 loop.end: to merge all execution blocks within a function into a single
+19 ...
+execution block covering the entire function. We attempt to
+Fig. 9: An example of the loop optimization. compute the write and read sets and instruction count for the
+entire function. If the function is complicated (e.g., contains
+loops), this may not succeed, and we do not optimize the
+function. If we can obtain the read and write sets and the
+More precisely, we distinguish between three types of
+instruction count and if they pass the tests of §V-C1 then we
+memory accesses. First, addresses that are known completely
+merge the entire function into a single execution block.
+atcompiletimecanbemappeddirectlytoacacheslot.Second,
+memory accesses given by an unknown base address and a Similarly, if we can determine the read and write sets of if-
+known fixed offset (e.g., rsp+8, rsp+16) are grouped by the then-else statements and if they meet the conditions of §V-C1,
+base pointer. We compute the maximum number of occupied we merge the if-then-else statement into a single execution
+ways separately for each group (base pointer) and add the block.
+maxima over all groups. Third, we model an access whose
+address is completely unknown as occupying one way of every E. Abort Sequence
+slot. Finally, we add the largest way-count from each of the
+three cases to obtain an upper bound on the L1 requirements If a transaction fails, TSX will transfer control to the abort
+of the execution block. address specified in the XBEGIN instruction. T-SGX places this
+address on the springboard.
+Weuseasimilarstrategytoanalyzethereadsetofexecution
+blocks,andwecountinstructionsasaproxyforexecutiontime. A simple version of the abort code restarts the transaction
+unconditionally until it succeeds. The appeal of this design lies
+in its simplicity. The abort code is stateless and only a few
+D. Optimization Techniques instructionslong.However,ifatransactionhastoaccessapage
+that has been unmapped, this design will restart the transaction
+AnemptytransactionwithXBEGINandXENDcostsabout200
+indefinitely, which is not an optimal defense strategy (§VII).
+cycles. This can have a significant performance impact on the
+end-to-end application run time (see §VIII). The simple, basic- The alternative is for the abort code to monitor transaction
+block-based partitioning uses basic block boundaries as the aborts for signs of attacks and to stop program execution if an
+defaultplacetobeginandendtransactions.However,itisoften attack is detected. Lacking hardware support for distinguishing
+possible to place transactions around larger units of program between page faults and regular interrupts as the cause of a
+execution,suchasloopsorfunctions.Thissubsectiondescribes transactionabort,weusethefollowingcriterion.Ifatransaction
+optimization techniques that follow this strategy and that can abortsmorethanntimes,theabortcodewillterminateprogram
+remove most of the overhead of the simple partitioning. Note execution,wherenisaparameterthatmustbechosensuchthat
+that these optimizations do not interfere with OS scheduling, the likelihood of seeing n consecutive transaction aborts due to
+since interrupts cause transactions to be aborted (§II-C2). benigncausesundernormaloperationisverylow.Basedonthe
+analysis of §VIII-B4, we set n=10. The controlled-channel
+1)Loops: Simple partitioning places transactions inside the
+attack [65] requires millions of page faults to obtain sensitive
+loop body. That is, every iteration of even the simplest loops
+information, so that 10 would be a reasonable threshold to
+(e.g., memcpy()) is at least one separate transaction. Our first
+defeat it.
+optimization technique is to pull the transaction out of the loop
+where possible. Rather than creating a transaction for every Aborting execution when an unmapped page is detected
+loop iteration, we create a single transaction for the entire loop may leak to the attacker that the enclave was trying to access
+execution. this page. However, as explained in §VII, this strategy ensures
+that the attacker does not learn anything else through the page
+The main difficulty is to determine the write set of a loop.
+fault channel.
+Ingeneral,thisisnotatractableproblem.However,inpractice,
+many loops have simple relationships between the iteration An implementation difficulty arises from the fact that the
+number and the addresses of memory accesses in that iteration. attack detection code is not stateless, as it has to count the
+Forexample,wefrequentlyobserveasimplelinearrelationship. number of times a transaction is aborted. In order to maintain
+That is, during the k-th iteration, the loop will access address the important springboard property that the only memory
+8accesses of springboard code outside transactions are execute VII. SECURITYANALYSIS
+accesses to the springboard page, we store the counter in a
+For T-SGX-based enclave programs, the attacker can only
+CPU register that we reserve in the compiler.
+observe page fault locations (faulting addresses) on (a) the
+springboard page and (b) the unsecured pages containing
+F. Preventing Reruns function wrappers for the external enclave entry points. The
+latter can be ignored, as they do not access sensitive data.
+The decision to run the enclave should be made by its
+owner and not by the attacker. This can be easily enforced by Furthermore, as shown below, the attacker cannot use
+having the enclave code wait for a cryptographically secured page faults to obtain deterministic notification when enclave
+authorization before it accesses sensitive data. We make this execution accesses the springboard. These two properties of
+authorization an optional part of T-SGX. T-SGX disable the two main uses of the page-fault channel
+in the attacks of [65] and [54]: (a) leaking page numbers of
+The attack model of [65] assumes that the victim runs
+memory accesses and (b) giving the attacker synchronization
+only once. Furthermore, the use model described in [65] (a
+points that allow him/her to track the the victim’s execution.
+remote user controlling a SGX-protected Haven instance or
+An example of the latter is the strategic unmapping of code
+VM in the cloud via a remote desktop protocol) effectively
+pages in [65] such that, every time the victim calls a function
+includes an authorization to run (the remote user’s commands)
+that accesses sensitive data (looking up a word in the Hunspell
+that is cryptographically secured (through the remote desktop
+hash table, rendering a character, decoding an 8 × 8 pixel
+protocol).
+block of an image), a page fault interrupts (stops) the victim
+and invokes the attacker, who can then advance him/her state
+G. External calls machine and update the set of unmapped pages. By blocking
+these two mechanisms, T-SGX effectively protects enclave
+T-SGX places an XEND before calls from the enclave into
+programs against the known page-fault-channel-based attacks.
+the untrusted part of the address space (an EEXIT instruction).
+Similarly, T-SGX places a XBEGIN instruction close to the Forthefull-strengthT-SGXvariantthatrequirestheenclave-
+enclave entry points specified in the SGX Thread Control owner’s consent to run the enclave program (§V-F) and that
+Structures (TCSs). aborts enclave execution as soon as a page fault is detected
+(§V-E), a stronger statement can be made: The attacker will
+learn at most one page access by the victim. Recall that the
+H. Illegal instructions
+attacks of [65] required millions of page faults.
+The T-SGX compiler ensures that no instructions that are
+Given a reliable attack detection mechanism, the argument
+illegal under SGX or TSX are generated for an enclave binary.
+isstraightforward.Thefirsttimeoneofthevictim’stransactions
+This is unproblematic, as those instructions are not necessary
+aborts, T-SGX will detect an attack and stop the execution. As
+to generate regular application code.
+the attacker will not be able to run the victim again, he/she
+cannot observe more than the one page access that caused the
+VI. IMPLEMENTATION springboardtoaborttheexecution.Whethertheattackdetection
+described in §V-E is sufficiently robust is arguable.
+We have built a prototype of T-SGX based on the LLVM
+compiler. Our prototype produces T-SGX-enabled binaries that
+Attack detection. For enclave execution, it is reasonable
+can be run in an enclave just like the original binary. Our
+to require that the enclave encounters no unexpected page
+prototype can handle arbitrary C and C++ code.
+faults. Thus, attack detection reduces to detecting page faults
+for T-SGX-secured pages. The problem would be trivial if
+The main part of our prototype is integrated into the back-
+the TSX hardware would distinguish between page faults
+end of LLVM. It starts by performing the analysis described
+in §V based on the basic blocks produced by LLVM. After and interrupts in the eax value provided to the abort handler.
+Lacking such hardware support, our abort handler declares an
+that, it modifies the instruction sequence as it is being emitted
+attack after a small number of consecutive transaction failures.
+by LLVM. In particular, it places two instructions (to load the
+This approximation is motivated by our evaluation (§VIII):
+address of the next execution block into the r15 register and
+Transactions tend to be short (1,000 to 2,000 cycles), and we
+to jump to the springboard) at the end of each execution block.
+have never observed more than three consecutive transaction
+In the case of 64-bit code, we reserve the r15 register for this
+aborts or false positives.
+purpose (i.e., to communicate the address of the next block to
+the springboard). Jump and call instructions (including indirect Restarting the transaction several times before aborting
+jumpsand calls) arealsomadeto jumptothespringboard with enclave execution could, in principle, give the attacker an
+the destination address loaded into r15. opportunity to observe that the page has been accessed and
+to make the page accessible before the springboard terminates
+As TSX uses the rax register, we reserve a second register
+enclave execution. However, it appears that the attacker would
+to save the value of rax at the end of each execution block
+have to rely mainly on other mechanisms (beyond the page-
+that writes to rax and to restore it at the beginning of each
+fault channel) to detect that the page had been accessed. In
+execution block that reads rax before writing to it.
+other words, while we cannot exclude the possibility that the
+OurprototypealsoincludesaplugintotheLLVMfront-end attacker could gain more information, it appears that he/she
+that injects a function wrapper for each exported function into would have to rely primarily on powerful mechanisms beyond
+the LLVM intermediate representation. The entire prototype the page-fault channel (e.g., cache side channels), which is not
+consists of 4,110 lines of C++ code. the focus of T-SGX.
+9AttacksontheSpringboard. Wenotedabovethattheattacker A. Application Binaries
+cannot obtain deterministic notification of springboard accesses
+through the page-fault channel. More precisely, the attacker This section shows various properties of T-SGX binaries.
+cannot force page faults on springboard accesses. The main effort in obtaining these binaries lies in porting the
+applications into the SGX environment. Once we had working
+Before execution of sensitive enclave code starts, the SGX applications, no further manual effort was required to
+springboard must be mapped and accessed since any sensitive apply the T-SGX protections.
+codeiscalledfromthespringboard.Theattackercan,ofcourse,
+unmapthespringboardinthepagetablesatanytime.However, Aftermanuallyadaptingthesourcecodeofeachapplication
+accesses to springboard will continue to succeed (without to run on SGX (resolving header and linker dependencies),
+causing page faults) as long as the springboard’s mapping we compiled the code with Clang-Cl, a cl.exe-compatible
+is in the TLB. Furthermore, this mapping is unlikely to be drivermodeprogramforClang(basedonLLVMversion3.7.1).
+evicted quickly from the TLB, as the springboard is accessed We linked the resulting object files into executables with the
+very frequently (§VIII). Microsoft linker (link.exe) version 14.00.23506.0.
+All reliable methods for removing the springboard’s map- Webuiltthreeversionsofeachapplication.(a)Thebaseline
+ping from the TLB (e.g., flushing the TLB) require the attacker versionrunsinanSGXenclavewithoutanyprotection.(b)The
+to run code on the enclave’s core or send an inter-processor TSX-basic version is secured with TSX on SGX, yet without
+interrupt (IPI) to the core, interrupting the enclave execution any optimization. (c) The T-SGX version is secured with
+eventually. The key observation is that, by construction of TSX and optimized as described in §V-D. These optimization
+T-SGX,theinstructionpointervalueatwhichenclaveexecution techniques improve performance without affecting security.
+will resume is on the springboard. Thus, if the attacker
+wants enclave execution to proceed, he will have to map the 1)Execution Block Counts and Code Size: We first mea-
+springboard in the page tables before resuming the enclave sure basic statistics of each application, in particular, static
+(ERESUME). The instruction at which enclave execution resumes information such as the number of execution blocks and the
+will be on the springboard, and its execution will establish a impact on code size. Table I shows the results. The reported
+new TLB entry for the springboard, which sets the attack back codesizesarethesizes(inbytes)ofthecode(.text)segments
+to the beginning. of all object files associated with the application. In the case of
+nbench where several applications share the same source file
+In summary, while the attacker can interrupt enclave execu-
+(and the same object file), we built per-application versions of
+tion asynchronously, he cannot use the page-fault channel to
+nbench by commenting out all source code that did not belong
+obtain deterministic notification of accesses to the springboard.
+in the application.
+The code size increase (excluding the springboard page)
+VIII. EVALUATION from baseline to T-SGX varies between 15% and 32%. These
+overheads will likely result in somewhat increased pressure
+We evaluate T-SGX by answering the following questions.
+on the L1 instruction cache. However, there will be no effect
+on the application’s data accesses. Thus, the increase in the
+• How general is the T-SGX approach? Can this ap-
+overall memory requirements will be significantly lower than
+proach be applied to a wide range of legacy real world
+30%, depending on the application and its inputs.
+applications without manual effort?
+• What are the performance characteristics of T-SGX-
+The table also reports the number of execution blocks in
+based programs?
+T-SGX. Dividing the size increase by the number of execution
+• What is the performance impact of running multiple
+blocks reveals an average size increase of 9 to 17 bytes per
+instancesofT-SGX-basedapplicationssimultaneously?
+execution block. This is roughly the space needed to store the
+two additional instructions that jump to the springboard and
+Experimental setup. The experiments were conducted on a the occasional instructions to save and restore rax (§VI).
+generic PC with a Supermicro X11SSQ motherboard, an Intel
+Core i7-6700K 4 GHz (Skylake) CPU, and 64 GB of RAM. 2)DistributionofExecutionBlockSizes: Thenextmeasure-
+The machine ran Windows 10 Pro. We disabled hyperthreading mentstudiesthesizeofexecutionblocks.Figure10displaysthe
+because avoiding cache-timing attacks in the public cloud is distribution of the number of instructions per execution block
+recommended. for T-SGX and TSX-basic across the 10 nbench applications.
+Target applications. We evaluate T-SGX by using the pro- We observe that the optimizations of §V-D have noticeably
+gramsinthenbenchbenchmarksuiteandthethreeapplications shifted the distribution for T-SGX toward larger blocks. The
+that were used by Xu et al. [65] to demonstrate the controlled- smallblocks(containingatmost10instructions)aremostlythe
+channel attack. Table I describes each program in detail, result of (a) non-mergeable cases, such as a block immediately
+including source code size, description, and binary code size beforeorafteraloop,(b)nestedloops,and(c)callstofunctions
+before and after applying T-SGX. The applications are fairly that may not satisfy the cache constraint.
+diverse, including cryptography, text processing, and image
+compression.Whilethenbenchapplicationsaregenerallysmall, We manually inspected two large outlier blocks (up to 120
+the other three applications are one to two orders of magnitude instructions). Both correspond to functions that were merged
+larger, with FreeType exceeding 100,000 lines of code. into a single execution block by our optimizations.
+10#exec. Codesegmentsize Avrageincrease
+Application LoC Description
+blocks Baseline T-SGX MemoryOverhead bytesperblock
+numericsort 211 Numericheapsort 23 1,014B 1,276B 25.8% 11.4B
+stringsort 521 Stringheapsort 46 2,745B 3,358B 22.3% 13.3B
+bitfield 225 Bitoperations 24 1,182B 1,472B 24.5% 12.1B
+fpemulation 1,396 Floating-pointemulation 80 5,636B 6,467B 14.7% 10.4B
+fourier 235 Signalprocessing 20 1,163B 1,386B 19.2% 11.2B
+assignment 490 Assignmentalgorithm 92 3,605B 4,758B 32.0% 12.5B
+idea 353 Crypto 36 3,101B 3,553B 14.6% 12.6B
+huffman 448 Compression 44 2,960B 3,648B 19.2% 15.6B
+neuralnet 746 Back-propagationnetworksimulation 82 4,183B 4,941B 18.1% 9.2B
+ludecomposition 441 Linearequationssolvingalgorithm 62 3,307B 4,136B 25.1% 13.4B
+AVERAGE 22.0%
+libjpeg(9a) 34,763 JPEGlibrary 4,557 272,881B 350,274B 28.4% 17.0B
+Hunspell(1.5.0) 24,794 Spellcheckinglibrary 8,641 356,298B 471,617B 35.0% 13.3B
+FreeType(2.5.3) 135,528 Fontrenderinglibrary 12,060 615,862B 796,105B 29.3% 14.9B
+AVERAGE 28.6%
+TABLE I: Benchmark programs (top) and applications (bottom) used to evaluate T-SGX.
+100
+80
+60
+40
+20
+0
+0 - 910 - 1920 - 2930 - 3940 - 4950 - 5960 - 6970 - 7980 - 8990 - 99100 - 11 01 90 -
+119
+skcolBnoitucexEllagnomaegatnecreP TX CON CAP AbortRate
+numericsort 481times/s 20times/s 0times/s 0.0020%
+TSX-basic
+stringsort 317.3times/s 5.3times/s 0times/s 0.0020%
+T-SGX
+bitfield 532times/s 2.3times/s 0times/s 0.0120%
+fpemulation 314times/s 8.5times/s 0times/s 0.0006%
+fourier 221.5times/s 1.5times/s 0times/s 0.0006%
+assignment 572.5times/s 13.5times/s 0times/s 0.0020%
+idea 707times/s 9.5times/s 0times/s 0.0160%
+huffman 530.7times/s 8times/s 0times/s 0.0013%
+neuralnet 485.5times/s 35.2times/s 0times/s 0.0015%
+ludecomposition 480times/s 27.3times/s 0times/s 0.0016%
+TABLE III: Rate and type of transaction aborts for the nbench
+applications for T-SGX.
+InstructionsperExecutionBlock
+Fig. 10: Distribution of execution block sizes: The optimizations
+increase the size of a typical execution block.
+significant, it does not appear prohibitive. The table also
+demonstrates the effectiveness of the optimizations of §V-D.
+Without these optimization techniques, the overhead would
+B. Run-time Performance have been significantly higher (as high as 17.9×). It seems that
+additional optimization could reduce the overhead even further.
+This section demonstrates the run-time performance of
+T-SGX. Unless stated otherwise, measurement values are 2)Transaction Properties: Table III displays the rate at
+averaged over five runs of nbench and the real applications. which T-SGX transactions are aborted and the reason, as
+For the nbench suite, we ran each program for five second indicatedbythevalueoftheeaxregisteratthetimeoftheabort.
+and measured the number of iterations per second. For jpeglib, We observe up to about 500 aborted transactions per second
+we measured how long it takes to decompress a 1220×813 with an eax value of 0, indicating an interrupt or exception.
+(203,446bytes)compressedjpegimage.Thesizeofthedecoded This rate follows closely the per-core interrupt arrival rate,
+image is 8,926,740 bytes. The measurement includes the image which we observed using Windows performance counters.
+decompression time but not general startup and initialization.
+We observed no transaction abort with eax bit 3 set (CAP).
+For Hunspell, we picked the book Around the World Eighty
+Thisbitissetifan“internalbufferoverflowed,”whichincludes
+Daysastheinput.Thenumberofwordsextractedfromthebook
+the case when a transaction’s read or write set does not fit
+is63,704.Weperformedaspellcheck(usingHunspell::spell)
+into the corresponding caches. This confirms the conservative
+on these words with the "en_US" dictionary as a single call
+nature of our cache model. We also observed small numbers
+intotheenclaveandmeasuredthetotaltimespent.Weusedthe
+of aborted transactions with eax bits 1 and 2 set (CON). These
+sameinput forFreeType. Thenumber ofcharactersin thebook
+bits indicate "transaction may succeed on retry" and "another
+is 375,338. We measured the time required for a single enclave
+logical processor conflicts with read or write set," respectively.
+call that renders all these characters (using FT_Load_Char).
+3)TransactionDuration: Figure11displaysthedistribution
+1)Run-timeOverhead: TableIIdisplaystherun-timeofthe
+of transaction durations. We measured the duration of each
+baseline, TSX-basic, and T-SGX versions of the applications
+transaction by instrumenting the springboard code that begins
+and the associated overheads. We took the numbers for the
+and ends transactions with rdtsc instructions. As the rdtsc in-
+nbench applications directly from the nbench outputs.
+structionisillegalunderSGXandenteringandleavingenclaves
+The overhead of T-SGX ranges from 4% to 118% add significant noise to the measurement, we performed this
+with a geometric mean of 50%. While this overhead is experiment by running the applications outside SGX enclaves.
+11Application Baseline TSX-basic (overhead) T-SGX (overhead)
+numericsort 12,682iter/s 1,149.1iter/s (9.1×) 8,390.1iter/s (1.5×)
+stringsort 8,872.3iter/s 1,991.1iter/s (4.1×) 7,218.7iter/s (1.2×)
+bitfield 516,000,000iter/s 26,100,000iter/s (17.9×) 443,000,000iter/s (2.1×)
+fpemulation 319.8iter/s 25.3iter/s (11.9×) 146.4iter/s (2.2×)
+fourier 186,000iter/s 31,847iter/s (5.4×) 98,847iter/s (1.9×)
+assignment 1,741.9iter/s 82.6iter/s (18.4×) 1,196iter/s (1.5×)
+idea 3,814.1iter/s 275.3iter/s (13.0×) 3,665.7iter/s (1.0×)
+huffman 3,264.7iter/s 162.6iter/s (16.6×) 1,641.5iter/s (2.0×)
+neuralnet 45.7iter/s 3.8iter/s (11.1×) 27.3iter/s (1.7×)
+ludecomposition 1,197.6iter/s 82.4iter/s (13.6×) 883.4iter/s (1.4×)
+GEOMEAN 11.0× 1.5×
+libjpeg 6,784.5 kB/s 846.4 kB/s (8.0×) 4,674.1 kB/s (1.5×)
+Hunspell 176,000word/s 36,333.3word/s (4.9×) 114,000word/s (1.6×)
+FreeType 37,747.2char/s 3,047.7char/s (12.4×) 28,394.5char/s (1.3×)
+GEOMEAN 7.8× 1.4×
+TABLE II: Run-time overhead of TSX-basic and T-SGX over baseline.
+100
+80
+60
+40
+20
+0
+0 - 1k1k - 22 kk - 33 kk - 44 kk - 55 kk - 66 kk - 77 kk - 88 kk - 99 kk - 11 kk 00 -1 11 1k k-1 12 2k k-1 13 3k k-1 14 4k k-
+15k
+skcolBnoitucexEllagnomaegatnecreP Numberofaborts Percentage
+0 99.9%
+TSX-basic 1 1.7·10-3%
+T-SGX 2 9.8·10-6%
+3 3.7·10-7%
+4 0%
+TABLE IV: Distribution of the number of times a transaction aborts
+before it succeeds.
+5)Multiple instances: The next experiment analyzes the
+performance of multiple T-SGX-protected enclaves running
+CyclesperExecutionBlock side by side. Our goal is to analyze whether T-SGX scales to
+Fig. 11: Distribution of transaction times: Most transactions take less multiple protected enclaves.
+than 3,000 cycles.
+We measured the running time of baseline and T-SGX for
+the nbench applications, varying the number of concurrent
+instances from one to eight. For each measurement, we created
+n identical enclaves in n separate Windows processes (n ∈
+Figure 11 shows the distribution of transaction duration
+{1,...,8}) running one of the 10 nbench applications for
+for T-SGX and TSX-basic. For TSX-basic, most transactions
+baseline or T-SGX and recorded the timing output of nbench
+take less than 1,000 cycles. As a result of the optimizations, a
+for one of the enclaves. We repeated the measurement for
+typical transaction for T-SGX takes between 1,000 and 2,000
+n from 1 to 8, for all 10 nbench applications and for both
+cycles. Still, the transaction duration is short enough to easily
+configurations (baseline and T-SGX).
+meet the execution time constraint imposed by the interrupt
+frequency.Forexample,our4GHzprocessorshouldbeableto Figure 12 displays the results. The x-axis displays the
+complete 2,000-cycle-transactions even for interrupt rates of up number of concurrent instances. Each line corresponds to one
+to2millioninterruptspersecondpercore.Sucharateisorders nbench application. The y-value is the ratio of the number
+of magnitude higher than the interrupt rates we have observed of iterations per second for T-SGX and for baseline. In other
+under normal conditions (thousands of interrupts per second words, it is the inverse of the overhead. All lines are roughly
+per core). This observation is also consistent with Table III. constant, indicating that one can run multiple T-SGX-protected
+enclaves without affecting the overhead.
+4)Transaction Abort Counts: We study the number of
+times a transaction aborts before it succeeds. We gather these
+IX. DISCUSSION
+counts by instrumenting the TSX management code on the
+springboard. InthissectionweexplainlimitationsofT-SGXandpossible
+approaches to overcome them. Also, we explain other potential
+Table IV displays the distribution of abort counts across
+attacks against T-SGX and show how we can cope with them.
+the 10 nbench applications. The overwhelming majority of
+transactions succeeds on the first try. A tiny fraction of
+A. Limitations
+transactions requires up to three retries. After executing many
+millions of transactions, we observed no transaction requiring One limitation of T-SGX is that it cannot correctly identify
+more than three retries to complete. This observation can be whatcausesanexception.Atransactionalexecutionabortswhen
+usedasthebasisforamechanismtodetectattacksoranomalies. an exception has been generated, but it does not let a program
+12100
+80
+60
+40
+20
+0
+1 2 3 4 5 6 7 8
+)%(enilesaBrevoXGS-T Memorybussnoopingattack. Amemorybussnoopingattack
+isahardware-levelattack.Bymonitoringmemorybustraffic,a
+maliciousperipheraldevicecanknowwhichmemoryaddresses
+arecurrentlyaccessedbyaCPUalthoughthememorycontents
+areencryptedbySGX.Topreventsuchanattack,SGXneedsto
+providesoftware-levelorhardware-levelORAMtechniques[12,
+38, 40, 49]. Also, we can minimize the number of memory
+accesses as much as possible by using cache-based [8, 17, 18,
+NumberofInstances 66] or register-based [15, 45] computations.
+numericsort assignment
+stringsort idea
+bitfield huffman X. RELATEDWORK
+fpemulation neuralnet
+fourier ludecomposition In this section, we discuss a number of important studies
+that are related to T-SGX.
+Fig. 12: Overhead with increasing number of parallel instances. It
+shows that T-SGX can be scaled for system-wide uses in practice.
+Trusted execution environments. Mainstream computing
+environments are typically very complex. They provide only
+limited assurance for confidentiality and integrity in light
+of various attacks such as malware, kernel exploits, and
+know the vector number of the exception (§II-C2). T-SGX can
+malicious peripherals. Numerous researchers and companies
+distinguish a synchronous exception from an asynchronous
+have proposed a variety of TEEs to protect critical data
+exception by repeatedly executing a transactional region, but
+and computations with higher assurance. TEEs typically do
+it cannot know whether the synchronous exception is a page
+not trust the main OS because it could be compromised.
+fault, a divide-by-zero error, or something else. This could be a
+Thus, they are implemented in places that even the OS
+problem because T-SGX may mistake errors in the enclave
+cannot control, such as a trusted hypervisor or hardware. For
+software for an attack by the OS. To avoid this problem,
+example, Overshadow [7], NOVA [57], TrustVisor [43], Cloud
+we plan to develop an application exception handler (§II-C1)
+Terminal [42], InkTag [21], MiniBox [37], and Sego [33] are
+running inside an enclave that dynamically inspects the code
+TEEs based on trusted hypervisors. The basic idea of these
+and execution status to know the exception reason and to fix
+systems is to provide isolated memory for each trusted process
+it to ensure continuous execution. Another limitation is that
+or module by using nested page tables or the extended page
+T-SGX cannot protect libraries without source code because it
+table feature of hardware-based virtualization. Also, all the
+is a compiler-based approach. This problem could be solved
+interactions between a trusted process and the OS (i.e., system
+when library developers apply T-SGX to their closed-source
+calls) have to be managed by the trusted hypervisor. However,
+libraries. Also, we plan to improve T-SGX to support binary
+a hypervisor is also software and potentially vulnerable to
+instrumentation. Another limitation is that T-SGX does not
+various attacks [64]. Flicker [44] and TrustVisor [43] use
+support page-level swapping between enclave memory and
+trusted hardware (TPM [60]) and attempt to minimize the
+main memory, as Sanctum [11] does. This limitation would
+complexityoftheirTEEsoftware.ARM’sTrustZone[1],Intel’s
+be problematic, especially when T-SGX runs in the public
+TXT[16]andSGX[24],andSamsung’sKNOX[50]arewidely-
+cloud while sharing the limited enclave memory with other
+deployed hardware-based TEEs. Numerous researchers have
+processes. One possible solution to this problem is to swap out
+proposed hardware-based TEE designs, such as TrInc [35],
+the whole memory of an enclave program to the main memory.
+SICE [3], SecureSwitch [58], OASIS [47], TrustLite [32], and
+We plan to study the effectiveness of this approach in the
+Sanctum [11].
+future. Lastly, T-SGX cannot support a multithreaded enclave
+program that wants use TSX for its original purpose: lock
+OS attacks against TEEs. Although TEEs are designed to
+elision. However, this does not hurt the program’s functionality
+protect user processes from a malicious OS, the latter still has
+because lock elision is just an optional feature. Instead, it can
+opportunitiestoattacktheprocessesbecausetheycannotaccess
+use a traditional lock for synchronization between different
+system resources (e.g., storage, network) without the help of
+threads without any problem.
+the OS. Iago attacks [6] exploit this limitation. For example,
+an Iago attack may manipulate the return value (i.e., a virtual
+B. Other Side-channel Attacks address) of the mmap() system call to make a target application
+overwrite a portion of its stack and, thereby, hijack control
+Cache timing attack. A cache timing attack by a malicious flow. Since any system call could potentially be exploited for
+OS is a serious threat because the OS manages the virtual this type of attack, the TEE has to carefully validate the return
+address mapping of every program [10]. To mitigate the threat, values of all system calls [21, 29]. The controlled-channel
+an enclave program needs to flush its private cache whenever attacks [54, 65] this paper focuses on also rely on the fact that
+the OS resumes its execution, but, generally, it cannot obtain the OS manages system memory. Finally, AsyncShock [63]
+suchinformation.Fortunately,withT-SGX,anenclaveprogram demonstratesthatsynchronizationbugsthataremostlyharmless
+can know exactly when it is resumed by the OS such that it in a traditional environment can allow an adversarial OS to
+only needs to flush its private cache at that point. However, compromise SGX enclaves.
+this mitigation is not enough to cope with asynchronous cache
+timing attacks that use the last-level cache (LLC) [28, 39]. SGX applications. Among the various hardware-based TEEs,
+We plan to study how to secure enclave programs from such Intel SGX recently has been receiving much attention because
+attacks. it is widely deployed (all Intel Skylake CPUs support it) and
+13because it allows developers to use almost the full unprivileged International Conference on Architectural Support for Programming
+instruction set of the Intel CPU. For example, Haven [4], LanguagesandOperatingSystems(ASPLOS),Houston,TX,Mar.2013.
+Graphene-SGX [61, 62], and SCONE [2] are SGX-based [7] X.Chen,T.Garfinkel,E.C.Lewis,P.Subrahmanyam,C.A.Waldspurger,
+D.Boneh,J.Dwoskin,andD.R.Ports,“Overshadow:Avirtualization-
+platforms to securely run an unmodified application in an
+basedapproachtoretrofittingprotectionincommodityoperatingsystems,”
+untrusted cloud. VC3 [51], M2R [12], and Ohrimenko et inProceedingsofthe13thACMInternationalConferenceonArchitectural
+al. [46] use SGX to perform data analytics, MapReduce com- SupportforProgrammingLanguagesandOperatingSystems(ASPLOS),
+putations, and machine learning computations while ensuring Seattle,WA,Mar.2008.
+[8] P.Colpa,J.Zhang,J.Gleeson,S.Suneja,E.deLara,H.Raj,S.Saroiu,and
+confidentialityandintegrity.Also,Kimetal.[31],S-NFV[53],
+A.Wolman,“Protectingdataonsmartphonesandtabletsfrommemory
+Pires et al. [48], and SecureKeeper [5] show how we can use
+attacks,”inProceedingsofthe20thACMInternationalConferenceon
+SGX for securing network services, content-based routing, and ArchitecturalSupportforProgrammingLanguagesandOperatingSystems
+distributed computing. Moat [56] and CONFIDENTIAL [55] (ASPLOS),Istanbul,Turkey,Mar.2015.
+designverificationmethodologiesforenclaveprogramstocheck [9] B. Coppens, I. Verbauwhede, K. D. Bosschere, and B. D. Sutter,
+“Practicalmitigationsfortiming-basedside-channelattacksonmodern
+whether they are secure. OpenSGX [29] is an emulator for the
+x86processors,”inProceedingsofthe30thIEEESymposiumonSecurity
+execution of enclave programs for software development and andPrivacy(Oakland),Oakland,CA,May2009.
+in-depth debugging and testing. SGX-Shield [52] implements [10] V. Costan and S. Devadas, “Intel SGX explained,” Cryptology ePrint
+fine-grained address space layout randomization (ASLR) for Archive,Report2016/086,2016,http://eprint.iacr.org/.
+[11] V. Costan, I. Lebedev, and S. Devadas, “Sanctum: Minimal hardware
+SGX. Ryoan [22] introduces a distributed two-way sandbox to
+extensions for strong software isolation,” in Proceedings of the 25th
+run untrusted enclave programs with sensitive user data while
+USENIXSecuritySymposium(Security),Austin,TX,Aug.2016.
+preventing possible information leakage. [12] T.T.A.Dinh,P.Saxena,E.-C.Cang,B.C.Ooi,andC.Zhang,“M2R:
+EnablingstrongerprivacyinMapReducecomputation,”inProceedings
+of the 24th USENIX Security Symposium (Security), Washington, DC,
+XI. CONCLUSION
+Aug.2015.
+[13] A.J.Feldman,W.P.Zeller,M.J.Freedman,andE.W.Felten,“SPORC:
+Intel SGX has been considered to be one of the most
+Group collaboration using untrusted cloud resources,” in Proceedings
+promising TEE technologies. However, the controlled-channel
+of the 9th USENIX Symposium on Operating Systems Design and
+attack [54, 65]—a noise-free side channel—has drawn its Implementation(OSDI),Vancouver,Canada,Oct.2010.
+securityintoquestion.ThispaperintroducesT-SGX,whichisa [14] C. Gentry, “Fully homomorphic encryption using ideal lattices,” in
+secure,efficient,andpracticalschemeforprotectinganyenclave Proceedingsofthe41stAnnualACMSymposiumonTheoryofComputing
+(STOC),2009.
+program from controlled-channel attacks. It ensures that no
+[15] J.GötzfriedandT.Müller,“Armored:CPU-boundencryptionforAndroid-
+pagefaultsequencewillbeleakedtoattackersandisanorderof drivenARMdevices,”inProceedingsofthe8thInternationalConference
+magnitude faster than the state-of-the-art scheme [54] without onAvailability,ReliabilityandSecurity(ARES),2013.
+requiring manual developer effort or hardware modifications. [16] J.Greene,“Inteltrustedexecutiontechnology,”IntelTechnologyWhite
+Paper,2012.
+[17] L.Guan,J.Lin,B.Luo,andJ.Jing,“Copker:Computingwithprivate
+ACKNOWLEDGMENT keyswithoutRAM,”inProceedingsofthe2014AnnualNetworkand
+Distributed System Security Symposium (NDSS), San Diego, CA, Feb.
+We thank Byoungyoung Lee for constructive discussions, 2014.
+theanonymousreviewersfortheirhelpfulfeedback,andGTISC [18] L.Guan,J.Lin,B.Luo,J.Jing,andJ.Wang,“Protectingprivatekeys
+lab members for their proofreading efforts. This research was againstmemorydisclosureattacksusinghardwaretransactionalmemory,”
+supported by the NSF award DGE-1500084, CNS-1563848,
+inProceedingsofthe36thIEEESymposiumonSecurityandPrivacy
+(Oakland),SanJose,CA,May2015.
+CRI-1629851 ONR under grant N000141512162, DARPA TC
+[19] S.M.Hand,“Self-pagingintheNemesisoperatingsystem,”inProceed-
+program under contract No. DARPA FA8650-15-C-7556, and ingsofthe3rdUSENIXSymposiumonOperatingSystemsDesignand
+DARPA XD3 program under contract No. DARPA HR0011- Implementation(OSDI),NewOrleans,LA,Feb.1999.
+16-C-0059, and ETRI MSIP/IITP[B0101-15-0644]. [20] M.HerlihyandJ.Moss,“Transactionalmemory:Architecturalsupport
+for lock-free data structures,” in Proceedings of the 20th ACM/IEEE
+InternationalSymposiumonComputerArchitecture(ISCA),SanDiego,
+REFERENCES CA,USA,1993.
+[21] O.S.Hofmann,S.Kim,A.M.Dunn,M.Z.Lee,andE.Witchel,“InkTag:
+[1] ARM, “Building a secure system using TrustZone technology,” Dec.
+Secureapplicationsonanuntrustedoperatingsystem,”inProceedings
+2008,pRD29-GENC-009492C.
+ofthe18thACMInternationalConferenceonArchitecturalSupportfor
+[2] S.Arnautox,B.Tarch,F.Gregor,T.Knauth,A.Martin,C.Priebe,J.Lind,
+ProgrammingLanguagesandOperatingSystems(ASPLOS),Houston,
+D.Muthukumaran,D.O’Keeffe,M.L.Stillwell,D.Goltzsche,D.Eyers,
+TX,Mar.2013.
+R.Kapitza,P.Pietzuch,andC.Fetzer,“SCONE:SecureLinuxcontainers
+[22] T.Hunt,Z.Zhu,Y.Xu,S.Peter,andE.Witchel,“Ryoan:Adistributed
+with Intel SGX,” in Proceedings of the 12th USENIX Symposium on
+sandbox for untrusted computation on secret data,” in Proceedings
+OperatingSystemsDesignandImplementation(OSDI),Savannah,GA,
+of the 12th USENIX Symposium on Operating Systems Design and
+Nov.2016.
+Implementation(OSDI),Savannah,GA,Nov.2016.
+[3] A.M.Azab,P.Ning,andX.Zhang,“SICE:Ahardware-levelstrongly
+[23] Intel, “Intel software guard extensions: Intel attestation service
+isolatedcomputingenvironmentforx86multi-coreplatforms,”inPro-
+API,”https://software.intel.com/sites/default/files/managed/3d/c8/IAS_1_
+ceedingsofthe18thACMConferenceonComputerandCommunications
+0_API_spec_1_1_Final.pdf.
+Security(CCS),Chicago,Illinois,Oct.2011.
+[24] ——,“Intelsoftwareguardextensionsprogrammingreference(rev2),”
+[4] A. Baumann, M. Peinado, and G. Hunt, “Shielding applications from
+Oct.2014,329298-002US.
+an untrusted cloud with Haven,” in Proceedings of the 11th USENIX
+[25] ——,“Intel64andIA-32architecturessoftwaredeveloper’smanual,”
+SymposiumonOperatingSystemsDesignandImplementation(OSDI),
+Dec.2015.
+Broomfield,Colorado,Oct.2014.
+[26] Intel,“SGXTutorial,ISCA2015,”http://sgxisca.weebly.com/,Jun.2015.
+[5] S.Brenner,C.Wulf,M.Lorenz,N.Weichbrodt,D.Goltzsche,C.Fetzer, [27] I.Ion,N.Sachdeva,P.Kumaraguru,andS.Cˇapkun,“Homeissaferthan
+P.Pietzuch,andR.Kapitza,“SecureKeeper:ConfidentialZooKeeperusing
+thecloud!:Privacyconcernsforconsumercloudstorage,”inProceedings
+IntelSGX,”inProceedingsofthe16thAnnualMiddlewareConference
+of the Seventh Symposium on Usable Privacy and Security (SOUPS),
+(Middleware),2016.
+Pittsburgh,Pennsylvania,2011.
+[6] S. Checkoway and H. Shacham, “Iago attacks: Why the system call
+[28] G.Irazoqui,T.Eisenbarth,andB.Sunar,“S$A:Asharedcacheattack
+APIisabaduntrustedRPCinterface,”inProceedingsofthe18thACM
+14thatworksacrosscoresanddefiesVMsandboxing—anditsapplication ings of the 25th USENIX Security Symposium (Security), Austin, TX,
+toAES,”inProceedingsofthe36thIEEESymposiumonSecurityand Aug.2016.
+Privacy(Oakland),SanJose,CA,May2015. [47] E. Owusu, J. Guajardo, J. McCune, J. Newsome, A. Perrig, and
+[29] P.Jain,S.Desai,S.Kim,M.-W.Shih,J.Lee,C.Choi,Y.Shin,T.Kim, A.Vasudevan,“OASIS:Onachievingasanctuaryforintegrityandsecrecy
+B.B.Kang,andD.Han,“OpenSGX:AnopenplatformforSGXresearch,” onuntrustedplatforms,”inProceedingsofthe20thACMConferenceon
+in Proceedings of the 2016 Annual Network and Distributed System ComputerandCommunicationsSecurity(CCS),Berlin,Germany,Oct.
+SecuritySymposium(NDSS),SanDiego,CA,Feb.2016. 2013.
+[30] S. Johnson, V. Scarlata, C. Rozas, E. Brickell, and F. Mckeen, “In- [48] R. Pires, M. Pasin, P. Felber, and C. Fetzer, “Secure content-based
+tel software guard extensions: EPID provisioning and attestation ser- routingusingIntelSoftwareGuardExtensions,”inProceedingsofthe
+vices,”https://software.intel.com/en-us/blogs/2016/03/09/intel-sgx-epid- 16thAnnualMiddlewareConference(Middleware),2016.
+provisioning-and-attestation-services. [49] A.Rane,C.Lin,andM.Tiwari,“Raccoon:Closingdigitalside-channels
+[31] S. Kim, Y. Shin, J. Ha, T. Kim, and D. Han, “A first step towards through obfuscated execution,” in Proceedings of the 24th USENIX
+leveraging commodity trusted execution environments for network SecuritySymposium(Security),Washington,DC,Aug.2015.
+applications,”inProceedingsofthe14thACMWorkshoponHotTopics [50] Samsung, “White paper: An overview of Samsung KNOX,” 2013,
+inNetworks(HotNets),Philadelphia,PA,Nov.2015. enterpriseMobilitySolutions.
+[32] P.Koeberl,S.Schulz,A.-R.Sadeghi,andV.Varadharajan,“TrustLite:A [51] F.Schuster,M.Costa,C.Fournet,C.Gkantsidis,M.Peinado,G.Mainar-
+securityarchitecturefortinyembeddeddevices,”inProceedingsofthe Ruiz,andM.Russinovich,“VC3:Trustworthydataanalyticsinthecloud
+9thEuropeanConferenceonComputerSystems(EuroSys),Amsterdam, usingSGX,”inProceedingsofthe36thIEEESymposiumonSecurity
+TheNetherlands,Apr.2014. andPrivacy(Oakland),SanJose,CA,May2015.
+[33] Y.Kwon,A.M.Dunn,M.Z.Lee,O.S.Hofmann,Y.Xu,andE.Witchel, [52] J.Seo,B.Lee,S.Kim,M.-W.Shih,I.Shin,D.Han,andT.Kim,“SGX-
+“Sego:Pervasivetrustedmetadataforefficienctlyverifieduntrustedsystem Shield:EnablingaddressspacelayoutrandomizationforSGXprograms,”
+services,”inProceedingsofthe21stACMInternationalConferenceon in Proceedings of the 2017 Annual Network and Distributed System
+ArchitecturalSupportforProgrammingLanguagesandOperatingSystems SecuritySymposium(NDSS),SanDiego,CA,Feb.–Mar.2017.
+(ASPLOS),Atlanta,GA,Apr.2016. [53] M.-W.Shih,M.Kumar,T.Kim,andA.Gavrilovska,“S-NFV:Securing
+[34] V.Leis,A.Kemper,andT.Neumann,“Exploitinghardwaretransactional NFVstatesbyusingSGX,”inProceedingsofthe1stACMInternational
+memoryinmain-memorydatabases,”inProceedingsofthe30thIEEE WorkshoponSecurityinSDNandNFV,NewOrleans,LA,Mar.2016.
+International Conference on Data Engineering (ICDE), Chicago, IL, [54] S.Shinde,Z.L.Chua,V.Narayanan,andP.Saxena,“Preventingyour
+Mar.–Apr.2014. faults from telling your secrets,” in Proceedings of the 11th ACM
+[35] D.Levin,J.R.Douceur,J.R.Lorch,andT.Moscibroda,“TrInc:Small Symposium on Information, Computer and Communications Security
+trustedhardwareforlargedistributedsystems,”inProceedingsofthe6th (ASIACCS),Xi’an,China,May–Jun.2016.
+USENIXSymposiumonNetworkedSystemsDesignandImplementation [55] R. Sinha, M. Costa, A. Lal, N. P. Lopes, S. Rajamani, S. A. Seshia,
+(NSDI),Boston,MA,Apr.2009. and K. Vaswani, “A design and verification methodology for secure
+[36] J.Li,M.Krohn,D.Mazières,,andD.Shasha,“Secureuntrusteddata isolatedregions,”inProceedingsofthe2016ACMSIGPLANConference
+repository(SUNDR),”inProceedingsofthe6thUSENIXSymposiumon onProgrammingLanguageDesignandImplementation(PLDI),Santa
+OperatingSystemsDesignandImplementation(OSDI),SanFrancisco, Barbara,CA,Jun.2016.
+CA,Dec.2004. [56] R. Sinha, S. Rajamani, S. Seshia, and K. Vaswani, “Moat: Verifying
+[37] Y. Li, J. McCune, J. Newsome, A. Perrig, B. Baker, and W. Drewry, confidentialityofenclaveprogram,”inProceedingsofthe22ndACM
+“MiniBox:Atwo-waysandboxforx86nativecode,”inProceedingsof ConferenceonComputerandCommunicationsSecurity(CCS),Denver,
+the2014USENIXAnnualTechnicalConference(ATC),Philadelphia,PA, Colorado,Oct.2015.
+Jun.2014. [57] U.SteinbergandB.Kauer,“NOVA:Amicrohypervisor-basedsecurevir-
+[38] C.Liu,A.Harris,M.Maas,M.Hicks,M.Tiwari,andE.Shi,“GhostRider: tualizationarchitecture,”inProceedingsofthe5thEuropeanConference
+Ahardware-softwaresystemformemorytraceobliviouscomputation,”in onComputerSystems(EuroSys),Paris,France,Apr.2010.
+Proceedingsofthe20thACMInternationalConferenceonArchitectural [58] K.Sun,J.Wang,F.Zhang,andA.Stavrou,“SecureSwitch:BIOS-assisted
+SupportforProgrammingLanguagesandOperatingSystems(ASPLOS), isolationandswitchbetweentrustedanduntrustedcommodityOSes,”in
+Istanbul,Turkey,Mar.2015. Proceedingsofthe19thAnnualNetworkandDistributedSystemSecurity
+[39] F.Liu,Y.Yarom,Q.Ge,G.Heiser,andR.B.Lee,“Last-levelcache Symposium(NDSS),SanDiego,CA,Feb.2012.
+side-channel attacks are practical,” in Proceedings of the 36th IEEE [59] H.Takabi,J.B.Joshi,andG.-J.Ahn,“Securityandprivacychallengesin
+SymposiumonSecurityandPrivacy(Oakland),SanJose,CA,May2015. cloudcomputingenvironments,”IEEESecurity&Privacy,vol.8,no.6,
+[40] M.Maas,E.Love,E.Stefanov,M.Tiwari,E.Shi,K.Asanovic´,J.Ku- pp.24–31,2010.
+biatowicz,andD.Song,“PHANTOM:Practicalobliviouscomputation [60] Trusted Computing Group, “Trusted platform module (TPM) sum-
+inasecureprocessor,”inProceedingsofthe20thACMConferenceon mary,”http://www.trustedcomputinggroup.org/trusted-platform-module-
+ComputerandCommunicationsSecurity(CCS),Berlin,Germany,Oct. tpm-summary/.
+2013. [61] C.-C. Tsai, K. S. Arora, N. Bandi, B. Jain, W. Jannen, J. John, H. A.
+[41] P. Mahajan, S. Setty, S. Lee, A. Clement, L. Alvisi, M. Dahlin, and Kalodner, V. Kulkarni, D. Oliveira, and D. E. Porter, “Cooperation
+M.Walfish,“Depot:Cloudstoragewithminimaltrust,”inProceedings and security isolation of library OSes for multi-process applications,”
+of the 9th USENIX Symposium on Operating Systems Design and inProceedingsofthe9thEuropeanConferenceonComputerSystems
+Implementation(OSDI),Vancouver,Canada,Oct.2010. (EuroSys),Amsterdam,TheNetherlands,Apr.2014.
+[42] L.Martignoni,P.Poosankam,M.Zaharia,J.Han,S.McCamant,D.Song, [62] C.-C.TsaiandD.Porter,“Graphene/Graphene-SGXLibraryOS-a
+V.Paxson,A.Perrig,S.Shenker,andI.Stoica,“CloudTerminal:Secure libraryOSforLinuxmulti-processapplications,withIntelSGXsupport,”
+accesstosensitiveapplicationsfromuntrustedsystems,”inProceedings https://github.com/oscarlab/graphene.
+ofthe2012USENIXAnnualTechnicalConference(ATC),Boston,MA, [63] N.Weichbrodt,A.Kurmus,P.Pietzuch,andR.Kapitza,“AsyncShock:
+Jun.2012. ExploitingsynchronisationbugsinIntelSGXenclaves,”inProceedings
+[43] J.M.McCune,Y.Li,N.Qu,Z.Zhou,A.Datta,V.Gligor,andA.Perrig, of the 21th European Symposium on Research in Computer Security
+“TrustVisor:EfficientTCBreductionandattestation,”inProceedingsof (ESORICS),Crete,Greece,Sep.2016.
+the31thIEEESymposiumonSecurityandPrivacy(Oakland),Oakland, [64] Xen,“Xensecurityadvisories,”http://xenbits.xen.org/xsa/.
+CA,May2010. [65] Y.Xu,W.Cui,andM.Peinado,“Controlled-channelattacks:Determin-
+[44] J. M. McCune, B. J. Parno, A. Perrig, M. K. Reiter, and H. Isozaki, isticsidechannelsforuntrustedoperatingsystems,”inProceedingsof
+“Flicker:AnexecutioninfrastructureforTCBminimization,”inProceed- the36thIEEESymposiumonSecurityandPrivacy(Oakland),SanJose,
+ingsofthe3rdEuropeanConferenceonComputerSystems(EuroSys), CA,May2015.
+Glasgow,Scotland,Mar.2008. [66] N. Zhang, K. Sun, W. Lou, and Y. T. Hou, “CaSE: Cache-assisted
+[45] T. Müller, F. C. Freiling, and A. Dewald, “TRESOR runs encryption secureexecutiononARMprocessors,”inProceedingsofthe37thIEEE
+securely outside RAM,” in Proceedings of the 20th USENIX Security SymposiumonSecurityandPrivacy(Oakland),SanJose,CA,May2016.
+Symposium(Security),SanFrancisco,CA,Aug.2011.
+[46] O.Ohrimenko,C.F.ManuelCosta,S.Nowozin,A.Mehta,F.Schuster,
+andK.Vaswani,“SGX-enabledobliviousmachinelearning,”inProceed-
+15

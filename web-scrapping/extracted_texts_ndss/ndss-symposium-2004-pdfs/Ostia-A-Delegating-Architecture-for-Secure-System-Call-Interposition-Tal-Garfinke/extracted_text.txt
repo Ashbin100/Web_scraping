@@ -1,0 +1,1023 @@
+Ostia: A Delegating Architecture for Secure System Call Interposition
+TalGarfinkel BenPfaff MendelRosenblum
+{talg,blp,mendel}@cs.stanford.edu
+ComputerScienceDepartment,StanfordUniversity
+Abstract ing the address spaces of sandboxed applications from the
+rest of the system. A relatively simple mechanism can al-
+lowauser-levelsandboxprogramtointerposeonthesystem
+Application sandboxes provide restricted execution en- call interface of a sandboxed application, allowing regula-
+vironments that limit an application’s access to sensitive tionofaccesstoallsensitivesystemresourcesincludingthe
+OS resources. These systems are an increasingly popular filesystemandnetwork.
+method for limiting the impact of a compromise. While a Filtering sandboxing architectures have been the dom-
+varietyofmechanismsforbuildingthesesystemshavebeen inant approach to building hybrid sandboxes. In these
+proposed,themostthoroughlyimplementedandstudiedare systems a user-level sandboxing program confines other
+based on system call interposition. Current interposition- applications by interposing on their access to the system
+based architectures offer a wide variety of properties that call interface via a kernel-level process tracing mecha-
+make them an attractive approach for building sandbox- nism [2, 3, 18, 29, 31, 21, 30, 1]. The sandboxing pro-
+ingsystems.Unfortunately,thesearchitecturesalsopossess gram can then filter the flow of system calls between the
+several critical properties that make their implementation applicationandtheOS.Unfortunately,thesetoolshavesuf-
+errorproneandlimittheirfunctionality. feredfromavarietyofsecurityproblemswhichhaslimited
+We present a study of Ostia, a sandboxing system we their functionality and made their design and implementa-
+have developed that relies on a “delegating” architecture tionparticularlyerrorprone[16]. Inthisworkwedemon-
+which overcomes many of the limitations of today’s sand- strate that these shortcomings are not a fundamental prop-
+boxingsystems. Wecomparethisdelegatingarchitectureto erty of hybrid sandboxes, but rather an artifact of several
+the “filtering” architecture commonly used for sandboxes propertiesoffiltering-basedarchitectures.
+today. We present the salient features of each architecture Wepresentanalternativearchitecturethatwecalladel-
+andexaminethedesignchoicesthatsignificantlyimpactse- egating architecture that retains the benefits of a filtering
+curity, compatibility, flexibility, deployability, and perfor- approach,whileovercomingmanyofitslimitations. Witha
+manceinthisclassofsystem. delegatingarchitecture, insteadofasandboxedapplication
+requesting sensitive resources directly from the kernel, it
+delegatesresponsibilityforobtainingsensitiveresourcesto
+1 Introduction theprogram(“agent”)controllingthesandbox. Thisagent
+accessesresourcesonbehalfofthesandboxedprogramac-
+Today’sapplications,fromemailclientstowebservers,
+cordingtoauser-specifiedsecuritypolicy.
+are often vulnerable to attack. Buffer overflows, back
+To motivate the need for a delegating architecture, as
+doors, logic errors, or simple misconfigurations permit
+wellastohighlightthesalientfeaturesofthisclassofsys-
+attackers to compromise these applications with disturb-
+tem, we compare Ostia, our implementation of a sandbox
+ing frequency. A heavily studied approach to remedy-
+with a delegating architecture, to J2 (Janus version 2), a
+ing this problem is running programs in application sand-
+sandbox we previously developed based on a filtering ar-
+boxes [18, 2, 3, 31, 30, 12, 10, 15, 28], i.e. execution en-
+chitecture. Throughthiscomparisonweshowhowdelegat-
+vironments that impose application-specific restrictions on
+ingarchitecturescangreatlysimplifythetaskofsystemcall
+accesstosystemresources.
+interposition and provide greater flexibility and assurance
+Hybrid interposition architectures, so called because
+thancurrentapproaches.
+they rely on both a kernel-level enforcement mechanism
+Thenextsectionprovidesadeeperdiscussionofhybrid
+and a user-level policy engine, have been a prominent ap-
+sandboxes,delvingfurtherintothepropertiesthatmotivate
+proachtobuildingthesetools. Thesesystemsleveragethe
+our interest in these systems. Section 3 presents the sig-
+hardwarememoryprotectionthatoperatingsystemsofferto
+nificant features of this class of system and describes both
+provideahighassuranceandefficientmechanismforisolat-filtering anddelegating sandboxes, highlighting the salient enforcement mechanisms, while the remaining portion of
+featuresofeach. Insection4weprovideadetaileddescrip- thesystemresidesatuserlevel. Ahybridapproachenjoys
+tionofJ2andOstiaandexploretheirimplementations.Sec- many of the attractive properties of both kernel- and user-
+tion5evaluatesandcompareseacharchitecture’simpacton levelapproaches. Leveraginghardwarememoryprotection
+security,policyflexibility,compatibilitywithexistingsoft- provided by the OS kernel yields greater assurance, better
+ware, ease of deployment, and performance. We discuss compatibility,etc.comparedtopurelyuser-levelsolutions,
+related work in section 6 and give our conclusions in sec- while keeping most of the sandbox at user level provides
+tion7. safeextensibility,easesdevelopmentandmaintenance,etc.
+Unfortunately, current hybrid systems have a number of
+2 Motivation criticalshortcomingsthatmaketheirdesignandimplemen-
+tation complex and error prone, and limit their flexibility.
+A system call interposition-based sandbox can be con-
+We demonstrate that these shortcomings are not an essen-
+structed using a spectrum of mechanisms for isolation, in-
+tial property of hybrid sandboxes but rather an artifact of
+terposition,andpolicy.
+today’sfilteringarchitectures. Wedemonstratethatindel-
+Purely user-level sandboxes can be realized through
+egating architectures these shortcomings can be mitigated,
+software-basedisolationtechniques,suchassoftware-based
+andthedesirablepropertiesofahybridapproachenhanced.
+fault isolation (SFI) [14], program shepherding [23], soft-
+The most significant problem that filtering-based sand-
+ware dynamic translation (SDT) [32], and safe languages.
+boxesexhibitisthattheyarepronetoraceconditions[16];
+Becausethesesystemsdopolicyenforcementatuserlevel,
+thisisafundamentalpropertyoftheirarchitecture. Inthese
+excellent extensibility can be realized without any need to
+systems,permissioncheckingperformedbythesandboxis
+modify the OS kernel. However, these approaches mani-
+separatefromaccessgrantingbytheOS.Asaresult, state
+festanumberoflimitations. Safelanguages(e.g.Java)and
+(e.g. call arguments, file system metadata, etc.) used by a
+low-levelsoftware-basedtechniques(e.g.SFI)areoftenex-
+system call can be changed between the time of the check
+tremelyspecifictoaparticularAPIorABI,greatlylimiting
+bythesandboxanditsusebytheOS.Modifyingthisstate
+the range of languages and architectures they can support.
+canallowanattackertochangetheobjectthatacallrefers
+Further,thegreatercomplexityofsoftware-basedisolation
+to,leadingtoa“timeofcheck/timeofuse”(TOCTOU)race
+mechanismsprovideslessassurancethansimplerhardware-
+conditionthatattackerscanexploit[33,7].
+basedmechanisms.Finally,thesemechanismsoftenimpose
+Filteringsandboxeshaveattemptedtoalleviatetheprob-
+anon-trivialoverheadonprogramexecution.
+lem of races by pushing more sandbox functionality into
+StrictlyOS-basedmechanismsthatresideentirelyinthe
+the kernel and by not supporting particularly problematic
+kernel [24, 28, 12, 5] and rely on hardware memory pro-
+classesofprograms(e.g.multi-threadedapplications). This
+tection for isolation can also be used. OS-based isolation
+canallowfiltering-basedsystemstoalleviatesomeofthese
+is fast, offers excellent assurance, and is already provided
+races on a piecemeal basis, but this increasingly mitigates
+bystandardoperatingsystems. Further,OS-basedisolation
+thebenefitsahybridapproach. Further,asafilteringsand-
+does not depend on the internal APIs or ABIs of the soft-
+boxdesiresmorecontroloverthesemanticsofsystemcalls
+ware, and can be used in conjunction with software-based
+inordertoexpressricherpolicies(e.g.rewritingsystemcall
+techniques(e.g.safelanguages).However,placinganentire
+arguments),furthersupportmustbepushedintothekernel,
+sandboxingsysteminthekernelalsohasundesirableconse-
+again on a feature-by-feature basis. Clearly, there is some
+quences.Asandboxingsystemcanstillbeanontrivialaddi-
+fundamental conflict arising between the requirements of
+tiontothekernelandpasterrorsinsuchsystemshaveintro-
+the sandboxing system, and the functionality provided at
+ducednewsecurityvulnerabilities[34]. Thesizeandcom-
+userlevelbyafilteringapproach.
+plexity of internal interfaces in modern monolithic kernels
+A delegating sandboxing architecture resolves this con-
+andtheirrateofchangemakeitmoredifficulttogaincon-
+flictbyprovidingmorepowertotheuserlevelsandboxing
+fidenceinthecorrectnessofpurelykernel-basedsolutions.
+system. Instead of simply providing an interface to filter
+The irregular and dynamic nature of kernel internals also
+systemcalls(i.e.toallowordenycallslikeapacketfilter),
+greatly exacerbate problems of portability, auditing, and
+a delegating architecture completely virtualizes those por-
+code maintenance. Finally, user-level code offers a much
+tionsofthesystemcallinterfacethatthesandboxinterposes
+richer development environment (e.g. languages, libraries,
+on. This provides the user level sandbox complete con-
+debuggers)whichgreatlysimplifiesdevelopment[17]. All
+trol over how resources are accessed, as the sandbox actu-
+thesefactorscontributetomakingapurelykernel-levelso-
+allyperformsaccesstotheresourcesonthesandboxedpro-
+lutionundesirablefromassurance, extensibility, andmain-
+gramsbehalf. Thisapproachalleviatesthesignificantsecu-
+tenancestandpoints.
+rityproblemsoffilteringsandboxes. Forexample,because
+In a hybrid sandbox [31, 18, 2], kernel-level code pro-
+the sandboxing system has complete control over access-
+videssupportforleveragingOSisolationandprovidesbasicingresourcesitcanensurethatthistakesplaceinamanner sensitivecallsareeasytohandleastheyhavefewparame-
+thatexcludesthepossibilityofraceconditions. Section5.1 tersandaregenerallyallowedordeniedoutright,regardless
+providesacompletediscussionofhowdelegationhelpsal- oftheirarguments.
+leviateracesandfacilitatesamoreconservativeandsecure The UNIX model for providing access to the network
+design in a variety of other ways. Delegation also greatly andfilesystemislargelybasedonasimplecapabilitymodel
+enhances extensibility as it allows system calls to be ar- where obtaining a capability, called a “descriptor,” for a
+bitrarilyredefined/transformed,withouteverrequiringker- resource (e.g. file descriptor with the open call) is per-
+nelchangese.g.rewritingsystemcallargumentscouldtriv- formed via an operation separate from resource use. Thus
+iallybefacilitatedatuserlevel(forfurtherdetailsseesec- we are primarily concerned with controlling calls that ac-
+tion5.2). Finally, becauseadelegatingarchitecturemoves quire these descriptors (e.g. open, socket) or modify
+virtuallyallofitsfunctionalitytouserlevel,itrequiresonly them (e.g. bind, setsockopt). We do not interpose
+trivialkernelsupport. Forexample,ourimplementationre- on calls that simply use descriptors (e.g. read, write)
+quiredonly200linesofcode. Therequirementforminimal or copy existing descriptors (e.g. dup). This separation is
+kernelsupportenhancesthesecurity,portability,andmain- importantforachievinggoodperformance.
+tainabilitypropertiesofahybridsandbox. Theinitialprocessinasandboxisstartedwithanessen-
+tiallyemptydescriptorspace. Subsequentprocessesstarted
+3 Hybridinterpositionarchitectures inthesandboxmusteitherobtaindescriptorsforresources
+by explicitly requesting them over a checked interface or
+At a high level, hybrid interposition-based sandboxes byinheritingthemfromaparent,whoseaccesseswerealso
+have two components: the interposition architecture and checked. Thus we can explicitly control a sandboxed pro-
+the policy engine. The policy engine is responsible for cess’sdescriptorset.(Descriptorscanalsobeobtainedfrom
+interpreting a user-specified policy and deciding which re- other processes via the sendmsg and recvmsg calls.
+sourcesthesandboxedapplicationshouldbeallowedtoac- Thesecallsarealsoregulatedthroughpolicy.)
+cess. The interposition architecture is responsible for pro- Some prominent examples of other calls which are
+viding the functionality required by the policy engine to checkedinclude: callsthatmanipulatefilesystemmetadata
+make decisions (e.g. provide access to system call argu- (e.g.rename,remove),callsthatmodifysandboxedpro-
+ments)andenforcethosedecisions. Policyenginescanbe cesses’ user and group identities (e.g. setuid), and calls
+madelargelyindependentoftheinterpositionarchitecture. tosendsignals(e.g.kill).
+Policydecisionsaremadebyinterpretingthemeaningof
+asystemcall(i.e.whatresourceitwillgrantaccessto)then Execution model: The lifetime of a program in an appli-
+makingadecisionbasedonauser-specifiedsandboxpolicy. cationsandboxprogressesinsimilarsteps,regardlessofthe
+Systemcallsareregulatedbasedonthepolicymodel,which architecture. To start a program in the sandbox, the user
+specifies which calls to allow or deny, given the sandbox invokesthesandboxspecifyingtheprogramtorunandthe
+policy. Thesandboxpolicyistypicallyafileconsistingofa policytoapply. Theuser-levelportionofthesystemreads
+setofrulesspecifyingwhichresourcesanapplicationmay thepolicyandstartsachild.Thechildreleasesitsresources
+access. AppendixAdescribesthetheformatfortheserules (filedescriptors, etc.), performssomeactionto“enter”the
+(orpolicyinterface)usedbyOstia,whichisthesameasthat sandbox, then execs thesandboxed application. The par-
+usedbyJ2foreaseofcomparison. ent(calledthe“monitor”or“agent”dependingonsandbox
+More complicated examples of policy interfaces can be type) then enters an event-handling loop that receives re-
+foundinothersystems[31,2]. Wehaveintentionallykept quests to access resources in the form of system calls. It
+the policy interface of J2 and Ostia simple as we believe allowsordeniestheserequestsaccordingtodecisionsmade
+thatamorebaroquepolicyformatwouldmerelyserveasa bythepolicyengine. Thepolicyengineinturnmakesdeci-
+distractionfromourfocusonsystemarchitecture. sionsbyinterpretingtherequestsinthecontextofthecur-
+rent system state; how it obtains this state is architecture
+Policy model: Hybrid interposition-based sandboxes dependent. The sandboxed application consists of one or
+leverage the isolation provided by the OS’s process ab- more processes (called “clients”) which make requests for
+straction. All security-sensitive interactions between the resources. These may be made to a single parent which
+sandboxed application and the system outside its address multiplexesallrequestsormultipleparents. Thelifetimeof
+space are conducted via the system call interface. (Minor thesandboxendswhennoclientprocessesremain.
+exceptionssuchascoredumpsareeasilyaccountedfor.)
+WhiletheUNIXAPIisquitelarge,weonlyneedtoreg- Concurrencystrategy: Themonitor(s)inafilteringsand-
+ulatethemodestnumberofcallsthathaveanimpactoutside box or agent(s) in a delegating sandbox must be able to
+oftheprocess. Themajorityofthisattentiongoestoregu- receive and answer requests sent concurrently by multiple
+latingaccesstothenetworkandfilesystem. Theremainingprocesses, sothesandboxdevelopermustmakeadecision
+abouthowtohandlethisconcurrency. Thetwoprimaryop-
+tions are to multiplex them through a single process using
+select or a similar mechanism, or to handle them con-
+currently with multiple processes or threads. The choice
+of concurrency strategy can significantly impact complex-
+ity and scalability. We discuss this further in sections 4.2
+and5.5respectively.
+3.1 Filteringarchitectures
+Application
+process process
+Monitor
+process
+System Call Entry tracing Interface
+Kernel Proper
+open("foo")
+Allow/Deny
+User Space
+Kernel Space
+)"oof"(nepo
+open("foo")
+Deny
+result
+Allow
+open("foo")
+tluser
+tluser
+Application
+Process
+result
+emulation library agent
+request
+Process
+emulation library result agent
+request
+User Space
+Kernel Space
+restricted interface
+Figure2: Delegatingarchitecture
+(“agent”)thatperformsaccesstosensitiveresourcesonbe-
+halfofthesandboxedprocess(“client”)wherepermittedby
+thepolicyengine. Thesesystemsusuallyhaveathirdpart,
+thatwerefertoastheemulationlibrary. Theemulationli-
+brary resides in the address space of sandboxed processes.
+Itconvertsasandboxedprocess’ssensitivesystemcallsinto
+IPC requests to the agent. How exactly this is done is im-
+plementationdependent(section4.2discussestheapproach
+weuse).
+When a client makes a sensitive system call, it is redi-
+rectedtotheemulationlibrary,whichsendsarequesttoits
+agent via an IPC channel. If the request is permitted by
+policy, the agent accesses the requested resource (possibly
+Figure1: Filteringarchitecture
+executing one or more system calls) and returns the result
+(e.g. return code, descriptor) to the client. As in a filter-
+Most existing application sandboxes have a filtering ar-
+ingsandbox,callswhichdonotprovideaccesstosensitive
+chitecture, illustratedbyFigure1. Itconsistsoftwoparts:
+resources but merely use resources the client has already
+akernel-basedtracingmechanismtofilterthesystemcalls
+obtained (e.g. read, write) are executed directly by the
+ofasandboxedapplication,andauser-level“monitor”that
+client.
+tellsthetracinginterfacewhichcallstoallowordenybased
+Thefactthattheagentbothcheckspermissionsandac-
+onauser-specifiedpolicy.
+cesses the requested resource on the child’s behalf is the
+In a filtering sandbox, when a sandboxed process
+most important distinction between the agent in a delegat-
+(“client”) executes a sensitive call, the process tracing
+ing sandbox and the monitor in a filtering sandbox. The
+mechanismputsittosleepandsendsarequesttothemon-
+delegatingsandboxgetsitsnamefromthefactthattheabil-
+itor. The monitor responds to the request with “allow” or
+ity to access sensitive resources is revoked from the client
+“deny”basedonthepolicyengine’sjudgment. Thetracing
+anddelegatedtotheagent.
+mechanismthenwakesupthesandboxedprocess.Ifthecall
+isallowed,theclient’scallproceedsnormally. Ifthecallis
+denied, the call is forced to return an error code immedi-
+4 Implementations
+ately. Callswhicharenotdeemedsensitivebythemonitor
+arenevertrappedbythetracinginterface,andthusexecute
+astheywouldnormallyinanunsandboxedapplication.
+This section describes in more detail the implementa-
+tionoftherelevantpartsofOstia, ourdelegatingsandbox.
+3.2 Delegatingarchitectures
+Tomakeourcomparisonsagainstfilteringsandboxesmore
+Ournewsandbox,Ostia,hasthedelegatingarchitecture concrete,wealsobrieflydescribeJ2,ourfilteringsandbox.
+depictedinFigure2. Ithastwoprimaryparts: akernelpor- More detailed descriptions of Janus [36, 18], J2 [16, 29],
+tion that enforces a hard-coded policy preventing all calls andotherverysimilarfilteringarchitectures[2,3]areavail-
+thatprovidedirectaccesstosensitiveresources(e.g.open, ableelsewhere. Wepresentfurtherdetailsinlatersections
+socket) from being executed, and a user-level portion astheybecomerelevant.4.1 J2 multiplexingmodeltohandleconcurrency, inwhichasin-
+glemonitorprocesspollsforclientrequestswithselect
+J2(Janusversion2)isacanonicalexampleofafiltering followed by a read from the descriptor associated with
+architecture. It was developed through successive rewrit- the pending request. The decision was made to go to a
+ingsoftheoriginalJanussystemandretainsitsbasicstruc- select-based model in J2 as a result of the belief that
+ture. It differs most prominently in its use of a dedicated thiswouldsubstantiallyreduceoverheadunderload. How-
+process tracing mechanism, mod janus, specifically de- ever, aswediscussinsection5.5, thisseemstohaveactu-
+signedforsecureinterposition,insteadofrelyingonanex- ally hurt scalability because the single monitor becomes a
+istingprocesstracinginterface. performancebottleneck.
+Tracing mechanism: J2’s tracing mechanism,
+4.2 Ostia
+mod janus, was originally developed in response to
+the shortcomings of existing process tracing mechanisms Ostiaimplementsadelegatingsandboxarchitecture. As
+forsupportingsecuresystemcallinterposition[36]. described in the previous section, it is composed of three
+mod janusprovidesasimpleinterfaceforthemonitor primarycomponents.
+process. To sandbox a process the monitor attaches a de-
+scriptor to it and specifies which system calls to trap and Kernel module: A small kernel module enforces Ostia’s
+whichtoallow. Themonitorcallsselectonthedescrip- staticpolicyofdenyinganycallthatprovidesdirectaccess
+torsassociatedwithitssandboxedprocessestopollfortrap to sensitive system resources. This is done simply by pre-
+events. Trapeventsaregeneratedwhenthesandboxedpro- venting a fixed set of system calls from executing. (As a
+cess makes a “trapped” system call. When a trap event is belt-and-suspendersmeasuretoensurethataccesstothefile
+pending on a descriptor, the type of call that was trapped systemisdenied,sandboxedprocessesarechrootedtoan
+andcallargumentscanbereadfromthedescriptor. Oncea emptydirectoryifOstiaisrunasroot.)
+processhasgeneratedatrapitisputintoanuninterruptible It also provides a trampoline mechanism that redirects
+sleepstateandcanonlycontinueoncegivenan“allow”or delegatedcallsbackintotheemulationlibraryasdiscussed
+“deny”bythemonitor. Itisimpossibleforaprocesstoes- below. Finally, it implements an fexecve call because
+capethesandbox;closingadescriptorkillsitsprocess,and execvecannotbedelegatedtoanotherprocess, forobvi-
+descriptorscannotbeunbound. ousreasons.
+Mosttrappedeventsareentriesintosystemcalls. Anex-
+ceptionisfork,whoseexitistrappedtoallowthemonitor Emulation library: Ostia uses a callback mechanism in
+toattachtothenewchildprocess. Toensurethatthechild the kernel module to redirect system calls. (Ostia evolved
+cannotexecuteanycallsoutsidethesandbox,mod janus from an earlier delegating system we built that relied on
+ensuresthatthemonitorattachestoitbeforeitisallowedto shared library replacement to redirect system calls. We
+beginexecution. note this to emphasize that system call redirection—or
+Whenasystemcallistrapped,callarguments(e.g.path virtualization—canbedonemultipleways.) Whenasensi-
+namesandstruct sockaddrs)areimmediatelycopied tivesystemcallreachesthekernelentrypoint,itcallsback
+out of the process’s address space and into a per-process into the handler in a special emulation library in the pro-
+kernel buffer. When pathnames are copied into the ker- gram’saddressspace. Theemulationlibrarytransformsthe
+nel they are resolved (canonicalized) with symlinks being systemcallintoarequesttotheagent. Tospeedupsubse-
+expanded in the context of the trapped process. This en- quentsystemcallsfromthesamepointinthecode,thehan-
+suresthatcanonicalizationtakesplaceinthepropernames- dler also examines the machine instructions that made the
+pace,i.e.iftheprocessischrooted,makesareferenceto call and, if they take the expected form, patches them in-
+/proc/self,orthereissomeotherper-processvariation place to jump directly to the handler, avoiding subsequent
+inthenamespace,thiswillbetakenintoaccount. Theker- roundtripsthroughthekernel.
+nel is redirected to this internal copy of the arguments for Ostia’shandlermustbeinstalledintotheprogram’sad-
+evaluatingthecall. Copyingargumentsintothekernelpre- dress space before the program gets control. It must be
+vents arguments from being modified which could lead to availableevenbeforetheloaderfordynamiclibrariestakes
+certain types of race conditions. It does not prevent other control, sothataccesstodynamiclibrariescangothrough
+kindsofraces,aswillbediscussedinsection5.1. the agent. Ostia does this by implementing its own ELF
+binaryloaderinuserspace. Insteadofexecutingthesand-
+Concurrencystrategy: InafilteringsandboxlikeJ2,both boxed program directly, it executes the loader program,
+single-threadedselect-basedandmultithreadedarchitec- whichcontainstheemulationlibraryandastartuproutine.
+tures are feasible. The original Janus prototype used one Thestartuproutineregistersthehandler,manuallyloadsthe
+monitorprocesspersandboxedprocess.J2’smonitorusesa sandboxed program with mmap calls, and turns over con-trol. Theemulationlibraryensuresthatthishappensonev- nicationwiththeagent.
+eryexecvebyaclient.
+Calls that modify the properties of objects referred to
+Aprocess’semulationlibrarysendsrequests(similarto
+by descriptors already held by a client (e.g. ioctl,
+RPC calls) to its respective agent over a UNIX domain
+bind) are delegated by passing the object’s descrip-
+socket. UNIXdomainsocketsaremorethansimplyanin-
+tortotheagent. Theagentcanquerythedescriptorfor
+terfaceforpassingmessages. Theyalsoallowfiledescrip-
+theobject’sstate(viae.g.getpeernameorfstat),
+tors to be passed between process and agent. This feature
+andifthemodificationconformstotheagent’spolicy,
+is critical as it permits delegation of obtaining capabilities
+modifytheobjectandreturnasuccesscodetothere-
+(e.g.openfiles)totheagent,whilepermittingprocessesto
+questingprocess.
+operate on capabilities (e.g. reading and writing files) di-
+Calls that operate on a descriptor’s object, but do not
+rectly.
+change its security relevant properties (e.g. read,
+Agents: As discussed in section 3, agents are responsible write, fstat) are not delegated. Similarly, calls
+forreadingthepolicyfile,startingtheinitialsandboxedpro- that modify a process’s descriptor space but do not
+cess, making policy decisions, etc. Each sandboxed pro- grantaccesstonewresources(e.g.dup2,close)are
+cess has its own agent. The most important function that alsonotdelegated. Asdiscussedinsection3,doingso
+an agent provides to its sandboxed process (or “client”) is isunnecessaryandcouldincursignificantperformance
+handlingrequestsforcallsfromtheemulationlibrary. overhead.
+Systemcallscanbedividedintothreeclasses: callsthat execve is an odd corner case, where a call refers to
+mustbedelegated,callsthatarealwayspermitted,andcalls
+afilebynamebutcannotbedelegated. Weaddressed
+that are completely disallowed. Refer back to the policy thisbyaddinganfexecvecallviathekernelmodule.
+model given in section 3 for additional background on the
+The agent must take care to ensure that the opera-
+reasoning behind each category. Each sandboxed process
+tions it performs involving file names are not subject
+has an agent to handle its delegated calls. Delegated calls
+toraceconditions.Wediscussthisissuefurtherinsec-
+fallintoafewsubcategories:
+tion 5.1. How this is achieved is OS dependent for
+• File system and network operations: In Unix, files somecalls. Forageneraltreatmentofthisissue,refer
+andnetworksocketsareoftenused(read,written,etc.) toViega[35].
+via descriptors. Applications are always started with
+• File system state tracking: When an agent accesses
+a descriptor space containing only the standard input,
+a resource on a sandboxed process’s behalf, it must
+output, anderrordescriptors. Thisensuresthatappli-
+adopt or emulate all relevant properties of the pro-
+cationscanonlygainaccesstoresourcesexplicitlyper-
+cess. Key properties for delegating file system oper-
+mittedbythesandbox.
+ations are the current working directory, file creation
+Any operation that refers to resources by name (i.e. a
+mask (umask), and effective identity (euid, egid, and
+filebypathnameornetworkhostbyaddress)andnot
+extendedgroupmembership).Theagentmustemulate
+bydescriptormustbedelegated.
+these properties of the sandboxed process to emulate
+Callsthatrefertoresourcesbynameandgrantaccess normalfilesysteminterfacesemantics.
+todescriptors(e.g. open,socket)aredelegatedby
+Forthisreason,theagenthandleschdir,umask,and
+requesting the descriptor from the agent. For exam-
+getcwdsystemcalls,amongothers.Theseoperations
+ple, when the agent receives an open request, it first
+are delegated simply by examining and updating data
+checks policy. If the open is permitted, the agent
+structures within the agent that track the sandboxed
+opens the file and passes the descriptor to the sand-
+process’sstate.
+boxedprocess.
+Toensurethatfilesystemrequestsareinterpretedcor-
+Calls that refer to resources by name but do not
+rectly,theagentassumestherelevantfilesystemstate
+grant access to descriptors include rename, chmod,
+ofitsclientbeforeinterpretingorfulfillingarequest.
+mkdirandsendto. Thesearedelegatedbyexecut-
+ingtheoperationintheagent. Inthiscasenodescrip- • Idmanagement:Tocorrectlyperformaccessesonthe
+torisreturned. However,aswithalldelegatedcalls,a process’s behalf, we need to know its user and group
+return value is passed back to the client reflecting the identities. There is no reason to let a process manip-
+result returned by the system call, e.g. an error such ulate this state in the kernel, as it is no longer able to
+asEPERM.Asanexception,sendmsgandrecvmsg accesssensitiveresourcesdirectly. Thus,wepreferto
+onaUnixdomainsocketbetweenaclientanditsagent run it completely without privilege and instead man-
+are allowed via direct system calls to permit commu- age this state in the agent. To fool the process intobelievingitisstillrunningunderthenormalOSpriv- singlecurrentworkingdirectory. Useofchdirisan
+ilegemodelwedelegatethisinterface,whichincludes essentialpartofcheckingfilesystempolicy,andserial-
+setuid, setgid, andgetuid, totheagentwhich izingthoseusesacrosstheagentswouldinduceaper-
+emulates the OS model for modifying these permis- formancehit. Instead,eachagentchecksbetweenpro-
+sions. Aswithfilesystemstatetracking, theseopera- cessing requests whether another agent has changed
+tionsaredelegatedsimplybyexaminingandupdating thecurrentworkingdirectoryandifsoupdatesitsown.
+agentdatastructures.
+The emulation library also needs support for threads.
+Whentheagentperformsacallonthesandboxedpro- Threads can share a file descriptor table, so a differ-
+cess’s behalf, it simply assumes the appropriate iden- entfiledescriptormustbeusedtoconnecteachthread
+titybasedontheemulatedpermissions. Thus,normal in a process to its agent. Each thread needs a piece
+OSaccesscontrolsareenforcedbythekernel. Inspite ofthread-specificdatathatdesignatesthefiledescrip-
+ofconcernsinstilledbyotherwork[9]thatthismight tor for its agent. We support this type of thread-local
+beparticularlyerrorprone,wedidnotfindimplement- storagethroughmod ostia.
+ing this to be difficult or intricate. The code is rela-
+tivelycleanandsimple,andlargelytakendirectlyfrom
+Concurrency strategy: Whereas a filtering sandbox can
+theLinuxkernel.
+easily be implemented using a multiplexing or multi-
+• Signals: The sandboxed process cannot be permitted threaded concurrency model, Ostia exhibits a multithread-
+ing model, i.e. one agent process per sandboxed process,
+to send signals directly. Instead signals are sent by
+delegating the responsibility for the kill call to the from necessity. In a delegating sandbox the agent both
+checkspolicyandexecutesapprovedoperations. Underthe
+agent, which only permits signals to be sent to other
+multiplexingmodelitwouldserializebothpolicychecking
+processesinthesandboxandotherwisemaintainsnor-
+andoperationexecution,whichcancausecorrectprograms
+malsignalsemantics.
+to fail. Consider a pair of producer-consumer client pro-
+A client process can make system calls that do
+cesses that communicate over sockets with sendmsg and
+not access sensitive system resources in the normal
+recvmsg,operationsthatmustbecheckedforpolicyand
+fashion, e.g. queries for information not typically
+can block in the server. If the consumer process runs and
+considered security sensitive, such as getpid and
+blockswaitingforinputfromtheproducer,itwillwaitfor-
+gettimeofday. Operations that modify process
+everbecausetheproducerwillnevergetachancetorun.
+state in safe ways of no interest for delegation pur-
+This limitation does not appear to be a liability. In our
+poses,suchassignalandulimit,arealsopermit-
+experience,amultithreadingsandboxissimplerandcleaner
+tedtoexecutenormally.
+than the multiplexing equivalent, because each agent or
+• forkhandlingandthreadsupport: Theforksys- monitor only manages state for a single process. Others
+temcallrequiresspecialhandling. Whentheclientin- havereportedthesameobservation[36]. Also,amultiplex-
+vokes fork, the emulation library takes control and ingsandboxcanimposesignificantperformancerestrictions
+notifies the agent. The agent forks a second agent under high load due to serializing all requests on a single
+process and replies to the client with a UNIX do- thread. Thisisexaminedfurtherinsection5.5.
+main socket descriptor for communicating with the
+5 Evaluation
+new agent. Then the client calls into the kernel to
+perform the real client fork. Afterward, each client
+In this section we evaluate and compare Ostia and J2,
+closesoneofthedescriptors.
+consideringtheimplicationsoftheseresultsforfilteringand
+As for thread support, with a filtering architecture, delegatingarchitecturesingeneral.
+sandboxes must provide extra code to prevent shared
+statefromleadingtoracesasdiscussedinsection5.1. 5.1 Security
+In contrast, delegating sandboxes must provide extra
+code to share state between agents where necessary.
+Race conditions: Time-of-check/time-of-use (“TOC-
+Ostianeedssuchextracodeonlyforthreadsupport.
+TOU”) races [7] are a significant potential problem for
+Inparticular,thecurrentworkingdirectoryandfilecre- sandboxing systems. These races occur when a policy
+ationmaskcanbesharedbetweenmultiplethreadsin engine performs a check to authorize a system call that
+a single program. When one of these threads sends relies on an object that a name (e.g. a file system path)
+a chdir request to its agent, the change in current references, but the name changes to refer to a different
+workingdirectorymustbereflectedinalloftheagents. object before the operating system executes the call. This
+The agents cannot themselves be threads that share a can occur when the nameis stored as some type of sharedstate, e.g. when the policy engine checks that a given file check and time of use. Currently we are not aware of any
+name refers to an allowed file, but the file name changes implementedsolutiontothisprobleminafilteringsandbox.
+to refer to a symbolic link before the operating system Allpublishedproposedsolutionsrelyoncanonicalizingthe
+executesit. Racesarisefromthreekindsofstate: pathnamebeforeitischecked,eitherinuserspaceorinthe
+kernel. Thisdoesnotsolvetheproblem;anycomponentof
+1. Inter-threadsharedstate:Statesharedbetweenmul-
+thepathcanstillchangetoasymboliclink,nomatterhow
+tiplethreadswithinaprocess,e.g.entireprocessmem-
+manytimescanonicalizationisdone.
+oryspace,userandgroupidentity,currentworkingdi-
+Relativepathraces, thesecondtypeoffilesystemrace,
+rectory,andfiledescriptorspace.
+can occur when the parent directory of a process’s current
+2. Inter-process shared state: State shared between working directory changes and a relative path is in use.
+multiplethreadsorprocesses,e.g.memorysharedwith Canonicalizing file names before use does solve this kind
+SystemVsharedmemoryandmmapmechanisms. of race, as this forces the use of an absolute path. J2 per-
+formsthisactionandisthusimmunetorelativepathraces.
+3. Globally shared state: State shared by all processes
+Clearly, solving some types of race conditions, possi-
+onthesystem,e.g.thefilesystem.
+blyallonapiecemealbasis,ispossibleinafilteringsand-
+The key property of all of these forms of shared state box. However, it comes at a great cost to implementation
+is that any of them can change asynchronously from the complexity, primarily in the kernel where it is least desir-
+perspective of a given thread. Put another way, regardless able. The complexity of these races and their solutions
+ofwhetheragiventhreadisscheduled,theseaspectsofits casts significant doubt on the security of these systems. It
+statecanchange. wasmanyyearsafterthefirstfiltering-basedsandboxingpa-
+per [18] that all of the aforementioned races were brought
+Race conditions in filtering sandboxes: Race conditions
+tolight[16]. Wemaystillbeoverlookingothers.
+are a significant problem in sandboxes based on a filter-
+ingarchitecture,andnosystem,includingJ2,hasfullyad- Ameliorating races with delegation: Delegation alone
+dressedthisproblem.Anin-depthstudyofthisproblemhas doesnotpreventallraces. However, itdoespreventsome,
+beenpresentedelsewhere[16]. Wewillreviewthemainis- by placing inter-process/inter-thread state under control of
+sues here to provide adequate context and appreciate the theagentbydefault. Italsoeasilyfacilitatestheprevention
+importanceofthisprobleminfilteringsandboxes. ofremainingracesbygivingtheagentcontroloverhowre-
+When threads in a process share a single file descriptor sourcesareaccessed.Letusconsiderhowdelegationallows
+table,theobjectadescriptornumberreferencescanchange eachclassofracetobeeasilyaddressedinOstia:
+between check and use. Similarly, if two threads share a
+current working directory, then a thread’s current working • Inter-thread and inter-process shared state races:
+directorycanbechangedbyasecondthreadbetweencheck Inadelegatingsandbox,sensitivesystemcallsareper-
+and use. There does not appear to be any simple way to formedbytheagent, sothefiledescriptorspace, cur-
+fix these races in filtering sandboxes. J2 simply disallows rent working directory, etc., used by sensitive system
+executionofmultithreadedprograms. calls are held exclusively by the agent. Most races,
+Shared memory (inter-thread and inter-process) results such as argument races, are no longer a concern be-
+in argument races, i.e. races where an argument could cause an external process cannot modify this state.
+changeafteritischeckedbythepolicyengine,butbeforeit Oneconcerniswhetheranagentcouldbetrickedinto
+isusedbythesystemcall. Thisisaproblemfornon-scalar inducing a race because of state shared between mul-
+system call arguments such as struct sockaddrs and tipleagentprocesses. Aswenotedinsection4.2,this
+pathnames,thattypicallyresideinthesandboxedprocess’s isnotasignificantissuebecauseagentsonlysharethe
+memoryuntiltheyareusedbythesystemcall.Asdescribed current working directory and file creation mask be-
+insection3,J2’ssolution,thesameasthatadoptedbymany tween multiple threads, explicitly and in a race-free
+other filtering sandboxes, is to marshal non-scalar argu- fashion.
+mentsintoprotectedkernelmemory. Thisprovidesanade-
+• Globally shared state: In some sense the primary
+quatesolutiontotheargumentraceproblem,butitcomesat
+problem that filtering sandboxes face is that they are
+athecostofsimplicity. Thecodetoperformthisfunction-
+not in control of how programs gain access to re-
+alityaccountsforabout25%ofmod janus’scode.
+sources. Programsshouldbeabletoaccessresources
+Globallysharedstateinthefilesystemisalsoatrouble-
+inarace-freefashion,buttheresponsibilityforensur-
+some source of races. These race conditions come in two
+ing race-free accesses falls upon the application pro-
+types: symboliclinkracesandrelativepathraces.
+grammer.
+Symbolic link races occur because any component in a
+path may be replaced by a symbolic link between time of Ifallprogramscarefullyavoidedfileraces, thenafil-tering sandbox would not need to worry about race generallyonlyrenderthesandboxineffective.
+conditions. For example, if all open calls in Linux Whileadifferenceof1,200LOCmaynotseemsignifi-
+were done with the “no follow” flag (which prevents cant,wefoundthecomplexitydifferencebetweenthesetwo
+symlink expansion in the last component of a path) modulestobeconsiderable. Thedifferenceindevelopment
+thenafilteringsandboxwouldnothavetoworryabout timeforthesetwomoduleswasafewdaysformod ostia,
+thelastcomponentofapathbeingasymlink,onepre- versusmanyweeksformod janus. Toputthecomplex-
+conditionforaracefreeopen. Ofcourse,notallpro- ityofthiscodeintoperspective,ptrace[27],thestandard
+gramsmaketheircallsfollowingthisconvention. Linux process tracing interface, consists of less than 300
+LOC,offerslessfunctionalitythanmod janus,andispart
+In a delegating sandbox we can address this problem
+ofthecorekernelwhichismaintainedbyexperiencedker-
+because the sandbox makes all accesses to resources
+neldevelopers. AlthoughptracehasbeeninLinuxsince
+itself. Thus accesses can be performed in a manner
+version1.0orearlier,significantvulnerabilitieswerefound
+respectingOSconventionsforprovidingrace-freeop-
+initsimplementationduringbothLinux2.2.x[8]andLinux
+erationsonthefilesystem.Anotherwaytoviewthisis
+2.4.x[11]kerneldevelopment.
+thattheagentisanactiveproxywhichnormalizescalls
+The size of the kernel portions of these systems is still
+totheOStoputthemintoaformwhichwillprovidea
+dwarfed by completely in-kernel systems. For example,
+predictableresult.
+Subdomain[10]isarelativelysmallin-kernelsolutionthat
+Ifthedelegatingsandboxnaivelyopenedfilesitwould restrictsaccesstothefilesysteminafashionsimilartothat
+be prone to race conditions, just like poorly writ- of our tools. It offers a very simple policy interface, but
+ten programs in today’s systems that suffer from the adds4,500linesofcodeinakernelmoduleandapatch.
+normal user-level file system races such as /tmp
+races [7]. By respecting OS conventions for safe file Other security factors: Metrics like lines of code do not
+access,Ostiaisabletoobtainthedescriptortoaknown tellthewholestoryonsecurity. Simplecodeandaconser-
+file,inparticularonepermittedbypolicy,whilebeing vative design are often far more telling. This is well illus-
+safefromraceconditions. trated by the original Janus system, which although under
+3,000 LOC was fraught with security problems, many of
+whichresultedfromarchitecturalfeaturesthatmadeitpar-
+Code complexity: There is no simple way to summarize ticularlypronetoraceconditions,inconsistentviewsofsys-
+thesecurityofasystem. Apopularstartingpointforcom- temstate,andmore[16]. Conversely,delegatingsandboxes
+parison is lines of code. The counts given below are total provideanexcellentillustrationofhowsystemarchitecture
+lines of code (LOC) as determined by Brian Marick’s lc canbenefitsecurity.
+program [26], rounded to the nearest 100. Code is written Delegatingsandboxespermitamoreconservativedesign
+inCexceptwhereotherwisespecified. inseveralways.
+First,consideruser-levelcode. TheOstiaagentconsists As we noted in section 5.1, delegating sandboxes are
+of 3,200 lines total. Of this, 700 comprise the policy en- relatively easy to render free of race conditions, as most
+gine, and the remaining 2,500 lines are the system core. classesofraceconditions(inter-process/inter-threadshared
+TheJ2monitoriseffectively3,000LOC(1,400LOCinthe state)areeliminatedbydesignduetothefactthattheagent
+policyengineand1,600LOCinthecore, excluding1,000 performsallsensitivesystemcalls, andinter-process/inter-
+additional lines to pretty-print system calls for policy de- thread state used by the calls is local to the agent. The
+bugging). Thus, there is little difference in size between remaining potential races are reduced to the much-studied
+the user-level portions of these two systems, or between problem of race-free file access by a normal application
+them and the original Janus prototype, which was just un- (i.e.theagent).
+der3,000linesofcode[36]. TheOstiaemulationlibraryis Running applications with privilege increases the risk
+1,000linesofadditionalcode,butthisisnotpartoftheTCB that an application that bypasses the sandbox will be able
+(trusted computing base) as it runs in the address space of to inflict damage on the system. Several approaches have
+theuntrustedapplication. been taken that try to mitigate this risk in filtering sand-
+The J2 kernel module mod janus consists of 1,400 boxes [31]. A delegating sandbox entirely mitigates this
+LOC in C and 11 LOC in x86 assembly. The Ostia ker- risk,becausesandboxedprocessesneverrunwithanypriv-
+nelmodulemod ostiaisonly200LOCinCand5LOC ilege. All privilege resides in the agents, as they will be
+in x86 assembly. The difference in complexity in the ker- makingthesystemcallsrequiringprivilegeontheprocess’s
+nel portion of J2 and Ostia point to significant differences behalf.
+intheimpactofeachtoolonasystem’ssecurity. Akernel If the policy engine contains a bug, it could potentially
+bug would potentially render the entire system vulnerable, allowthesandboxtobebypassed,thusitiscriticalthatthis
+as opposed to a bug in a user-space portion which wouldportionofthesystembeassimpleaspossible.Adelegating 5.3 Compatibility
+sandbox like Ostia can simplify its policy engine greatly,
+Forgreatestutility,anapplicationsandboxmustbecom-
+as well as other portions of its implementation, by push-
+patible with a wide range of software. As a first step, it
+ingsomeofthecomplexityofitsTCBintountrustedcode,
+mustnotrequireapplicationstoberecompiledorotherwise
+i.e.intotheaddressspaceofthesandboxedprocessviathe
+modifiedtoruntheminthesandbox.Ostia,aswellasmany
+emulation library. For example, the emulation library can
+filteringsandboxes,meetsthiscriterion.
+reduce the policy engine’s complexity by translating oper-
+Ostiaalsosupportsmultithreadedapplications. Nocur-
+ations in the sandboxed process into equivalent sequences
+rentfilteringsandboxingsystemsupportsmultithreadedap-
+for the agent, e.g. if a stub translates truncate into the
+plications due to the problem of race conditions. While it
+equivalentsequenceopen,ftruncate,close,thenthe
+is certainly possible to add this functionality to a filtering
+agentdoesnotneedtoimplementtruncateatall. Tech-
+sandbox, the significant additional effort and questions of
+niqueslikethisaccountforthe50%smallersizeofOstia’s
+assuranceraisedhavepreventedusandothersfrominclud-
+policyengine.Thecomplexityofmarshalingthearguments
+ingthisfunctionality.
+of system calls made by a sandboxed process can also be
+Currentlyoursystemhasbeensuccessfullyusedtosand-
+pushed into the emulation library. This is another exam-
+boxawidevarietyofrealworldapplications,includingthe
+ple of offloading complexity into the emulation library. In
+following:
+thiscase,theagentonlyhastocheckthatarguments,once
+received,arecorrectlyformatted.
+Networkservers: Apache,BIND,CUPS.
+Networkclients: konqueror,lynx,links,ssh,wget.
+5.2 Flexibility
+Xapplications: gimp,gphoto,konsole.
+Viewers: gs,gv,xpdf,xli.
+Asandboxingarchitectureshouldbeflexibleandexten-
+Editors: Emacs,nvi,vim.
+sible enough to implement a wide range of security poli-
+Shells: bash,tcsh.
+ciesandhelpfulfeatures. Delegatingarchitecturesofferex-
+pandedpotentialforeasilysupportingnovelpolicies. More
+The broad applicabilityof interposition-basedsandbox-
+specifically, because Ostia handles granting access to re-
+ing in a practical setting has also been demonstrated by
+sources at user level, it is inherently easier to alter the im-
+othersystems[31,2].
+plementationofsystemcalls. Thisaddedflexibilitycanbe
+abooninavarietyofscenarios.
+5.4 Deployability
+For example, applications can be given their own per-
+sonalizedviewofthefilesystemnamespace,e.g.mapping Thefewerprerequisitesanddependenciesaprogramhas,
+/etc/shadowtoanapplication-specificcopyofthepass- the more easily that program can be deployed in real sys-
+wordfile,atthesametimepreservingcompatibilityandnot tems.
+exposing sensitive state [2]. It can also be useful for miti- Ostiareliesonakernelmodule,whichcausessomede-
+gatingsideeffectscausedbydenyingsystemcalls[31,16]. ployment difficulty in itself, since it requires that any ma-
+The capability to selectively modify some calls makes it chinewhereitisinstalledhasaCcompilerandappropriate
+easier to apply other security mechanisms. For example, headers, or a suitable precompiled module. Ostia’s mod-
+thesandboxmightrespondtoarequestforasocketwitha ule is extremely simple, with few dependencies on kernel
+socket running over a SOCKS connection to a firewall, or internals, which makes porting and maintenance easy. On
+with a socket that has had a socket filter applied to it. (A the other hand, kernel modules required by many filtering
+socketfilterisaLinuxprimitiveforapplyingfinegrainre- sandboxes,includingJ2,arelargerandmorecomplex,with
+strictionsonwhatcanpassoverasocket.) important dependencies on kernel internals that may need
+Filtering sandboxes have provided some support for carefulchangesasthekernelevolves,whichmakesporting
+changingcallimplementation. Forexample, somesupport andmaintenancesignificantlymoredifficult.
+the ability to rewrite arguments, to change a call’s return Ostiadoesnotrequireakernelpatch,greatlyeasingthe
+value,ortochangetheprivilegelevelofaprocesswhileit burdenontheinstaller. Applyingakernelpatchrequiresa
+executesasystemcall[2,31]. Unfortunately,foreachnew newsystemkerneltobecompiledandinstalledfollowedby
+changetohowacallisexecuted,newsupportmustbeadded asystemreboot. Thisadditionalhumanoverheadaswellas
+piecemeal to the kernel. Delegating sandboxes are easily system downtime makes this approach a real impediment
+able to accommodate all of these features entirely at user to practical adoption. Some systems are loath to be taken
+levelbecausetheagentcontrolstheexecutionenvironment downforakernelpatch,normalusersoftendonothavethe
+of the call (e.g. call arguments, privilege level, descriptor maturitytocomfortablypatchandrecompiletheirownker-
+space)andthechoiceofcallsexecutedforagivenrequest. nel,andoftenevenexperienceduserssimplydonotwanttoexpend this effort to try a new tool. (Some filtering sand- sandbox
+boxes,includingJ2,alsodonotrequireakernelpatch.) call none J2 Ostia
+Ostia’s loader program must intimately understand the geteuid 1.00µs 9.70µs9.7× 12.42µs12.4×
+systemexecutableformat. Achangeintheexecutablefor- open 3.92µs 20.42µs5.2× 31.16µs 7.9×
+matwouldrequiremodificationstotheloaderprogram.Ex-
+Table 1: Microbenchmark results. Entries for J2
+ecutable formats rarely change, so this is unlikely to be a
+and Ostia show absolute times and number of
+realbarriertodeployment.
+times slower than unsandboxed times. Times
+Inconclusion,webelievethatadelegatingsandboxsuch
+are “wall clock” times averaged over 10 sets of
+asOstiacanbemoreeasilyportedanddeployedonawide
+100,000iterations. Overthe10sets,σ2 < .15µs.
+rangeofplatformsduetoitsminimalrequirementsforker-
+nelsupportandeaseofinstallation.
+cause J2 Ostia
+5.5 Performance open 3.92µs 3.92µs
+basicinterposition 8.70µs 11.42µs
+Architectural features impact performance in important policydecision 3.27µs 9.26µs
+ways. This section undertakes a quantitative comparison extrakerneloverhead 4.53µs 6.56µs
+of these features, examining the performance impacts of total 20.42µs 31.16µs
+differentinterpositionmechanisms,concurrencystrategies,
+andtheoverheadofsandboxingondifferentworkloads.We Table 2: Time to execute open under J2 and Os-
+primarilycompareOstiaagainstJ2,althoughotherapplica- tia, broken down into individual components: the
+tionsandboxesarebrieflyconsidered. open itself, basic system call interposition over-
+head, time to make a policy decision, and addi-
+Test platform: All of our performance testing was con- tionaloverheadinthekernel.
+ducted on an IBM T30 laptop with a 1.8 GHz Pentium 4
+processorand1GBofRAM,runningDebianGNU/Linux
+“sid” “unstable” with a Linux 2.4.20 kernel. Testing was upfront overhead is quickly amortized away over the life-
+performed in single-user mode with all system services time of the program. Other overheads, such as the cost of
+turnedoffandthenetworkinterfacedisabled. Networkser- copying arguments, can be kept to a minimum in a care-
+vice tests were conducted locally over the loopback inter- ful implementation. This said, we believe that significant
+face. further speedups are achievable over our current naive im-
+plementation. However,aswewillseelater,Amdahl’slaw
+Interposition overhead: Table 1 shows per-call interpo- will likely make further optimizations irrelevant for most
+sition cost, the primary overhead imposed by sandboxing. workloads.
+Thetable’sfirstrowshowsthebasicspeedofinterposition
+in each system, using geteuid, a trivial system call. On Wherethetimegoes: Table2breaksdownthecostsofre-
+ourtestsystem,theminimumpenaltyofinterpositionfora strictingasingleopencall.Weattributethesamecosttothe
+systemcallisthereforeabout11.4µsunderOstia. Thesec- actualfileopen,3.92µs,asintheunsandboxedtimingsfor
+ondrowshowsthespeedofinterpositionforopen,amore open. Wealsoassumethatthebasiccostofinterposingon
+substantialsystemcall. NeitherJ2norOstiahasbeenheav- a call is unchanged from that for geteuid. We calculate
+ilyoptimized. Inspiteofthis,itsperformanceforopenis thecostofmakingapolicydecisionbyrepeatingthemea-
+substantially better than previous published results, which surementswiththepolicyengineturnedoffandcomputing
+putitsslowdownat25×(25timesslower)[31],compared thedifference. Finally,weassumethattheremainderofthe
+withournumberswhichonlyreflect5×to8×slowdown. time is taken up in additional kernel overhead for check-
+In principle, there are some basic limits on how much ingbuffersforfilenames,copyingdata,transferringfilede-
+thisoverheadcanbereduced.OstiaandJ2bothrequirecon- scriptors between processes, etc., all costs necessitated by
+text switches to and from the policy-checking process for openbutnotbygeteuid.
+everycalltheycheck. Thisimposesabasicpenaltyoftwo ThetableshowsthatOstia’spolicyengineisslowerthan
+additionalcontextswitches(essentiallyonesystemcall)for J2’s. This is understandable because the policy engine in
+eachcheckedcallinadditiontotheoverheadformakinga Ostiaoftenmakesseveralsystemcalls,whereastheJ2pol-
+policydecision. icy engine for file system operations is largely a string-
+In a delegating sandbox, some additional calls may be matching operation. The table also shows that Ostia has
+required to obtain a requested resource. Ostia’s callback higher“extra”kerneloverhead,whichmaybeduetointer-
+mechanism also requires two additional context switches processfiledescriptorpassing.
+forthefirstinstanceofeachtypeofcallitintercepts. Thissandbox the added complexity of such an approach seems unwar-
+benchmark none J2 Ostia rantedgiventhesuccessofanaiveagent-per-processstrat-
+webserving 10.85s 10.88s .2% 10.90s .5% egy. Previous work has overlooked the benefits of paral-
+decompress 3.13s 3.13s .0% 3.13s .0% lelism, merely citing the overhead of additional processes
+encode 14.91s 14.94s .2% 14.92s .0%
+asthereasonformultiplexing[36,30]. Empirically,multi-
+build 8.12s 8.78s8.1% 10.11s24.5%
+plexingdoesnotseemtoofferanyperformancebenefit;on
+thecontraryitsignificantlylimitsscalability.
+Table 3: Macrobenchmark results. Entries for J2
+andOstiashowabsolutetimesandpercentslower
+Typical application overhead: The primary use of sand-
+than unsandboxed times. Times are averaged
+boxingsystemsistoprotectapplicationsthatareroutinely
+“wallclock”times. Mostentriesareaveragedover
+exposed to hostile inputs, such as helper applications and
+10runswithσ2 < .1s;webserviceentriesaver-
+networkservices. Webenchmarkedthreesuchprograms:
+agedover100runswithσ2 < .5s.
+Webserving uses Apache to serve 5,000 static pages, to-
+No.Procs. none J2 Ostia
+taling6.4MB,toaclientrunningoutsidethesandbox.
+1 3.90s 20.89s 31.07s Pagesarerequestedandservicedseriallyforthistest,
+10 3.94s 22.79s 31.62s soJ2’spolicyengineserializationdoesnotpenalizeit.
+25 3.92s 29.12s 32.71s
+50 3.91s 55.48s 32.77s
+Decompress uses GNU gzip to decompress a 31 MB file,
+100 3.91s 375.96s 31.87s
+discardingtheoutput.
+Table 4: Scaling results. Times are “wall clock”
+time, in seconds, required to open and close
+Encode convertsa48MBWAVfiletoOggVorbisformat.
+1,000,000 files. “No. Procs” is the number of
+processes that the file operations were divided
+ThefirstthreerowsofTable3showtheresults. Ineach
+among on each row. Entries are the average of
+case, the penalty for sandboxing is less than 1%, because
+3 runs after an initial, discarded run. σ2 < .1 s
+noneoftheseapplicationsusesagreatnumberofsandboxed
+exceptforJ2column.
+systemcalls.
+Worst-caseapplicationoverhead: Wealsobenchmarked
+Concurrency scaling: Concurrency strategy can signifi- a program build. This is an activity not often of interest
+cantly impact scalability, as a lack of parallelism in the in sandboxing scenarios. For us, it provides an interesting
+monitororagentcancauseabacklogofcallswaitingtobe worst-casebenchmarkgiventhelargenumberofrestricted
+checked. Oursandboxesareatoppositeendsoftheconcur- systemcallsperformed. Itisnotentirelycontrived, asone
+rencyspectrum: Ostiausesapurelymultithreadingmodel, mightwishtosandboxabuildofsoftwaredownloadedfrom
+withoneagentprocesspersandboxedprocess, whereasJ2 untrusted locations on the Internet (e.g. to protect against
+multiplexesrequeststhroughasinglemonitorprocess. malicious build scripts). Fortunately, building untrusted
+To clearly show how a single process can act as a bot- software is not an activity that takes place frequently, nor
+tleneck, we ran a simple microbenchmark that repeatedly does it have real-time requirements as helper applications
+opened and closed files, dividing this work evenly among often do. Thus even the relatively high 25% overhead for
+avariablenumberofprocesses. Table4showstheresults. thispathologicalexampleseemsquitetolerableinpractice.
+With no sandbox, running time varied only 1% between 1 Our example build decompresses, unpacks, configures,
+and100processes;withOstia,ourmultithreadingsandbox, andcompilesthesourcetreeforGNUgzip1.3.5. Thisisa
+only5%.UnderJ2,ourmultiplexingsandbox,runningtime systemcallintensiveapplication,withlittleCPUneededto
+for100processeswasabout18×thatforasingleprocess, compileunder10,000linesofC,sothecostofsandboxing
+andevenat10processesa10%increasewasobserved. issignificantinthebottomline.
+Wedrawtwoconclusions. First, thelackofparallelism
+in a multiplexing sandbox can create a significant perfor- Competingsandboxperformance: Table5comparesJ2’s
+mancebottleneck. Evenunderrelativelymodestloadsthis and Ostia’s performance against published benchmarks of
+greatly impacts performance. Second, the overhead of othersandboxingtools. ThefiguressuggestthatOstiaper-
+naively scaling the number of sandbox processes with the forms competitively. The numbers in the table, other than
+number of application processes is nominal. A third op- those for J2 and Ostia, are taken from various published
+tionthatwedidnotexploreisathreadpoolapproachwhere sources using different applications and test platforms, so
+parallelism could gradually scale with demand. However usecautionindrawinganymoreambitiousconclusions.Jain& byplacingcodeinthesehandlers.
+Class J2Ostia SekarSystraceMAPbox Usingthismechanismtoconvertnativesystemcallsinto
+network <1%<1% <5% 5% 17% IPC messages to user-level processes via an emulation li-
+compute <1%<1% <2% 0% 1% brary, as done in Ostia, is reminiscent of traditional tech-
+systemcall 8% 25% — 31% 41% niquesforbuildingUnixemulationlayersontopofmicro-
+kernels. For example, an implementation of 4.3 BSD on
+Table 5: Approximate overhead of sandboxing top of Mach based on this technique is given by Golub et
+tools on network-intensive (e.g. web serving), al.[19]. Incontrasttothesetechniqueswhichvirtualizethe
+compute-intensive (e.g. encoding), and system entireOSinterface,Ostiaonlyvirtualizestheaccesscontrol
+call intensive (e.g. program build) applications. relevantportionsofOSAPI.
+Numbers for Jain & Sekar obtained from [21], Specialized kernel support for interposing on OS inter-
+Fig. 6; for Systrace, [31], Fig. 9; and for MAPbox, faces for extensibility purposes has been explored in other
+[2],Table2. work, such as pseudo-devices and pseudo-file systems in
+Sprite[38]andworkbyBershadetal.withWatchdogs[6].
+A variety of purely kernel-level [12, 15, 10, 5, 13, 4]
+6 Relatedwork
+andpurelyuser-level[14,23,32]sandboxingsystemshave
+beenpresentedintheliterature. Agoodcomparativesurvey
+Thefirsthybridsystemcallinterposition-basedapplica-
+ofsandboxingmechanismsandalternatives,suchaswhole-
+tionsandboxwasJanus,developedbyGoldberg[18]etal.
+systemaccesscontrols(e.g.DTE[37]),isgivenbyPeterson
+Janussetforththebasicarchitectureforfilteringsandboxes.
+etal.[30].
+JanusisverysimilartoJ2, asJ2evolvedfromtheoriginal
+Janus system. Janus initially relied on the Solaris /proc
+7 Conclusion
+interfaceforinterposition. Thiswasnoteworthybecauseit
+did not require any kernel modifications. An extended de- Wehaveexploredtheimportanceofsystemarchitecture
+scription of Janus’s architecture is given in Wagner’s the- insecureinterpositionsystems. Wepresentedtwosystems
+sis[36]. thatimplementdifferenthybridarchitectures: J2,basedon
+ThebasicJanusarchitecturewassubsequentlyreplicated a “filtering” architecture representative of many of today’s
+in MapBox [2], which focused on the problem of policy sandboxing systems, and Ostia, based on a novel “dele-
+specification. It was also replicated in consh [3], which gating” architecture. We have observed that many of the
+leveraged system call interposition to transparently extend problems in today’s filtering architectures can be amelio-
+the file system and other system interfaces, and to restrict ratedbyadelegation-basedapproach. Further,adelegating
+execution. TheSystrace[31]systemexhibitsafilteringar- approach can enhance the beneficial properties of existing
+chitecture very similar to J2. It provides a rich set of fea- hybridapproaches.
+turesforspecifyingandgeneratingpolicy. Systracestands
+outasbeingthemostmatureandsignificantlydeployedsys- 8 Acknowledgments
+temofthistype.
+J2 was developed in collaboration with David Wagner,
+Systemcallinterpositionhasalsobeenapopularmecha-
+whoprovidedinvaluablefeedbackandencouragementdur-
+nismforimplementingintrusiondetectionsystems. Several
+ingtheearlystagesofthiswork. SteveGribble, CostaSa-
+notableexamplesofthisincludeworkbyWespietal.[39]
+punzakis, and Ulfar Erlingson also provided helpful feed-
+andHofmeyeretal.[20].
+backatvariousstagesofthiswork. CristenTorreyprovided
+Jain et al. [21] presented a generalized framework for
+valuable editorial assistance. Finally, we are very grate-
+building secure interposition systems on top of standard
+fulforthegenerousfeedbackandcommentsofouranony-
+process tracing mechanisms. As with all the aforemen-
+mous reviewers. This work was supported in part by the
+tioned systems, this toolkit had a variety of security prob-
+National Science Foundation under Grant No. 0121481, a
+lems. Garfinkel[16]presentedafullstudyofpotentialse-
+StanfordGraduateFellowship,andbyNSFCAREERCCR-
+curity problems in these tools, including race conditions,
+0093337.
+indirectpathstoresources,andsideeffectsofdenyingsys-
+temcalls.
+References
+The callback support added to the Linux kernel to sup-
+portOstiaisreminiscentofasimilarfeatureprovidedbythe [1] Subterfugue: strace meets expect. http:
+Machsystemcallinterceptionmechanism[25],whichredi- //subterfugue.org/.
+rectssystemcallstohandlersinthesameaddressspaceas [2] A. Acharya and M. Raje. MAPbox: Using parameterized
+thecallingprocess.Jones’workoninterpositionagents[22] behaviorclassestoconfineuntrustedapplications. InProc.
+presentsageneralframeworkthatprovidesOSextensibility 9thUSENIXSecuritySymposium,Aug.2000.[3] A. Alexandrov, P. Kmiec, and K. Schauser. Consh: [20] S.A.Hofmeyr,S.Forrest,andA.Somayaji.Intrusiondetec-
+A confined execution environment for internet computa- tionusingsequencesofsystemcalls. JournalofComputer
+tions.http://www.cs.ucsb.edu/berto/papers/ Security,6(3):151–180,1998.
+99-usenix-consh.ps,1998.
+[21] K.JainandR.Sekar.User-levelinfrastructureforsystemcall
+[4] A. Berman, V. Bourassa, and E. Selberg. TRON: Process- interposition:Aplatformforintrusiondetectionandconfine-
+specific file protection for the UNIX operating system. In ment. In Proc. Network and Distributed Systems Security
+ProceedingsoftheWinterUSENIXConference,1995. Symposium,2000.
+[22] M.B.Jones. Interpositionagents:Transparentlyinterposing
+[5] M. Bernaschi, E. Gabrielli, and L. V. Mancini. Remus: a
+usercodeatthesysteminterface. InSymposiumonOperat-
+security-enhancedoperatingsystem. ACMTrans.Informa-
+ingSystemsPrinciples,pages80–93,1993.
+tionandSystemSecurity(TISSEC),5(1):36–61,2002.
+[23] V.Kiriansky,D.Bruening,andS.Amarasinghe.Secureexe-
+[6] B.N.BershadandC.B.Pinkerton. Watchdogs: Extending
+cutionviaprogramshepherding. InProceedingsofthe11th
+theUNIXfilesystem. InUSENIXConferenceProceedings,
+USENIXSecuritySymposium,August2002.
+pages267–75,Dallas,TX,Winter1988.
+[24] C. Ko, T. Fraser, L. Badger, and D. Kilpatrick. Detecting
+[7] M. Bishop and M. Dilger. Checking for race conditions
+and countering system intrusions using software wrappers.
+infileaccesses. ComputingSystems, 9(2):131–152, Spring
+InProc.9thUSENIXSecuritySymposium,August2000.
+1996.
+[25] M.Accettaetal. Mach:AnewkernelfoundationforUNIX
+[8] CERT. Vulnerability note VU#176888, Linux kernel con-
+development. InProc.USENIXSummerConference,1986.
+tainsraceconditionviaptrace/procfs/execve. may2002.
+[26] B. Marick. lc. ftp://ftp.qucis.queensu.ca/
+[9] H.Chen, D.Wagner, andD.Dean. Setuiddemystified. In pub/software-eng/software/Cmetrics/lc.
+Proc.11thUSENIXSecuritySymposium,August2002. tar.gz%.
+[10] C.Cowan,S.Beattie,G.Kroach-Hartman,C.Pu,P.Wagle, [27] M.K.McKusick,K.Bostic,M.J.Karels,andJ.S.Quarter-
+andV.Gligor. Subdomain:Parsimoniousserversecurity. In man. TheDesignandImplementationofthe4.4BSDOper-
+Proc.SystemsAdministrationConference,Dec.2000. atingSystem,pages112–114. Addison-Wesley,1996.
+[11] A. Cox. CAN-2003-0127, Linux kernel ptrace() flaw lets [28] T.Mitchem,R.Lu,andR.O’Brien. Usingkernelhypervi-
+localusersgainrootprivileges. March2003. sorstosecureapplications. InProc.13thAnnualComputer
+SecurityApplicationsConference,December1997.
+[12] A. Dan, A. Mohindra, R. Ramaswami, and D. Sitaram.
+[29] V. Nakra. Architecture study: Janus—a practical tool for
+Chakravyuha (CV): A sandbox operating system environ-
+applicationsandboxing.
+mentforcontrolledexecutionofaliencode. TechnicalRe-
+port20742,IBMT.J.WatsonResearchCenter,Sept.1997. [30] D.S.Peterson, M.Bishop, andR.Pandey. Aflexiblecon-
+tainmentmechanismforexecutinguntrustedcode. InProc.
+[13] Entercept Security Technologies. System call inter-
+11thUSENIXSecuritySymposium,August2002.
+ception whitepaper. http://www.entercept.com/
+whitepaper/systemcalls/. [31] N.Provos.Improvinghostsecuritywithsystemcallpolicies.
+InProc.12thUSENIXSecuritySymposium,pages257–272,
+[14] Erlingsson and Schneider. SASI enforcement of security
+august2003.
+policies:Aretrospective.InWNSP:NewSecurityParadigms
+[32] K.ScottandJ.Davidson. Safevirtualexecutionusingsoft-
+Workshop.ACMPress,2000.
+waredynamictranslation. InProc.AnnualComputerSecu-
+[15] T. Fraser, L. Badger, and M. Feldman. Hardening COTS rityApplicationsConference,2002.
+softwarewithgenericsoftwarewrappers. InIEEESympo-
+[33] Steve Bellovin. Shifting the Odds, Writing More Secure
+siumonSecurityandPrivacy,pages2–16,1999.
+Software. http://www.research.att.com/˜smb/
+[16] T.Garfinkel.Trapsandpitfalls:Practicalproblemsinsystem talks/odds.ps.
+callinterpositionbasedsecuritytools. InProc.Networkand
+[34] Teso Security Advisory. LIDS Linux Intrusion Detection
+DistributedSystemsSecuritySymposium,February2003.
+Systemvulnerability. http://www.team-teso.net/
+[17] D.P.Ghormley,D.Petrou,S.H.Rodrigues,andT.E.Ander- advisories/teso-advisory-012.txt.
+son.SLIC:Anextensibilitysystemforcommodityoperating
+[35] J.ViegaandG.McGraw. BuildingSecureSoftware, pages
+systems. In Proc. USENIX Annual Technical Conference,
+209–229. Addison-Wesley,2002.
+pages39–52,June1998.
+[36] D.A.Wagner. Janus: Anapproachforconfinementofun-
+[18] I.Goldberg,D.Wagner,R.Thomas,andE.Brewer.Asecure trusted applications. Technical Report CSD-99-1056, Uni-
+environmentforuntrustedhelperapplications. InProc.6th versityofCalifornia,Berkeley,12,1999.
+USENIXSecuritySymposium,July1996.
+[37] K.M.Walker,D.F.S.anadM.L.Badger,M.J.Petkac,D.L.
+[19] D.B.Golub,R.W.Dean,A.Forin,andR.F.Rashid. UNIX Shermann,andK.A.Oostendorp. Confiningrootprograms
+asanapplicationprogram. InUSENIXSummer,pages87– with domain and type enforcement. In Proceedings of the
+95,1990. sixthUSENIXSecuritySymposium,July1996.[38] B.WelchandJ.Ousterhout. Pseudodevices: User-levelex- /var/toberead.
+tensionstotheSpritefilesystem. InSummer1988USENIX
+Conference,pages37–49,SanFrancisco,CA,1988.
+NetworkPolicy
+[39] A.Wespi,M.Dacier,andH.Debar. Intrusiondetectionus-
+ingvariablelengthaudittrailpatterns. InRAID2000,pages net-allow (outgoing|incoming)
+110–129,2000.
+(tcp|udp) address[/mask] port[/mask]
+The net-allow directive controls access to network re-
+A OstiaPolicyInterface
+sourcesandlimitsIPCoversockets. Allapplicationuseof
+StartingState socketsmustbeexplicitlyallowed. Creatingoutgoingcon-
+nections to other local or remote processes and accepting
+starting uid uid incoming connections from other processes are controlled
+starting gid gid separately.
+starting dir directory The syntax to allow a sandboxed application to connect to
+Setstheinitialuserid,groupid,andcurrentworkingdirec- another process or send traffic directly to it is net allow
+toryforthesandboxedprocess. outgoing type end-point.
+Toallowasandboxedapplicationtobindasocket(i.e. wait
+FileSystemPolicy foraconnectionfromsomeotherprocess)orreceivetraffic
+fromanotheraddress,write
+path-allow (read|write|unlink|exec)... net-allow incoming type end-point
+path...
+Examples:
+Providesaccesstofilesystemresources. Filestowhichac-
+net-allow incoming unix-domain /var/∗
+cess is granted are written as absolute file names that may
+Allowsasandboxedprocesstobindasocketwithanypath
+pattern matching wildcards. Keep in mind that directories
+in/var.
+arefilesandmustbeauthorizedthesameway;e.g.tostat
+net-allow outgoing tcp 128.36.31.50 80
+adirectory,readpermissionforthatdirectoryisrequired.
+Allows tcp connections to be made to the host at
+Examples:
+128.36.31.50onport80.
+path-allow read /var/foo
+net-allow outgoing tcp MYHOST ADDR 0/0
+Allowsthecontentsof/var/footoberead.
+Allowsasandboxedprocesstomaketcpconnectionstoany
+path-allow read /var/∗ local port. Keyword MYHOST ADDR is special syntax for
+Allowsanyfilewhoseabsolutepathbeginswiththeprefix thelocalIPaddress.

@@ -1,0 +1,1258 @@
+ASLR on the Line: Practical Cache Attacks on the MMU
+Ben Gras∗ Kaveh Razavi∗ Erik Bosman Herbert Bos Cristiano Giuffrida
+Vrije Universiteit Amsterdam
+{beng, kaveh, ejbosman, herbertb, giuffrida}@cs.vu.nl
+∗ Equal contribution joint first authors
+Abstract—Address space layout randomization (ASLR) is an bruteforcing, if at all possible [16], [59], requires repeat-
+importantfirstlineofdefenseagainstmemorycorruptionattacks edly generating anomalous events (e.g., crashes [5], [17],
+andabuildingblockformanymoderncountermeasures.Existing [54], exceptions [19], [23], or huge allocations [47]) that are
+attacks against ASLR rely on software vulnerabilities and/or on easy to detect or prevent. For instance, for some attacks [6]
+repeated (and detectable) memory probing.
+disabling non-fundamental memory management features is
+In this paper, we show that neither is a hard requirement enough [62]. Consequently, even if ASLR does not stop the
+and that ASLR is fundamentally insecure on modern cache- more advanced attackers, in the eyes of many, it still serves
+based architectures, making ASLR and caching conflicting as a good first line of defense for protecting the users and
+requirements (ASLR⊕Cache, or simply AnC). To support as a pivotal building block in more advanced defenses [9],
+this claim, we describe a new EVICT+TIME cache attack [15],[36],[42],[52].Inthispaper,wechallengethisbeliefby
+on the virtual address translation performed by the memory
+systematically derandomizing ASLR through a side-channel
+managementunit(MMU)ofmodernprocessors.OurAnCattack
+attack on the memory management unit (MMU) of processors
+relies on the property that the MMU’s page-table walks result
+that we call ASLR⊕Cache (or simply AnC).
+in caching page-table pages in the shared last-level cache (LLC).
+As a result, an attacker can derandomize virtual addresses of a
+Previous work has shown that ASLR breaks down in
+victim’s code and data by locating the cache lines that store the
+the presence of specific weaknesses and (sometimes arcane)
+page-table entries used for address translation.
+features in software. For instance, attackers may derandomize
+Relying only on basic memory accesses allows AnC to be ASLR if the application is vulnerable to thread spraying [23],
+implemented in JavaScript without any specific instructions or if the system turns on memory overcommit and exposes
+software features. We show our JavaScript implementation can
+allocation oracles [47], if the application allows for crash
+break code and heap ASLR in two major browsers running on
+tolerant/resistantmemoryprobing[5],[17],[19],[54],orifthe
+the latest Linux operating system with 28bits of entropy in 150
+underlying operating system uses deduplication to merge data
+seconds. We further verify that the AnC attack is applicable to
+pages crafted by the attacker with pages containing sensitive
+every modern architecture that we tried, including Intel, ARM
+andAMD.Mitigatingthisattackwithoutnaivelydisablingcaches system data [6]. While all these conditions hold for some
+is hard, since it targets the low-level operations of the MMU. applications, none of them are universal and they can be
+We conclude that ASLR is fundamentally flawed in sandboxed mitigated in software.
+environments such as JavaScript and future defenses should not
+rely on randomized virtual addresses as a building block. In this paper, we show that the problem is much more
+serious and that ASLR is fundamentally insecure on modern
+I. INTRODUCTION cache-based architectures. Specifically, we show that it is
+possible to derandomize ASLR completely from JavaScript,
+Address-space layout randomization (ASLR) is the first
+without resorting to esoteric operating system or application
+line of defense against memory-related security vulnerabilities
+features. Unlike all previous approaches, we do not abuse
+in today’s modern software. ASLR selects random locations
+weaknesses in the software (that are relatively easy to fix).
+in the large virtual address space of a protected process for
+Instead, our attack builds on hardware behavior that is central
+placing code or data. This simple defense mechanism forces
+to efficient code execution: the fast translation of virtual to
+attackers to rely on secondary software vulnerabilities (e.g.,
+physical addresses in the MMU by means of page tables.
+arbitrary memory reads) to directly leak pointers [16], [56] or
+As a result, all fixes to our attacks (e.g., naively disabling
+ad-hocmechanismstobruteforcetherandomizedlocations[5],
+caching) are likely too costly in performance to be practical.
+[6], [17], [19], [23], [47], [54].
+To our knowledge, this is the first attack that side-channels
+Finding secondary information leak vulnerabilities raises the MMU and also the very first cache attack that targets a
+the effort on an attacker’s side for exploitation [22]. Also victim hardware rather than software component.
+Highleveloverviewoftheattack Wheneveraprocesswants
+Permission to freely reproduce all or part of this paper for noncommercial to access a virtual address, be it data or code, the MMU per-
+purposes is granted provided that copies bear this notice and the full citation
+forms a translation to find the corresponding physical address
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author in main memory. The translation lookaside buffer (TLB) in
+(for reproduction of an entire paper only), and the author’s employer if the each CPU core stores most of the recent translations in order
+paper was prepared within the scope of employment. to speed up the memory access. However, whenever a TLB
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+miss occurs, the MMU needs to walk the page tables (PTs) of
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23271 theprocess(alsostoredinmainmemory)toperformthetrans-lation. To improve the performance of the MMU walk (i.e., a mitigationstolimit(butnoteliminate)theimpactoftheattack
+TLB miss), the PTs are cached in the fast data caches very in Section IX and highlight the related work in Section X
+muchliketheprocessdataiscachedforfasteraccess[4],[28]. before concluding in Section XI.
+Relying on ASLR as a security mechanism means that
+II. THREATMODEL
+the PTs now store security-sensitive secrets: the offset of a
+PT entry in a PT page at each PT level encodes part of We assume the attacker can execute JavaScript code in
+the secret virtual address. To the best of our knowledge, the the victim’s browser, either by luring the victim into visiting
+implicationsofsharingtheCPUdatacachesbetweenthesecret a malicious website or by compromising a trusted website.
+PT pages and untrusted code (e.g., JavaScript code) has never Assuming all the common defenses (e.g., DEP) are enabled in
+been previously explored. the browser, the attacker aims to escape the JavaScript sand-
+box via a memory corruption vulnerability. To successfully
+By executing specially crafted memory access patterns on
+compromise the JavaScript sandbox, we assume the attacker
+acommodityIntelprocessor,weareabletoinferwhichcache
+needs to first break ASLR and derandomize the location
+sets have been accessed after a targeted MMU PT walk when
+of some code and/or data pointers in the address space—
+dereferencing a data pointer or executing a piece of code. As
+a common attack model against modern defenses [53]. For
+only certain addresses map to a specific cache set, knowing
+this purpose, we assume the attacker cannot rely on ad-hoc
+thecachesetsallowsustoidentifytheoffsetsofthetargetPT
+disclosure vulnerabilities [16], [56] or special application/OS
+entries at each PT level, hence derandomizing ASLR.
+behavior [5], [6], [17], [19], [23], [47], [54]. While we focus
+on a JavaScript sandbox, the same principles apply to other
+Contributions Summarizing, we make the following contri-
+sandboxingenvironmentssuchasGoogle’sNativeClient[65].
+butions:
+1) We design and implement AnC, the first cache III. BACKGROUNDANDAPPROACH
+side-channel attack against a hardware component
+Inthissection,wediscussnecessarydetailsofthememory
+(i.e., the processor’s MMU), which allows malicious
+architecture in modern processors. Our description will focus
+JavaScript code to derandomize the layout of the
+on recent Intel processors due to their prevalence, but other
+browser’saddressspace,solelybyaccessingmemory.
+processors use similar designs [4] and are equally vulnerable
+SinceAnCdoesnotrelyonanyspecificinstructionor
+as we will show in our evaluation in Section VII.
+softwarefeature,itcannotbeeasilymitigatedwithout
+naively disabling CPU caches.
+A. Virtual Address Translation
+2) To implement AnC, we needed to implement better
+synthetic timers than the one provided by the current Currently, the virtual address-space of a 64bit process is
+browsers. Our timers are practical and can tell the 256TB on x86 64 processors, whereas the physical memory
+difference between a cached and an uncached mem- backing it is often much smaller and may range from a few
+oryaccess.OntopofAnC,theymakepreviouscache KBs to a few GBs in common settings. To translate a virtual
+attacks (e.g., [48]) possible again. address in the large virtual address-space to its corresponding
+3) While AnC fundamentally breaks ASLR, we fur- physical address in the smaller physical address-space, the
+ther show, counter-intuitively perhaps, that memory MMU uses the PT data structure.
+allocation patterns and security countermeasures in
+The PT is a uni-directed tree where parts of the virtual
+current browsers, such as randomizing the location
+address select the outgoing edge at each level. Hence, each
+of the browser heaps on every allocation, make AnC
+virtual address uniquely selects a path between the root of the
+attacks more effective.
+tree to the leaf where the target physical address is stored.
+4) We evaluated end-to-end attacks with AnC on two
+As the current x86 64 architecture uses only the lower 48 bits
+major browsers running on Linux. AnC runs in tens
+forvirtualaddressing,thetotaladdressspaceis256TB.Since
+of seconds and successfully derandomizes code and
+a PT maintains a translation at the granularity of a memory
+heap pointers, significantly reducing an attacker’s
+page (4096 bytes), the lower 12 bits of a virtual page and its
+efforts to exploit a given vulnerability.
+corresponding physical page are always the same. The other
+36 bits select the path in the PT tree. The PT tree has four
+Outline After presenting the threat model in Section II, we
+levelsofpagetables,whereeachPTisitselfapagethatstores
+explain the details of address translation in Section III. In
+512 PT entries (PTEs). This means that at each PT level, 9 of
+that section, we also summarize the main challenges and
+theaforementioned36bitsdecidetheoffsetofthePTEwithin
+how we address them. Next, Sections IV—VI discuss our
+the PT page.
+solutions for each of the challenges in detail. In Section VII,
+we evaluate AnC against Chrome and Firefox, running on the Figure 1 shows how the MMU uses the PT for translating
+latestLinuxoperatingsystem.WeshowthatAnCsuccessfully an example virtual address, 0x644b321f4000. On the x86
+derandomizes ASLR of the heap in both browsers and ASLR architecture, the CPU’s CR3 control register points to the
+of the JIT code in Firefox while being much faster and highest level of the page table hierarchy, known as level 4
+less demanding in terms of requirements than state-of-the- or PTL4. The top 9 bits of the virtual address index into this
+art derandomization attacks. We discuss the impact of AnC single PTL4 page, in this case selecting PTE 200. This PTE
+on browser-based exploitation and on security defenses that has a reference to the level 3 page (i.e., PTL3), which the
+rely on information hiding in the address space or leakage- next 9 bits of the virtual address index to find the target PT
+resilient code randomization in Section VIII. We then propose entry (this time at offset 300). Repeating the same operation
+2Level 4 Level 3 Level 2 Level 1
+CR3: Level 4 Physical Addr
+PTE 0:
+.......
+PTE 0:
+.......
+PTE 0:
+.......
+PTE 0:
+.......
+Core
+MMU CR3
+Execution Unit
+PTE 200:Leve .......l 3 Phys Addr
+Load/Store Unit
+Virt Addr TLB M Fii ls ls WaP lT
+k er
+PTE
+300:Leve....l
+2 Phys Addr
+... Phys Addr
+PTE 400:Level 1 Phys Addr
+....... L2 L1 Data
+PTE
+500:Targ....et
+Phys Addr
+... L3 (Shared)
+DRAM
+Fig. 1. MMU’s page table walk to translate 0x644b321f4000 to its
+correspondingmemorypageonthex8664architecture.
+Fig.2. MemoryorganizationinarecentIntelprocessor.
+for PT pages at level 2 and 1, the MMU can then find the
+corresponding physical page for 0x644b321f4000 at the PT
+at the first level, L1D and L1I, to cache data and instructions,
+entry in the level 1 page.
+respectively. The cache at the second level, L2, is a unified
+cache for both data and instructions. L1 and L2 are private to
+Note that each PTE will be in a cache line, as shown by
+each core, but all cores share L3. An important property of
+different colors and patterns in Figure 1. Each PTE on x86 64
+these caches is their inclusivity. L2 is exclusive of L1, that is,
+iseightbytes,hence,each64bytecachelinestoreseightPTE.
+the data present in L1 is not necessarily present in L2. L3,
+Wewilldiscusshowwecanusethisinformationforderandom-
+however, is inclusive of L1 and L2, meaning that if data is
+izing ASLR of a given virtual address in Section III-D after
+present in L1 or L2, it also has to be present in L3. We later
+looking into the memory organization and cache architecture
+exploit this property to ensure that a certain memory location
+of recent Intel x86 64 processors.
+is not cached at any level by making sure that it is not present
+in L3. We now discuss the internal organization of these CPU
+B. Memory Organization
+caches.
+Recent commodity processors contain a complex memory
+Toadheretotheprincipleoflocalitywhileavoidingexpen-
+hierarchyinvolvingmultiplelevelsofcachesinordertospeed
+sive logic circuits, current commodity processors partition the
+uptheprocessor’saccesstomainmemory.Figure2showshow
+cachesateachlevel.Eachpartition,oftenreferredtoasacache
+the MMU uses this memory hierarchy during virtual to physi-
+set, can store only a subset of physical memory. Depending
+caladdresstranslationinarecentIntelCoremicroarchitecture.
+on the cache architecture, the physical or virtual address of a
+Loads and stores as well as instruction fetches on virtual
+memory location decides its cache set. We often associate a
+addresses are issued from the core that is executing a process.
+cache set with wayness. An n-way set-associative cache can
+TheMMUperformsthetranslationfromthevirtualaddressto
+store n items in each cache set. A replacement policy then
+the physical address using the TLB before accessing the data
+decides which of the n items to replace in case of a miss in
+ortheinstructionsincethecachesthatstorethedataaretagged
+a cache set. For example, the L2 cache on an Intel Skylake
+with physical addresses (i.e., physically-tagged caches). If the
+processor is 256KB and 4-way set-associative with a cache
+virtual address is in the TLB, the load/store or the instruction
+line size of 64B [28]. This means that there are 1024 cache
+fetch can proceed. If the virtual address is not in the TLB, the
+sets (256KB/(4-way×64B)) and bits 6 to 16 of a physical
+MMU needs to walk the PT as we discussed in Section III-A
+address decide its corresponding cache set (the lower 6 bits
+and fill in the TLB. The TLB may include translation caches
+decide the offset within a cache line).
+for different PT levels (e.g., paging-structure caches on Intel
+described in Section 4.10.3 of [29]). As an example, if TLB In the Intel Core microarchitecture, all the cores of the
+includes a translation cache for PTL2, then the MMU only processor share the LLC, but the microarchitecture partitions
+needs to walk PTL1 to find the target physical address. it in so-called slices, one for each core, where each core has
+faster access to its own slice than to the others. In contrast to
+During the PT walk, the MMU reads PT pages at each
+L1 and L2 where the lower bits of a physical address decide
+PT level using their physical addresses. The MMU uses the
+its corresponding cache set, there is a complex addressing
+same path as the core for loading data to load the PTEs
+function (based on an XOR scheme) that decides the slice for
+during translation. As a result, after a PT walk, the cache
+eachphysicalmemoryaddress[27],[44].Thismeansthateach
+lines that store the PTE at each PT level are available in the
+slice gets different cache sets. For example, a 4-core Skylake
+L1 data cache (i.e., L1D). We now briefly discuss the cache
+i7-6700K processor has an 8MB 16-way set associative LLC
+architecture.
+with4sliceseachwith2048cachesets.WenowshowhowPT
+pages are cached and how we can evict them from the LLC.
+C. Cache Architecture
+In the Intel Core microarchitecture, there are three levels D. Derandomizing ASLR
+of CPU caches1. The caches that are closer to the CPU are
+smaller and faster whereas the caches further away are slower Asdiscussedearlier,anymemoryaccessthatincursaTLB
+but can store a larger amount of data. There are two caches miss requires a PT walk. A PT walk reads four PTEs from
+main memory and stores them in four different cache lines in
+1ThemobileversionoftheSkylakeprocessorshasalevel4cachetoo. L1D if they are not there already. Knowing the offset of these
+3cache lines within a page already derandomizes six bits out of levels. We call this technique sliding and discuss it further in
+nine bits of the virtual address at each PT level. The last three Section V-E.
+bitswillstillnotbeknownbecausetheoffsetofthePTEwithin
+the cache line is not known. We hence need to answer three E. ASLR on Modern Systems
+questions in order to derandomize ASLR: (1) which cache
+lines are loaded from memory during the PT walk, (2) which Mapped virtual areas for position-independent executables
+page offsets do these cache lines belong to, and (3) what are inmodernLinuxsystemsexhibit28bitofASLRentropy.This
+the offsets of the target PTEs in these cache lines? means that the PTL1, PTL2 and PTL3 fully contribute to
+creating 27bits of entropy, but only the last bit of the PTE
+1)Identifying the cache lines that host the PTEs: Since offsetin PTL4 contributesto theASLR entropy.Nevertheless,
+the LLC is inclusive of L1D, if the four PTEs cache lines are ifwewanttoidentifythislastbit,sinceitfallsintothelowest
+in L1D, they will also be in the LLC and if they are not in three bits of the PTE offset (i.e., within a cache line), we
+the LLC, they will also not be in L1D. This is an important require a crossing cache set at PTL4. Each PTE at PTL4
+property that we exploit for implementing AnC: rather than maps 512GB of virtual address-space, and hence, we need
+requiring a timer that can tell the difference between L1D and a virtual mapping that crosses a 4TB mark in order for a
+LLC (assuming no L2 entry), we only require one that can cache set change to happen at PTL4. Note that a cache set
+tell the difference between L1D and memory by evicting the change in PTL4 results in cache sets changing in the other
+target cache line from the LLC rather than from L1D. levels as well. We will describe how we can achieve this
+by exploiting the behavior of memory allocators in various
+The PTE cache lines could land in up to four different
+browsers in Section VI.
+cache sets. While we cannot directly identify the cache lines
+that host the PTE, by monitoring (or controlling) the state of Note that the entropy of ASLR in Linux is higher than
+variouscachesetsattheLLC,wecandetectMMUactivitydue otherpopularoperatingsystemssuchasWindows10[45],[63]
+to a PT walk at the affected cache sets. While the knowledge which provides only 24bits of entropy for the heap and 17–
+of MMU activity on cache sets is coarser than on cache lines, 19bitsofentropyforexecutables.ThismeansthatonWindows
+it is still enough to identify the offset of the PTE cache lines 10, PTL4 does not contribute to ASLR for the heap area.
+within a page as we describe next. Since each entry in PTL3 covers 1GB of memory, a mapping
+that crosses an 8GB will result in cache set change at PTL3,
+2)Identifying page offsets of the cache lines: Oren et
+resulting in derandomization of ASLR. The lower executable
+al. [48] realized that given two different (physical) memory
+entropy means that it is possible to derandomize executable
+pages, if their first cache lines (i.e., first 64B) belong to the
+locations on Windows 10 when crossing only the two lower
+samecacheset,thentheirother63cachelinesshare(different)
+level (i.e., with 16MB). In this paper we focus on the much
+cachesetsaswell.Thisisduetothefactthatforthefirstcache
+harder case of Linux which provides the highest entropy for
+lines to be in the same cache set, all the bits of the physical
+ASLR.
+addresses of both pages that decide the cache set and the slice
+have to be the same and an offset within both memory pages
+F. Summary of Challenges and Approach
+will share the lower 12 bits. Given, for example, 8192 unique
+cachesets,thismeansthatthereare128(8192/64)uniquepage We have discussed the memory hierarchy on modern
+colors in terms of the cache sets they cover. x86 64 processors and the way in which an attacker can mon-
+itor MMU activity to deplete ASLR’s entropy. The remainder
+This simple fact has an interesting implication for our
+of this paper revolves around the three main challenges that
+attack. Given an identified cache set with PT activity, we can
+we need to overcome to implement a successful attack:
+directly determine its page color, and more importantly, the
+offset of the cache line that hosts the PT entry. C1 Distinguishing between a memory access and a cache
+access when performed by the MMU in modern
+3)Identifying cache line offsets of the PT entries: At this
+browsers.Tocombattimingattacksfromasandboxed
+stage, we have identified the cache sets for PTEs at each PT
+JavaScriptcode[6],[48],browsershavedecreasedthe
+level. To completely derandomize ASLR for a given virtual
+precision of the accessible timers in order to make it
+address,westillneedtoidentifythePTEoffsetwithinacache
+difficult,ifnotimpossible,fortheattackerstoobserve
+line (inside the identified cache set), as well as mapping each
+the time it takes to perform a certain action.
+identified cache set to a PT level.
+C2 Observing the effect of MMU’s PT walk on the state
+Weachievebothgoalsviaaccessingpagesthatarexbytes
+of the data cache. Recent work [48] shows that it is
+apartfromourtargetvirtualaddressv.Forexample,thepages
+possibletobuildcacheevictionsetsfromJavaScriptin
+that are 4KB, 8KB, ..., 32KB away from v, are 1 to 8 PTEs
+order to bring the last-level cache (LLC) to a known
+away from v at PTL1 and if we access them, we are ensured
+state for a well-known PRIME+PROBE attack [39],
+to see a change in one of the four cache sets that show MMU
+[49]. In a typical PRIME+PROBE attack, the victim
+activity(i.e.,thenewcachesetwilldirectlyfollowtheprevious
+is a process running on a core, whereas in our attack
+cache set). The moving cache set, hence, uniquely identifies
+the victim is the MMU with a different behavior.
+astheonethatishostingthePTentryforPTL1,andthepoint
+when the change in cache set happens uniquely identifies the C3 Distinguishing between multiple PT entries that are
+PT entry offset of v within its cache line, derandomizing the storedinthesamecachelineanduniquelyidentifying
+unknown 3 least significant bits in PTL1. We can apply the PT entries that belong to different PT levels. On e.g.,
+same principle for finding the PT entry offsets at other PT x86 64 each PT entry is 8 bytes, hence, each 64-byte
+40.6
+0.5
+0.4
+0.3
+0.2
+0.1
+0 0 20 40 60 80 100 120 140
+)dezilamron(
+ycneuqerF
+Google Chrome 50.0 on Linux 4.4.0 1. Old Timer MT > CT 2. Fixed Timer MT = CT
+Mozilla Firefox 46.0.1 on Linux 4.4.0
+Cache CT = t1 – t0 Cache ...
+t0 t1 t0 t1
+Memory MT = t3 – t2 Memory ...
+t2 t3 t2 t3
+Number of loops per tick of performance.now()
+3. SMC MC > CC 4. TTT MC < CC
+Fig.3. Measuringthequalityofthelow-precisionperformance.now()
+inChromeandFirefox.
+Cache CC = c1 – c0 Cache CC
+c0 c1 t0 t1
+cache line can store 8 PT entries (i.e., the 3 lower
+bits of the PT entry’s offset is not known). Therefore, Memory MC = c3 – c2 Memory MC
+to uniquely identify the location of a target PT entry c2 c3 t2 t3
+within a PT page, we require the ability to access the
+virtual addresses that correspond to the neighboring
+Fig.4. 1.Howtheoldperformance.now()wasusedtodistinguishbe-
+PT entries in order to observe a cache line change. tweenacachedoramemoryaccess.2.Howthenewperformance.now()
+Further, in order to derandomize ASLR, we need PT stops timing side-channel attacks. 3. How the SMC can be used to make
+entries to cross cache line at each PT level. the distinction in the memory reference using a separate counting core as a
+reference.4.HowTTTcanmakethedistinctionbycountinginbetweenticks.
+To address C1, we have created a new synthetic timer in
+JavaScript to detect the difference between a memory and
+a cache access. We exploit the fact that the available timer, performance.now()) in our target browsers. The mi-
+although coarse, is precise and allows us to use the CPU core crobenchmark measures how many times we can execute
+as a counter to measure how long each operation takes. We performance.now() in a tight loop between two sub-
+elaborate on our design and its implications on browser-based sequent ticks of performance.now() for a hundred
+timing attacks in Section IV. times. Figure 3 shows the results of our experiment in
+terms of frequency. Firefox shows a single peak, while
+To address C2, we built a PRIME+PROBE attack for
+Chrome shows multiple peaks. This means that Firefox’s
+observing the MMU’s modification on the state of LLC in
+performance.now() ticks exactly at 5µs, while Chrome
+commodity Intel processors. We noticed that the noisy nature
+has introduced some jitter around around the 5µs intervals.
+ofPRIME+PROBEthatmonitorstheentireLLCineachround
+Thedecreasedprecisionmakesitdifficulttotellthedifference
+of the attack makes it difficult to observe the (faint) MMU
+between a cached or memory access (in the order of tens of
+signal,butamoredirectedandlow-noiseEVICT+TIMEattack
+nanoseconds) which we require for AnC to work.
+that monitors one cache set at a time can reliably detect
+the MMU signal. We discuss the details of this attack for Figure 4.1 shows how the old timer was being used to
+derandomizingJavaScript’sheapandcodeASLRinSectionV. distinguish between cached or memory access (CT stands for
+cache time and MT stands for memory time). With a low-
+To address C3, we needed to ensure that we can allocate
+precisiontimer,showninFigure4.2,itisnolongerpossibleto
+and access virtually contiguous buffers that span enough PT
+tellthedifferencebysimplycallingthetimer.Recentwork[35]
+levels to completely derandomize ASLR. For example, on a
+shows that it is possible to use the clock edge to improve the
+64bit Linux system ASLR entropy for the browser’s heap and
+precision of the degraded counters, but it is still not enough
+theJITedcodeis28bitsandonanx86 64processor,thereare
+to tell the difference between operations that are only tens of
+4 PT levels, each providing 9 bits of entropy (each PT level
+nanoseconds apart (i.e., accessing cache versus memory).
+stores 512 PT entries). Hence, we need a virtually contiguous
+areathatspansallfourPTlevelsforcompletederandomization
+In the following sections, we describe two techniques for
+of ASLR. In Section VI, we discuss how ASLR⊕Cache
+measuring how long executing a memory reference takes by
+exploits low-level memory management properties of Chrome
+counting how long a memory reference takes rather than
+and Firefox to gain access to such areas.
+timing. Both techniques rely on the fact that CPU cores have
+a higher precision than performance.now().
+IV. TIMINGBYCOUNTING
+The first technique (Figure 4.3), shared memory counter
+Recent work shows that timing side channels can be
+(SMC), relies on an experimental feature (with a draft
+exploited in the browser to leak sensitive information such
+RFC [55]) that allows for sharing of memory between
+as randomized pointers [6] or mouse movement [48]. These
+JavaScript’s web workers2. SMC builds a high-resolution
+attacks rely on the precise JavaScript timer in order to tell the
+counter that can be used to reliably implement AnC in all
+differencebetweenanaccessthatissatisfiedthroughacacheor
+the browsers that implement it. Both Firefox and Chrome
+main memory. In order to thwart these attacks, major browser
+currently support this feature, but it needs to be explicit
+vendors have reduced the precision of the timer. Based on our
+enabled due to its experimental nature. We expect shared
+measurements, both Firefox and Chrome have decreased the
+memorybetweenJavaScriptwebworkerstobecomeadefault-
+precision of performance.now() to exactly 5µs.
+on mainstream feature in a near future. The second technique
+We designed a small microbenchmark in order to bet-
+ter understand the quality of the JavaScript timer (i.e., 2JavaScriptwebworkersarethreadsusedforlongrunningbackgroundtasks.
+5(Figure 4.4), time to tick (TTT), relies on the current low- We use TTT on Firefox and SMC on Chrome for the
+precision performance.now() for building a timer that evaluationofAnCinSectionVII.Thesharedmemoryfeature,
+allowsustomeasurethedifferencebetweenacachedreference neededforSMC,iscurrentlyenabledbydefaultinthenightly
+and a memory reference, and allows us to implement AnC in build of Firefox, implemented in Chrome [10] and under
+low-jitter browsers such as Firefox. development in Edge [8]. We have notified major browser
+vendors warning them of this danger.
+TheimpactofTTTandSMCgoesbeyondAnC.Allprevi-
+ous timing attacks that were considered mitigated by browser
+V. IMPLEMENTINGANC
+vendors are still applicable today. It is worth mentioning that
+the recently proposed fuzzy time defense for browsers [35], Equipped with our TTT and SMC timers, we now proceed
+while also expensive, is not effective against SMC. We now with the implementation of AnC described in Section III-D.
+discuss the TTT and SMC timers in further detail. We first show how we managed to trigger MMU walks when
+accessing our target heap and when executing code on our
+A. Time to Tick target JIT area in Section V-A. We then discuss how we
+identified the page offsets that store PT entries of a target
+The idea behind the TTT measurement, as shown in virtualaddressinSectionsV-B,V-CandV-D.InSectionsV-E
+Figure 4.4, is quite simple. Instead of measuring how long andV-F,wedescribethetechniquesthatweappliedtoobserve
+a memory reference takes with the timer (which is no longer the signal and uniquely identify the location of PT entries
+possible), we count how long it takes for the timer to tick insidethecachelinesthatstorethem.InSectionsV-GandV-H
+after the memory reference takes place. More precisely, we wediscussthetechniquesweappliedtocleartheMMUsignal
+first wait for performance.now() to tick, we then ex- by flushing the page table caches and eliminating noise.
+ecute the memory reference, and then count by executing
+performance.now() in a loop until it ticks. If memory A. Triggering MMU Page Table Walks
+reference is a fast cache access, we have time to count more
+InordertoobservetheMMUactivitiesontheCPUcaches
+until the next tick in comparison to a memory reference that
+we need to make sure that 1) we know the offset in pages
+needs to be satisfied through main memory.
+within our buffer when we access the target, and 2) we are
+TTT performs well in situations where abletoevicttheTLBinordertotriggeranMMUwalkonthe
+performance.now() does not have jitter and ticks target memory location. We discuss how we achieved these
+at regular intervals such as in Firefox. We, however, believe goals for heap memory and JITed code.
+that TTT can also be used in performance.now() with
+1)Heap: We use the ArrayBuffer type to back
+jitter as long as it does not drift, but it will require a higher
+the heap memory that we are trying to derandomize. An
+number of measurements to combat jitter.
+ArrayBuffer is always page-aligned which makes it pos-
+sible for us to predict the relative page offset of any index in
+B. Shared Memory Counter
+our target ArrayBuffer. Recent Intel processors have two
+Our SMC counter uses a dedicated JavaScript web worker levels of TLB. The first level consists of an instruction TLB
+for counting through a shared memory area between the main (iTLB) and a data TLB (dTLB) while the second level is a
+JavaScript thread and the counting web worker. This means larger unified TLB cache. In order to flush both the data TLB
+that during the attack, we are practically using a separate core and the unified TLB, we access every page in a TLB eviction
+for counting. Figure 4-3 shows how an attacker can use SMC buffer with a larger size than the unified TLB. We later show
+to measure how long a memory reference takes. The thread that this TLB eviction buffer can be used to evict LLC cache
+that wants to perform the measurement (in our case the main sets at the desired offset as well.
+thread) reads the counter and stores it in c1, executes the
+2)Code: In order to allocate a large enough JITed code
+memoryreference,andthenreadsthecounteragainandstores area we spray 217 JavaScript functions in an asm.js [26]
+it in c2. Since the other thread is incrementing the counter
+module. We can tune the size of these functions by changing
+during the execution of the memory reference, in case of a
+the number of their statements to be compiled by the JIT
+slow memory access, we see a larger c2−c1 compared to the
+engine. The machine code of these functions start from a
+case where a faster cache access is taking place.
+browser-dependentbutknownoffsetinapageandfolloweach
+SMCisagnostictothequalityofperformance.now() otherinmemoryandsincewecanpredicttheir(machinecode)
+sinceitonlyreliesonaseparateobservercoreforitsmeasure- sizeonourtargetbrowsers,weknowtherelativeoffsetofeach
+ments. function from the beginning of the asm.js object. In order
+to minimize the effect of these functions on the cache without
+affecting their size, we add an if statement in the beginning
+C. Discussion
+ofallthefunctionsinordernottoexecutetheirbody.Thegoal
+We designed a microbenchmark that performs a cached istohitasinglecachelineonceexecutedsoastonotobscure
+access and a memory access for a given number of iterations. thepagetablecachelinesignals,butstillmaintainalargeoffset
+We can do this by accessing a huge buffer (an improvised between functions. To trigger a PT walk when executing one
+eviction set), ensuring the next access of a test buffer will be of our functions, we need to flush the iTLB and the unified
+uncached. We measure this access time with both timers. We TLB.ToflushtheiTLB,weuseaseparateasm.jsobjectand
+then know the next access time of the same test buffer will execute some of its functions that span enough pages beyond
+be cached. We time this access with both timers. In all cases, the size of the iTLB. To flush the unified TLB, we use the
+TTTandSMCcouldtellthedifferencebetweenthetwocases. same TLB eviction buffer that we use for the heap.
+6As we will discuss shortly, AnC observes one page offset trigger (MMU’s PT walk), we could opt for a more exotic
+in each round. This allows us to choose the iTLB eviction EVICT+TIME attack that allowed us to avoid the drawbacks
+functions and the page offset for the unified TLB eviction of PRIME+PROBE (Section V-D).
+buffer in a way that does not interfere with the page offset
+under measurement. C. Cache Colors Do Not Matter for AnC
+Cache-based side-channel attacks benefit from the fine-
+B. PRIME+PROBE and the MMU Signal
+grainedinformationavailableinthestateofcacheafterasecret
+The main idea behind ASLR⊕Cache is the fact that we operation—the cache sets that were accessed by a victim. A
+can observe the effect of MMU’s PT walk on the LLC. cache set is uniquely identified by a color (i.e., page color)
+There are two attacks that we can implement for this pur- and a page (cache line) offset. For example, a cache set in an
+pose[49]:PRIME+PROBEorEVICT+TIME.Toimplementa LLCwith8192cachesetscanbeidentifiedbya(color,offset)
+PRIME+PROBE attack, we need to follow a number of steps: tuple, where 0≤color<128 and 0≤offset<64.
+1) BuildoptimalLLCevictionsetsforallavailablepage ASLR encodes the secret (i.e., the randomized pointer) in
+colors. An optimal eviction set is the precise number the page offsets. We can build one eviction set for each of the
+of memory locations (equal to LLC set-associativity) 64 cache line offsets within a page, evicting all colors of that
+thatonceaccessed,ensuresthatatargetcachelinehas cache line offset with each set. The only problem is that the
+beenevictedfromtheLLCcachesetwhichhoststhe PTentriesatdifferentPTlevelsmayusedifferentpagecolors,
+target cache line. and hence, show us overlapping offset signals. But given that
+2) Prime the LLC by accessing all the eviction sets. we can control the observed virtual address, relative to our
+3) Access the target virtual address that we want to target virtual address, we can control PT entry offsets within
+derandomize, bringing its PT entries into LLC. differentPTlevelsasdiscussedinSectionIII-Dtoresolvethis
+4) Probe the LLC by accessing all the eviction sets and problem.
+measure which ones take longer to execute.
+Our EVICT+TIME attack, which we describe next, does
+The eviction sets that take longer to execute presumably notrelyontheexecutiontimeofevictionsets.Thismeansthat
+needtofetchone(ormore)oftheirentriesfrommemory.Since we do not require to build optimal eviction sets. Coupled with
+duringtheprimephase,theentriesinthesethavebeenbrought the fact that ASLR is agnostic to color, we can use any page
+to the LLC, and the only memory reference (besides TLB as part of our eviction set. There is no way that page tables
+evictionset)isthetargetvirtualaddress,fourofthese“probed” mightbeallocatedusingacertaincolorlayoutschemetoavoid
+eviction sets have hosted the PT entries for the target virtual showing this signal, as all of them appear in our eviction sets.
+address. As we mentioned earlier, these cache sets uniquely This means that with a sufficiently large number of memory
+identify the upper six bits of the PT entry offset at each PT pages, we can evict any PT entry from LLC (and L1D and
+level. L2)atagivenpageoffset,notrelyingonoptimalevictionsets
+that take a long time to build.
+There are, however, two issues with this approach. First,
+building optimal LLC eviction sets from JavaScript, necessary
+D. EVICT+TIME Attack on the MMU
+forPRIME+PROBE,whilehasrecentlybeenshowntobepos-
+sible[48]takestime,speciallywithoutaprecisetimer.Second, The traditional side-channel attacks on cryptographic keys
+andmorefundamental,wecannotperformthePRIME+PROBE
+or for eavesdropping benefit from observing the state of the
+attack reliably, because the very thing that we are trying entire LLC. That is the reason why side-channel attacks
+to measure, will introduce noise in the measurements. More such as PRIME+PROBE [48] and FLUSH+RELOAD [64] that
+precisely, we need to flush the TLB before accessing our allow attackers to observe the entire state of the LLC are
+target virtual address. We can do this either before or after popular [27], [30], [31], [39], [49], [66].
+the priming step, but in either case evicting the TLB will
+causetheMMUtoperformsomeunwantedPTwalks.Assume Compared to these attacks, EVICT+TIME can only
+we perform the TLB eviction before the prime step. In the gain information about one cache set at each measurement
+middle of accessing the LLC eviction sets during the prime round, reducing its bandwidth compared to attacks such as
+step, potentially many TLB misses will occur, resulting in PRIME+PROBE [49]. EVICT+TIME further makes a strong
+PT walks that can potentially fill the already primed cache assumption that the attacker can observe the performance of
+sets, introducing many false positives in the probe step. Now the victim as it performs the secret computation. While these
+assumeweperformtheTLBevictionstepaftertheprimestep. properties often make EVICT+TIME inferior compared to
+A similar situation happens: some of the pages in the TLB morerecentcacheattacks,itjusthappensthatiteasilyapplies
+eviction set will result in a PT walk, resulting in filling the toAnC:AnCdoesnotrequireahighbandwidth(e.g.,tobreak
+already primed cache sets and again, introducing many false acryptographickey)anditcanmonitortheperformanceofthe
+positives in the probe step. victim (i.e., the MMU) as it performs the secret computation
+(i.e., walking the PT). EVICT+TIME implements AnC in the
+Our initial implementation of AnC used PRIME+PROBE. following steps:
+Ittookalongtimetobuildoptimalevictionsetsandultimately
+was not able to identify the MMU signal due to the high 1) Take a large enough set of memory pages to act as
+ratio of noise. To resolve these issues, we exploited unique an eviction set.
+properties of our target in order not to build optimal eviction 2) For a target cache line at offset t out of the possible
+sets (Section V-C), and due to the ability to control the 64 offsets, evict that cache line by reading the same
+7Fig.5. TheMMUmemorygramasweaccessthetargetpagesinapatternthatallowsustodistinguishbetweendifferentPTsignals.EachrowshowsMMU
+activity for one particular page within our buffer. The activity shows different cache lines within the page table pages that are accessed during the MMU
+translationofthispage.ThecolorisbrighterwithincreasedlatencywhenthereisMMUactivity.Weusedifferentaccesspatternswithinourbuffertodistinguish
+betweensignalsofPTentriesatdifferentPTlevels.Forexample,thestaircase(ontheleft)distinguishesthePTentryatPTL1sinceweareaccessingpages
+thatare32KBapartinsuccession(32KBis8PTentriesatPTL1oracacheline).Hence,weexpectthisaccesspatterntomakethemovingPTL1cacheline
+createastaircasepattern.Onceweidentifythestaircase,ittellsusthePTentryslotinPTL1anddistinguishesPTL1fromtheotherlevels.Onceasufficiently
+uniquesolutionisavailableforbothcodeanddataaccessesatallPTlevels,AnCcomputesthe(derandomized)64bitaddressesforcodeanddata,asshown.
+offset in all the memory pages in the eviction set. by allocating a sufficiently large buffer (in our case a 2GB
+Accessing this set also flushes the dTLB and the allocation) and accessing different locations within this buffer
+unified TLB. In case we are targeting code, flush the in order to derandomize the virtual address where the buffer
+iTLB by executing functions at offset t. has been allocated from. We derandomize PTL1 and PTL2
+3) Time the access to the target virtual address that we differently than how we derandomize PTL3 and PTL4. We
+want to derandomize at a different cache line offset describe both techniques below.
+than t, by dereferencing it in case of the heap target
+1)Derandomizing PTL1 and PTL2: Let’s start with the
+or executing the function at that location in case of
+cache line that hosts the PT entry at PTL1 for a target virtual
+the code target.
+addressv.Weobservewhenoneofthe(possible)4cacheline
+The third step of EVICT+TIME triggers a PT walk and change as we access v+i×4KB for i={1,2,...,8}. If one
+dependingonwhethertwashostingaPTentrycacheline,the ofthecachelineschangesati,itimmediatelyprovidesuswith
+operation will take longer or shorter. EVICT+TIME resolves two pieces of information: the changed cache line is hosting
+theissuesthatwefacedwithPRIME+PROBE:first,wedonot the PT entry for PTL1 and the PTL1’s PT entry offset for v is
+needtocreateoptimalLLCevictionsets,sincewedonotrely 8−i. We can perform the same technique for derandomizing
+onevictionsetsforprovidinginformationandsecond,theLLC the PT entry at PTL2, but instead of increasing the address by
+evictionsetisunifiedwiththeTLBevictionset,reducingnoise 4KB each time, we now need to increase by 2MB to observe
+duetofewerPTwalks.Moreimportantly,thesePTwalks(due the same effect for PTL2. As an example, Figure 5 shows an
+to TLB misses) result in significantly fewer false positives, example MMU activity that AnC observes as we change the
+again because we do not rely on probing eviction sets for cache line for the PT entry at PTL1.
+timing information.
+2)Derandomizing PTL3 and PTL4: As we discussed in
+Due to these improvements, we could observe cache line Section III-E, in order to derandomize PTL3, we require an
+offsetscorrespondingtothePTentriesofthetargetvirtualad- 8GB crossing in the virtual address space within our 2GB
+dresswhentryingEVICT+TIMEonall64possiblecacheline allocationandtoderandomizePTL4,werequirea4TBvirtual
+offsets in JavaScript both when dereferencing heap addresses addressspacecrossingtohappenwithinourallocation.Werely
+and executing JIT functions. We provide further evaluation in onthebehaviorofmemoryallocators,discussedinSectionVI,
+SectionVII,butbeforethat,wedescribehowwecanuniquely in the browsers to ensure that one of our (many) allocations
+identify the offset of the PT entries inside the cache lines satisfies this property. But assuming that we have a cache
+identified by EVICT+TIME. line change at PTL3 or PTL4, we would like to detect and
+derandomize the corresponding level. Note that a cache line
+E. Sliding PT Entries crossing at PTL4 will inevitably cause a cache line crossing
+at PTL3 too.
+At this stage, we have identified the (potentially overlap-
+ping)cachelineoffsetsofthePTentriesatdifferentPTlevels. Remember that each PT entry at PTL3 covers 1GB of
+There still remains two sources of entropy for ASLR: it is virtual memory. Hence, if a cache line crossing at PTL3
+not possible to distinguish which cache line offset belongs to happens within our 2GB allocation, then our allocation could
+whichPTlevel,andtheoffsetofthePTentrywithinthecache cover either two PTL3 PT entries, when crossing is exactly at
+line is not yet known. We address both sources of entropy the middle of our buffer, or three PT entries. Since a crossing
+8exactly in the middle is unlikely, we consider the case with 2)Multiple rounds for each offset: In order to add reli-
+three PT entries. Either two of the three or one of three PT ability to the measurements, we sample each offset multiple
+entriesareinthenewcacheline.ByobservingthePTL3cache times(’rounds’)andconsiderthemedianfordecidingacached
+line when accessing the first page, the middle page, and the versus memory access. This simple strategy reduces the false
+last page in our allocation, we can easily distinguish between positivesandfalsenegativesbyalargemargin.Forlargescale
+these two cases and fully derandomize PTL3. experiment and visualization on the impact of measurement
+rounds vs other solving parameters, please see section VII-C.
+A cache line crossing at PTL4 only occurs if the cache
+line at PTL3 is in the last slot in its respective PT page. By For an AnC attack, false negatives are harmless due to the
+performingasimilartechnique(i.e.,accessingthefirstandlast factthattheattackercanalwaysretrywithanewallocationas
+page in our allocation), if we observe a PT entry cache line we discuss in the next section. We evaluate the success rate,
+PTE change from the last slot to the first slot and another PT false positives and false negatives of the AnC attack using
+2
+entry cache line PTE move one slot ahead, we can conclude Chrome and Firefox in Section VII.
+1
+a PTL4 crossing and uniquely identify PTE as the PT entry
+2
+at PTL3 and PTE as the PT entry at PTL4. I. Discussion
+1
+WeimplementedtwoversionsofAnC.Anativeimplemen-
+F. ASLR Solver
+tationinCinordertostudythebehavioroftheMMUPTwalk
+We created a simple solver in order to rank possible activity without the JavaScript interference and a JavaScript-
+solutions against each other as we explore different pages only implementation.
+within our 2GB allocation. Our solver assumes 512 possible
+We ported the native version to different architectures and
+PTentriesforeachPTlevelforthefirstpageofourallocation
+Microsoft Windows 10 to show the generality of AnC pre-
+buffer, and ranks the solutions at each PT level independently
+sented in Section VII-D. Our porting efforts revolved around
+of the other levels.
+implementing a native version of SMC (Section IV-B) to
+As we explore more pages in our buffer according to accuratelydifferentiatebetweencachedanduncachedmemory
+patterns that we described in Section V-E1 and Section V-E2, accesses on ARM which only provides coarse-grained (0.5µs)
+oursolvergainsasignificantconfidenceinoneofthesolutions timing mechanism and dealing with different page table struc-
+or gives up and starts with a new 2GB allocation. A solution tures. Our native implementation amounts to 1283 lines of
+willalwaysderandomizesPTL1andPTL2andalsoPTL3and code
+PTL4 if there was a cache line crossing at these PT levels.
+OurJavaScript-onlyimplementationworksonChromeand
+Firefox browsers and is aimed to show the real-world impact
+G. Evicting Page Table Caches of the AnC attack presented in various experiments in Sec-
+tionVII.WeneededtohandtunetheJavaScriptimplementation
+AsmentionedinSectionIII-B,someprocessorsmaycache
+using asm.js [26] in order to make the measurements faster
+the translation results for different page table levels in their
+and more predictable. This limited our allocation size to the
+TLB. AnC needs to evict these caches in order to observe the
+maximumof2GB.OurJavaScriptimplementationamountsto
+MMU signal from all PT levels. This is straightforward: we
+2370 lines of code.
+can access a buffer that is larger than that the size of these
+caches as part of our TLB and LLC eviction.
+VI. ALLOCATORSANDANC
+Forexample,aSkylakei7-6700Kcorecancache32entries
+As mentioned in Section V-E2, we rely on the behavior of
+forPTL2lookups.Assumingwearemeasuringwhetherthere
+thememoryallocatorsinthebrowserstogetanallocationthat
+ispagetableactivityinthei-thcachelineofpagetablepages,
+crossesPTL3andPTL4inthevirtualaddressspace.Webriefly
+accessinga64MB(i.e.,32×2MB)bufferat0+i×64,2MB
+discuss the behavior of the memory allocators in Firefox and
++ i×64, 4MB + i×64, ..., 62MB + i×64 will evict the
+Chrome and how we could take advantage of them for AnC.
+PTL2 page table cache.
+While we needed to implement this mechanism natively A. Memory Allocation in Firefox
+to observe the signal on all PT levels, we noticed that due
+to the JavaScript runtime activity, these page table caches are In Firefox, memory allocation is based on demand paging.
+naturally evicted during our measurements. Large object allocations from a JavaScript application in the
+browser’s heap is backed by mmap without MAP POPULATE.
+This means that memory is only allocated when the corre-
+H. Dealing with Noise
+sponding page in memory is touched.
+Themainissuewhenimplementingside-channelattacksis
+Figure 6 shows how Firefox’s address space is laid out in
+noise. There are a number of countermeasures that we deploy
+memory. Firefox uses the stock mmap provided by the Linux
+in order to reduce noise. We briefly describe them here:
+kernel in order to randomize the location of JITed code and
+1)Random exploration: In order to avoid false negatives heap using 28bits of entropy. The (randomized) base address
+causedbythehardwareprefetcher,weselectt(thepageoffset for mmap is only chosen once (by the OS) and after that the
+that we are evicting) randomly within the possible remaining subsequent allocations by Firefox grow backward from the
+offsets that we (still) need to explore. This randomization also previous allocation towards low (virtual) memory. If an object
+helps by distributing the localized noise caused by system isdeleted,Firefoxreusesitsvirtualmemoryforthesubsequent
+events. allocations. Hence, to keep moving backward in the virtual
+91
+Firefox Chrome False positive
+0.8 False negative
+Success rate
+0.6
+JIT 0.4
+heap
+ASLR 0.2
+Random 0
+objects Chrome 3 Levels Firefox 3 Levels Firefox 4 Levels
+JIT heap
+Fig.7. Thesuccessrate,falsepositiveandfalsenegativerateofAnC.
+ASLR
+ASLR
+allocate a buffer and use AnC to see whether there are PTL3
+kernel space kernel space or PTL4 cache line crossings. If this is not the case, we delete
+the old buffer and start with a new allocation. Based on a
+givenprobabilityp,AnC’sithallocationwillcrossPTL3based
+on the following formula using a Bernoulli trial (assuming a
+2GB allocation): (cid:80)i 1(3)i ≥p. Calculating for average (i.e.,
+1 4 4
+Fig. 6. Low-level memory allocation strategies in Firefox and Chrome. p = 0.5), AnC requires around 6.5 allocations to get a PTL3
+FirefoxusesthestockmmapinordertogainASLRentropyforitsJITedcode crossing.SolvingthesameequationforaPTL4crossing,AnC
+and heap while Chrome does not rely on mmap for entropy and randomizes
+requires on average 1421.2 allocations to get a crossing. In
+eachlargecode/dataallocation.
+a synthetic experiment with Chrome, we observed a desired
+allocation after 1235 trials. While nothing stops AnC from
+address space, a JavaScript application should linger to its old derandomizing PTL4, the large number of trials makes it less
+allocations. attractive for attackers.
+AninterestingobservationthatwemadeisthataJavaScript Thistechniqueworksthesameforallocationsofbothheap
+applicationcanallocateTBsof(virtual)memoryforitsobjects and JITed objects. The current version of AnC implements
+as long as they are not touched. AnC exploits this fact and derandomization of heap pointers on Chrome using this tech-
+allocatesafew2GBbuffersforforcingacachelinechangeat nique.
+PTL3 (i.e., 1bit of entropy remaining), or if requested, a large
+number of 2GB objects forcing a cache line change at PTL4 VII. EVALUATION
+(i.e., fully derandomized).
+WeshowthesuccessrateandfeasibilityoftheAnCattack
+To obtain a JIT code pointer, we rely on our heap pointer
+using Firefox and Chrome. More concretely, we like to know
+obtained in the previous step. Firefox reserves some virtual
+thesuccessrateofAnCinfaceofnoiseandthespeedinwhich
+memory in between JIT and heap. We first spray a number
+AnC can reduce the ASLR entropy. We further compare AnC
+of JITed objects to exhaust this area right before allocating
+withothersoftware-basedattacksintermsofrequirementsand
+our heap. This ensures that our last JITed object is allocated
+performance and showcase an end-to-end exploit using a real
+before our heap. There are however a number of other objects
+vulnerability with pointers leaked by AnC. For the evaluation
+that JavaScript engine of Firefox allocates in between our last
+of the JavaScript-based attacks, we used an Intel Skylake i7-
+JITed object and the heap, introducing additional entropy. As
+6700Kprocessorwith16GBofmainmemoryrunningUbuntu
+aresult,wecanpredictthePTL3andPTL4slotsofourtarget
+16.04.1 LTS as our evaluation testbed. We further show the
+JIT pointer using our heap pointer, but the PTL1 and PTL2
+generality of the AnC attack using various CPU architectures
+slots remain unknown. We now deploy our code version of
+and operating systems.
+AnCtofindPTL1andPTL2slotsofourcodepointer,resulting
+in a full derandomization.
+A. Success Rate
+B. Memory Allocation in Chrome To evaluate the reliability of AnC, we ran 10 trials of
+the attack on Firefox and Chrome and report success rate,
+In Chrome, memory allocations are backed by mmap and
+false positive and false negative for each browser. For the
+initialized. This means that every allocation of a certain size
+ground truth, we collected run time statistics from the virtual
+will consume the same amount of physical memory (plus
+mappings of the browser’s process and checked whether our
+a few pages to back its PT pages). This prohibits us from
+guessed addresses indeed match them. In case of a match,
+usingmultipleallocationssimilartoFirefox.Chromeinternally
+the trial counts towards the success rate. In case AnC fails
+choosestherandomizedlocationformmapandthismeansthat
+to detect a crossing, that trial counts towards false negatives.
+for every new large object (i.e., a new heap). This allows for
+False negatives are not problematic for AnC, since it results
+roughly35bitsoutoftheavailable36bitsofentropyprovided
+in a retry which ultimately makes the attack take longer.
+byhardware(Linuxkernelisalwaysmappedintheupperpart
+False positives, however, are problematic and we count them
+oftheaddressspace).Randomizingeverynewheapisdevised
+when AnC reports an incorrect guessed address. In case of
+in order to protect against the exploitation of use-after-free
+Chrome, we report numbers for when there are PTL3 cache
+bugs that often rely on predictable reuse on the heap [57].
+line crossings. We did not observe a PTL4 crossing (i.e., all
+AnC exploits this very protection in order to acquire an levels) in our trials. In case of Firefox, we performed the
+object that crosses a PTL3 or a PTL4 cache line. We first measurementbyrestartingittogetanewallocationeachtime
+1036
+33
+30
+27
+24
+21
+18
+15
+12
+9
+6
+3
+0
+0 10 20 30 40 50
+)stib(
+yportne
+sserdda
+lautriv
+gniniameR
+Chrome heap (PTL3 cacheline crossing) Firefox heap (PTL3 cacheline crossing) 40
+Firefox heap (PTL4 cacheline crossing) Firefox JIT (PTL2 cacheline crossing) 36
+32
+28
+24
+20
+16
+12
+8
+4
+0
+0 2 4 6 8 10 12 14 16 18 20 22
+Elapsed time (s)
+Fig. 8. Reduction in heap (Chrome and Firefox) and JIT (Firefox) ASLR
+entropyovertimewiththeAnCattack.Atthecodestageoftheattack,AnC
+already knows the exact PTE slots due to the obtained heap pointer. This
+means that for the code, the entropy reaches zero at 37.9s, but our ASLR
+solverisagnostictothisinformation.
+andweusedittoderandomizebothJITandheappointers.We
+report numbers for both PTL3 and PTL4 cache line crossings.
+Figure 7 reports the results of the experiment. In the case
+of Chrome, AnC manages to successfully recover 33bits out
+of the 35bits of the randomized heap addresses in 8 of the
+cases. In the case of Firefox, AnC reduces the entropy of JIT
+and heap to a single bit in all 10 cases. Getting the last bit
+is successful in 6 of the cases with 2 cases as false positive.
+ThePTEhostingthelastbitofentropy(i.e.,inPTL4)isoften
+shared with other objects in the Firefox runtime, making the
+measurements more noisy compared to PTEs in other levels.
+B. Feasibility
+To evaluate the feasibility of AnC from an attacker’s
+perspective, we report on the amount of time it took AnC
+toreduceASLR’sentropyinthesameexperimentthatwejust
+discussed. Allocating the buffers that we use for the AnC do
+nottakeanytimeonChrome.OnFirefox,forcrossingacache
+lineinPTL3,thebufferallocationstake5.3s,andforcrossing
+a cache line in PTL4, the buffer allocations take 72.7s.
+Figure 8 shows ASLR entropy as a function of time when
+AnC is applied to Firefox and Chrome as reported by our
+solver described in Section V-F. Both heap and code deran-
+domizationarevisualized.Notethatduetothenoiseoursolver
+sometimes needs to consider more solutions as time progress
+resulting in a temporary increase in the estimated entropy.
+More importantly, our solver is agnostic to the limitations of
+the underlying ASLR implementations and always assumes
+36bits of entropy (the hardware limit). This means that AnC
+can reduce the entropy even if the implementation uses all
+available bits for entropy which is not possible in practice. In
+the case of Chrome, in 11.2s the entropy is reduced to only
+2bits (our solver does not know about kernel/user space split
+andreports3bits).InthecaseofFirefox,in33.1stheentropy
+is reduced to 1bit when crossing a cache line in PTL3 (our
+solver does not know about mmap’s entropy) and in 40.5s to
+zero when crossing a cache line in PTL4.
+As discussed in Section VI, after obtaining a heap pointer,
+our AnC attack proceeds to obtain a JITed code pointer. At
+sdnuor
+tnemerusaeM
+False positives out of 10
+10
+False positives out of 10
+8
+6
+4
+2
+0
+Confidence margin
+Fig. 9. The effects of our noise reduction techniques on the fidelity of
+AnC.Theplottedintensityindicatesfalsepositive(wronganswer)rate,asa
+functionofsolverconfidencerequirement(Xaxis)vs.numberofmeasurement
+repetitions (Y axis). This shows that the number of measurement rounds
+is critical to reliable conclusions while the confidence margin improves the
+resultsfurther.
+this stage of the attack, AnC already knows the upper two
+PT slots of the JIT area (our solver does not know about
+this information). After 37.9s, AnC reduces the code pointer
+entropy to only 6bits as reported by our ASLR solver. These
+arethesameentropybitsthataresharedwithourheappointer.
+This means that at this stage of the attack we have completely
+derandomized code and heap ASLR in Firefox.
+C. Noise
+We evaluated the efficacy of our techniques against noise
+inthesystem.Aswementionedearlier,weusedmeasurement
+roundsinordertocombattemporalnoiseandascoringsystem
+in our solver in order to combat more persistent noise in the
+system.
+Figure9showsdifferentconfigurationofAnCwithrespect
+to the number of rounds and the confidence margin in our
+solver. As we decrease the number of rounds or confidence
+margin, we observe more false positives in the system. These
+results show that with our chosen configuration (confidence
+margin = 10 and rounds = 20) these techniques are effective
+against noise.
+D. Generalization
+Our evaluation so far shows that AnC generalizes to
+different browsers. We further studied the generality of the
+AnC attack by running our native implementation on different
+CPU architectures.
+Table I shows a successful AnC attack on 11 different
+CPU architectures including Intel, ARM and AMD. We did
+not find an architecture on which the AnC attack was not
+possible. Except for on ARMv7, we could fully derandomize
+ASLR on all architectures. On ARMv7, the top level page
+tablespansfourpageswhichintroducestwobitsofentropyin
+thehighvirtualaddressbits.OnARMv7withphysicaladdress
+extension (i.e., ARMv7+LPAE), there are only four entries in
+the top level page table which fit into a cache line, resulting
+againintworemainingbitsofentropy.OnARMv8,AnCfully
+solves ASLR given a similar page table structure to x86 64.
+11TABLEI. CPUMODELSVERIFIEDTOBEAFFECTEDBYANC. TABLEII. DIFFERENTATTACKSAGAINSTUSER-SPACEASLR.
+Vendor CPUModel Year Microarchitecture Attack Time Probes Pointers Requirement
+Intel Corei7-6700K 2015 Skylake BROP [5] 20m 4000 Code Crashtolerance
+Intel Corei3-5010U 2015 Broadwell CROP[19] 243m 228 Heap/code Crashresistance
+Allwinner A64 2015 ARMv8-A,Cortex-A53 DedupEstMachina[6] 30m 0 Heap/code Deduplication
+Nvidia JetsonTK-1 2014 ARMv7,Cortex-A15 AnC 150s 0 Heap/code Cache
+Nvidia TegraK1CD570M 2014 ARMv7+LPAE,Cortex-A15
+Intel Corei7-4510U 2014 Haswell
+Intel CeleronN2840 2014 Silvermont
+Intel AtomC2750 2013 Silvermont on 64-bit Firefox. With AnC, however, we re-injected the
+AMD FX-83208-Core 2012 Piledriver vulnerability in Firefox and verified an attacker can mount an
+Intel Corei7-3632QM 2012 IvyBridge
+end-to-endattack withoutanadditional informationdisclosure
+Intel E56xx/L56xx/X56xx 2010 Westmere
+vulnerability. In particular, we were able to (i) craft a fake
+vtable containing AnC-leaked code pointers, (ii) craft a fake
+Both ARM and AMD processors have exclusive LLCs object pointing to the AnC-leaked address of the fake vtable,
+compared to Intel. These results show that AnC is agnostic to (iii) trigger the vulnerability to overwrite the original object
+theinclusivityoftheLCC.Wealsosuccessfullyperformedthe pointerwiththeAnC-leakedfakeobjectpointer,and(iv)hijack
+AnC attack on the Microsoft Windows 10 operating system. the control flow.
+E. Comparison against Other Derandomization Attacks G. Discussion
+TableIIcomparesexistingderandomizationattacksagainst We showed how AnC can quickly derandomize ASLR
+ASLR with AnC. Note that all the previous attacks rely on towards end-to-end attacks in two major browsers with high
+software features that can be mitigated. For example, the success rate. For example, AnC can derandomize 64bit code
+most competitive solution, Dedup Est Machina [6], relies on and heap pointers completely in 150 seconds in Firefox. We
+memory deduplication, which was only available natively on also showed that AnC has a high success rate.
+Windows and has recently been turned off by Microsoft [14],
+[46]. Other attacks require crash-tolerance or crash-resistance
+VIII. IMPACTONADVANCEDDEFENSES
+primitives,whicharenotalwaysavailableandalsoyieldmuch
+morevisiblesideeffects.WealsonotethatAnCismuchfaster The AnC attack casts doubt on some of the recently
+than all the existing attacks, completing in 150 seconds rather proposed advanced defenses in academia. Most notably, AnC
+than tens of minutes. can fully break or significantly weaken defenses that are
+basedoninformationhidingintheaddress-spaceandleakage-
+resilientcoderandomization.Wediscussthesetwocasesnext.
+F. End-to-end attacks
+ModernbrowsersdeployseveraldefensessuchasASLRor
+A. Information Hiding
+segment heaps to raise the bar against attacks [63]. Thanks to
+suchdefenses,traditionalbrowserexploitationtechniquessuch Hiding security-sensitive information (such as code point-
+as heap spraying are now much more challenging to execute, ers) in a large 64bit virtual address-space in a common
+typicallyforcingtheattackertoderandomizetheaddressspace technique to bootstrap more advanced security defenses [9],
+before exploiting a given vulnerability [53]. [15], [36], [42], [52]. Once the location of the so-called safe-
+region is known to the attacker, she can compromise the
+For example, in a typical vtable hijacking exploit (with
+defensemechanisminordertoengagein,forexample,control-
+manyexamplesinrecentPwn2Owncompetitions),theattacker
+flow hijacking attacks [17], [19], [23], [47].
+seeks to overwrite a vtable pointer to point to a fake vtable
+using type confusion [38] or other software [60] or hard- With the AnC attack, in situations where the attacker can
+ware [6] vulnerabilities. For this purpose, the attacker needs operatearbitrarymemoryaccesses,theunknown(randomized)
+to leak code pointers to craft the fake vtable and a heap targetvirtualaddresscanbederandomized.Alreadytriggering
+pointer to the fake vtable itself. In this scenario, finding a a single memory reference in the safe-region allows AnC to
+dedicated information disclosure primitive is normally a sine reduce the entropy of ASLR on Linux to log (210 ×4!) =
+2
+qua non to mount the attack. With AnC, however, this is no 10.1 bits (1bit on the PTL4 and 3bits on other levels) and on
+longer a requirement: the attacker can directly leak heap and Windows to log (29 ×4!) = 9.4 bits (9bits on PTL3, PTL2
+2
+code addresses she controls with a cache attack against the and PTL1). Referencing more virtual addresses in different
+MMU. This significantly reduces the requirements for end-to- memory pages allows AnC to reduce the entropy further.
+end attacks in the info leak era of software exploitation [53].
+For example, the original linear table implementation for
+As an example, consider CVE-2013-0753, a use-after-free the safe-region in CPI [36], spans 242 of virtual address-space
+vulnerability in Firefox. An attacker is able to overwrite a andmovestheprotectedcodepointersinthisarea.Thismeans
+pointer to an object and this object is later used to perform that,sincetherelativeaddressofsecretpointerswithrespectto
+a virtual function call, using the first field of the object to eachotherisknown,anattackercanalsoimplementslidingto
+reference the object’s vtable. On 32-bit Firefox, this vulner- findthepreciselocationofthesafe-regionusingAnC,breaking
+ability can be exploited using heap spraying, as done in the CPI. Similarly, the more advanced two-level lookup table or
+publicly available Metasploit module (https://goo.gl/zBjrXW). hashtable versions of CPI [37] for hiding the safe-region will
+However, due to the much larger size of the address space, be prone to AnC attacks by creating a sliding mechanism on
+an information disclosure vulnerability is normally required the target (protected) pointers.
+12We hence believe that randomization-based information X. RELATEDWORK
+hidingonmoderncache-basedCPUarchitecturesisinherently
+A. Derandomizing ASLR in Software
+prone to cache attacks when the attacker controls memory
+accesses (e.g., web browsers). We thereby caution future Bruteforcing, if allowed in software, is a well-known tech-
+defenses not to rely on ASLR as a pivotal building block, nique for derandomizing ASLR. For the first time, Shacham
+even when problematic software features such as memory et al. [54] showed that it is possible to systematically deran-
+deduplication [6] or memory overcommit [47] are disabled. domizeASLRon32bitsystems.BROP[5]bruteforcesvalues
+in the stack byte-by-byte in order to find a valid 64bit return
+B. Leakage-resilient Code Randomization address using a few hundreds of trials. Bruteforcing, however,
+is not always possible as it heavily relies on application-
+Leakage-resilient code randomization schemes based on
+specific behavior [5], [19]. Further, significant number of
+techniqueslikeXnRandcodepointerhiding[1],[7],[13]aim
+crashes can be used by anomaly detection systems to block
+toprovideprotectionbymakingcoderegionsexecute-onlyand
+an ongoing attack [54].
+thelocationoftargetcodeinmemoryfullyunpredictable.This
+makes it difficult to perform code-reuse attacks given that the A key weakness of ASLR is the fact that large (virtual)
+attacker cannot directly or indirectly disclose the code layout. memory allocations reduce its entropy. After a large memory
+AnC weakens all these schemes because it can find the allocation,theavailablevirtualaddress-spaceissmallerforthe
+precise memory location of executed code without reading it next allocation, reducing entropy. This weakness has recently
+(Section VII-B). Like Information Hiding, the execution of a been exploited to show insecurities in software hardening
+singlefunctionalreadyleavesenoughtracesinthecachefrom techniques that rely on ASLR [23], [47].
+the MMU activity to reduce its address entropy significantly.
+MemorydeduplicationisanOSorvirtualmachinemonitor
+featurethatmergespagesacrossprocessesorvirtualmachines
+IX. MITIGATIONS
+in order to reduce the physical memory footprint. Writing to
+merged pages results in a copy-on-write that is noticeably
+Detection It is possible to detect an on-going AnC attack
+slower than writing to a normal. This timing channel has been
+using performance counters [50]. These types of anomaly-
+recently used to bruteforce ASLR entropy in clouds [2] or
+based defenses are, however, prone to false positives and false
+inside browsers [6].
+negatives by nature.
+All these attacks against ASLR rely on a flaw in software
+Cache coloring Partitioning the shared LLC can be used to that allows an attacker to reduce the entropy of ASLR. While
+isolate an application (e.g., the browser) from the rest of the software can be fixed to address this issue, the microarchi-
+system [33], [39], but on top of complications in the kernel’s tectural nature of our attack makes it difficult to mitigate.
+frame allocator [40], it has performance implications both for We hence recommend decommissioning ASLR as a defense
+the operating system and the applications. mechanism or a building block for other defense mechanisms.
+Securetimers Reducingtheaccuracyofthetimers[35],[43],
+B. Timing Attacks on CPU Caches
+[58]makesitharderforattackerstotellthedifferencebetween
+cached and memory accesses, but this option is often costly Closest to ASLR⊕Cache, in terms of timing attacks on
+to implement. Further, there are many other possible sources CPU caches is the work by Hund et al. [27] in breaking Win-
+to craft a new timer. Prior work [11] shows it is hard if not dows kernel-space ASLR from a local user-space application.
+impossibletoremoveallofthemeveninthecontextofsimple Their work, however, assumes randomized physical addresses
+microkernels. This is even more complicated with browsers, (instead of virtual addresses) with a few bits of entropy, and
+which are much more complex and bloated with features. that the attacker has the ability to reference arbitrary virtual
+addresses. Similar attacks geared towards breaking kernel-
+Isolatedcaches CachingPTentriesinaseparatecacherather level ASLR from a controlled process have been recently
+thanthedatacachescanmitigateAnC.Havingaseparatecache documented using the prefetch instruction [25], hardware
+just for page table pages is quite expensive in hardware and transactional memory [32] and branch prediction [18]. In our
+adoptingsuchsolutionasacountermeasuredefeatsthepurpose work, we derandomized high-entropy virtual addresses in the
+of ASLR—providing a low-cost first line of defense. browser process inside a sandboxed JavaScript. To the best
+of our knowledge, AnC is the first attack that breaks user-
+The AnC attack exploits fundamental properties of cache-
+spaceASLRfromJavaScriptusingacacheattack,significantly
+based architectures, which improve performance by keeping
+increasing the impact of these types of attacks.
+hot objects in a faster but smaller cache. Even if CPU man-
+ufacturers were willing to implement a completely isolated Timing side-channel attack on CPU caches have also
+cache for PT entries, there are other caches in software that been used to leak private information, such as cryptographic
+canbeexploitedtomountattackssimilartoAnC.Forexample, keys, mouse movements, and etc. The FLUSH+RELOAD at-
+the operating system often allocates and caches page table tack [31], [64], [66] leaks data from a sensitive process by
+pages on demand as necessary [24]. This optimization may exploiting the timing differences when accessing cached data.
+yieldatimingsidechannelonmemorymanagementoperations FLUSH+RELOAD assumes the attacker has access to victims’
+suitable for AnC-style attacks. Summarizing, we believe that code pages either via the shared page cache or some form of
+the use of ASLR is fundamentally insecure on cache-based memory deduplication. The PRIME+PROBE attack [39], [49]
+architectures and, while countermeasures do exist, they can lifts this requirement by only relying on cache misses from
+only limit, but not eliminate the underlying problem. the attacker’s process to infer the behavior of the victim’s
+13process when processing secret data. This relaxation makes attacks show the possibility of compromising the browser [6],
+it possible to implement PRIME+PROBE in JavaScript in the cloud virtual machines [51] and mobile devices [61] using
+browser[48],significantlyincreasingtheimpactofcacheside- wide-spread DRAM disturbance errors [34].
+channel attacks for the Internet users.
+While FLUSH+RELOAD and PRIME+PROBE observe
+XI. CONCLUSIONS
+the change in the state of the entire cache, the older In this paper, we described how ASLR is fundamentally
+EVICT+TIME [49] attack, used for recovering AES keys, insecure on modern architectures. Our attack relies on the
+observes the state of one cache set at a time. In situations interplay between the MMU and the caches during virtual
+whereinformationontheentirestateofthecacheisnecessary, to physical address translation—core hardware behavior that
+EVICT+TIME does not perform as effectively as the other is central to efficient code execution on modern CPUs. The
+attacks, but it has a much higher signal to noise ratio since underlying problem is that the complex nature of modern
+it is only observing one cache set at a time. We used the microarchitectures allows attackers with knowledge of the
+reliability of EVICT+TIME for observing the MMU signal. architecture to craft a carefully chosen series of memory
+accesses which manifest timing differences that disclose what
+C. Defending Against Timing Attacks memory is accessed where and to infer all the bits that make
+up the address. Unfortunately, these timing differences are
+As we described in Section IX mitigating AnC is difficult. fundamental and reflect the way caches optimize accesses in
+However,wediscusssomeattemptsforreducingthecapability the memory hierarchy. The conclusion is that such caching
+of the attackers to perform timing side-channel attacks. behaviorandstrongaddress spacerandomizationaremutually
+exclusive. Because of the importance of the caching hierarchy
+At the hardware-level, TimeWarp [43] reduces the fidelity
+for the overall system performance, all fixes are likely to
+of timers and performance counters to make it difficult for
+be too costly to be practical. Moreover, even if mitigations
+attackers to distinguish between different microarchitectural
+are possible in hardware, such as separate cache for page
+events. Stefan et al. [58] implement a new CPU instruction
+tables,theproblemsmaywellresurfaceinsoftware.Wehence
+scheduling algorithm that is indifferent to timing differences
+recommend ASLR to no longer be trusted as a first line of
+fromunderlyinghardwarecomponents,suchasthecache,and
+defense against memory error attacks and for future defenses
+is, hence, secure against cache-based timing attacks.
+not to rely on it as a pivotal building block.
+At the software-level, major browsers have reduced the
+accuracy of their timers in order to thwart cache attacks DISCLOSURE
+from JavaScript. Concurrent to our efforts, Kohlbrenner and
+We have cooperated with the National Cyber Security
+Shacham[35]showthatitispossibletoimprovethedegraded
+Centre in the Netherlands to coordinate the disclosure of AnC
+timers by looking at when the degraded clock ticks and
+to the affected hardware and software vendors. Most of them
+proposed introducing noise in the timer and the event loop
+acknowledged our findings and we are closely working with
+of JavaScript. In this paper, we show that it is possible to
+some of them to address some of the issues raised by AnC.
+build more accurate timers than that of Kohlbrenner and
+Shacham, necessary for the correct operation of AnC. Our
+SMC timer is independent of the JavaScript-provided timer ACKNOWLEDGEMENTS
+and the JavaScript runtime, and will thus not be stopped by
+We would like to thank the anonymous reviewers for their
+the proposed defenses.
+comments. Stephan van Schaik helped us observe the MMU
+Page coloring, in order to partition the shared cache, signalonARMandAMDprocessors.Thisworkwassupported
+is another common technique for defending against cache by the European Commission through project H2020 ICT-32-
+side-channel attacks [39]. Kim et al. [33] propose a low- 2014 SHARCS under Grant Agreement No. 644571 and by
+overhead cache isolation technique to avoid cross-talk over the Netherlands Organisation for Scientific Research through
+shared caches. Such techniques could be retrofitted to protect grant NWO 639.023.309 VICI Dowsing.
+the MMU from side-channel attacks from JavaScript, but as
+mentioned in Section IX, they suffer from deployability and REFERENCES
+performanceproblems.Asaresult,theyhavenotbeenadopted
+[1] M.Backes,T.Holz,B.Kollenda,P.Koppe,S.Nu¨rnberger,andJ.Pewny.
+toprotectagainstcacheattacksinpracticalsettings.Bydynam- You Can Run but You Can’t Read: Preventing Disclosure Exploits in
+ically switching between diversified versions of a program, ExecutableCode. CCS’14.
+Crane et al. [12] change the mapping of program locations [2] A. Barresi, K. Razavi, M. Payer, and T. R. Gross. CAIN: Silently
+to cache sets, making it difficult to perform cache attacks BreakingASLRintheCloud. WOOT’15.
+on program’s locations. Our AnC attack, however, targets the [3] D.B.Bartolini,P.Miedl,andL.Thiele. OntheCapacityofThermal
+CovertChannelsinMulticores. EuroSys’16.
+MMU operations and can already reduce the ASLR entropy
+significantly as soon as one program location is accessed. [4] R.Bhargava,B.Serebrin,F.Spadini,andS.Manne.AcceleratingTwo-
+dimensionalPageWalksforVirtualizedSystems. ASPLOSXIII.
+[5] A. Bittau, A. Belay, A. Mashtizadeh, D. Mazie`res, and D. Boneh.
+D. Other Hardware-based Attacks HackingBlind. SP’14.
+[6] E.Bosman,K.Razavi,H.Bos,andC.Giuffrida. DedupEstMachina:
+Fault attacks are pervasive for extracting secrets from se-
+MemoryDeduplicationasanAdvancedExploitationVector. SP’16.
+cureprocessors[21].Power,thermalandelectromagneticfield
+[7] K.Braden,S.Crane,L.Davi,M.Franz,P.Larsen,C.Liebchen,andA.-
+analysis have been used for building covert channels and ex-
+R.Sadeghi. Leakage-resilientlayoutrandomizationformobiledevices.
+tractingcryptographickeys[3],[20],[41].RecentRowhammer NDSS’16.
+14[8] ChakraCore Roadmap. https://github.com/Microsoft/ChakraCore/wiki/ [37] V.Kuznetsov,L.Szekeres,M.Payer,G.Candea,andD.Song. Poster:
+Roadmap. Getting the point (er): On the feasibility of attacks on code-pointer
+[9] X. Chen, A. Slowinska, D. Andriesse, H. Bos, and C. Giuffrida. integrity. SP’15.
+StackArmor: Comprehensive Protection From Stack-based Memory [38] B. Lee, C. Song, T. Kim, and W. Lee. Type casting verification:
+ErrorVulnerabilitiesforBinaries. NDSS. Stoppinganemergingattackvector. SEC’15.
+[10] Shared Array Buffers, Atomics and Futex APIs. https://www. [39] F. Liu, Y. Yarom, Q. Ge, G. Heiser, and R. B. Lee. Last-level cache
+chromestatus.com/feature/4570991992766464. side-channelattacksarepractical. SP’15.
+[11] D.Cock,Q.Ge,T.Murray,andG.Heiser.TheLastMile:AnEmpirical [40] LKML. PageColouring. goo.gl/7o101i.
+StudyofTimingChannelsonseL4. CCS’14. [41] J. Longo, E. De Mulder, D. Page, and M. Tunstall. SoC It to EM:
+[12] S.Crane,A.Homescu,S.Brunthaler,P.Larsen,andM.Franz.Thwart- ElectroMagneticSide-ChannelAttacksonaComplexSystem-on-Chip.
+ingCacheSide-ChannelAttacksThroughDynamicSoftwareDiversity. CHES’15.
+NDSS’15. [42] K.Lu,C.Song,B.Lee,S.P.Chung,T.Kim,andW.Lee.ASLR-Guard:
+[13] S.Crane,C.Liebchen,A.Homescu,L.Davi,P.Larsen,A.-R.Sadeghi, StoppingAddressSpaceLeakageforCodeReuseAttacks. CCS’15.
+S.Brunthaler,andM.Franz. Readactor:PracticalCodeRandomization [43] R. Martin, J. Demme, and S. Sethumadhavan. TimeWarp: Rethinking
+ResilienttoMemoryDisclosure. NDSS. Timekeeping and Performance Monitoring Mechanisms to Mitigate
+[14] CVE-2016-3272.http://www.cve.mitre.org/cgi-bin/cvename.cgi?name= Side-channelAttacks. ISCA’12.
+CVE-2016-3272. [44] C.Maurice,N.L.Scouarnec,C.Neumann,O.Heen,andA.Francillon.
+[15] T. H. Dang, P. Maniatis, and D. Wagner. The performance cost of ReverseEngineeringIntelLast-LevelCacheComplexAddressingUsing
+shadowstacksandstackcanaries. ASIACCS’15. PerformanceCounters. RAID’15.
+[16] L. Davi, C. Liebchen, A.-R. Sadeghi, K. Z. Snow, and F. Monrose. [45] M.MillerandK.Johnson. ExploitMitigationImprovementsinWin8.
+Isomeron: Code Randomization Resilient to (Just-In-Time) Return- BH-US’12.
+OrientedProgramming. NDSS’15. [46] Microsoft Security Bulletin MS16-092. https://technet.microsoft.com/
+[17] I.Evans,S.Fingeret,J.Gonzalez,U.Otgonbaatar,T.Tang,H.Shrobe, library/security/MS16-092.
+S. Sidiroglou-Douskos, M. Rinard, and H. Okhravi. Missing the [47] A. Oikonomopoulos, C. Giuffrida, E. Athanasopoulos, and H. Bos.
+Point(er):OntheEffectivenessofCodePointerIntegrity. SP’15. PokingHolesintoInformationHiding. SEC’16.
+[18] D. Evtyushkin, D. Ponomarev, and N. Abu-Ghazaleh. Jump Over [48] Y.Oren,V.P.Kemerlis,S.Sethumadhavan,andA.D.Keromytis. The
+ASLR:AttackingBranchPredictorstoBypassASLR. MICRO’16. Spy in the Sandbox: Practical Cache Attacks in JavaScript and their
+[19] R.Gawlik,B.Kollenda,P.Koppe,B.Garmany,andT.Holz. Enabling Implications. CCS’15.
+Client-SideCrash-ResistancetoOvercomeDiversificationandInforma- [49] D. A. Osvik,A. Shamir, and E. Tromer. Cache Attacksand Counter-
+tionHiding. NDSS’16. measures:TheCaseofAES. CT-RSA’06.
+[20] D.Genkin,L.Pachmanov,I.Pipman,E.Tromer,andY.Yarom.ECDSA [50] M. Payer. HexPADS: A Platform to Detect “Stealth” Attacks. ES-
+Key Extraction from Mobile Devices via Nonintrusive Physical Side SoS’16.
+Channels. CCS’16. [51] K.Razavi,B.Gras,E.Bosman,B.Preneel,C.Giuffrida,andH.Bos.
+[21] C.GiraudandH.Thiebeauld.ASurveyonFaultAttacks.CARDIS’04. FlipFengShui:HammeringaNeedleintheSoftwareStack. SEC’16.
+[22] C.Giuffrida,A.Kuijsten,andA.S.Tanenbaum. EnhancedOperating [52] SafeStack. http://clang.llvm.org/docs/SafeStack.html.
+System Security Through Efficient and Fine-grained Address Space [53] F.J.Serna. TheInfoLeakEraonSoftwareExploitation. BH-US’12.
+Randomization. SEC’12.
+[54] H.Shacham,M.Page,B.Pfaff,E.-J.Goh,N.Modadugu,andD.Boneh.
+[23] E.Goktas,R.Gawlik,B.Kollenda,E.Athanasopoulos,G.Portokalidis, OntheEffectivenessofAddress-spaceRandomization. CCS’04.
+C. Giuffrida, and H. Bos. Undermining Entropy-based Information
+[55] ECMAScriptSharedMemory. https://goo.gl/WXpasG.
+Hiding(AndWhattodoAboutit). SEC’16.
+[56] K. Z. Snow, F. Monrose, L. Davi, A. Dmitrienko, C. Liebchen, and
+[24] M.Gorman. UnderstandingtheLinuxvirtualmemorymanager.
+A.R.Sadeghi.Just-In-TimeCodeReuse:OntheEffectivenessofFine-
+[25] D. Gruss, C. Maurice, A. Fogh, M. Lipp, and S. Mangard. Prefetch GrainedAddressSpaceLayoutRandomization. SP’13.
+Side-ChannelAttacks:BypassingSMAPandKernelASLR. CCS’16.
+[57] A.Sotirov. HeapFengShuiinJavaScript. BH-EU’07.
+[26] D. Herman, L. Wagner, and A. Zakai. asm.js. http://asmjs.org/spec/ [58] D. Stefan, P. Buiras, E. Z. Yang, A. Levy, D. Terei, A. Russo, and
+latest/. D.Mazie`res.EliminatingCache-BasedTimingAttackswithInstruction-
+[27] R. Hund, C. Willems, and T. Holz. Practical Timing Side Channel BasedScheduling. ESORICS’13.
+AttacksAgainstKernelSpaceASLR. SP’13. [59] A. Tang, S. Sethumadhavan, and S. Stolfo. Heisenbyte: Thwarting
+[28] Intel64andIA-32ArchitecturesOptimizationReferenceManual.Order MemoryDisclosureAttacksUsingDestructiveCodeReads. CCS’15.
+Number:248966-032,January2016. [60] C. Tice, T. Roeder, P. Collingbourne, S. Checkoway, U´. Erlingsson,
+[29] Intel64andIA-32ArchitecturesSoftwareDeveloper’sManual. Order L.Lozano,andG.Pike. Enforcingforward-edgecontrol-flowintegrity
+Number:253668-060US,September2016. ingcc&llvm. SEC’14.
+[30] G. Irazoqui, M. Inci, T. Eisenbarth, and B. Sunar. Wait a Minute! A [61] V. van der Veen, Y. Fratantonio, M. Lindorfer, D. Gruss, C. Maurice,
+fast,Cross-VMAttackonAES. RAID’14. G.Vigna,H.Bos,K.Razavi,andC.Giuffrida.Drammer:Deterministic
+RowhammerAttacksonMobilePlatforms. CCS’16.
+[31] G.Irazoqui,M.S.Inci,T.Eisenbarth,andB.Sunar. Lucky13Strikes
+Back. ASIACCS’15. [62] VMWare. Security considerations and disallowing inter-Virtual Ma-
+chineTransparentPageSharing.
+[32] Y. Jang, S. Lee, and T. Kim. Breaking kernel address space layout
+randomizationwithinteltsx. CCS’16. [63] D.WestonandM.Miller. Windows10MitigationImprovements. BH-
+US’16.
+[33] T. Kim, M. Peinado, and G. Mainar-Ruiz. STEALTHMEM: System-
+level Protection Against Cache-based Side Channel Attacks in the [64] Y.YaromandK.Falkner.FLUSH+RELOAD:AHighResolution,Low
+Cloud. SEC’12. Noise,L3CacheSide-channelAttack. SEC’14.
+[34] Y. Kim, R. Daly, J. Kim, C. Fallin, J. H. Lee, D. Lee, C. Wilkerson, [65] B. Yee, D. Sehr, G. Dardyk, J. B. Chen, R. Muth, T. Ormandy,
+K. Lai, and O. Mutlu. Flipping Bits in Memory Without Accessing S. Okasaka, N. Narula, and N. Fullagar. Native Client: A Sandbox
+Them:AnExperimentalStudyofDRAMDisturbanceErrors.ISCA’14. forPortable,Untrustedx86NativeCode. SP’09.
+[35] D.KohlbrennerandH.Shacham.Trustedbrowsersforuncertaintimes. [66] Y.Zhang,A.Juels,M.K.Reiter,andT.Ristenpart.Cross-TenantSide-
+SEC’16,2016. ChannelAttacksinPaaSClouds. CCS’14.
+[36] V.Kuznetsov,L.Szekeres,M.Payer,G.Candea,R.Sekar,andD.Song.
+Code-pointerintegrity. OSDI’14.
+15

@@ -1,0 +1,1406 @@
+SilentWhispers: Enforcing Security and Privacy in
+Decentralized Credit Networks
+Not Every Permissionless Payment Network Requires a Blockchain
+Giulio Malavolta Pedro Moreno-Sanchez Aniket Kate Matteo Maffei
+⇤ ⇤
+Saarland Informatics Campus Purdue University Purdue University TU Vienna
+Abstract—Credit networks model transitive trust (or credit) a few emerging payment systems, such as Ripple [6] and
+between users in a distributed environment and have recently Stellar[4],relyoncreditnetworkstorepresentandprocessthe
+seen a rapid increase of popularity due to their flexible design credit between peers: this enables multi-currency transactions
+androbustnessagainstintrusion.Theyservetodayasabackbone (in fiat currencies, cryptocurrencies and user-defined curren-
+of real-world IOweYou transaction settlement networks such cies) across the globe in a matter of seconds, which are also
+as Ripple and Stellar, which are deployed by various banks
+significantly cheaper than traditional banking solutions [38].
+worldwide, as well as several other systems, such as spam-
+Severalmajorbanksworldwide[31],[52],[53],[57]havenow
+resistant communication protocols and Sybil-tolerant social net-
+started to use Ripple as a backbone for online transactions.
+works.Currentsolutions,however,raiseseriousprivacyconcerns,
+asthenetworktopologyaswellasthecreditvalueofthelinksare
+Credit networks and cryptocurrencies. Ripple and Stellar
+madepublicforapparenttransparencypurposesandanychanges
+are the first payment settlement networks deployed in practice
+are logged. In payment scenarios, for instance, this means that
+using the concept of credit network, and it is interesting
+alltransactionshavetobepublicandeverybodyknowswhopaid
+what to whom. to compare them with the other payment systems such as
+Bitcoin.Despiteitsunquestionableutility,Bitcoin(asanyother
+In this work, we question the necessity of a privacy-invasive
+currency) is limited to transactions where both transacting
+transaction ledger. In particular, we present SilentWhispers, the
+partiesagreeonacommoncurrency.Creditnetworks,instead,
+first distributed, privacy-preserving credit network that does
+smoothlyenablecross-currencytransactionsinanyuserspeci-
+not require any ledger to protect the integrity of transactions.
+fiedcurrency(includingBitcoin)andthisisoneofthereasons
+Yet, SilentWhispers guarantees integrity and privacy of link
+values and transactions even in the presence of distrustful users of their increasing deployment in banking systems [38].
+and malicious neighbors, whose misbehavior in changing link
+Similarly to Bitcoin, Ripple and Stellar networks opted
+values is detected and such users can be held accountable. We
+for a ledger-based consensus to demonstrate consistency of
+formalize these properties as ideal functionalities in the univer-
+sal composability framework and present a secure realization transactions through transparency. A crucial, and arguably
+based on a novel combination of secret-sharing-based multi- surprising, insight of this work is that while replicated ledgers
+party computation and digital signature chains. SilentWhispers (or blockchains) are crucial in cryptocurrencies, credit net-
+can handle network churn, and it is efficient as demonstrated works have inherent tolerance against transactional inconsis-
+with a prototype implementation evaluated using payments data tencies and thus they do not require such replicated ledgers
+extracted from the currently deployed Ripple payment system. nor a global consensus process, paving thereby the way for
+lightweight transactions.
+I. INTRODUCTION
+Privacy in credit networks. Most current credit network
+Motivation. Credit networks [22], [27], [29] model trust designs [44], [51] are centralized, i.e., the credit network
+among users in a network through a directed, weighted graph, is maintained entirely in a server environment. The others,
+wherethevalueofeachedgeshowstheamountofcreditthata such as Ripple [6] and Stellar [4], make their entire sets
+useriswillingtoextendtoanother.Creditnetworksconstitute of transactions as well as the network topology publicly
+thecoreofavarietyofapplications,suchastrustworthyonline available to establish credibility through transparency. As a
+marketplaces [51], spam filtering [44], rating systems [33], result, credit networks today cannot provide any meaningful
+cloud computing [46], and social networks [45]. Moreover, privacy guarantee: simple anonymization methods based on
+pseudonyms, like those employed in Ripple, are not effective,
+⇤Bothauthorscontributedequallyandareconsideredtobeco-firstauthors. as transactions still remain linkable to each other and they are
+susceptible to deanonymization attacks such as [43].
+Permission to freely reproduce all or part of this paper for noncommercial Inthecontextofpaymentsettlementnetworks,forinstance,
+purposes is granted provided that copies bear this notice and the full citation
+everybody knows who paid what to whom [48]. This state
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author of affairs clearly conflicts with the desire of users, who
+(for reproduction of an entire paper only), and the author’s employer if the instead strive for hiding their credit links and their operations:
+paper was prepared within the scope of employment. businesses and customers are interested in hiding their credit
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+information and transactions from competitors and even ser-
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23448 vice providers [37], while regular users aim at protecting theirtransactions as they might reveal personal information (e.g., Whispers is the first payment system that dispenses with
+medical bills or salary). the deployment of any centrally maintained or replicated,
+consensus-based ledger to ensure the integrity of the trans-
+Totacklethisproblem,Moreno-Sanchezetal.[47]recently
+actions.
+developed a centralized privacy-preserving architecture for
+credit networks, based on trusted hardware and oblivious We formalize for the first time the desired privacy
+•
+computations. Although this solution provides formal privacy properties of a credit network (i.e., value privacy, link privacy,
+guarantees and is efficient enough to support Ripple transac- sender privacy, and receiver privacy) as well as security
+tions, the usage of trusted hardware makes its employment in properties (i.e., integrity and accountability) following the
+real life quite problematic. The first challenge is who should universal composability (UC) framework [13] and prove that
+maintainthetrustedhardwareandwhyshouldtheotherparties, SilentWhispers constitutes a secure realization.
+distributed over the globe and ranging from individuals to
+WepresenttwoextensionsofSilentWhisperstoenhance
+banks,trustsuchanentityforthesetupandmaintenanceofthe
+•
+its robustness, by supporting offline nodes, and security, by
+hardware [50]. The trusted hardware also becomes a critical
+considering fully malicious landmarks. We discuss in detail
+bottleneck in terms of scalability and reliability, for instance,
+thetradeoffsintermsofavailability,performance,andprivacy
+in case of failure or simple software upgrades. On the other
+induced by these extensions.
+hand,itishardtoimagineacentralizedcryptographicsolution
+that does not rely on trusted hardware, since it is unclear how We have implemented SilentWhispers as a C++ library
+one could possibly read the network information required to and• evaluated its performance to demonstrate the practicality
+perform transactions without breaking the privacy of the other of our approach. Specifically, we have extracted transactions
+users. from Ripple activity in the period October 2013–January
+Ourworkmovesfromtheobservationthattheuser’scredit 2015 to set up the parameters of SilentWhispers and thereby
+links alone determine her available credit in the network and simulate a realistic scenario. Our experiments show that in
+the amount of credit loss she can incur due to misbehaving SilentWhispers it is possible to perform a transaction in about
+users.Hence,unlikeBitcoinandothercryptocurrencies,credit 1.3 seconds. The precision of SilentWhispers is optimal (1.0),
+networksareanidealtargetforadistributedarchitecturewhere which implies the absence of false positives and that users do
+each user maintains her own credit links locally and checks not incur any money loss. The performance evaluation shows
+that her inflow and outflow of credit do not change without thatSilentWhisperscanbeeffectivelydeployedasarealworld
+explicitconsent.Weherebyexplorethisapproach,designinga transactionnetwork,sinceitisefficientandscalestoagrowing
+distributedarchitecturethatprovidesstrongprivacyguarantees, number of users and payment transactions.
+offersbetterscalabilityandreliability,enforcesthecorrectness
+of transactions, and holds updates of credit links accountable. Organization. The rest of the paper is organized as follows:
+Section II gives a background on credit networks; Section III
+Challenges. Designingaprivacypreserving,distributedcredit
+presents the key ideas underlying our approach; Section IV
+network is technically challenging. A first problem is to
+formally defines the privacy guarantees of a credit network;
+correctlycomputetheavailablecredit(max-flow)betweentwo
+Section V presents the cryptographic construction; Section VI
+users without leaking the individual link values. A distributed
+illustrates SilentWhispers extensions to handle offline nodes
+max-flow computation [7] is a natural fit, but generic, off-
+and malicious landmarks; Section VII discusses our imple-
+the-shelf secure multiparty computations among all involved
+mentation and performance analysis; Section VIII discusses
+users would be too slow and not scalable enough for real-
+the related work; and Section IX concludes this work.
+world networks. A second problem is that some of the users
+might be dishonest and try to deviate from the protocol in
+order to selectively deny some legitimate transactions or learn II. BACKGROUND
+sensitive information. Perhaps most interestingly, ensuring the
+A. Credit Networks—CN
+correctness of the transactions without relying on a privacy
+invasive ledger requires a fresh architectural design. A credit network (CN) [22], [27], [29] is a weighted,
+directed graph G = (V,E), where vertices V represent the
+Our contribution. In this work, we present SilentWhispers,
+users and weighted edges (links) E represent the credit links.
+the first privacy-preserving, distributed credit network. In par-
+ticular,
+Theweightonanedge(u 1,u 2) 2Eindicatestheunconsumed
+credit that a user u has extended to u . For convenience, we
+2 1
+denote by val the non-negative credit of the directed
+SilentWhispers adapts the traditional landmark routing- (u1,u2)
+base• d credit network design [60], [62] to a distributed setting, link between u 1 and u 2. A credit network is equipped with
+four operations (pay, chgLink, test, testLink): pay allows to
+extendingitwithcryptographicconstructionsthatenabletrans-
+decrease the credit between two users only along credit paths
+actions among any two users while preserving strong privacy
+connecting those users; test checks the available credit along
+guarantees.
+creditpathsconnectingtwousers;testLinkandchgLinkenable
+Technically, SilentWhispers features a novel distributed pay- to test and increase the credit in a direct credit link between
+mentprotocoltocalculatetheavailablecreditbetweenasender two users. We refer to [47] for their formal definitions.
+and a receiver without revealing information about the credit
+Thelossofcreditincurredbytheusersinacreditnetwork
+in the involved links, nor the transacting users.
+is bounded [22] by the credit they have extended to a misbe-
+Additionally,SilentWhispersallowsforholdingusersaccount- having user. Moreover, credit loss is localized [21], as only
+ableforthecorrectnessofcreditupdates.Interestinglyenough, honest users who have extended credit to a misbehaving one
+2can incur credit loss. These interesting and useful properties of the landmarks. We refer the reader to [47] for a detailed
+have motivated the use of credit networks in several Sybil and description of landmark routing on directed graphs.
+malicious behavior tolerant applications [4], [6], [33], [44]–
+Applying landmark routing in a distributed network re-
+[46], [51].
+quires to perform the BFS algorithm in a distributed man-
+Centralized vs. distributed CN designs. In a central- ner[7],[39].Throughouttherestofthepaper,weassumethat
+ized credit network design, a service provider maintains the the executionofthelandmark-basedBFSalgorithm,whichwe
+complete credit network and updates it according to users addressbyrout,resultsineveryuserknowingitsparentonthe
+transactions. This approach is used, for instance, to avoid pathtotheBFSrootnode.Weformalizetheroutfunctionality
+fraud in marketplaces [51] and to mitigate spam in e-mail in Section IV.
+systems [44] or social networks [45]. In a distributed design,
+every user maintains her own credit links. This approach is C. Transactions in Distributed CN
+adopted for example in a Local Exchange Trading System
+(LETS) [1], where credit is used to monetize different goods Here we discuss how credit network operations are ex-
+such as childcare or transport. ecuted in a distributed fashion. First, chgLink and testLink
+operations are locally performed by the two users sharing the
+We aim at a distributed privacy-preserving credit network corresponding link.
+design, as it better fits the nature of current banking, where
+each user is responsible for her own credit while each bank The pay operation is divided into three main steps. First,
+is responsible for credit with its customers. There are several the sender reconstructs the transaction paths with the receiver
+challenges that should be addressed in a distributed design: through the different landmarks. These transaction paths can
+howtheroutinginformationisspreadalongthecreditnetwork, be reconstructed from the arborescence and anti-arborescence
+how to reconstruct credit paths to perform transactions (e.g., generated after performing the routing protocol. Second, the
+payments), how to ensure the correctness of these transactions credit available in every path is calculated as the minimum
+without a privacy-invasive ledger, and what privacy properties credit among the credits available in each of the links in the
+are desirable. path. The exact approach to calculate the available credit in a
+distributed setting and in a privacy-preserving manner is one
+of the open challenges that we address in this work. Finally,
+B. Routing in Distributed CN thesenderdecreasesthecreditavailableinthepathsbyatotal
+amount corresponding to the requested transaction value.
+A routing protocol computes the discovery of the credit
+paths among different users in the network. Using max- The test operation works as the pay algorithm except that
+flow [24], [26], [30] to perform routing in a centralized the last step (where the sender decreases the credit available
+credit network does not scale to large networks, which is in the paths by the transaction value) is omitted.
+only accentuated in the case of distributed credit networks.
+Thus, recent works adopt an approximated routing algorithm,
+III. PROBLEMDEFINITION&KEYIDEAS
+called landmark routing [60], where only a subset of all
+possible paths between sender and receiver are calculated. It In the following, we describe the security properties of
+has been shown in the context of centralized credit networks interest in a credit network. We defer formal treatment to the
+thatlandmarkroutingoutperformsthemax-flowapproach[62]. subsequent sections.
+The idea of the landmark routing protocol is to calculate a Integrity. A credit network achieves integrity if for all pay
+pathbetweensenderandreceiverthroughanintermediarynode operations the following holds. Let path ,...,path be the
+1 LM
+calledalandmark.Inmoredetail,landmarksareselectednodes paths in a pay operation, v 1,...,v LM be the credi|t av|ailable
+which are well known to every other node in the network. in such paths and x be the tran|sac|tion value. Then, after
+EachlandmarkstartstwoinstancesoftheBreadth-First-Search performing a successful pay, every credit link in each path is
+i
+(BFS) algorithm rooted at itself. In the first instance only decreased by x i v i, where x 1+...+x LM =x. If pay is
+edges in the forward direction are considered, calculating thus unsuccessful, no credit link must get modi|fied|.
+shortest paths from the landmark to each node. The second
+Serializability. Transactions in a credit network are serializ-
+instance only considers edges in the reverse direction, thereby
+able if, for all sets of pay and chgLink operations successfully
+obtaining the shortest paths from each node to the landmark.
+performedinaconcurrentmanner,thereexistsaserialordering
+This results in every user learning her parent in the path
+of the same operations with the same outcome (i.e., changes
+to and from each landmark. In the following, we denote by
+in the credit available in the corresponding paths).
+arborescencetheBFStreescontainingshortestpathsfromeach
+landmarktoallthenodes.Correspondingly,wedenotebyanti- Accountability. A credit network achieves accountability if
+arborescence the BFS trees containing shortest paths from all it is not possible for the adversary to claim a credit value in a
+nodes to each of the landmarks. link other than the current value (i.e., last credit value agreed
+between both users sharing the link), without being detected
+With such information, when a path between two users
+by honest parties.
+(e.g., sender and receiver) needs to be calculated, the shortest
+path from sender to landmark and the shortest path from We now informally describe the privacy properties of
+landmark to receiver are stitched together to generate a uni- interest in a credit network. Value privacy and sender privacy
+directional path of the form sender ... landmark werealreadyformalizedin[47],whiletheothersarepresented
+! !
+... receiver. Such a path can be calculated for each in this work for the first time.
+! !
+3Value privacy. A credit network achieves value privacy if
+it is not possible for any adversary to determine the total
+value of a transaction between non-compromised users: The a lid nv ke sr ,s ba ury
+t
+im
+t
+ia sy ns oe te poso ssm ibe letr fa on rsa ac nt yio an ds vh era sp ap re yn ti ong deo tv ee rmr ic ne ert ta hin
+e
+[15]
+total transaction value. 15 70 25 5
+Link privacy. A credit network achieves link privacy if it is [15]
+n inot ap lo inss kib bl ee twfo er ea nny noa nd -v ce or msa pr ry ot mo id see dter um sei rn se .thecreditavailable [15]
+Sender privacy. A credit network achieves sender privacy if
+it is not possible for any adversary to determine the sender in
+a transaction between non-compromised users. The definition
+of receiver privacy follows along the same lines.
+A. Attacker model
+We consider a fully distributed network where the adver-
+sarycanpotentiallycorrupt,spawn,orimpersonateanarbitrary
+setofusers.Theadversaryisallowedtoadaptivelychoosethe
+setofcorruptedparties.Thismodelsthefactthattheadversary
+can include her own users in the credit network and that the
+adversary might also compromise some of the honest users’
+machines.
+We initially consider only passive, but still adaptive, cor-
+ruption of a minority (less than half of the total set) of the
+landmark users, which are thus assumed to be honest-but-
+curious. We assume that the non-corrupted landmarks execute
+the algorithms according to our specifications and do not
+share private information among each other (i.e., they do not
+collude). In our vision, landmarks represent the root of trust
+in our network and they can be seen as the network operators
+(e.g., banks are the natural candidate to serve as landmarks
+in a transaction system). Furthermore, operations from the
+landmarks in the protocol are confined to the computation
+of the minimum value of each path during the transaction
+protocol.Thelandmarkscouldreportavaluesmallerorgreater
+than the actual minimum value of a path. A smaller value
+would reduce the functionality of the system while no credit
+would be lost by the honest user. A greater value would be
+detectedbythehonestuserwhodoesnothaveenoughcreditin
+thetransactionpath.Therefore,inbothcaseslandmarkswould
+lose customers and (possibly) go out of business. We thus
+argue that it is in the interest of the landmarks to follow the
+protocol in order to maintain the availability of their network.
+Nevertheless, it is theoretically interesting to realize a
+systemthatisresilientagainsttheactivecorruptionofasubset
+of landmarks. Later, in Section VI, we extend SilentWhispers
+in order to provide security and privacy guarantees even in
+presence of actively malicious landmarks.
+B. Strawman Approach and Key Ideas
+Routing:findingpathsinepochs. Routinginformationmust
+be repeatedly recalculated to account for the dynamic nature
+of credit networks: credit links among users are continuously
+updated, created, and deleted as a result of carrying out
+the transactions. Under the assumption that users are loosely
+synchronized, we divide the time in well-known epochs: BFS
+arborescences and anti-arborescences are created at the begin-
+ning of each epoch and users utilize that routing information
+throughout the duration of the epoch.
+]07[ [min(1 5, 7 0,
+...)]
+[25]
+[5]
+[5]
+U1 [min(15U
+,
+2
+70,
+...)]
+[70]
+[25]
+[25]
+U3
+[5]
+U4
+Fig.1:AnillustrativeexampleoftheuseofSMPCinSilentWhispers:
+Dashed lines show communication between parties and solid arrows
+represent credit links, while notation [a] indicates a (secret sharing)
+share of value a. We consider a payment from user U1 to U4. First,
+everyuserinthepathsendsashareofherlinkvaluetoeachlandmark.
+Then, landmarks locally compute the share of the minimum credit
+on the path and send it to the sender. Transfer of the share from the
+landmarkinthemiddletothesenderhasbeenomittedforreadability.
+We assume that the set of landmarks is fixed and known
+to all users and that the credit network is a connected graph.
+Then,thecorrectnessofBFSascertainsthateachuserreceives
+routing information from all her neighbors for each landmark.
+This ensures that no honest user is alienated by a malicious
+neighbor; the absence of BFS related communication from a
+neighbor for any landmark serves as a detection mechanism
+of misbehavior so that further actions (e.g., removing the link
+with the misbehaving neighbor) can be adopted. We leave
+the design and implementation of a fault-tolerant BFS as an
+interesting future work.
+Credit on a path: SMPC. The central technical challenge
+in the design of a credit network is the computation of the
+credit available in a certain path, which is necessary for
+performing a transaction. A first, trivial solution would be to
+leteveryuserinthepathprivatelycommunicateherownlink’s
+value to the corresponding landmark so that the landmark
+can thereby compute the minimum value over the path and
+notify the intended recipients. It is easy to see, however, that
+this approach fails to guarantee privacy against an honest-
+but-curious landmark as the landmark would learn the credit
+associated with each link.
+A local approach, where the credit on the path gets com-
+putedstep-by-stepbyeachuserinthepath,doesnotsolvethe
+privacy problem either. For instance, suppose that each user
+sends to the next user in the path the lower value between the
+oneofitsownlinkandtheonereceivedfromtheprevioususer:
+it is easy to see that such a protocol leaks all the intermediate
+values.
+The idea underlying our approach is to design a secure
+Multi-Party Computation (SMPC) protocol to compute the
+credit available on a path. In order to boost the efficiency of
+ourconstruction,weletlandmarksplaytheroleofcomputation
+parties, each receiving a share of the credit on each link from
+the sender to the receiver. Landmarks can jointly compute the
+credit on the whole path, intuitively by computing a series of
+minimum functions, but without learning anything about the
+resultofthecomputation,norofcoursethecreditonthelinks.
+4AnillustrativeexampleisshowninFig.1.First,everyuser
+inthepaymentpathfromthesender(U )tothereceiver(U ), Log Log
+1 4 (SK1,VK1) (SK2,VK2)
+creates a share of the link’s value for each of the landmarks.
+After receiving all shares, landmarks locally compute the
+Sign(SK2,(U1 1 !5 U2,t1)) Sign(SK1,(U1 1 !5 U2,t1))
+“minimum”functionovertheshares,therebyobtainingashare
+(ChgLink(U1,U2,+3),t2) (ChgLink(U1,U2,+3),t2)
+o ref ct oh ne str re us cu tl st tt hh eat ri es suth lten ans den ct arto riet she ouse tn td he er. pF ayin ma ell ny t, .the sender (U1 1 !6 U2) (U1 1 !8 U2)
+This approach, however, leaves two important concerns Fig. 3: Illustrative example of the dispute resolution in
+unanswered. First, how to assure that the shares come from SilentWhispers. Users sharing a link exchange a signature of the
+users forming a path from the sender to the receiver without current link’s value. When an operation on the link occurs (e.g.,
+compromising their privacy (e.g., revealing the links); and increase the link value by 3 credits) and users do not agree on the
+second, how to enforce the correctness of the updates of links newlink’svalue,thelogsfromusersallowstosolvethedispute(e.g.,
+caused by the transaction without using a public ledger. the new value must be set to 18).
+Path construction: chained digital signatures. We ensure
+that all shares come from users in a path from the sender to Inanutshell,thetwoend-pointsestablishthecurrentvalue
+the receiver by resorting to a chain of signatures. Na¨ıvely, we of the link by signing it with their long-term signing keys.
+couldassumethateveryuserusesalong-termkeypairtosign Then, if a transaction is routed through such link, both users
+the verification key from her predecessor and her successor in log the transaction and sign the new link value. All signatures
+a given path. This would result in a unique signature chain in our accountability mechanism contain a timestamp to avoid
+serving as a valid proof of the existence of a path from sender rollback attacks. By inspecting these signatures, a judge can
+to receiver. determine the correct value of the link. We assume that long-
+term keys are associated to the real user’s identities (e.g., in
+However, the exposure of the same long term keys across an offline contract or using a PKI), such that users are held
+different transactions would allow for correlation attacks and accountable for their actions.
+ultimately compromise user privacy. Using fresh keys per
+transaction to overcome this issue does not entirely solve the IV. SECURITYDEFINITION
+problem either: since fresh keys are not bound to a user, an
+We define the security and privacy goals of our design us-
+adversarycanalwaysimpersonateanhonestuserwithherown
+ingtheideal/realworldparadigmfromtheUniversalCompos-
+keys.
+ability(UC)framework[13].Wedescribeinthefollowingthe
+Our idea, instead, is to combine long term and fresh keys. ideal functionality CN, which models the intended behavior
+F
+First, a user signs a fresh verification key with her long term of the system, in terms of functionality, security, and privacy.
+signing key so that they are bound together. The (sensitive)
+Ideal world. We consider a connected network of n nodes
+long term verification key is revealed only to the counterparty
+where each node is labeled either as a standard end-user (u)
+inacreditlinksothattherelationbetweenafreshverification
+or as a landmark (LM). We model the synchronous network
+key and a user is verifiable to the counterparty but remains
+as an ideal functionality as well as the secure and
+NET
+hidden for the rest of users in the credit network. Second, a F
+authenticated channels that connect each pair of neighboring
+usercanuseherfreshsigningkeytosignthefreshverification
+nodes, ,asproposedin[13].Inourabstraction,messages
+SMT
+key of the predecessor and successor in any given path, F
+betweenhonestnodesaredirectlydeliveredthrough ,i.e.,
+SMT
+thereby creating a signature chain. A pictorial description of F
+the adversary cannot identify whether there is a communica-
+the approach is reported in Fig. 2.
+tion between two honest users. The attacker can corrupt any
+instance by a message corrupt sent to the respective party ID.
+Accountability: dispute resolution. In a distributed credit
+Thefunctionality handsovertotheattackerallthestatic
+network,thetwoend-pointsofalinkareresponsibleforsetting FNET
+information related to ID. In case ID is a standard node, all
+itsvalue.Weprovideanaccountabilitymechanismtoestablish
+its subsequent communication is routed through , which can
+therealvalueofalink,incasethetwoend-pointsdisagreeon A
+reply arbitrarily (active corruption). If ID is a landmark, all its
+that. An illustrative example of this idea is depicted in Fig. 3.
+subsequent communication is recorded and the transcripts are
+Sign(SK⇤2, {VK⇤1,VK⇤2,VK⇤LM}) Sign(SK⇤3, {VK⇤LM,VK⇤3,VK⇤4}) given to
+A
+(passive corruption).
+Ouridealfunctionalityforacreditnetwork, ,maintains
+CN
+Sign(SK⇤1, {VK⇤1,VK⇤2}) Sign(SK⇤LM, {VK⇤2,VK⇤LM,VK⇤3}) Sign(SK⇤4, {VK⇤3,VK⇤4})
+locally the static information about nodes,
+liF
+nks, and their
+creditusingamatrix.Additionally, logsallofthechanges
+CN
+F
+to the credits between nodes that result from successful trans-
+U1 U2 LM U3 U4 actions and we denote by valt u,u0 the credit between some u
+and u at time t. is composed by a set of functionali-
+0 CN
+Fig. 2: Illustrative example of path construction in SilentWhispers. ties ( , ,F , , , ) that
+ROUT PAY TEST CHGLINK TESTLINK ACC
+Every user i has a pair (SK⇤i,VK⇤i) of signing and verification keys. interaF ct as foF llows:F
+CN
+perF iodically eF xecutes a fuF nctionality
+Every user in the path privately exchanges the fresh verification key to update the routingF information of the nodes in the network
+tobothneighbors.Then,eachuserpublishesasignedtuplecontaining ( ) using as a mean of synchronization. Nodes can
+ROUT NET
+the fresh verification keys of the neighbors and his/her own. A path cF ontact the ideaF l functionality to perform transactions ( ),
+PAY
+is correct if contiguous verification keys in the path are equal. test the available credit ( ), update the credit onF a link
+TEST
+F
+5( ), test the credit available in a link ( ) or
+toFC sH oG lvL eINK
+disputes relative to the credit on
+someFT liE nS kTL (INK
+).
+Functionality FROUT
+ACC
+Under these assumptions, we describe the routines exF ecuted 1) LM sends to FROUT two tuples of the form (u 1,...,u m), indi-
+by in the following. cating the sets of neighbors of LM in the arborescence and anti-
+CN
+F arborescence, respectively.
+F toRO coU nT s: tT ruh ce tr to hu eti Bng FSal tg ro er ei sth rm eq( uF irig ed.4 t) oa fl olo rw ms tt rh ae nsf au cn tc ioti non pa al ti hty
+s
+2) F toR cO oU nT sr tru un cs ta anB aF rS boa rl eg so cr eit nh cm eao nv der anth ae nl ti in -ak rs ba om reo sn ceg nr ce egi rs ot oe tr ee dd au ts te hr es
+landmark ID .
+betweenapairofnodes.Thelandmarkfixesthesetofchildren LM
+3) Specifically,thealgorithmoperatesonasetofuserstobevisited,
+nodes for the computation of the BFS (step 1) and the ideal
+initially set to the one specified by the landmark. For each user
+functionality executes the BFS (steps 2-3) by exchanging
+messages with each node in the network, starting from the u in t ,h wis hes re et, hF iR sO tU hT ense un md bs eh re or fa hom pses ts ha ag te se( ps aid ra, tI eD sL uM, fh ro, mu p I) Dvia
+SMT LM
+set specified by the landmark. Each node can decide whether F andu
+p
+istheparentnodeonthatpath.u caneithersend( ,sid),
+to interrupt the algorithm or to indicate the next node to visit. causing
+FROUT
+to roll back to the previous user, or (u0,? sid) to
+This models possible disruptive users in a distributed credit indicate the next user u0 to visit, which is thus added to the set.
+network.Attheendoftheexecutioneachnodelearnsitsparent The algorithm terminates when the set is empty.
+from and to the input landmark.
+Fig. 4: Ideal functionality for the rout operation
+:ThealgorithminFig.5providesanidealfunctionalityof
+PAY
+F
+thepay operationinadistributedcreditnetwork.Theprotocol
+is initiated by the sender Sdr that communicates the two ends
+of the transaction to the ideal functionality
+PAY
+(step 1). Functionality FPAY
+F
+For each landmark, FPAY derives two paths connecting the 1) ForeachLM,asenderSdrsendsthetuple(Sdr,Rvr,Txid,ID LM)
+sender to the landmark (resp. the receiver to the landmark) in to ,whereRvr,Txid,andID denotethereceiver,thetrans-
+PAY LM
+F
+a distributed fashion (step 2): the functionality interacts with action identifier, and the landmark identifier of the transaction.
+each intermediate node that can choose the next node where 2) For each LM, PAY derives the path from Sdr to Rvr, by
+F
+to route , until the landmark is reached (or the maximum concatenating the respective paths to LM, as follows: starting
+PAY
+F from Sdr and Rvr, sends (Txid, ID , u) via , where
+length of the path is exceeded). Again, each node along the FPAY LM FSMT
+u is the previous user in the chain, if any. Each node can
+path can arbitrarily delay the operation and potentially choose
+either send ( ,Txid,ID ), to have ignoring the path, or
+any next node to visit, to model possibly malicious nodes. ? LM FPAY
+( ,Txid,ID )toletthefunctionalityfollowthepathconstructed
+LM
+computesthenthetotalamountofcreditassociatedwith >
+F eaP cA hY of the derived paths and sends the information to the b toy LF MRO .UT,or( pu ro0, cT eex did s, uI nD tiL lM i) tt ro eai cn hd eic sa Lte Mth fe ron mex bt ou ts her eo nn dsth (e orp ta hth e
+PAY
+sender(step3)whocaneitherinterrupttheexecutionorinform maximuF m length of the path is exceeded) and it computes the
+ofthevaluestotransferthrougheachpath(step4). minimum value v among credits of the links on the path to
+PAY PAY LM
+F F
+informsthenodesofthevaluetransactedthroughthemandthe LM.
+receiver of the total amount of transacted credit (steps 5-6). 3) ForeachLM, PAY calculatesthesetoftuplesP = ID LM,v LM ,
+F { }
+Each node involved in this phase can either confirm or abort wherev LM isthecreditassociatedtothepathfromtheSdrtothe
+Rvr throughLM(path ). sendsthen(P,Txid)totheSdr
+the operation if the transacted amount exceeds the capacity LM FPAY
+via .
+o crf edso itm ine foli rn mk a. tiI of na oll f eo af chth ne on do ed ie ns voa lc vc ee dp ct, onF sP isA tY enu tlp yd wat ie ts h tt hh ee 4) SdrF caSM nT either abort by sending ( ?,Txid) to FPAY or send a set
+of tuples (ID ,x ,Txid) to via .
+LM LM PAY SMT
+transacted amount. Then informs the set of nodes that F F
+participated to the protocoF lP (A sY tarting from the receiver) of the 5) vF ao lr ueea xch L bM y, seF nP dA iY ngin (f xorm ,s IDall ,th Te xidn )od ve is a in pat .h ELM achof noth de e
+LM LM LM SMT
+operation’ssuccess(step7).Thisisdoneagainiterativelysuch can either send ( ,ID ,Txid) to abort thF e transaction, or
+LM
+?
+that any node can interrupt the communication, if traversed. (accept,ID ,Txid)tocarryoutthetransaction.Inthelattercase
+LM
+PAY checks whether for the corresponding edge e:val e x LM,
+The FTEST functionality computes the credit available on F andifyes FPAY subtractsx LM fromval e.Ifoneofthecon  ditions
+the paths connecting any two nodes in the network, and it is not met or there is at least one ( ,ID ,Txid) message,
+LM
+?
+w inor tk hs
+e
+a en xa el co ug tio ou nsly eacto
+h
+t nh oe deste cp as
+n
+1 q- u3 eri yn F TP EA SY T. LIA NKt a tn oy op bo tai in nt t ch oe rn resF pP oA nY dia nb go lr it ns kt she oftr pa an ts ha Lc Mti .on and restores the credits on the
+information about her adjacent links andF each pair of neigh- 6) PAY sends to Rvr the tuple (Sdr,Rvr,v,Txid) via SMT, where
+F F
+v is the total amount transacted to Rvr. Rvr can either abort
+boring nodes can jointly query to update their link
+FCHGLINK the transaction by sending ( ,Txid) or allow it by sending
+or generate a new one. ?
+(success,Txid).
+7) ForeachLM, sendseither(success,Txid)(or( ,Txid)de-
+FACC: The accountability algorithm depicted in Fig. 6 solves pendingontheF oP uA tY comeofthetransaction)toeachuse?
+rinthepath
+eventual disputes among pairs of nodes for the value of the
+from the Rvr to the Sdr, starting from the Rvr. Such a user can
+link between them. Any two nodes can contact the
+FACC either reply with ( ,Txid) to conclude the functionality or with
+functionality with their claim for the value of that link (step (accept,Txid)toh? ave passingthemessage(success,Txid)
+PAY
+1).Ifthetwovaluesareequalorthetwonodesarenotarguing (or ( ,Txid)) to the neF xt user until Sdr is reached.
+?
+aboutthesamelink, informsthenodesandinterruptsthe
+ACC
+F
+execution (step 2). Otherwise ACC retrieves the current value Fig. 5: Ideal functionality for the pay operation
+F
+ofthelinkfrom andreportstoeachnodetheindexofthe
+CN
+F
+instancethatqueriedthecorrectvalue,ifany.Thefunctionality
+iterates this procedure with older versions of the link stillnovalueprovidedbyanyclientsmatchestheonerecorded
+ACC
+F
+value (step 3) until the initial state of the system is reached. If by , returns (step 4).
+CN ACC
+F F ?
+6Functionality FACC withauniformlysampledidthatdoesnotcontainanyinforma-
+1) Two nodes u 0 and u 1 contact ACC by sending the tuple tion about the identity of the sender nor of the receiver. Thus
+F
+(val 0,u 0,u 00), (val 1,u 10,u 1) respectively, via FSMT. in the ideal world each user does not learn any information
+2) The functionality FACC checks whether u 00 = u 1 and u 10 = u 0, beyond the fact that some transaction has traversed some of
+if this is not the case then ACC sends the distinguished symbol her direct links, which is inevitable to disclose.
+F
+to both of the instances and aborts the execution. If val 0 =
+?
+val 1 the functionality replies with the distinguished symbol > Foradetaileddiscussionofafewinterestingdesignchoices
+and interrupts the protocol.
+underlying the ideal world, we refer to the full version [3].
+3) Set t to be the current time and iterate until t=0
+a) FACC queries FCN to retrieve valt (u0,u1). UC-Security. We define the concept of UC-security, which
+b) If valt
+(u0,u1)
+=val 0, then
+FACC
+sends the tuple (0,val 0,val 1) intuitively captures under which conditions a cryptographic
+to u 0 and u 1 via FSMT. Else, if valt (u0,u1) = val 1, then the system in the real world constitutes a secure realization of the
+functionality sends the tuple (1,val 0,val 1) to u 0 and u 1 via ideal world. Let EXEC ⌧, , be the ensemble of the outputs of
+SMT. Otherwise, ACC sets t=t 1. the environment whenAinEteracting with the adversary and
+F F   E A
+4)
+ACC
+returns ( ,val 0,val 1). parties running the protocol ⌧ (over the random coins of all
+F ?
+the involved machines).
+Fig. 6: Ideal functionality for the accountability mechanism
+Definition 1 (UC-Security): A protocol ⌧ UC-realizes an
+ideal functionality if for any adversary there exists a
+F A
+simulator such that for any environment the ensembles
+Discussion. What is left to be shown is that our ideal S E
+EXEC andEXEC arecomputationallyindistinguish-
+functionality captures the security and privacy properties that ⌧, , , ,
+able. AE F SE
+one would expect for a credit network.
+- Integrity:Intheidealworld,integrityisguaranteedbythe
+V. CRYPTOGRAPHICCONSTRUCTION
+idealfunctionality,whomaintainsadatabaseofthelinkvalues
+andupdatesthemconsistentlywiththesuccessfultransactions. A. Building Blocks
+- Serializability:WeobservethatanysetofchgLinkopera- In the following we provide the intuitive description of the
+tionsonthesamelinkisexecutedseriallybytheidealfunction- cryptographic primitives that we deploy in our system.
+ality.AssumeforthemomentthatonlychgLinkoperationsare
+Secret Sharing. A Secret Sharing Scheme ( ) [56] allows a
+performed: as any two concurrent operations are necessarily T
+dealer to distribute shares of a secret among different parties
+executed on two different links, it is easy to find a scheduler
+such that any number of shares below a certain threshold re-
+that returns the same outcome by performing those operation
+vealsno informationaboutthe secretitselfin theinformation-
+in some serial order (i.e., any order). Since a pay operation
+theoretic sense, while an arbitrary subset of shares above the
+can be represented as a set of chgLink operations performed
+threshold allows a receiver to fully reconstruct the secret.
+atomically (due to the integrity notion), the property follows.
+In the following, we denote the shares of a secret value by
+- Accountability: We consider attacks aiming to alter the [[s 1,...,s m]], where m is the number of landmarks. We set
+credit on the network. Hence we can assume without loss of the threshold t<m/2 so that multiplication of shares can be
+generality that any malicious behavior necessarily results in handled by m computing parties.
+at least one pair of neighboring nodes not agreeing on the
+Distributed Minimum Computation. Oninputsecretshares
+value of one of their shared links. We further note that the
+of values x ,...,x shared using scheme among a set of
+ideal functionality updates the values of the links involved 1 n T
+computing parties, a multi-party computation protocol min()
+in a transaction only if all the corresponding nodes accept
+results in each party having a share of the minimum of
+it. It follows that, for each link, the functionality always
+those values. We employ a distributed integer comparison
+retrieves a value which the two end-points agreed upon and is
+protocol [16] for this distributed computation.
+correctly updated upon each successful transaction. Therefore
+the accountabilityalgorithm cansuccessfully determinewhich Digital Signatures. A signature scheme ⇧ allows one to
+of the two nodes is claiming the correct value of the link, if compute a tag ( ) on a given message m that proves the au-
+any. thenticity of it. We denote this operation as   Sign(sk,m),
+whereskisasecretkey.Inparticularitshouldbeinfeasiblefor
+- Value privacy: We observe that the only information
+anybody not possessing the secret key to produce a valid tag
+revealed to the nodes about a transaction is the value of the
+on any arbitrary message. In addition, the validity of the tag-
+transaction that traverses them (while the total amount of
+messagepaircanbepubliclyverifiedviaanassociatedverifica-
+transferred credit is kept local by the ideal functionality). It
+tionkey(vk).WedenotethisoperationasVerify(vk,m, ).We
+is unavoidable to leak this information to each node since it
+refer to [14] for the security definition in the UC framework.
+affects its direct links and thus the leakage for the transaction
+value in our protocol is optimal.
+B. Protocol Description
+- Link privacy: The reasoning is similar, since we model
+System assumptions. We assume that the set of landmarks
+each link as a value shared between two users and concealed
+is fixed at the beginning of each epoch and that it is known
+from the others.
+to all users. Any changes to the set become effective in the
+- Sender/Receiverprivacy:Forsenderandreceiverprivacy, nextroutingepochasusersperformanewinstanceofthelink
+we note that the ideal functionality addresses each transaction setup protocol. This is crucial as this allows users to know the
+7root of all BFS trees in advance (and therefore the number of Protocol 1: Link setup protocol.
+possible paths) during the routing operation, and to securely
+communicate with them. In practice, one can maintain the set
+u 1, u 2: Nodes creating a shared link
+of landmarks in a public and authenticated log (e.g., as Tor Input: val: Value of the link u 1 !u 2
+directory authorities listing). We assume that the communica-
+(sk⇤ui, ev pk o⇤u
+ci
+h):
+:
+U Cuse rrr ei ntlo en pg oct herm keys
+tionbetweentwohonestusersisnotobservablebytheattacker. 1 u 1 sends   1 Sign(sk⇤1,(settled ||vk⇤1||vk⇤2||val ||epoch)) to
+This is a stronger requirement than the presence of a secure u
+2
+channel, since, in addition to hiding the messages exchanged 2 u 2 sends   2 Sign(sk⇤2,(settled ||vk⇤1||vk⇤2||val ||epoch)) to
+bythetwoclients,wewanttohidethefactthatcommunication u 1
+happened in the first place. If the adversary observes whether 3 if Verify(vk⇤2,(settled ||vk⇤1||vk⇤2||val ||epoch),  2) then u 1
+two honest users communicate, it is not possible to enforce
+stores (  1,  2,st
+vk⇤1,vk⇤2
+:=(settled ||vk⇤1||vk⇤2||val ||epoch))
+any meaningful notion of sender/receiver privacy. We note 4 if Verify(vk⇤1,(settled ||vk⇤1||vk⇤2||val ||epoch),  1) then u 2
+that, in practice, this condition can be enforced by having the
+stores (  1,  2,st
+vk⇤1,vk⇤2
+:=(settled ||vk⇤1||vk⇤2||val ||epoch))
+twousersdeployingsomeanonymouscommunicationchannel
+(e.g., Tor [23]). Moreover, we require all the involved users Phase 1: path construction and shares submission. In this
+to be online during a given transaction or the presence of a phase, users on each path create a signature chain and submit
+synchronizer (among the others [7], [59]) for the execution of the shares of their link values to the landmarks. In detail,
+the algorithms. We discuss later in Section VI-A on how to starting from the sender, each user signs her fresh verification
+relax this condition. key with her long term signing key and sends the signature
+to both the successor and the predecessor in the path (lines 3-
+Notation. We use bold terms to denote the input fields added
+4). This signature binds a fresh verification key to a user and
+only for readability. The rest of inputs are locally held by
+thus avoids illegitimate impersonations. Neighbors can then
+involved users. Moreover, We use the following notation to
+exchangethesharesoftheirsharedlink’svalueandcheckthat
+describe our protocols.
+they reconstruct to the same value (i.e., the two end-points
+p(u,i) Parent of node u in the path i agreeonthecreditbetweenthem)(lines5-6).Finally,eachuser
+c(u,i) Child of node u in the path
+i on the path signs all this information along with a timestamp
+val u1,u2 Credit value on link u 1 !u 2 (to avoid replay attacks) and sends it to the landmarks (line
+stu1,u2 Last value on u 1 !u 2 agreed by u 1,u 2 8). The signature is created with the user’s fresh signing key
+m[i] Element at position i in array m
+vki Fresh verification key of user u in path so that the user’s identity is concealed from the landmarks.
+u i Finally, the sender must create additional messages for each
+max Maximum path length (system parameter)
+ts Current timestamp path in order to pad it into a length predefined by the system
+(i.e.,max)inordertoavoidinferenceattacksbasedonthepath
+Setup. Users have access to a synchronous network through length (line 9). The same procedure is symmetrically carried
+NET. Every pair of users sharing a credit link communicate out on the paths from the receiver to each landmark.
+F
+through a secure and authenticated channel, described by
+. Secure realizations of and have been pro- Concerning the integrity of paths, we observe that a mali-
+SMT NET SMT
+F F F
+posedin[13].Finally,usershaveaccesstotheroutingprotocol cious user could divert the signature chain using fresh keys of
+described in : this functionality is executed periodically her choice. However, she cannot get an honest user into the
+ROUT
+F
+at epochs (e.g., according to some system parameter) so that fake chain continuation, since that user would refuse to sign
+frequent changes in the inherently dynamic topology of credit the attacker’s fresh key, making the attack ineffective.
+networks are taken into account for subsequent transactions.
+We show in the full version [3] that the landmark routing Phase 2: computation of credit on a path. In this phase,
+algorithm UC-realizes ROUT. landmarks verify the correctness of the signature chain and
+F
+calculate the credit available in each path. In particular, after
+Link setup. This protocol allows two users sharing a credit
+thelandmarksreceivemessagesfromuptomaxusersforeach
+link to agree on the link’s value at the beginning of each
+path,theyverifythatneighboringkeysinapathareconsistent
+routing epoch. This is later used as a reference for subsequent
+and calculate the minimum value of each path using a secure
+updates within the epoch. For that, each user signs the other’s
+multi-party computation (lines 11-12). This results into each
+long-term verification key and the current credit with her own
+landmark having a share of the minimum value for each path
+long-term signing key.
+which is then sent to the sender (line 13).
+Transaction. For easing the presentation, we have made
+two simplifications. First, we assume the set of paths In a nutshell, the use of fresh keys hides users identities
+path ,...,path as input of the transaction protocol, al- and the multiparty computation over shared values does not
+{ 1 LM}
+though in reality every user notifies her parent on the path reveal the actual link values to the landmarks. Additionally,
+that she is part of a transaction path and she needs to carry due to the use of fresh keys for each path, landmarks cannot
+out the corresponding operations. Second, at certain steps of detect whether a given link is shared in more than one path.
+the protocol we write that users submit messages directly to Thiscouldresultinlandmarkscalculatingapathvaluegreater
+the corresponding landmark (e.g., step 8) to mean that such than the available one. Nevertheless, this over-approximation
+messages are sent to the landmark by forwarding it among is detected in the next phase when a link cannot be updated
+neighbors in the path. The creator of such message encrypts due to insufficient credit and this path is then ignored for
+it under the public key of the landmark and signs it with her the transaction without incurring any credit loss for the users
+fresh signing key to avoid tampering from other users. involved in the transaction.
+8Phase 3: Updating link values. Link values on each path Protocol 2: Transaction protocol.
+are updated so that the expected credit reaches the receiver.
+Sdr,Rvr: Transaction sender and receiver
+This process is performed in two steps. First, the transaction
+Input: path ,...,path Set of paths Sdr to Rvr
+value for each path is decreased (i.e., on hold) on each link { 1 LM}
+from the sender to the receiver (lines 18-22). This ensures /* Phase 1: si( gsk n⇤u ai t,v uk r⇤u ei): chau ise nr u i long term keys */
+that a user puts on hold credit on her outgoing link only after 1 for i LM do
+2| |
+assuring the credit in the incoming link has been held, and 2 for u 2path i do
+thus a honest user in the path cannot incur in credit loss. This 3 u creates fresh keys (sk u,vk u),   u :=Sign(sk⇤u,vk u)
+escrow serves as a commitment to accept the new link value and sends (  u,vk u) to p(u,i) and to c(u,i)
+if the receiver eventually accepts the transaction. 4 u receives (  c(u,i),vk c(u,i)) from c(u,i) and
+(  ,vk ) from p(u,i)
+p(u,i) p(u,i)
+Second, after receiving the confirmation from the receiver 5 u receives from c(u,i) shares [[s01,...,s0LM]] , u
+(i.e., the receiver signature on the transaction’s value for a reconstructs v’ from [[s01,...,s0LM]] and|che|cks
+given path), the held value is adopted as the new credit value whether v0 =val
+c(u,i),u
+| |
+(i.e., settled) on each link, starting from the receiver to the 6 u creates [[s 1,...,s LM]] for the value val u,p(u,i) and
+sender (lines 25-29). This reverse order ensures that each user sends them to p(u,i|) |
+inthepathhasanincentivetosettlethefinalvalue:auserfirst 7 if Verify(vk⇤c(u,i),vk c(u,i),  c(u,i))
+^
+settles the outgoing link (i.e., giving out credit), and thus is Verify(vk⇤p(u,i),vk p(u,i),  p(u,i)) then
+in the user interest to settle the incoming link (i.e., receiving 8 for j LM do
+2| |
+credit) to recover the credit. In this manner, credit values on 9 u creates m:=
+transaction paths can be consistently updated. Interestingly, if
+(vk c(u,i)||[[s0j]] ||vk
+u
+||vk p(u,i)||[[s j]] ||Txid ||ts),
+any user does not cooperate with her neighbor during this
+u creates  
+LMj
+Sign(sk u,m) and finally
+phase (e.g., a faulty user), the credit involved in the dispute
+sends (  LMj,m) to LM j
+is bounded (see Section II-A) and the dispute can be resolved
+later following the accountability protocol.
+10 Sdr creates k:=(max  |path i|) more tuples (m,  LMi) ,
+where all shares reconstruct to the maximum possible
+Testcredit. Thetestoperationworkssimilartothetransaction credit in a link, and sends them to LM i
+protocol.Itonlydiffersinthefactthatthesenderwillnotcarry /* Phase 2: Minimum computation */
+out the transaction (steps 15-29), as the test operation only 11 for i LM do
+2| |
+requires the sender to learn the available credit. testLink and 12 Each LM checks whether |path i|=max
+^
+chgLink can be easily performed by exchanging a message 8j 2{1,..., |path i|}:Verify(m j[3],m j,  j) ^m j[1]=
+m [3] m [4]=m [3] m [6]=m [6]=m [6]
+b auet tw hee ne tn icath tee dt pw ro ivae tn ed c- hp ao nin nt es l.of the credit link through their 13 Eaj c h1 LM^ coj mputes thj e+1 shar^ e s mj   ini1 as resulj t for funcj t+ io1 n
+Accountability. Our accountability protocol requires some 14
+m Eain ch( ·) LMove sr enth de ss th ha ere res s[ u[s lt1 i, n. g. t. u, ps lm ea sx] (] ib ,e sl mo inn ig ,i vn kg
+i
+1,to vkp
+i
+ma at xh )i.
+entity (e.g., a judge) that can enforce decisions externally to Sdr
+to the system. Given two users u 0,u 1 disputing the current /* Phase 3: Carrying out transaction */
+value on their shared link, this protocol allows each user 15 Sdr reconstructs the tuples (i,min i) and verifies that vki 1 and
+to provide the judge with her view of the link (st 0,st 1), vki
+max
+are the first and last keys of path
+i
+as she expects
+the corresponding confirmations ((  00,  01),(  10,  11)) and the 16 for i 2|LM
+|
+do
+signaturesofthesenderandthereceiverofthelasttransaction 17 Sdr chooses the transaction value x i, generates
+(( Sdr, Rvr),( Sdr, Rvr)).Giventhat,thejudgecandecidethe tx i :=(ts x i Txid vk Sdr vk Rvr) and
+vali0 d link0 state f1 ollow1 ing the steps we describe in Protocol 3.   Si dr :=Si| g| n(| s| k Sdr,t|| x i), a| n| d sends (tx i,  Si dr) to the
+nodes in path
+i
+First, the judge checks the validity of signatures (  i0,  i1) 18 for u 2path i do
+on the link states presented by each user u i (lines 2-5). If 19 u checks Verify(vk Sdr,tx i,  iSdr), x i is smaller than
+only one user provides valid signatures, her state is taken as the value val u,p(u,i), and previous link c(u,i) !u
+the valid one. If no user provides valid signatures, the judge has been reduced by x i
+cannot decide which state is correct. We denote this by . 20 u decreases link value on path i by x i resulting in x0i
+Finally, if all signatures are correct, the judge continues? to 21 u creates m:=(onhold ||vk⇤u||vk⇤p(u,i)||x0i||tx i),
+check the content of both states st and st .   u :=Sign(sk⇤u,m) and sends (  u,m) to p(u,i)
+0 1 22 u receives   p(u,i) :=Sign(sk⇤p(u,i),m) from p(u,i)
+Thejudgemustdeterminethecurrentlyvalidsettledvalue 23 u and p(u,i) locally store (st vk⇤u,vk⇤p(u,i) :=m) and
+on the link. However, it is possible that a user’s view consists (  p(u,i),  u)
+on an onhold state and a valid transaction proving that held
+valuehasbeensuccessfullytransmittedfromsendertoreceiver. 24 Rvr   Ri vr :=Sign(sk Rvr,tx i) and sends (tx i,  Ri vr) to Sdr
+Thus, the judge first attempts to upgrade such views to a 25 for i LM do
+settled state (lines 6-10). 26 R2 vr| send| s (tx i,  Si dr,  Ri vr) to every node in path i
+27 for u 2path i do
+Finally,ifbothviewsareinsettledstate,thejudgeresolves 28 u creates m:=(settled ||vk⇤u||vk⇤c(u,i)||x0i||ts),
+the dispute by declaring valid the view with the more recent   u :=Sign(sk⇤u,m) and sends (  u,m) to c(u,i)
+timestamp (st[5]) (lines 11-15). In a simpler case where only 29 u receives   c(u,i) :=Sign(sk⇤c(u,i),m) from c(u,i)
+one view is in settled state, such view is declared as the valid 30 u and c(u,i) locally store (st vk⇤u,vk⇤c(u,i) :=m) and
+one. Otherwise, if any user’s view is finally settled, the judge (  ,  )
+c(u,i) u
+outputs .
+?
+9Protocol 3: Accountability protocol. Best-effort concurrent transactions. Transactions over dis-
+joints sets of links can be easily carried out concurrently. If,
+(vk⇤0),(vk⇤1): Keys for u 0, u 1 however, two or more transactions require more credit than
+Input: (st0,  00,  01),(st1,  11,  10): Link state for u 0, u 1 available at a shared link, the user of such link notices that
+(  0Sdr,  0Rvr),(  1Sdr,  1Rvr): Signatures of tx for u 0, u 1 when required to decrease her link. This user can handle
+/* Check signatures on link states */
+1 for i 0,1 do this situation in an optimistic manner: she can put on hold
+2
+3
+if2 ¬{ V iferif} y(vk⇤i,sti,  ii)
+_¬
+Verify(vk⇤1  i,sti,  i1  i) then t Ah se pv ra el vu ie ouf so lr yo mn ee nto iof nt eh de
+,
+t ar ba on rs ta ec dtio trn as nsa an cd tioa nb sor dt oth ne oto ath ffe er cs t.
+V the er nify(vk⇤1  i,st1  i,  11   ii)
+^
+Verify(vk⇤i,st1  i,  1i  i) c sir ge ndi tt heon abt oh re tedne tt rw ano sr ak cts ii on nc se
+.
+c To hr ere ns ,p eo an cd hin seg ndre ec re oiv fe ar ns ad bo orn teo dt
+4 return st1 i transactionrandomlychoosesawaitingperiodafterwhichshe
+ 
+reissuesthetransaction.Thismechanismcloselyresemblesthe
+5 else return
+? behavior of users in currently deployed credit networks such
+/* Upgrade states on hold */ as Ripple [2], where better liquidity decreases the odds for a
+6 for i 0,1 do deadlock in a credit network.
+2{ }
+7 if sti[1]=onhold then
+8 tx :=(sti[5] sti[6] sti[7] sti[8] sti[9]) Networkchurn. Whenacreditlinkiscreated(e.g.,anewuser
+|| || || ||
+9 if Verify(sti[8],tx,  iSdr)
+^
+Verify(sti[9],tx,  iRvr) enters the credit network creating a credit link to an existing
+then user),itcannotbeimmediatelyusedtoperformtransactions.It
+10 sti[1]=settled becomes usable next time the routing algorithm is performed
+(i.e., in the next epoch). When a credit link is deleted, its
+/* Settled link views */ value is set to 0 and thus immediately unusable to perform
+11 for i 0,1 do transactions through it. Finally, we describe the case when a
+2{ }
+1 12
+3
+if st ii f[1 s] ti= [5s ]e >ttl se td
+1
+^ i[5]st t1 h  ei n[1 r] e= turs ne stt tl ied then user goes offline in Section VI-A.
+ 
+14 if sti[1]=settled then return sti D. Security Analysis
+15 return
+? We hereby state the security and privacy results for
+SilentWhispers.Weproveourresultinthe , -hybrid
+NET SMT
+C. System Discussion model;i.e.,thetheoremholdsforanyUC-sF ecurerF ealizationof
+and . Due to space constraints, we defer the proof
+NET SMT
+Handling faulty users. During the first phase of the transac- F of the theoF rem to the full version of this work [3].
+tion protocol, a malicious user could send inconsistent shares
+of her link’s value to a landmark. The landmark notices this Theorem 1 (UC-Security): Let be a secure secret shar-
+T
+in the second phase since inconsistent shares are not signed ing scheme and ⇧ be an existentially unforgeable digital
+by honest users. Then, the landmark directly assigns zero to signature scheme, then SilentWhispers UC-realizes the ideal
+that path’s capacity and continues processing other paths for functionality CN in the NET, SMT-hybrid model.
+F F F
+the current transaction.
+E. Application of SilentWhispers to Other Credit Networks
+During the third phase, a user could refuse to update a
+link value during a transaction. On the one hand, if this We describe how SilentWhispers can be used to realize a
+happens while credit is being set on hold from sender to secure and privacy-preserving distributed variant of previous
+receiver, the receiver does not receive the expected credit credit network-based systems, thereby demonstrating its gen-
+and thus he does not sign the transaction. Consequently, after eralapplicability.Forthat,weobservethatcurrentapplications
+a certain timeout, users in the path can safely release the based on credit networks differ on two aspects: the meaning
+held value for such transaction. On the other hand, if this of credit values on each link and how a path is updated as a
+occurswhencreditisbeingsettledfromreceivertosender,the result of a transaction. We refer to [47] for a characterization
+accountability mechanism provided in SilentWhispers allows of these aspects for Ripple, Bazaar and Ostra.
+the honest counterparty of the link to show the transaction
+SilentWhispers can simulate the Ostra credit network by
+signed by both sender and receiver as a valid proof to settle
+setting the value on a link i j as the number of remaining
+the new value in the link. !
+emailsthatj allowsfromi.Interestingly,chgLinkandtestLink
+can be then performed locally between i and j. Moreover,
+We note that two neighboring corrupted nodes may apply
+test and pay operations can be used in a distributed fashion,
+arbitrarymodificationstotheirsharedlinkswithoutnecessarily
+as defined for SilentWhispers, thereby covering all necessary
+following the procedure specified above. This does not affect
+functionality.
+the credit balance for honest users: Our mechanism for link
+updates ensures that any honest user puts on hold the credit The Bazaar credit network can be also realized in a
+on any outgoing link only after the same amount of credit distributedmannerbydefiningcreditvaluesastheaccumulated
+has been held on an incoming edge. That is, the total balance value of successful transactions between two users sharing a
+of the intermediate users of a given transaction is maintained link. As before, chgLink and testLink operations are locally
+throughout the execution of the transaction. Given that, it carried out, while test and pay can be performed as defined
+follows that no malicious behavior can cause loss of credit for SilentWhispers. Interestingly, a successful transaction in
+for honest users. Bazaar additionally requires to restore the values on the links
+10used for a transaction and the addition of the paid credit path’s link. As before, the new link state is signed together
+to the link between sender and receiver. This functionality with the next neighbor if online or locally by the landmarks.
+can be simulated in SilentWhispers as follows: the sender Finally, each landmark logs the tuple (s ,  ) to be later on
+i i
+anonymously (e.g., using Tor) publishes the feedback along revealed to the offline user. This mechanism is repeated for
+with Txid; users involved in the transaction path for Txid can each user until the receiver of the transaction is reached. The
+then locally restore their credit links; finally, the sender can protocol works similarly for the path from the receiver to the
+locally update her link with the receiver. sender.
+The test operation is processed analogously except for
+VI. EXTENDINGSILENTWHISPERS link updates. The chgLink operation is, in the offline case,
+issued by the requesting user in the form of signed shares
+A. Boosting the Availability of the System
+over the value to subtract from (or to add to) the given link.
+We assumed throughout our discussion that all users are The landmarks verify the respective signatures, collectively
+online,anassumptionthatmightnotholdinpractice.Torelax compute whether the link has enough capacity and eventually
+it,weprovideamechanismtoallowtransactionstotakeplace carry out the operation, logging the request. The testLink
+evenwhensome(orall)intermediateusersinapathareoffline. operation is simply performed locally by the requester and
+Intuitively, we allow each user to store information on the the link’s counterparty if online, or the landmarks if offline.
+landmarks so to let them impersonate it during the execution
+Once a user goes online again, it can simply retrieve the
+of the routing algorithm or a transaction but without revealing
+updated share of the link value from the landmarks together
+criticalsensitivedata.Whentheusergoesbackonline,shecan
+with the logged operations performed while it was offline.
+retrieve her updated information and verify the correctness of
+The user can then reconstruct the values subtracted to her
+the changes. Due to space constraints, we show the detailed
+links and identify the users originating the requests through
+protocol in the full version [3] and describe it here on a high
+the signatures on the shares.
+level.
+Analysis. The correctness of the underlying SMPC protocol
+When a user u is about to go offline, she first notifies her
+combined with the integrity of our original construction are
+neighbors and then she secret shares the value of each of her
+enough to prove that our extension achieves integrity. Also,
+linksandherlongtermkeysk⇤u amongthelandmarks.Finally,
+this extension achieves value privacy: loosely speaking, all
+shesendsthemtogetherwiththelongtermverificationkeyand
+the information that each landmark learns about the values
+the signatures over all link shares (produced by herself and
+of the links comes in the form of shares from the secret-
+the neighbors) to all the landmarks. Intuitively, shares of the
+sharingscheme,whichdonotrevealanyinformationaboutthe
+link value allow the landmarks to jointly perform operations
+respectivevalue(unlessallthelandmarksarecolluding,which
+on the links values without revealing the value itself. The
+is excluded by assumption). The accountability of link values
+signatures (  ,  ) are crucial to enable accountability of the
+u,i i
+is guaranteed by unforgeability of the pair of signatures from
+linkupdates.Sharess allowlandmarkstojointlysignthelink
+0j
+the long term keys (or their shares if the user went offline).
+stateaftereachupdateforaccountability.Thus,landmarkscan
+impersonate the user and execute the protocols on her behalf. These modifications enhance the performance of
+SilentWhispers, inasmuch landmarks impersonate offline
+In particular, during the landmark routing protocol, each
+users in both routing and transaction protocols and the
+landmark locally impersonates the offline users. The transac-
+corresponding rounds of communications are avoided.
+tion protocol requires instead the following modifications. In
+However, this reveals the network topology to the landmarks,
+thefirstphase,offlineusersareimpersonatedbythelandmarks,
+thus losing the notions of link privacy as well as sender or
+who interact with online neighbors to create the signature
+receiver privacy. We observe that it is hard for any distributed
+chain. In the second phase, since landmarks already have the
+protocol to preserve link privacy as well as sender and
+shares of link values from offline users, they can compute the
+receiver privacy when users go offline, unless some party is
+credit value on a path and send it to the sender.
+assumed to be honest. In the extreme case where all of the
+Finally,thethirdphaseisperformedasfollows.Thesender users go offline except for two, even a semi-honest adversary
+generates shares [[s ,...,s ]] for the value to be subtracted can easily figure out the sender and receiver of an eventual
+1 LM
+inthepathalongwith  :=|Sig|n(sk ,(s ,Txid)),asignature transaction. Thus, this can be seen as a general issue when
+i Sdr i
+of each share ensuring the authenticity of the request. Then, handling offline users in a distributed scenario instead of an
+the sender passes it over to the next user in the path. inherent limitation of our construction.
+Thestepsforeachuserinthepathdependonwhetheritis
+onlineornot.Iftheuserisonline,itgetsallthetuples(s ,  ), B. Security against Malicious Landmarks
+i i
+verifies them, reconstructs the original value and reduces it
+In our initial security model, we only considered passive
+(i.e., on hold) from the credit available in the link with the
+corruption of a proper subset of landmarks. In the following
+next neighbor. Moreover, the user signs the new link state
+we show how to provide security guarantees in presence of
+together with the next neighbor or with the landmarks if the
+malicious landmarks.
+neighbor is offline; if offline, the user sends to each landmark
+apair(s ,  ),whointurnsverifiesit,checksthroughamulti- In the standard protocol the landmarks are deployed for
+i i
+partycomputationprotocolwhethers isindeedtheshareofa the computation of the path’s capacity. Therefore, we can
+i
+valid value (i.e., smaller or equal than the path capacity) and deploystandardtechniquestoupgradeoursystemtoastronger
+eventually reduces (i.e., on hold) s from the share s of the security setting while preserving UC-security, such as the
+i j
+11transformation of [19]. We shall note that the previously Setup (5,1) (5,2) (7,1) (7,2) (7,3)
+mentioned transformation allows the system to handle only Time HbC 0.304 0.314 0.357 0.346 0.349
+Time Mal 12.630 13.105 18.973 20.408 21.457
+staticcorruptionsofthenodes.Whileitiscertainlypossibleto
+extendthesecurityofoursystemagainstadaptivecorruptionof TABLEI:TimesinsecondstocomputeMin(a,b).Weuse32bitsto
+peers adopting fully UC-secure SMPC constructions like [15], represent a and b. We consider two scenarios: landmarks are honest
+this however comes with a considerable increase in cost both but curious (HbC) and malicious (Mal). In a setup (n,t), n denotes
+in terms of computation and cryptographic assumptions. the total number of landmarks out of which t are compromised.
+VII. PERFORMANCEANALYSIS
+each of the max neighbors and thus the communication cost
+A. Implementation is max 340 bytes. As we show in Section VII-C, in practice,
+·
+max is a small constant and forwarding such message can be
+We have developed a C++ implementation to demonstrate
+done efficiently even with commodity communication links.
+thefeasibilityofSilentWhispers.Wefocusinparticularonthe
+transaction protocol (Protocol 2), which dominates by far the Regarding computation time, we observe that operations
+computationalcomplexity,simulatingthemainfunctionalityof performed by users in phases 1 and 3 consist of the creation
+both landmarks and users in the credit network. and verification of signatures, which are extremely efficient.
+Therefore, we focus on the computation of the credit value of
+Our realization relies on the MPC Shared Library [5], on
+a path (i.e., the minimum among the credit values of the links
+the Shamir’s information theoretic construction [56] for secret
+composing the path), since it is the most expensive operation.
+sharing, and on Schnorr’s signatures [55], [58] due to their
+Thetimetocomputetheminimumbetweentwovaluesamong
+efficiency.
+a set of landmarks is shown in Table I. The actual number of
+Implementation-level optimizations. There exist several suchmincomputationsrequiredtocalculatethecreditinapath
+independentoperationsinatransactionthatcanbeparallelized. depends on the length of the path (i.e., max). Using the im-
+Intuitively, in the first phase, users can prepare fresh keys, plementation level optimizations, landmarks need to perform
+signatures and shares of the link values for each path in only log(max) min operations sequentially. In Table II we
+parallel.Theycanthenbeprocessedandverifiedbylandmarks showd the time te o compute the credit in a path for different
+in parallel as well during the second phase of the transaction path lengths. In the honest-but-curious case, computing the
+protocol. Finally, users can carry out the third phase by minimum credit in a path takes roughly 1.7 seconds for
+updating links for different paths independently of each other. max=20.
+Since the min function is associative, we can paral- Routing time. For completeness, we consider the other two
+lelize independent min operations to improve the efficiency protocols in SilentWhispers: the link setup and the routing
+of calculating the minimum value in a path. For instance, protocol. The link setup is extremely efficient and can be
+x := min(a,b) and y := min(c,d) can be done in parallel doneevenoffline.Theroutingprotocolrequiresadecentralized
+and then compute min(x,y) to obtain the minimum among BFS algorithm. The decentralized BFS is well studied in
+a,b,c,d. Finally, the sender can reconstruct the min i values the literature and it has been shown to be practical [39].
+for each path i and transmit it to the users in path i in parallel. In particular, the proposed algorithm has a communication
+complexityofO(E)andatimecomplexityofO(l2),whereE
+B. Performance denotesthenumberoflinksandldenotestheheightoftheBFS
+tree. Moreover,BFSdoesnotinvolvecryptographicoperations
+We conduct our experiments in machines with 3.3 GHz
+and it can be run as a background process, thus it does not
+processor and 8 GB RAM to carry out distributed operations
+hinder the performance of the rest of system operations.
+involvinglandmarks(e.g.,multipartycomputationofthemini-
+mumvalueofapath).Wesimulateeachlandmarkinadifferent
+machine. For our experiments, we have implemented the C. Establishing system parameters
+cryptographic schemes used in the transaction protocol. Based
+Running SilentWhispers requires setting up two system
+on their execution time, we calculated the total time for the
+parameters: the maximum path length and the number of
+transaction operations taking into account the implementation
+landmarks. To do that, we have extracted transactions carried
+optimizations (see Section VII-A).
+out in Ripple [6], a currently deployed credit network system
+Transaction time. The chgLink and testLink operations are with a publicly available ledger containing the network graph
+performed directly between the users sharing a credit link and and transaction history. Based on this information, we set up
+areextremelyefficient.Amongtheothertransactions,wehave the system parameters such that SilentWhispers can process
+studied the pay transaction, since it is clearly more expensive the transactions already performed in Ripple.
+than test. In particular, we first study the communication cost
+First,forprocessingatransaction,thesenderhastopadthe
+andthenthecomputationtimerequiredforthepay operation.
+number of links in the path to maintain the privacy properties.
+In the pay operation, each user in the path must forward In order to find a meaningful value for the maximum path
+messages to the neighbors. The longest message to be sent is length, we have collected all transactions from the start of
+defined in Algorithm 2-line 20 and contains 340 bytes: 4 veri- the Ripple network until December 2015, resulting in a set
+fications keys (i.e., 64 bytes each in the elliptic curve setting), of 17,645,343 transactions. The maximum path length that we
+5integersof4byteseachandasignature(i.e.,extra64bytes). have observed is 10 links. Thus, we set up the maximum path
+In the worst case, a user must forward one such messages for length to 10 in our evaluation.
+12Path Length (max) 5 10 20 overthemostrecentsnapshotofthecreditnetwork.Therefore,
+Time HbC 1.047 1.349 1.745 no transaction is answered as successful if there is currently
+Time Mal 64.371 85.828 107.285 not enough credit in the network. Recall measures the ratio
+between true and false negatives. SilentWhispers achieves a
+TABLEII:Timesinsecondstocomputethecreditonapath.Weuse
+high recall. Previous solutions [47], [62] have shown that the
+asetup(7,3):7landmarks,3compromised.Westudytwoscenarios:
+use of landmark routing incurs in answering less than 5% of
+landmarks are honest but curious (HbC) and malicious (Mal).
+the transactions wrongly as unsuccessful. Interestingly, these
+transactionscanbereissuedwhenanewiterationoftherouting
+Second, processing a transaction requires more than one protocol is done. At that point, new transaction paths are
+path. The actual number of paths used in a transaction will calculated and the transaction can be successfully carried out.
+determine the number of landmarks required in our system. Given the efficiency of available distributed BFS algorithms
+In order to find this value, we have extracted the distribution and that we use the same routing technique as Canal [62] and
+on the number of paths that have been used for the Ripple Privpay [47], SilentWhispers achieves the same recall value.
+transactions. We have observed that the maximum number Moreover, transactions wrongly tagged as unsuccessful can be
+of paths used in a transaction is 7 and thus we use 7 reissued so that they are eventually successfully performed.
+landmarksinourevaluation. Wenotethatusingthelandmark
+Handling offline users. Whenauserisofflineandgoesback
+routing algorithm in the current Ripple network might imply
+online, she must retrieve from landmarks the updates of her
+a variation in the number of required landmarks. However,
+credit links. Then the user must verify that all changes on her
+choosing adequate users as landmarks will ensure that the
+credit links have been correctly performed by the landmarks
+maximumnumberofpathsismaintainedwithinasmallfactor,
+(see Section VI-A).
+as most of the transactions are routed through the landmarks.
+In order to study the impact of this extension, we have
+In practice, selecting those users with higher number of
+extracted the number of updates performed over credit links
+creditlinksasthelandmarksfacilitatesfindingsuitabletransac-
+of Ripple users. We have randomly selected 100 Ripple users
+tion paths between users for a transaction. For instance, banks
+and checked how many transactions involve their credit links
+arethenaturalcandidatetoserveaslandmarksinatransaction
+over a period of a month (i.e., June 2014). We observe that a
+network. Furthermore, we have extracted the Ripple network
+maximum of 107 updates are performed over the credit links
+and observed that most nodes have links to a few highly
+of a user. In principle, the user must check each update as
+connected nodes, which correspond to gateways. They are
+many times as the number of landmarks, but this task can be
+alreadywellknowntoallusersasmostofthemalsocontribute
+parallelized. For each update performed by a given landmark,
+tovalidatetheRipplenetwork,andtheythusbecometheideal
+the user must verify the update and its signature, which can
+landmark candidates when applying SilentWhispers in Ripple.
+be performed in less than 5 ms. Therefore, even if a user is
+In conclusion, SilentWhispers can simulate the Ripple offline for a period of a month, it will take her about 500 ms
+network using 7 landmarks and a path length of 10. Given to restore her information and check its authenticity.
+thesesystemparameters,eachuserhastoforward,intheworst
+Moreover, as described in Section VI-A, landmarks must
+case, a message of 10 340=3400 bytes, which can be done
+· check that the share of the transaction value issued by the
+efficiently even with commodity communication links. More-
+sender is indeed smaller than the capacity of the path. For
+over, computing the minimum credit in a path takes roughly
+that purpose, landmarks carry out the less than operation as a
+1.3 seconds (see Table II). A transaction in the currently
+multiparty computation protocol using the two shared values
+deployed transaction network Ripple, takes approximately 5
+as input. This modification implies an overhead of only 0.330
+seconds.Thus,ourevaluationshowsthatourapproachwillnot
+seconds assuming honest-but-curious landmarks and 21.132
+introduce any significant overhead to the transaction time.
+seconds in the presence of malicious landmarks.
+D. Discussion Finally, landmarks must sign new link states on behalf
+of offline users using the shares of their signing keys. For
+Scalability. The running time of the routing protocol in-
+efficiency,thistaskcanbeperformedusingdistributedSchnorr
+creaseswiththenumberofusers.However,itcanbeperformed
+signatures [58] so that the time to compute a signature is
+as a background process and thus does not directly impact the
+similar to the creation of a single signature by each landmark,
+time to perform transactions. As shown before, the time to
+and thus can be computed efficiently. Therefore, the overall
+perform a transaction is mostly dictated by the length of the
+time for the transaction operation in the presence of offline
+path,whichissettoafixedvalueof10anditdoesnotincrease
+users is still dominated by the computation of the credit
+withagrowingnumberofusers.Therefore,SilentWhispershas
+available in the path (i.e., about 1.3 seconds).
+the potential to scale to a large number of users.
+Handling malicious landmarks. For handling malicious
+Precision and recall. Duetotheinefficiencyofoptimalrout-
+landmarks, we need to incorporate SMPC protocols secure
+ingprotocolsinnetworks,itisunavoidabletouseapproximate
+against malicious adversaries. In the transaction protocol, the
+routingprotocolsasthelandmarkroutingtechnique[62].This
+landmarks are confined to the computation of the minimum
+approachmotivatesourresultsintermsofprecisionandrecall.
+value of the path, whose execution time in the malicious case
+Precision measures the ratio between true and false posi- is shown in Table I. In a setting with 7 landmarks out of
+tives. SilentWhispers achieves an optimal precision of 1 (i.e., which3arecorrupted,thecomputationoftheminimumoftwo
+nofalsepositives) ensuringthususersdonotlosemoneyusing values takes 21.457 seconds. This implies that computation
+thesystem.Thecalculationofthecreditavailableisperformed of the minimum credit in a path takes approximately 86
+13seconds. Notice that the employed SMPC library does not yet There exist several proposals to construct privacy preserv-
+incorporate the recent significant advancements in the SMPC ingpaymentsinBitcoin basedonzero-knowledgeproofs[11],
+domain [18], [20], [34], [36]. It employs the older SMPC [42], centralized mixing [12], decentralized mixing [54], [61],
+paradigm [10], [28], and with an improved library, we expect SMPC [25], confidential transactions [40] and smart con-
+atleastanorderofmagnitudeimprovementintheperformance tracts[35],[64]. Theseproposals,however,arenotapplicable
+of our maliciously secure SMPC executions. to the inherently different credit network setting: Bitcoin does
+not use the concept of credit link and thus there is not a
+We believe that the resulting running time is still practical
+credit network among Bitcoin users. SilentWhispers enables
+in most of the scenarios. For example, it still allows one
+credit network operations such as path finding and payment
+to significantly speed up intercontinental transactions that
+path updates in a privacy preserving manner while ensuring
+currently take up to several days. Nevertheless, we believe
+correctness (e.g., no double spending): each intermediate user
+that the extension to malicious landmarks is interesting from
+verifies that her total balance is preserved after each payment.
+a theoretical point of view, but not worth to be implemented
+in practice since landmarks have no incentive in misbehaving, Wu et al. [63] present a protocol to compute the shortest
+as discussed in Section III-A. pathinaprivacy-preservingmannerbasedonprivateinforma-
+tion retrieval (PIR) in a centralized setting. Employing their
+VIII. RELATEDWORK techniques in a decentralized network does not seem feasible,
+if even possible.
+The problem of enforcing privacy-preserving transactions
+in a credit network has recently been studied by Moreno-
+Sanchez et al. [47]. They leverage the use of trusted hardware
+IX. CONCLUSIONS
+to enforce the privacy of the transacting parties and the Inthiswork,wepresentedSilentWhispers,thefirstprivacy-
+transacted value by accessing the credit network information preserving distributed credit network. SilentWhispers achieves
+by means of an oblivious RAM algorithm. In contrast to a number of privacy properties (i.e., sender, receiver, link,
+this work, they target a centralized approach, where a unique and value privacy), preserves the correctness of transactions,
+server stores the complete credit network. Such a solution is and provides an accountability mechanism to enforce the
+hardly applicable to real-life payment systems (e.g., Ripple correctness of link updates. Use of highly connected and
+and Stellar), since it would require them to change their readilyavailablenodessuchasgatewaysinRippleisacrucial
+hardware infrastructure to incorporate trusted hardware. Also, ingredient to make our system efficient, robust, and scalable.
+the centralized design of [47] is in inherent tension with
+the distributed nature of consensus algorithms used in Ripple We implemented the cryptographic schemes employed in
+and Stellar, and it is unclear who should play the role of SilentWhispers and demonstrated through an experimental
+the central server running the trusted hardware. Moreover, evaluationthepracticalityofourapproachforreal-lifepayment
+the centralized architecture of [47] may constitute a severe systems. In particular, we showed that our solution allows for
+problem for scalability, since transactions are handled by a fast transactions and scales to a growing number of users.
+single secure processor and thus cannot be easily parallelized. Moreover, we discussed how SilentWhispers can be used
+to instantiate currently available applications based on credit
+Mezzouretal.[41]proposeapath-discoverytechniquethat networks on a distributed manner. Finally, SilentWhispers
+computes a hash tree connecting users that share a credit link. demonstrates that a privacy-invasive public ledger is not nec-
+Tofindapathbetweentwousers,theycomputetheprivateset essary for the secure instantiation of a credit network.
+intersectionofthesetofhashedvaluestheyhold.Apathexists
+between two users if the intersection set is non-empty. This Acknowledgments: Wewouldliketothanktheanonymous
+technique does not allow to reconstruct the path connecting reviewers for their valuable feedback and our shepherd Erman
+sender and receiver in a private manner, and it omits the Ayday for his comments and suggestions. This work was par-
+conceptofcreditbyconsideringunweightedlinks,twofeatures tially supported by the German Federal Ministry of Education
+that are crucial for credit networks. and Research (BMBF) through the Emmy Noether program
+andthroughfundingfortheCenterforIT-Security,Privacyand
+Backes et al. [8] present the concept of Anonymous Webs Accountability(CISPA)andbytheGermanResearchFounda-
+ofTrust,whichincludesamechanismtoprovetheexistenceof tion(DFG)viathecollaborativeresearchcenter“Methodsand
+a path of trust certificates among the sender and the receiver ToolsforUnderstandingandControllingPrivacy”(SFB1223).
+in zero-knowledge such that intermediate trust relationships
+remainprivateforthirdparties. Thisapproach,however,relies
+REFERENCES
+on a server maintaining all the trust certificates, which must
+be publicly available, thus breaking link privacy. [1] “LocalExchangeTradingSystem,”http://tinyurl.com/zea59ob.
+[2] “ReliableTransactionSubmission,”http://tinyurl.com/zdgdlkm.
+There is an extensive literature on privacy-preserving on-
+[3] “SilentWhispers site,” http://crypsys.mmci.uni-saarland.de/projects/
+line social networks [9], [17], [32], [49]. Intuitively, an object
+DecentralizedPrivPay/.
+(e.g., tweet) is secured such that only friends of the object’s
+[4] “Stellarwebsite,”https://www.stellar.org/.
+owner can access it while remaining private for the rest of
+[5] “MPCSharedLibrary,”http://smpc.ml/,2015.
+users. In a credit network however, a given credit link is
+[6] F.Armknecht,G.Karame,A.Mandal,F.Youssef,andE.Zenner,“Rip-
+potentially accessed by any user connected through a credit
+ple:Overviewandoutlook,”inTrustandTrustworthyComputing’15.
+path.Therefore,theownerofalinkcannotestablishinadvance
+[7] B.Awerbuch,“Reducingcomplexitiesofthedistributedmax-flowand
+anaccesspolicytoagivenlinkotherthanthemostpermissive
+breadth-first-searchalgorithmsbymeansofnetworksynchronization.”
+one, i.e., everybody is allowed to access it. Networks,1985.
+14[8] M. Backes, S. Lorenz, M. Maffei, and K. Pecina, “Anonymous webs [36] Y. Lindell, B. Pinkas, N. P. Smart, and A. Yanai, “Efficient con-
+oftrust,”inPETS’10. stant round multi-party computation combining BMR and SPDZ,” in
+CRYPTO’15.
+[9] F. Beato, M. Conti, B. Preneel, and D. Vettore, “Virtualfriendship:
+Hidinginteractionsononlinesocialnetworks,”inCNS’14. [37] A. Liu, “Implementing the interledger protocol in ripple,” 2015, http:
+//tinyurl.com/gtf6dpj.
+[10] M.Ben-Or,S.Goldwasser,andA.Wigderson,“Completenesstheorems
+for non-cryptographic fault-tolerant distributed computation (extended [38] ——, “Santander: Distributed Ledger Tech Could Save Banks $20
+abstract),”inSTOC’98. BillionaYear,”2015,http://tinyurl.com/zwhkoln.
+[11] E.Ben-Sasson,A.Chiesa,C.Garman,M.Green,I.Miers,E.Tromer, [39] S. Makki, “Efficient distributed breadth-first search algorithm,” Com-
+and M. Virza, “Zerocash: Decentralized anonymous payments from puterCommunications,vol.19,no.8,pp.628–636,1996.
+bitcoin,”inS&P’14. [40] G. Maxwell, “Confidential Transactions, Content privacy for Bitcoin
+[12] J.Bonneau,A.Narayanan,A.Miller,J.Clark,J.A.Kroll,andE.W. transactions,”PostonBitcoinForum,http://tinyurl.com/zvdr6q2.
+Felten, “Mixcoin: Anonymity for bitcoin with accountable mixes,” in [41] G. Mezzour, A. Perrig, V. Gligor, and P. Papadimitratos, “Privacy-
+FC’14. Preserving Relationship Path Discovery in Social Networks,” in
+CANS’09.
+[13] R. Canetti, “Universally composable security: A new paradigm for
+cryptographicprotocols,”inFOCS’01. [42] I.Miers,C.Garman,M.Green,andA.D.Rubin,“Zerocoin:Anony-
+mousdistributede-cashfrombitcoin,”inS&P’13.
+[14] ——,“Universallycomposablesignature,certification,andauthentica-
+tion,”inCSFW’04. [43] T. Minkus and K. W. Ross, “I Know What You’re Buying: Privacy
+BreachesoneBay,”inPETS’14.
+[15] R.Canetti,Y.Lindell,R.Ostrovsky,andA.Sahai,“Universallycom-
+posabletwo-partyandmulti-partysecurecomputation,”inSTOC’02. [44] A.Mislove, A.Post, P.Druschel, andK. P.Gummadi, “Ostra:Lever-
+agingTrusttoThwartUnwantedCommunication,”inNSDI’08.
+[16] O.CatrinaandS.deHoogh,“Improvedprimitivesforsecuremultiparty
+integercomputation,”inSCN’10. [45] A. Mohaisen, N. Hopper, and Y. Kim, “Keep your friends close:
+Incorporating trust into social network-based Sybil defenses,” in IN-
+[17] L. Cutillo, R. Molva, and T. Strufe, “Safebook: A privacy-preserving FOCOM’11.
+onlinesocialnetworkleveragingonreal-lifetrust,”IEEECommunica-
+[46] A. Mohaisen, H. Tran, A. Chandra, and Y. Kim, “Trustworthy dis-
+tionsMagazine,2009.
+tributedcomputingonsocialnetworks,”inASIACCS’13.
+[18] I.Damga˚rd,M.Keller,E.Larraia,V.Pastro,P.Scholl,andN.P.Smart,
+[47] P. Moreno-Sanchez, A. Kate, M. Maffei, and K. Pecina, “Privacy
+“Practical covertly secure MPC for dishonest majority - or: Breaking
+preserving payments in credit networks: Enabling trust with privacy
+theSPDZlimits,”inESORICS’13.
+inonlinemarketplaces,”inNDSS’15.
+[19] I. Damga˚rd and C. Orlandi, “Multiparty computation for dishonest
+[48] P.Moreno-Sanchez,M.B.Zafar,andA.Kate,“Listeningtowhispers
+majority:Frompassivetoactivesecurityatlowcost,”inCRYPTO’10.
+ofripple:Linkingwalletsanddeanonymizingtransactionsintheripple
+[20] I. Damga˚rd, V. Pastro, N. P. Smart, and S. Zakarias, “Multiparty network,”inPETS’16.
+computationfromsomewhathomomorphicencryption,”inCRYPTO’12.
+[49] S.Nilizadeh,S.Jahid,P.Mittal,N.Borisov,andA.Kapadia,“Cachet:
+[21] P. Dandekar, A. Goel, R. Govindan, and I. Post, “Liquidity in credit A decentralized architecture for privacy preserving social networking
+networks: a little trust goes a long way.” in ACM Conference on withcaching,”inCoNEXT’12.
+ElectronicCommerce,2011. [50] B.Parno,“Bootstrappingtrustina”trusted”platform,”inHotSec’08.
+[22] D.DeFigueiredoandE.T.Barr,“TrustDavis:ANon-ExploitableOnline [51] A.Post,V.Shah,andA.Mislove,“Bazaar:StrengtheningUserRepu-
+ReputationSystem,”inE-CommerceTechnology’05. tationsinOnlineMarketplaces,”inNSDI’11.
+[23] R. Dingledine, N. Mathewson, and P. Syverson, “Tor: The Second- [52] P. Rizzo, “Japan’s SBI Holdings Teams With Ripple to Launch New
+generationOnionRouter,”inUSENIX’04. Company,”http://tinyurl.com/jaartry.
+[24] Y. Dinitz, “Dinitz’s Algorithm: The Original Version and Even’s Ver- [53] ——,“RoyalBankofCanadaRevealsBlockchainTrialWithRipple,”
+sion,”inTheoreticalComputerScience,2006. 2016,http://tinyurl.com/zw48e3c.
+[25] K.ElDefrawyandJ.Lampkins,“Foundingdigitalcurrencyonsecure [54] T. Ruffing, P. Moreno-Sanchez, and A. Kate, “Coinshuffle: Practical
+computation,”inCCS’14. decentralizedcoinmixingforbitcoin,”inESORICS’14.
+[26] L.R.FordandD.R.Fulkerson,“MaximalFlowthroughaNetwork.” [55] C.-P.Schnorr,“Efficientsignaturegenerationbysmartcards,”J.Cryp-
+CanadianJournalofMathematics,vol.8,1954. tol.,1991.
+[27] R. Fugger, “Money as IOUs in Social Trust Networks & A Proposal [56] A.Shamir,“Howtoshareasecret,”Commun.ACM,1979.
+for a Decentralized Currency Network Protocol,” 2004. [Online]. [57] J. Southurst, “Australia’s Commonwealth Bank Latest to Experiment
+Available:http://archive.ripple-project.org/decentralizedcurrency.pdf WithRipple,”2015,http://tinyurl.com/pt9gpnv.
+[28] R.Gennaro,M.O.Rabin,andT.Rabin,“SimplifiedVSSandfact-track [58] D. R. Stinson and R. Strobl, “Provably secure distributed schnorr
+multiparty computations with applications to threshold cryptography,” signatures and a (t, n) threshold scheme for implicit certificates.” in
+inPODC’98. ACISP’01.
+[29] A.Ghosh,M.Mahdian,D.M.Reeves,D.M.Pennock,andR.Fugger, [59] C. Tryfonopoulos, P. Raftopoulou, V. Setty, and A. Xiros, “Towards
+“MechanismDesignonTrustNetworks,”inWINE’07. content-based publish/subscribe for distributed social networks,” in
+DEBS’15.
+[30] A.V.GoldbergandR.E.Tarjan,“ANewApproachtotheMaximum-
+flowProblem,”J.ACM,vol.35,no.4,pp.921–940,1988. [60] P. F. Tsuchiya, “The Landmark Hierarchy: A New Hierarchy for
+RoutinginVeryLargeNetworks,”SIGCOMM’88.
+[31] E.Holley,“EarthportlaunchesdistributedledgerhubviaRipple,”2016,
+http://tinyurl.com/hdygnab. [61] L.ValentaandB.Rowan,“Blindcoin:Blinded,accountablemixesfor
+bitcoin,”inFC2015.
+[32] S.Jahid,S.Nilizadeh,P.Mittal,N.Borisov,andA.Kapadia,“Decent:
+A decentralized architecture for enforcing privacy in online social [62] B. Viswanath, M. Mondal, K. P. Gummadi, A. Mislove, and A. Post,
+networks,”in(PERCOMWorkshops)2012. “Canal: Scaling Social Network-based Sybil Tolerance Schemes,” in
+EuroSys’12.
+[33] A. M. Kakhki, C. Kliman-Silver, and A. Mislove, “Iolaus: securing
+[63] D. J. Wu, J. Zimmerman, J. Planul, and J. C. Mitchell, “Privacy-
+onlinecontentratingsystems,”inWWW’13.
+preservingshortestpathcomputation,”inNDSS’16.
+[34] M. Keller, P. Scholl, and N. P. Smart, “An architecture for practical
+[64] G. Zyskind, O. Nathan, and A. Pentland, “Enigma: Decentralized
+activelysecurempcwithdishonestmajority,”inCCS’13.
+computation platform with guaranteed privacy,” 2015, http://arxiv.org/
+[35] A. Kosba, A. Miller, E. Shi, Z. Wen, and C. Papamanthou, “Hawk: abs/1506.03471.
+The blockchain model of cryptography and privacy-preserving smart
+contracts,”CryptologyePrintArchive,Report2015/675,2015.
+15

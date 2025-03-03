@@ -1,0 +1,1310 @@
+P2P Mixing and Unlinkable Bitcoin Transactions
+Anonymity of the People, by the People, and for the People
+Tim Ruffing Pedro Moreno-Sanchez Aniket Kate
+Saarland University Purdue University Purdue University
+tim.ruffing@mmci.uni-saarland.de pmorenos@purdue.edu aniket@purdue.edu
+Abstract—Starting with Dining Cryptographers networks routers to avoid individual messages getting traced through the
+(DC-nets),severalpeer-to-peer(P2P)anonymouscommunication network.Theoriginalmixnetprotocol,aswellasitssuccessors
+protocols have been proposed. However, despite their strong suchasonionrouting[31],AN.ON[1],andTor[23],inherently
+anonymity guarantees, none of them have been employed in require access to a set of geographically distributed routers
+practice so far: Most protocols fail to simultaneously address
+such that at least some of them are trusted to not break peers’
+the crucial problems of slot collisions and disruption by mali-
+anonymity.
+cious peers, while the remaining ones handle f malicious peers
+with O(f2) communication rounds. We conceptualize these P2P Starting with the Dining Cryptographers network (DC-
+anonymouscommunicationprotocolsasP2Pmixing,andpresent net) protocol [17], another line of research on anonymous
+a novel P2P mixing protocol, DiceMix, that needs only four
+communication networks emerged, in which peers do not
+communication rounds in the best case, and 4 + 2f rounds
+depend on any third-party routers and instead communicate
+in the worst case with f malicious peers. As every individual
+with each other to send their messages anonymously. While
+malicious peer can force a restart of a P2P mixing protocol by
+the DC-net protocol can guarantee successful termination and
+simplyomittinghismessages,wefindDiceMixwithitsworst-case
+complexityofO(f)roundstobeanoptimalP2Pmixingsolution. anonymity against an honest-but-curious adversary controlling
+asubsetofpeers,itispronetodisruptionbyasinglemalicious
+On the application side, we employ DiceMix to improve peer who sends invalid protocol messages (active disruption),
+anonymity in crypto-currencies such as Bitcoin. The public
+or simply omits protocol messages entirely (passive disruption).
+verifiabilityoftheirpseudonymoustransactionsthroughpublicly
+Moreover, a DC-net protects the anonymity of the involved
+available ledgers (or blockchains) makes these systems highly
+maliciouspeers,makingitimpossibleforhonestpeerstodetect
+vulnerabletoavarietyoflinkabilityanddeanonymizationattacks.
+and exclude the malicious peer.
+We use DiceMix to define CoinShuffle++, a coin mixing protocol
+that enables pseudonymous peers to perform unlinkable trans-
+To address this termination issue, recent successors of the
+actions in a manner fully compatible with the current Bitcoin
+DC-net protocol [15], [22], [27], [28], [32], [55] incorporate
+system. Moreover, we demonstrate the efficiency of our proto-
+cryptographic accountability mechanisms against active disrup-
+cols with a proof-of-concept implementation. In our evaluation,
+tions. The employed techniques are either proactive, e.g., zero-
+DiceMix requires less than eight seconds to mix 50 messages
+(160 bits, i.e., Bitcoin addresses), while the best protocol in the knowledge proofs proving the validity of sent messages [32],
+literature requires almost three minutes in the same setting. or reactive, e.g, the revelation of session secrets to expose and
+exclude malicious disruptors after a failed protocol run [22].
+Finally,wepresentadeanonymizationattackonexistingP2P
+These protocols have demonstrated that, for a set of mutually
+mixing protocols that guarantee termination in the presence of
+distrusting peers, sending their messages anonymously is
+disruptive peers. We generalize the attack to demonstrate that
+feasible purely by communicating with each other in a peer-
+no P2P mixing protocol simultaneously supports arbitrary input
+messages, provides anonymity, and terminates in the presence of to-peer (P2P) manner. Moreover, given the surging demand
+disruptive peers. DiceMix resists this attack by requiring fresh for anonymity in P2P crypto-currencies such as Bitcoin [5],
+input messages, e.g., cryptographic keys never used before. [6], [40], [45], [46], [51], [53], these protocols have led to
+real-world P2P Bitcoin mixing systems [3], [42], [52].
+I. INTRODUCTION Nevertheless, these solutions are still not ideal: with
+communication rounds quadratic in the worst case with many
+Chaum [18] introduced the concept of anonymous digital
+malicious peers, these current pure P2P solutions [22], [52],
+communicationintheformofmixingnetworks(ormixnets).In
+[55] do not scale as the number of participating peers grows.
+the mixnet protocol, a batch of encrypted messages from users
+For instance, the state-of-the-art Bitcoin P2P mixing protocol
+is decrypted, randomly permuted, and relayed by a sequence of
+CoinShuffle [52] requires a few minutes to anonymize the
+communication of 50 peers if every peer is honest, and even
+Permission to freely reproduce all or part of this paper for noncommercial much longer in the presence of malicious peers. In this paper,
+purposes is granted provided that copies bear this notice and the full citation it is our goal to bring P2P anonymous communication from
+on the first page. Reproduction for commercial purposes is strictly prohibited the realm of feasibility to the realm of practicality.
+without the prior written consent of the Internet Society, the first-named author
+(for reproduction of an entire paper only), and the author’s employer if the
+A. Contributions
+paper was prepared within the scope of employment.
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+We compartmentalize our contributions in this paper into
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23415 four key components.1)P2P Mixing: As our first contribution, we conceptualize attacker controlling the network and some peers should not be
+P2P mixing as a natural generalization of DC-nets [17]. A P2P able to tell which of the messages belongs to which honest
+mixing protocol enables a set of mutually distrusting peers peer. In more detail, the anonymity set of an individual honest
+to publish their messages simultaneously and anonymously peer should be the set of all honest participating peers, and we
+withoutrequiringanytrustedoruntrustedthird-partyanonymity expect the size of this set to be at least two.
+proxy.
+The requirement to achieve sender anonymity without the
+2)DiceMix Protocol: Although some DC-net succes- help of any third-party anonymity proxy such as an onion
+sors [30], [41] as well as some anonymous group messaging router or a mix server makes P2P mixing fundamentally
+systems [22], [52], [55] satisfy the P2P mixing requirements, different from most well-known anonymous communication
+we found those to be too inefficient for large-scale mixing. techniques in the literature. Unlike standard techniques such
+As our second contribution, we present the new P2P mixing as onion routing or mix cascades, P2P mixing relies on a
+protocolDiceMix,whichbuildsontheoriginalDC-netprotocol. much weaker trust assumption and is expected to terminate
+P2P Mixing Protocol handles collisions by redundancy, and successfully and provide a meaningful anonymity guarantee
+disruption by revealing session secrets to expose malicious in the presence of an attacker controlling all but two peers.
+peers.DiceMixrequiresonly4+2f roundsinthepresenceoff As a consequence, each peer must be actively involved in the
+maliciouspeers,i.e.,onlyfourroundsifeverypeerbehaveshon- anonymous communication process which comes with inherent
+estly.Theresultingcommunicationroundcomplexityisalinear restrictions and expense.
+factor better than in existing state-of-the-art approaches [22],
+[30], [41], [52]. A. Setup and Communication Model
+We provide a proof-of-concept implementation of the Weassumethatpeersareconnectedviaabulletinboard,e.g.,
+DiceMix protocol, and evaluate it in Emulab [59]. Our results a server receiving messages from each peer and broadcasting
+show that in an Internet-like setting, 50 peers can anonymously them to all other peers. We stress that sender anonymity will
+broadcast their messages in about eight seconds, whereas be required to hold even against a malicious bulletin board;
+previous state-of-the art protocols need several minutes. the bulletin board is purely a matter of communication.
+3)CoinShuffle++ Protocol: As our third contribution, we We assume the bounded synchronous communication set-
+apply DiceMix to Bitcoin, the most popular crypto-currency. ting, where time is divided into fixed communication rounds
+In particular, building on the CoinJoin paradigm [43] and such that all messages broadcast by a peer in a round are
+DiceMix, we present CoinShuffle++, a practical decentralized available to the peers by the end of the same round, and
+mixing protocol for Bitcoin users. CoinShuffle++ not only is absence of a message on the bulletin board indicates that the
+considerably simpler and thus easier to implement than its peer in question failed to send a message during the round.
+predecessor CoinShuffle [52] but also inherits the efficiency
+of DiceMix and thus outperforms CoinShuffle significantly. Suchabulletinboardcanbeseamlesslydeployedinpractice,
+In particular, in a scenario with 50 participants in the same and in fact already-deployed Internet Relay Chat (IRC) servers
+evaluation setting, a successful transaction with CoinShuffle++ suffice.1 The bulletin board can alternatively be substituted by
+can be created in eight seconds, instead of the almost three an (early stopping) reliable broadcast protocol [24], [54] if one
+minutes required with CoinShuffle. is willing to accept the increased communication cost.
+4)A Generic Attack on P2P Mixing Protocols: As our We assume that all peers participating in a P2P mixing
+protocolareidentifiedbyverificationkeysofadigitalsignature
+fourth contribution, we present a deanonymization attack on
+scheme, and that the peers know each other’s verification keys
+existing P2P mixing protocols that guarantee termination in the
+at the beginning of a protocol execution.
+presence of disruptive peers. We exemplify the attack on the
+Dissentshuffleprotocol[22],[55]andthengeneralizetheattack
+To find other peers willing to mix messages, a suitable
+to demonstrate that no P2P mixing protocol simultaneously
+bootstrapping mechanism is necessary. Note that a malicious
+supports arbitrary input messages, provides anonymity, and
+bootstrapping mechanism may hinder sender anonymity by
+terminates in the presence of disruptive peers.
+preventing honest peers from participating in the protocol and
+thereby forcing a victim peer to run the P2P mixing protocol
+Theproposedattackissimilartostatisticaldisclosureattacks
+with no or only a few honest peers, decreasing the size of
+across several protocol runs (e.g., [14], [61]) but works with
+her effective anonymity set. While this is a realistic threat
+certainty, because a protocol, which is supposed to terminate
+against any anonymous communication protocol in general,
+successfully, can be forced to start a new run to ensure
+we consider protection against a malicious bootstrapping
+termination.Finally,wediscusshowDiceMixresiststhisattack
+mechanism orthogonal to our work.
+by requiring fresh input messages (e.g., cryptographic keys
+never used before), and we discuss why this is not a problem
+for applications such as coin mixing. B. Input and Outputs of a P2P Mixing Protocol
+Our treatment of a P2P mixing protocol is special with
+II. CONCEPTUALIZINGP2PMIXING respect to inputs and outputs. Regarding inputs (the messages
+to mix), allowing the adversary to control all but two peers
+A P2P mixing protocol [22], [52], [62] allows a group
+of mutually distrusting peers, each having an input message,
+1ServerssupportingIRCversion3.2arecapableofaddingaservertimestamp
+to simultaneously broadcast their messages in an anonymous
+to every message [39]; this can ensure that peers agree whether a certain
+manner without the help of a third-party anonymity proxy. An messagearrivedintime.
+2introduces an unexpected requirement, namely, that input an identifier of the run.) Possible confirmations range from
+messages must be fresh. Regarding outputs, a P2P mixing a signature on M, to a complex task requiring interaction
+protocol according to our definitions provides the feature that among the peers, e.g., the creation of a threshold signature in
+the peers will have to explicitly agree on the protocol output, a distributed fashion.
+i.e., the set of anonymized messages.
+If confirmation can be obtained from everybody, then
+1)Freshness of Input Messages: In contrast to state-of-the- the run and the P2P mixing protocol terminates successfully.
+art anonymous and terminating P2P mixing protocols such as Otherwise, CONFIRM(i,P,M) by convention fails and reports
+Dissent [22] and the protocol by Golle and Juels [32], we the malicious peers deviating from the confirmation steps back
+requirethatinputmessagestobemixedarefreshlydrawnfrom totheP2Pmixingprotocol.Inthiscase,theprotocolcanstarta
+adistributionwithsufficiententropy,e.g.,inputmessagescanbe newrunbyobtainingafreshmessagevia GEN();themalicious
+randombitstringsorpublickeysneverusedbefore.Furthermore, peers are excluded in this new run.
+if the honest peers exclude a peer from the protocol, e.g.,
+An example execution is depicted in Fig. 1. Note that
+because the peer appears offline, all messages used so far will
+while in this example execution all runs are sequential, this
+be discarded. Then, all remaining peers again generate fresh
+is not a requirement. For improved efficiency, a P2P mixing
+messages and are required to continue the protocol with them.
+protocol can perform several runs concurrently, e.g., to have
+While this seems to be a severe restriction of functionality an already-started second run in reserve in case the first fails.
+compared to the aforementioned protocols, a restriction of this Then the protocol can terminate with the first run that confirms
+kind is in fact necessary to guarantee anonymity. If instead successfully, and abort all other runs.
+peers can arbitrarily choose their messages in a P2P mixing
+protocol guaranteeing termination, the protocol is inherently D. Threat Model
+vulnerable to an attack breaking sender anonymity. We will
+explain this attack in detail in Section VIII; it works against In general, we assume that the attacker controls some
+state-of-the-art P2P mixing protocols and has been overlooked number f of n peers.
+in this form in the literature so far.
+For the sender anonymity property, we assume that the
+2)Explicit Confirmation of the Output: Anonymity-seeking attacker additionally controls the bulletin board, i.e., the
+P2Papplicationssuchascoinmixing[43],[52],[62]oridentity network. In particular, the attacker can partition the network
+mixing [26] require that the peers agree explicitly on the andblockmessagesfromhonestpeers.Inthecaseofsuccessful
+outcome of the mixing before it comes into effect, e.g., by termination, the anonymity set of each honest peer will be the
+collectively signing the set M of anonymized messages. set of unexcluded honest peers2. This means that we need
+f <n−1 at the end of the protocol, where n is the number
+We call this additional functionality confirmation and of unexcluded peers, to ensure that at least two honest peers
+incorporate it in our model. The form of the confirmation are present and the anonymity guarantee is meaningful.
+depends on the application and is left to be defined by the
+application which calls the protocol. For example in coin For the termination property, we trust the bulletin board to
+mixing, the confirmation is a special transaction signed by relay messages reliably and honestly, because termination (or
+all peers; we will discuss this in detail in Section VI. any liveness property) is impossible to achieve against a mali-
+cious bulletin board, which can just block all communication.
+While the protocol cannot force malicious peers to confirm
+M, those malicious peers should be excluded and the protocol
+E. Security Goals
+shouldfinallyterminatesuccessfullywithaproperconfirmation
+by all unexcluded peers. AP2Pmixingprotocolmustprovidetwosecurityproperties.
+a)Sender Anonymity: If the protocol succeeds for
+C. Interface and Execution Model
+honest peer p in a run (as described in Section II-C) with
+To deploy a P2P mixing protocol in various anonymity- message m p and final peer set P, and p(cid:48) ∈P is another honest
+seeking applications, our generic definition leaves it up to the peer, then the attacker cannot distinguish whether message m p
+application to specify exactly how fresh input messages are belongs to p or to p(cid:48).
+obtained and how the confirmation on the result is performed.
+b)Termination: If the bulletin board is honest and there
+We restrict our discussion here to terminology and a syntactic
+areatleasttwohonestpeers,theprotocoleventuallyterminates
+description of the interface between the anonymity-seeking
+successfully for every honest peer.
+application and an employed P2P mixing protocol, and leave
+the semantic requirements to the protocol construction later. Our definition of sender anonymity is only concerned
+with the messages in a successful run, i.e., no anonymity
+A protocol instance consists of one or several runs, each
+is guaranteed for messages discarded in failed runs (see
+started by calling the user-defined algorithm GEN() to obtain
+Section II-C). This demands explanation, because giving up
+a fresh input message to be mixed. If a run is disrupted, the
+anonymity in the case of failed confirmation seems to put
+protocol can exclude peers that turned out to be malicious.
+privacy at risk at first glance. However, the discarded messages
+Otherwise, the protocol will obtain a candidate result, i.e., a
+are just randomly generated bitstrings and have never been
+candidate output set M of anonymized messages. Then it calls
+and will never be used outside the P2P mixing protocol; in
+the user-defined confirmation subprotocol CONFIRM(i,P,M),
+whose task is to obtain confirmation for M from the final 2Ahonestpeermightappearofflineduetotheattackerblockingnetwork
+peer set P of all unexcluded peers. (The first argument i is messages.Suchapeercanbeexcludedtoallowtheremainingpeerstoproceed.
+3Application
+P P , M
+1 3 3
+P2P Mixing Protocol
+m m P , M P ∅ m P , M P ∅
+1 2 2 2 mal,2 3 3 3 mal,3
+GEN() GEN() CONFIRM(2, P
+2
+, M ≠2) GEN() CONFIRM(3, P
+3
+, M =3)
+Run 1 Run 2 Run 3
+Fig. 1: Example Execution of a P2P Mixing Protocol. The figure shows the calls during the execution; time proceeds from left
+to right. The execution starts with the application calling the P2P mixing protocol with an initial set P of peers. The P2P mixing
+1
+protocol then starts Run 1 by generating a new message m
+1
+(via calling GEN()). Run 1 fails early (e.g., due to active disruption
+by a peer p) and m is discarded. The P2P mixing protocol then starts Run 2 with peer set P =P \{p} by generating a new
+1 2 1
+message m . Run 2 is initially not disrupted, and the P2P mixing protocol calls the confirmation subprotocol to confirm the set
+2
+M of mixed messages with the peers in P . The confirmation subprotocol fails, because a set P of peers refuse to confirm.
+2 2 mal,2
+The confirmation subprotocol reports those malicious peers back to the P2P mixing protocol, which in turn discards m . The P2P
+2
+mixing protocol then starts Run 3 with peer set P =P \P . This time, the confirmation subprotocol succeeds and indicates
+3 2 mal,2
+this by returning an empty set (of malicious peers) to the P2P mixing protocol. That is, all peers in P have confirmed that the set
+3
+M of anonymized messages is the final output. The P2P mixing protocol returns P and M to the application and terminates.
+3 3 3
+particular the messages have been not returned back to the One proposed solution is to perform an anonymous reser-
+application. So it is safe to give up sender anonymity for vation mechanism so that peers agree in advance on a slot
+discarded messages. It turns out that this permissive definition assignment for publishing [30], [41]. However, this mechanism
+is sufficient for a variety of applications and allows for very adds communication rounds among the peers and it must also
+efficient constructions. provide anonymity, which typically makes it prone to the same
+issues (e.g., slot collisions) that we would like to overcome in
+III. SOLUTIONOVERVIEW the first place. Alternatively, it is possible to establish many
+more slots so that the probability of a collision decreases [21].
+Our core tool to design an efficient P2P mixing protocol
+However,thisbecomesinefficientquickly,andtwohonestpeers
+is a Dining Cryptographers network (DC-net) [17]: Suppose
+could still collide with some probability.
+that each pair of peers (i,j) shares a symmetric key k and
+i,j
+that one of the peers (e.g., p ) wishes to anonymously publish
+1 Instead, we follow the paradigm of handling collisions by
+a message m such that |m| = |k |. For that, p publishes
+i,j 1 redundancy [15], [19], [25], [38], [50]. Assume that messages
+M 1 ··= m⊕k 1,2⊕k 1,3, p 2 publishes M 2 ··= k 1,2⊕k 2,3 and to be mixed are encoded as elements of a finite field F with
+finally p 3 publishes M 3 ··= k 1,3⊕k 2,3. Now, the peers (and |F|>n, where n is the number of peers. Given n slots, each
+observers) can compute M 1⊕M 2⊕M 3, effectively recovering peer i, with message m , publishes mj (i.e., m to the j-th
+m. However, the origin of the message m is hidden: without i i i
+power) in the j-th slot. This yields an intentional collision
+knowingthesecretsk ,noobservercandeterminewhichpeer
+i,j
+involving all peers in each of the slots. Using addition in
+published m. Additionally, the origin is also hidden for peers
+F instead of XOR to create DC-net messages, the j-th slot
+themselves(e.g.,asp 2 doesnotknowk 1,3,shecannotdiscover contains the power sum S =(cid:80) mj .
+whether p 1 or p 3 is the origin of the message). It is easy to j i i
+extend this basic protocol to more users [32].
+Now, we require a mechanism to extract the messages m
+j
+Besides the need for pairwise symmetric keys, which can from the power sums S . Let g(x) = a xn +a xn−1 +
+j n n−1
+be overcome by a key exchange mechanism, there are two ...+a x+a be a polynomial with roots m ,m ,...,m .
+1 0 1 2 n
+key issues to overcome, namely, first making it possible that Newton’s identities [33] state
+all peers can publish a message simultaneously, and second,
+ensuring termination of the protocol even in the presence of
+a =1,
+n
+malicious disruptors, while preserving anonymity.
+a =S ,
+n−1 1
+A. Handling Collisions a =(a S −S )/2,
+n−2 n−1 1 2
+Each peer p ∈ P in the mixing seeks to anonymously
+a
+n−3
+=(a n−2S 1−a n−1S 2+S 3)/3,
+publish her own message m p. Naively, they could run |P| . .
+.
+instances (called slots) of a DC-net, where each peer randomly
+selects one slot to publish her message. However, even if all
+peers are honest, two peers can choose the same slot with high By knowledge of all coefficients a of the polynomial g, we
+j
+probability, and their messages are then unrecoverable [32]. can find its n roots, which are the n input messages.
+4B. Handling Disruption and Ensuring Termination A. Building Blocks
+Recoveringthemessagesonlyworkswhenallpeershonestly 1)DigitalSignatures: Werequireadigitalsignaturescheme
+follow the protocol. If a malicious peer disrupts the DC-net by (KeyGen, Sign, Verify) unforgeable under chosen-message
+simply using inconsistent DC-net messages, we must ensure attacks (UF-CMA). The algorithm KeyGen returns a private
+that the protocol still terminates eventually. signing key sk and the corresponding public verification key
+vk. On input message m, Sign(sk,m) returns σ, a signature
+When a candidate set M is determined, every honest peer
+on message m using signing key sk. The verification algorithm
+checks whether her input message is indeed in M. Depending
+Verify(pk,σ,m) outputs true iff σ is a valid signature for m
+on the outcome of this check, the peer either starts the
+under the verification key vk.
+confirmation subprotocol to confirm a good M, or reveals
+the secret key used in the key exchange to determine who is 2)Non-interactive Key Exchange: We require a non-in-
+responsible for an incorrect M. We face two challenges on the teractive key exchange (NIKE) mechanism (NIKE.KeyGen,
+way to successful termination. NIKE.SharedKey) secure in the CKS model [16], [29].
+The algorithm NIKE.KeyGen(id) outputs a public key npk
+1)ConsistentDetectionofDisruption: Thefirstchallengeis
+and a secret key nsk for a given party identifier id.
+to ensure that indeed M does not contain any honest message.
+NIKE.SharedKey(id ,id ,nsk ,npk ,sid) outputs a shared
+Onlythenwillallhonestpeersagreeonwhetherdisruptionhas 1 2 1 2
+key for the two parties id and id and session identifier sid.
+occurred and are able to take the same control flow decision 1 2
+NIKE.SharedKey must fulfill the standard correctness require-
+at this stage of the protocol, which is crucial for termination.
+mentthatforallsessionidentifierssid,allpartiesid ,id ,and
+1 2
+To overcome this challenge, every peer must provide a all corresponding key pairs (npk ,nsk ) and (npk ,nsk ),
+1 1 2 2
+non-malleable commitment (e.g., using a hash function) to its it holds that NIKE.SharedKey(id ,id ,nsk ,npk ,sid) =
+1 2 1 2
+DC-net vector before she sees the vectors of other peers. In NIKE.SharedKey(id ,id ,nsk ,npk ,sid). Additionally, we
+2 1 2 1
+this manner, malicious peers are forced to create their DC-net require an algorithm NIKE.ValidatePK(npk), which outputs
+vectors independently of the input messages of honest peers. trueiffnpk isapublickeyintheoutputspaceofNIKE.KeyGen,
+The redundant encoding of messages using powers ensures that and we require an algorithm NIKE.ValidateKeyPair(npk,nsk)
+amaliciouspeerisnotabletocreateamalformedDC-netvector which outputs true iff nsk is a valid secret key for the public
+that results in a distortion of only a subset of the messages of key npk.
+the honest peers. Intuitively, to distort some messages but keep
+some other message m of a honest peer intact, the malicious Static Diffie-Hellman key exchange satifies these require-
+ments [16], given a suitable key derivation algorithm such as
+peer must influence all power sums consistently. This, however,
+would require a DC-net vector that depends on m (as we show
+NIKE.SharedKey(id 1,id 2,x,gy) ··= K((gxy,{id 1,id 2},sid))
+for a hash function K modeled as a random oracle.
+inSectionIV-D),whichispreventedbythenon-malleabilityof
+the commitments. This ensures that all honest peers agree on 3)Hash Functions: We require two hash functions H and
+whether M is correct, and take the same control flow decision. G both modeled as a random oracle.
+2)Exposing a Disruptor: The second challenge is that the
+4)Conventions and Notation for the Pseudocode: We use
+misbehaving peer is not trivially detected given the sender
+arrays written as ARR[i], where i is the index. We denote the
+anonymity property of DC-nets. To overcome this, every peer
+full array (all its elements) as ARR[].
+is required to reveal the ephemeral secret key used in the
+initial key exchange. Then every peer can replay the steps A protocol message msg is broadcast using the instruction
+done by every other peer and eventually detect and expel the “broadcast m”. The instruction “receive ARR[p] from all p∈
+misbehaving peer from further runs. P where X(ARR[p]) missing C(P off)” attempts to receive a
+message from all peers p ∈ P. The first message msg from
+Note that the revelation of the secret keys clearly breaks
+peer p that fulfills predicate X(msg) is accepted and stored as
+sender anonymity for the current run of the protocol. However,
+the failed run will be discarded and a new run with fresh
+ARR[p]; all other messages from p are ignored. When a timeout
+is reached, the command C is executed, which has access to a
+cryptographic keys and fresh messages will be started without
+set P ⊆P of peers that have not sent a (valid) message.
+the misbehaving peer. This is in line with our definition of off
+sender anonymity, which does not impose a requirement on Regarding concurrency, a thread t that runs a procedure
+failed runs. P(args) is started using “t ··= fork P(args)”. A thread with
+handle t can either be joined using “r ··= join t”, where r is
+An important guarantee provided by DiceMix is that if a
+its return value, or it can be aborted using “abort t”. A thread
+protocolrunfails,thehonestpeersagreeonthesetofmalicious
+can wait for a notification and receive a value from another
+peers to be excluded. Although this is critical for termination,
+thread using “wait”. The notifying thread uses “notify t of v”
+this aspect has not been properly formalized or addressed
+to wake up thread t and notify it of value v.
+in some previous P2P mixing protocols supposed to ensure
+termination [22], [52], [55].
+B. Contract with the Application
+IV. THEDICEMIXPROTOCOL
+In the following, we specify the contract between DiceMix
+InthissectionwepresentDiceMix,anefficientP2Pmixing and the application calling it. We start with two guarantees
+protocol,whichterminatesinonly4+2f roundsinthepresence provided by DiceMix to the application and then we describe
+of f malicious peers. features required of the application by DiceMix.
+5Runs Communicationrounds We require two natural properties from the confirmation
+subprotocol.Thefirstproperty(correctconfirmation)statesthat
+1 KE CM DC SK
+a successful call to the subprotocol indeed confirms that the
+RV honest peers in P agree on M. The second property (correct
+2 KE CM CF
+DC exclusion) states that in an unsuccessful call, the confirmation
+RV subprotocolidentifiesatleastonemaliciouspeer,andnohonest
+3 KE CM CF
+DC peer is falsely identified as a malicious peer.
+4 KE CM a)Correct Confirmation: Even if the bulletin board
+is malicious,4 we require the following: If a call to
+Fig. 2: Example of a DiceMix Execution. Run 1 fails due CONFIRM(i,P,M) succeeds for peer p (i.e., if the call returns
+anemptysetP =∅ofmaliciouspeersrefusingconfirmation),
+to DC-net disruption. Run 2 fails to confirm. Run 3 finally mal
+succeeds, and run 4 is then aborted. Rows represent protocol
+then all honest peers in P have called CONFIRM(i,P,M).
+runs and columns represent communication rounds. Blue parts b)CorrectExclusion: Assumethatthebulletinishonest.
+are for concurrency; the arrows depict the dependency between If CONFIRM(i,P,M) returns a set P
+mal
+(cid:54)= ∅ for honest peer
+runs, i.e., when a run notifies the next run about the peers to p, then CONFIRM(i,P,M) returns the same set P
+mal
+for every
+exclude. KE: Key exchange; CM: Commitment; DC: DC-net; honest peer p(cid:48). Furthermore, the returned set P does not
+mal
+RV: Reveal pads; SK: Reveal secret key; CF: Confirmation. contain honest peers.
+C. Protocol Description
+1)Guarantees Provided to the Application: The confirma- We describe the DiceMix protocol in Algorithm 1. The
+tionsubprotocolisprovidedwithtwoguarantees.First,DiceMix black code is the basic part of the protocol; the blue code
+ensures that all honest peers call the confirmation subprotocol handles concurrent runs and offline peers.
+in the same communication round with the same parameters; 1)Single Run of the Protocol (Black Pseudocode): The
+we call this property agreement. protocol starts in DICEMIX(), which takes as input a set of
+Second, to ensure that no peer refuses confirmation for
+other peers P, the peer’s own identity my, an array VK[] of
+verification keys of all peers, the peer’s own signing key sk,
+a legitimate reason, e.g., an incorrect set final set M not
+and a predetermined unique session identifier sid. A single
+containing her message, our protocol ensures that all honest
+peers deliver the same and correct message set M. Then,
+protocol run, implemented in RUN(), consists of four rounds.
+the confirmation subprotocol CONFIRM(i,P,M) can safely In the first round (KE), the NIKE is used to establish
+assume that peers refusing to confirm are malicious. We call pairwisesymmetrickeysbetweenallpeers(DC-KEYS()).Then
+this property validity. each peer can derive the DC-net pads from these symmetric
+keys (DC-SLOT-PAD()) and use them to create the vector of
+The purpose of both of these guarantees is to ensure
+messages for the DC-net (DC-MIX()). In the second round
+correct functionality of the confirmation subprotocol, and the
+(CM), each peer commits to her DC-net vector using hash
+guarantees are only provided if the bulletin board is honest. As
+function H; adding randomness is not necessary, because we
+a consequence, it is up to the confirmation subprotocol to fail
+assume that the input messages contained in the DC-net vector
+safely if they do not hold. The guarantees are detailed below.
+have sufficient entropy. In the third round (DC), the peers open
+a)Agreement: Assume that the bulletin board is honest. their commitments. They are non-malleable and their purpose
+Let p and p(cid:48) be two honest peers in a protocol execution. If is to prevent a rushing attacker from letting his DC-net vector
+p calls CONFIRM(i,P,M)3 in some communication round r, depend on messages by honest peers, which will be crucial for
+then p(cid:48) calls CONFIRM(i,P,M) with the same message set M the agreement property. After opening the commitments, every
+and final peer set P in the same communication round r. peerhasenoughinformationtosolvetheDC-netandextractthe
+list of messages by solving the power sums (DC-MIX-RES()).
+b)Validity: Assume that the bulletin board is honest.
+If honest peer p calls CONFIRM(i,P,M) with message set M Finally, every peer checks whether her input message is
+and final peer set P, then (i) for all honest peers p(cid:48) and their in the result of the DC-net, determining how to proceed in
+messagesm p(cid:48),wehavem
+p(cid:48)
+∈M,and(ii)wehave|M|≤|P|. the fourth round. Agreement will ensure that either every peer
+finds her message or no honest peer finds it.
+2)Requirements of the Application: Next, we specify the
+Ifapeerfindshermessage,sheproceedstotheconfirmation
+guarantees that the application must provide to DiceMix to
+subprotocol (CF). Otherwise, she outputs her secret key. In this
+ensure proper function.
+case, every other peer publishes her secret key as well, and the
+We assume that input messages generated by GEN() are peers can replay each other’s protocol messages for the current
+encoded in a prime field F q, where q is larger than the number run. This will expose the misbehaving peer, and honest peers
+of peers in the protocol. Also, we assume that the message m will exclude him from the next run (SK).
+returned by GEN() has sufficient entropy such that it can be
+predicted only with negligible probability, which also implies 4This property puts forth a requirement on a successful call of the
+confirmationsubprotocol.Suchasuccessfulcallwillresultinasuccessfulrun
+that q is at least as large as the security parameter.
+andultimatelyinasuccessfulterminationofthewholeP2Pmixingprotocol,
+whichimpliesthatthemessagesarenotdiscardedandsenderanonymityis
+3CONFIRM()willactuallytakemorearguments,buttheyarenotrelevant requiredforthisrun.Sothispropertyiscrucialforsenderanonymityandthus
+forthissubsection. wemustassumethatitholdsevenifthebulletinboardismalicious.
+62)Concurrent Runs of the Protocol (Blue Pseudocode): A only the successful run i. Since p succeeds in run i, the
+simple but inefficient way of having several runs is to start a call to CONFIRM(i,P,M) has succeeded. By the “correct
+singlerunoftheprotocolandonlyaftermisbehaviorisdetected, confirmation” property of CONFIRM(), peer p(cid:48) has started
+start a new run without the misbehaving peer. This approach CONFIRM(i,P,M) in the same communication round as p.
+requires 4+4f rounds, where f is the number of disruptive By construction of the protocol, this implies two properties
+peers (assuming that CONFIRM() takes one round). To reduce about peer p(cid:48): (i) p(cid:48) will not reveal her secret key in round SK,
+the number of communication rounds to 4+2f, we deploy and (ii) p(cid:48) assumes that p is not excluded in run i, and thus
+concurrent runs as depicted in Fig. 2. We need to address two has not revealed the symmetric key shared with p in round RV.
+main challenges. First, when a peer disrupts the DC-net phase
+of run i, it must be possible to patch the already-started run AsthekeyexchangeschemeissecureintheCKSmodeland
+i+1 to discard messages from misbehaving peers in run i. For the exchanged public keys are authenticated using unforgeable
+that, run i must reach the last round (SK or CF) before run signatures, the attacker cannot distinguish the pads derived
+i+1 reaches the DC round. from the symmetric key between p and p(cid:48) from random pads.
+Before its DC round, run i+1 can be patched as follows. Thus, after opening the commitments on the pads, peer
+In the DC round of run i+1, honest peers broadcast not only p has formed a proper DC-net with at least peer p(cid:48). The
+their DC-net messages, but also in parallel they reveal (RV) security guarantee of Chaum’s original DC-nets [17] implies
+the symmetric keys shared in run i+1 with malicious peers that the attacker cannot distinguish m p from m p(cid:48) before the
+detected in run i. In this manner, DC-net messages can be call to CONFIRM(i,P,M). Now, observe that the execution of
+partially unpadded, effectively excluding malicious peers from subprotocol CONFIRM(i,P,M)doesnothelpindistinguishing,
+run i+1. We note that a peer could reveal wrong symmetric since all honest peers call it with the same arguments, which
+keys in this step. This, however, leads to wrong output from follows by the “correct confirmation” property as we have
+the DC-net, which is then handled by revealing secret keys already argued. This shows sender anonymity.
+in round i+1. Publishing partial symmetric keys does not
+2)Validity: Toshowvalidity,wehavetoshowthatifhonest
+compromise sender anonymity for unexcluded peers because
+peer p calls CONFIRM(i,P,M) with message set M and final
+messages remain partially padded with symmetric keys shared
+peer set P, then (i) for all honest peers p(cid:48) and their messages
+between the honest peers.
+m p(cid:48), we have m p(cid:48) ∈M, and (ii) we have |M|≤|P|.
+3)Handling Offline Peers (Blue Pseudocode): So far
+For part (i) of validity, recall that we assume the bulletin
+we have only discussed how to ensure termination against
+board to be honest for validity, so every peer receives the same
+actively disruptive peers who send wrong messages. However,
+broadcast messages. Under this assumption and the assumption
+a malicious peer can also just send no message at all. This
+case is easy to handle in our protocol. If a peer p has not that the signature scheme is unforgeable, a code inspection
+shows that after receiving the DC message, the entire state
+provided a (valid) broadcast message to the bulletin board in
+time, all honest peers will agree on that fact, and exclude the of a protocol run i is the same for every honest peer, except
+unresponsivepeer.Inparticular,itiseasytoseethatallcriteria for the signing keys, the own identity my, and the message m
+specifying whether a message is valid will evaluate the same generatedby GEN().Fromthesethreeitems,onlyminfluences
+for all honest peers (if the bulletin board is reliable, which we the further state and control flow, and it does so only in the
+assume for termination). check m∈M at the end of RUN() (Line 48 in Algorithm 1).
+To be able to achieve termination 4+2f in communication We now show as intermediate step that in every run i, the
+rounds, it is crucial that missing messages in the first two condition m∈M evaluates to true for all honest peers or false
+broadcasts(KEandCM)donotrequireabortingtherun.Luckily, for all honest peers. Note that M is entirely determined by
+the current run can be continued in those cases. Peers not broadcast messages and thus the same for all honest peers. Let
+sending KE are just ignored in the rest of the run; peers not pandp(cid:48) betwohonestpeerswiththeirinputmessagesm p and
+sending CM are handled by revealing symmetric keys exactly m p(cid:48) in run i, and assume for contradiction that the condition
+as done with concurrent runs (see the code blocks starting with is true for p but not for p(cid:48), i.e., m p ∈M but m p(cid:48) ∈/ M. This
+the “missing” instruction). implies that at least one malicious peer a has committed to an
+ill-formed DC-net vector in run i, i.e., a vector which is not of
+D. Security and Correctness Analysis
+theform(m a,m2 a,...,mn a)withn≥3,becausethereisatthe
+least malicious peer a and two honest peers. Since m ∈M,
+p
+In this section, we discuss why DiceMix achieves all this ill-formed vector left the message m intact. This implies
+p
+required properties, namely the security properties sender that the vector of a was chosen depending on the other DC-
+anonymity and termination as well as the guarantees of validity net vectors. A simple algebraic argument shows that even for
+and agreement that the application may rely on. the second power sum in the second slot, it is not feasible to
+come up with an additive offset to the power sum that changes
+1)Sender Anonymity: Consider a protocol execution in
+some of the encoded messages but leaves all others intact: To
+which an honest peer p succeeds with message m and final
+peer set P, and let p(cid:48) ∈P be another honest peer. Wp e have to changem p(cid:48) tom p(cid:48)+∆andleaveallothermessagesintact,the
+correct offset for the first slot is ∆, and the correct offset for
+argue that the attacker cannot distinguish whether m belongs
+to p or p(cid:48). p the second slot is (m p(cid:48) +∆)2−m2 p(cid:48) =2m p(cid:48)∆+∆2, which
+depends on m p(cid:48) for fixed ∆. However, it is not feasible for the
+Since both p and p(cid:48) choose fresh messages m p, m p(cid:48), and attacker to create one (or more) commitments on messages that
+fresh NIKE key pairs in each run, it suffices to consider depend on m p(cid:48), because the commitments are non-malleable
+7Algorithm 1 DiceMix
+1: proc DICEMIX(P,my,VK[],sk,sid) 55: receive (SK,NSK[p]) from all p∈P
+2: sid ··=(sid,P,VK[]) 56: where NIKE.ValidateKeyPair(NPK[p],NSK[p])
+3: if my∈P then 57: missing P off do (cid:46) Abort and rely on next run
+4: fail “cannot run protocol with myself” 58: return RESULT-OF-NEXT-RUN(P off,next)
+5: return RUN(P,my,VK[],sk,sid,0) 59: (cid:46) Determine malicious peers using the secret keys
+6: proc RUN(P,my,VK[],sk,sid,run) 60: P mal ··=BLAME(P,NPK[],my,NSK[],DC[][],sidH
+7: if P =∅ then ,P ex,Kex[][])
+8: fail “no honest peers” 61: return RESULT-OF-NEXT-RUN(P mal,next)
+9: (cid:46) Exchange pairwise keys 62: proc DC-MIX(P,my,K[],m)
+10: (NPK[my],NSK[my])··=NIKE.KeyGen(my) 63: (cid:46) Create power sums in individual slots
+11: sidHpre··=H((sidHpre,sid,run)) 64: for i··=1,...,|P|+1 do
+12: broadcast (KE,NPK[my],Sign(sk,(NPK[my],sidHpre))) 65: DCMY[j]··=mi+DC-SLOT-PAD(P,my,K[],i)
+13: receive (KE,NPK[p],σ[p]) from all p∈P 66: return DCMY[]
+14: where NIKE.ValidatePK(NPK[p])
+1 1 1 15 6 7 8: : :
+:
+m s Kid [is ]HPs ··i =n ··=··g = DHP CPo
+(∧
+f -(f K\
+sdV
+iP
+Eoe
+d
+Yor
+f Hf
+Sif (,y Ps( iV
+,d
+NK
+,
+PP[p K]
+∪
+[, ]σ ,{[ mmp y] y, ,}(cid:46)( N,N
+N
+SEP
+Kx
+PK
+c
+[K[ mlp
+u [
+y] ]d,
+, ]e
+,s
+r
+si uod
+in
+dfH
+fl )
+H)p
+i
+)nr )e e) p)
+eers
+6
+6 6 7
+77
+8 9 0
+1:
+: : :
+:
+proc
+f (cid:46)
+MoD
+r [S
+]oMC
+s ··l
+=v- ∗··=M
+e[s
+Se]I
+1
+oqX
+··, =
+lu-
+v.
+aR
+e. D t (.
+iE ∀oC,S
+n
+s|( -PP
+S
+∈saa yLll
+l
+sl {O|,
+t 1T
+edD ,m-oC
+O
+..M
+fP
+.oEI ,rX
+N
+|P[ a(]
+r
+aP[
+r
+lla]
+a
+|,
+l y
+}lP
+, .D
+Me Mx C,
+[
+∗MK
+]
+[e
+o
+sIx
+X
+]f[
+[
+=] m][ [] e])
+(cid:80), ss s, a | iP =P g ae 1le lx s |, MKe [x i[ ]s][ )])
+72: return Set(M[]) (cid:46) Convert M[] to an (unordered) multiset
+19: (cid:46) Generate fresh message to mix
+20: m··=GEN() 73: proc DC-SLOT-PAD(P,my,K[],s)
+21: DC[my][]··=DC-MIX(P,my,K[],m) 74: return (cid:80) p∈P sgn(my−p)·G((K[p],s)) (cid:46) in F
+22: P ex ··=∅ (cid:46) Malicious (or offline) peers for later exclusion 75: proc DC-SLOT-OPEN(P all,DC[][],s,P ex,Kex[][])
+23: (cid:46) Commit to DC-net vector 76: (cid:46) Pads cancel out for honest peers
+24: COM[my]··=H((CM,DC[my][])) 77: m∗ ··=(cid:80) DC[p][s] (cid:46) in F
+25: broadcast (CM,COM[my],Sign(sk,(COM[my],sidH)))
+p∈Pall
+2 2 26 7 8: :
+:
+r me ic se w si iv nhe ger( PeC oM V ff, e dC r oiO fyM ([ Vp] K, [σ p[ ]p ,] σ) (cid:46)[pfr ] S,o t(m oC reOa M oll f[ flpp ] i, n∈ s eiP d pH ee) r)
+s for exclusion
+7 7 88 9 0: :
+:
+(cid:46) m reR t∗ ue ·· r=m no m mve ∗ ∗p −ad (cid:80)s f po ∈r Pe alx lc Dlu Cd -e Sd Lp Oe Te -r Ps AD(P ex,p,Kex[],s)
+29: P ex ··=P ex∪P off 81: proc DC-KEYS(P,NPK[],my,nsk,sidH)
+30: if run>0 then 82: for all p∈P do
+31: (cid:46) Wait for prev. run to notify us of malicious peers 83: K[p]··=NIKE.SharedKey(my,p,nsk,NPK[p],sidH)
+32: P exPrev ··= wait 84: return K[]
+33: P ex ··=P ex∪P exPrev 85: proc BLAME(P,NPK[],my,NSK[],DC[][],sidH,P ex,Kex[][])
+34: (cid:46) Collect shared keys with excluded peers 86: P mal ··=∅
+35: for all p∈P ex do 87: for all p∈P do
+36: Kex[my][p]··=K[p] 88: P(cid:48) ··=(P ∪{my}∪P ex)\{p}
+37: (cid:46) Start next run (in case this one fails) 89: K(cid:48)[]··=DC-KEYS(P(cid:48),NPK[],p,NSK[p],sidH)
+38: P ··=P \P ex
+39: next··= fork RUN(P,my,VK[],sk,sid,run+1) 90: (cid:46) Reconstruct purported message m(cid:48) of p
+40: (cid:46) Open commitments and keys with excluded peers 91: m(cid:48) ··=DC[p][1]−DC-SLOT-PAD(P(cid:48),p,K(cid:48)[],1)
+41: broadcast (DC,DC[my][],Kex[my][],Sign(sk,Kex[my][])) 92: (cid:46) Replay DC-net messages of p
+42: receive (DC,DC[p][],Kex[p][],σ[p]) from all p∈P 93: DC(cid:48)[]··=DC-MIX(P(cid:48),p,K(cid:48)[],m(cid:48))
+43: where H((CM,DC[p][]))=COM[p] 94: if DC(cid:48)[](cid:54)=DC[p][] then (cid:46) Exclude inconsistent p
+∧ {p(cid:48) :Kex[p][p(cid:48)](cid:54)=⊥}=P ex 95: P mal ··=P mal∪{p}
+∧ Verify(VK[p],Kex[p][],σ[p])
+96: (cid:46) Verify that p has published correct symmetric keys
+44 4 64 5 :: : Mmis ··s r =i en tug Dr CP no -f R Mf d E ISo XU -RLT E- SO (PF-N ∪E {X mT y- }R(cid:46) ,U DA N Cb ( [Po ]r o [t ff ], ,a n Pn ed ex x,tr )e Kly ex[o ]n [])next run 999 987 ::: for ia fll K Pp exe m[x p a∈ l][ ··p =P exe ] Px (cid:54)= md ao lK ∪(cid:48)[ {p pex }] then
+47: (cid:46) Check if our output is contained in the result 100: return P mal
+48: if m∈M then
+49: P mal ··=CONFIRM(i,P,M,my,VK[],sk,sid) 101: proc RESULT-OF-NEXT-RUN(P exNext,next)
+50: if P mal =∅ then (cid:46) Success? 102: (cid:46) Hand over to next run and notify of peers to exclude
+51: abort next 103: notify next of P exNext
+52: return m 104: (cid:46) Return result of next run
+53: else 105: result··= join next
+54: broadcast (SK,NSK[my]) (cid:46) Reveal secret key 106: return result
+8andm p(cid:48) cannotbepredicted.Thisargumentcanbegeneralized Runs Communication rounds
+to changing exactly d messages for 1≤d<n.
+1 KE DC SK
+As the message H((CM,DC[my][])) implements a hiding, 2 KE DC CF
+binding and non-malleable commitment on DC[my][] (recall
+3 KE DC CF
+that adding randomness is not necessary because there is
+4 KE
+sufficient entropy in DC[my][]), it is infeasible, even for a
+rushing malicious peer a, to have committed to an ill-formed
+Fig. 3: Example of a DiceMix Execution with a Dedicated
+vector that leaves m intact. This is a contradiction, and thus
+p
+Bulletin Board. Run 1 fails due to DC-net disruption. Run
+the condition m ∈ M evaluates equivalently for all honest
+2 fails to confirm. Run 3 finally succeeds and run 4 is then
+peers.
+aborted. Rows represent protocol runs and columns represent
+Nowobservethattheconditionm∈M determineswhether communication rounds. The blue arrows depict dependencies
+CONFIRM() is called. That is, whenever CONFIRM(i,P,M) is between runs, i.e., some run informs the next run about the
+called by some honest peer p, then m p(cid:48) ∈ M for all honest peers to exclude. KE: Key exchange; CM: Commitment; DC:
+peers p(cid:48). This shows part (i) of validity. DC-net; SK: Reveal secret key; CF: Confirmation.
+For part (ii) (|M|≤|P|) observe that in the beginning of
+an execution and whenever P changes, a new run with |P|
+peers is started, each of which submits exactly one message.
+Thus |M|=|P|. This shows validity. anyreal functionalityorperform anycomputation.The bulletin
+board is a simple broadcast mechanism and may be replaced
+3)Agreement: To show agreement, we have to show that
+by a suitable reliable broadcast protocol [54]. However, if one
+for eachrun i,if one honest peer p calls CONFIRM(i,P,M) in
+is willing to depend on a more sophisticated bulletin board
+someround,theneveryhonestpeerp(cid:48) calls CONFIRM(i,P,M)
+with dedicated functionality, the efficiency of DiceMix can be
+in the same round. This follows from validity: By part
+improved. It is important to note that even a dedicated bulletin
+(i) of validity, we know that if some honest peer calls
+boardisstillonlytrustedforterminationandnotforanonymity.
+CONFIRM(i,P,M), then m p(cid:48) ∈ M for every peer p(cid:48) in
+run i. By construction of the protocol (Line 48), the con-
+dition m p(cid:48) ∈ M is exactly what determines whether p(cid:48) 1)DroppingtheCommitmentPhase: Recallthatthepurpose
+calls CONFIRM(i,P,M). Thus every honest peer p(cid:48) calls ofthenon-malleablecommitmentsistopreventmaliciouspeers
+from choosing their DC-net vectors depending on the DC-net
+CONFIRM(i,P,M)inthesameround,whichshowsagreement.
+vectors of the honest peers.
+4)Termination: Now,weshowwhytheprotocolterminates
+for every honest peer. We first show that at least one malicious Assume that the bulletin board supports secure channels,
+peer is excluded in each failed run. We have already argued and broadcasts the messages in the DC round only after all
+above (for validity) that in the presence of an honest bulletin peers have submitted their messages. Then independence is
+board, all honest peers take the same control flow decision ensured with an honest bulletin board, and we can drop the CM
+(whether to call CONFIRM() or not at the end of each run). We (commitment) round. This is secure because the independence
+can thus distinguish cases on this control flow decision. of the DC-net vectors is necessary for termination but not
+If CONFIRM() is called in a failed run, then it returns for anonymity, and we trust the bulletin board for termination
+already. A serial protocol execution (without concurrency) will
+the same non-empty set of malicious peers (by the “correct
+then follow the pattern “KE (DC CF/SK)+”, where the plus
+exclusion” property), and those peers will be excluded by
+every honest peer. If CONFIRM() is not called in a run, then indicates that these phases are performed once or several times.
+Withthehelpofconcurrency,wecanrunthekeyexchange(KE)
+there must have been disruption by at least one malicious
+concurrentlytotheconfirmationphase(CF/SK),andreducethe
+peer. Replaying all protocol messages of this run (with the
+number of rounds to 3+2f (assuming that the confirmation
+help of then-revealed secret keys) clearly identifies at least
+phase takes one round). An example run is depicted in Fig. 3.
+one malicious peer, and since all honest peers run the same
+deterministic code (BLAME()) on the same inputs to do so,
+they will all exclude the same set of malicious peers.
+Notethatarevelationofsymmetrickeys(RVintheoriginal
+protocol) will not be necessary anymore, because the malicious
+We have shown that in each failed run, all honest peers peers to exclude are determined before the DC round of the
+exclude the same non-empty set of malicious peers. Eventually, second run (see Section IV-C2 for an explanation of RV).
+we reach one of two cases. In the first case, the number of
+unexcludedpeerswilldropbelowtwo;inthatcasetheprotocol
+2)Bulletin Board Performs Expensive Computation: More-
+is allowed to fail and thus there is nothing to show. In the
+over, a dedicated bulletin board can perform the expensive
+second case, we reach a run in which all peers behave honestly
+computationofsolvingtheequationsysteminvolvingthepower
+(independently of whether they are controlled by the attacker).
+sums, and broadcast the result instead of the DC-net vectors.
+This run will successfully terminate, which shows termination.
+The bulletin board would then also be responsible for handling
+inconsistent messages in the SK run; it would then announce
+E. Variants of the Protocol
+the malicious peers after having received all secret keys. This
+The design of DiceMix follows the P2P paradigm, and saves communication in the rounds DC and SK. Again, security
+consequently,wedonotexpectthebulletinboardtoimplement ispreserved,becausewetrustthebulletinboardfortermination.
+9V. PERFORMANCEANALYSIS
+In this section, we analyze the performance of DiceMix.
+We first analyze the communication costs, and then evaluate
+the running time with the help of a prototype implementation.
+Our results show that DiceMix is practical and outperforms
+existing solutions.
+A. Communication
+Using concurrent runs, DiceMix needs (c+3)+(c+1)f
+communicationrounds,wheref isthenumberofpeersactually
+disruptingtheprotocolexecution,andcisthenumberofrounds
+of the confirmation subprotocol. In the case c=1, such as in
+our Bitcoin mixing protocol (Section VI), DiceMix needs just
+4+2f rounds.
+The communication costs per run and per peer are domi-
+nated by the broadcast of the DC-net array DC[my][] of size
+n·|m| bits, where n is the number of peers and |m| is the
+length of a mixed message. All three other broadcasts have
+constant size at any given security level. These communication
+costs have been shown to be asymptotically optimal for P2P
+mixing [20].
+B. Prototype Implementation
+We developed a proof-of-concept implementation of the
+DiceMix protocol. Our unoptimized implementation encom-
+passes the complete functionality to enable testing a successful
+run of DiceMix without disruptions.
+TheimplementationiswritteninPythonandusesOpenSSL
+for ECDSA signatures on the secp256k1 elliptic curve (as
+usedinBitcoin)atasecuritylevelof128bits.WeuseaPython
+wrapper for the PARI/GP library [47], [56] to find the roots of
+the power sum polynomial by the Kaltofen-Shoup algorithm
+for polynomial factorization [37].
+1)Testbed: We tested our DiceMix implementation in
+Emulab [59]. Emulab is a testbed for distributed systems
+that enables a controlled environment with easily configurable
+parameters such as network topology or bandwidth of the
+communication links. We simulated a network setting in which
+all peers (10 Mbit/s) have pre-established TCP connections to
+25
+20
+15
+10
+5
+0
+0 20 40 50 60 80 100
+]ces[emiT
+a bulletin board (1 Gbit/s); all links had a delay of 50 ms. We
+used different Emulab machines (2.2–3.0 GHz) to simulate the
+peers; note that the slowest machine is the bottleneck due to
+the synchronization enforced by the broadcasts.
+Werantheprotocolwithavaryingnumberofpeers,ranging
+from20to100.Eachpeerhadasinputforthemixinga160-bit
+message (e.g., a Bitcoin address).
+2)Results: First, we measured wall-clock time, averaged
+over all peers. As shown in Fig. 4, we observe that with
+a moderate size of 50 participants, DiceMix runs in about 8
+seconds.Second,wemeasuredcomputationtime;theresultsare
+depictedinFig.4.Weconsideredtheaveragetotalcomputation
+time spent by a peer and average computation time only for
+polynomial factorization, i.e., solving the equation system
+involving the power sums.
+3)Optimization: We observe that solving the equation
+system is quite expensive, e.g., about one second for 100 peers.
+To demonstrate that this is mostly due to lack of optimization,
+we developed an optimized stand-alone application for this
+step in C++ using the FLINT number theory library [34],
+which provides a highly optimized implementation of the
+Kaltofen-Shoup algorithm for polynomial factorization over
+finite fields [37]. Our optimized application solves the equation
+systeminvolvingthepowersumsinabout0.32secondsfor100
+peers on a 2.70 GHz (Intel Core i7-4800MQ) machine, using
+6 MB of DDR3-1600 RAM. This shows that optimizations can
+reduce the running time of the protocol further.
+4)Conclusion: The experimental results show that even
+our unoptimized implementation of DiceMix scales to a
+large number of peers and outperforms state-of-the-art P2P
+mixing solutions such as CoinShuffle [52] and Dissent [22]
+considerably.Incomparison,CoinShuffle(asantailoredvariant
+of the Dissent shuffle protocol) needs slightly less than three
+minutestocompleteasuccessfulrunoftheP2Pmixingprotocol
+in a very similar test environment with 50 peers.
+VI. EFFICIENTCOINMIXINGINBITCOIN
+Several different heuristics to link Bitcoin payments sent
+or received by a particular user have been proposed in the
+literature [5], [6], [40], [46], [51], [53]. Ultimately, crypto-
+currencies such as Bitcoin using a public blockchain may in
+fact provide less anonymity than traditional banking, as the
+deployment of proposed heuristics to the blockchain opens
+Wall-clock
+the possibility to know who paid what to whom. Coin mixing
+Computation(total)
+Computation(factorization) has emerged as a technique to overcome this problem while
+maintainingfullcompatibilitywiththecurrentBitcoinprotocol.
+A promising solution in this direction is CoinShuffle [52],
+a P2P mixing protocol based on a mixnet run by the peers
+to ensure the unlinkability of input and output accounts in
+a jointly created mixing transaction (a so-called CoinJoin
+transaction [43]). However, a run with a decent anonymity
+set of n=50 peers takes about three minutes to complete [52],
+assuming that every peer is honest. In the presence of f
+Numberofnodes
+disruptive peers aiming at impeding the protocol, O(nf)
+Fig. 4: Wall-clock time and computation times. All peers communication rounds are required, most of them inevitably
+have a bandwidth of 10 Mbit/s; the bulletin board has a total takinglongerduetothedisruptivepeersdelayingtheirmessages
+of 1 Gbit/s; all links have 50 ms latency. intentionally. For instance, assume that there are f = 10
+10disrupting peers; then the protocol needs more than 30 minutes Note that DiceMix guarantees that everybody receives the
+to succeed, which arguably prohibits a practical deployment of correct list of output accounts in the confirmation subprotocol.
+CoinShuffle.Asaconsequence,welackacoinmixingprotocol SoapeerrefusingtosigntheCoinJointransactioncansafelybe
+for crypto-currencies that is efficient enough for practical consideredmaliciousandremoved.Thisisacrucialpropertyfor
+deployment. an anonymous CoinJoin-based approach; otherwise, a single
+malicious peer can refuse to sign the transaction and thus
+As a solution, we propose CoinShuffle++, a highly efficient
+mount a DoS attacl on all other peers who cannot exclude the
+coin mixingprotocol resultingfrom theapplication ofDiceMix
+malicious peer if not convinced of his guilt.
+to the Bitcoin setting.
+We define CoinShuffle++ in Algorithm 2. There, we denote
+A. The Bitcoin System
+by CoinJoinTx(VKin[],VK out,β) a CoinJoin transaction that
+transfers β bitcoins from every input account in VKin[] to the
+Bitcoin [2], [12], [49] is a crypto-currency run by a P2P outputaccounts,whereβ isapre-arrangedparameter;notethat
+network.AnaccountintheBitcoinsystemisassociatedwithan ifthereare|P|unexcludedpeers,thentheP2Pmixingprotocol
+ECDSA key pair; accounts are publicly identified by a 160-bit guarantees that there will be |M| ≤ |P| output accounts.
+hash of the verification key, called an address. Every peer can Moreover, we denote by Submit(tx,σ[]) the submission of
+create new accounts by creating fresh key pairs. tx including all signatures to the Bitcoin network.
+A peer can spend funds associated with her account 1)Security Analysis: CoinShuffle++ adheres to the require-
+by creating Bitcoin transactions, which associate funds with ments specified in Section IV-B. Thus, sender anonymity and
+another account. In its simplest form, a Bitcoin transaction is termination in CoinShuffle++ are immediate. (We refer the
+composedofatransactioninput(areferencetounspentfundsin reader to [45] for a detailed taint-based analysis on the privacy
+the blockchain associated with some account), a newly created implications of CoinJoin-based coin mixing protocols.) Correct
+transaction output, and the amount of funds to be transferred balance is enforced by the CoinJoin paradigm: by construction,
+from the input to the output. For a transaction to be fully valid, a peer signs only transactions that will transfer her funds from
+it must be signed with the signing key of the input account. her input address to her output address.
+Bitcoin transactions can include multiple input and output 2)Performance Analysis: In our performance analysis of
+accounts to spend funds simultaneously. In this case, the DiceMix (Section V), GEN() creates a new ECDSA key pair
+transaction must be signed with the all signing keys of the and CONFIRM() obtains ECDSA signatures from all peers
+input accounts. (using their initial ECDSA key pairs) on a bitstring of 160
+bits. This is almost exactly CoinShuffle++, so the performance
+analyses of DiceMix carries over to CoinShuffle++.
+B. Security Goals
+3)Practical Considerations: There are several considera-
+Apart from the security goals for a P2P mixing protocol
+tions when deploying CoinShuffle++ in practice. First, Bitcoin
+(see Section II-E), a coin mixing protocol must guarantee
+charges a small fee to prevent transaction flooding attacks.
+correct balance. It ensures that no funds can be stolen from Second, the mixing amount β must be the same for all peers,
+honest peers.
+butpeerstypicallydonotholdtheexactmixingamountintheir
+Correct Balance: For every honest peer p, the total balance input Bitcoin account and thus may need a change address.
+of all accounts of peer p is not reduced by running the coin Finally, after honestly performing the CoinShuffle++ protocol,
+a peer could spend her bitcoins in the input account before
+mixing protocol (ignoring transaction fees).
+the CoinJoin transaction is confirmed, in a double-spending
+attempt. All these challenges are easy to overcome. We refer
+C. The CoinShuffle++ Protocol
+the reader to the literature on CoinJoin-based coin mixing, e.g.,
+CoinShuffle++ leverages DiceMix to perform a Bitcoin [43], [45], [52], for details.
+transaction where the input and output accounts for any given
+DiceMix does not rely on any external anonymous channel
+honest peer cannot be linked. In particular, CoinShuffle++
+creates a fresh pair of signing-verification Bitcoin keys and
+returns the verification key to implement GEN(). Algorithm 2 CoinShuffle++
+proc GEN( )
+Then, for the confirmation subprotocol CONFIRM(), Coin- (vk,sk)··=AccountGen() (cid:46) Stores sk in the wallet
+Shuffle++usesCoinJoin[43],[45]toperformtheactualmixing. return vk
+A CoinJoin transaction allows a set of peers to mix their coins
+proc CONFIRM(i,P,VK out,my,VKin[],sk in,sid)
+without the help of a third party. In such a transaction, peers tx··=CoinJoinTx(VKin[],VK out,β)
+set their current Bitcoin accounts as input and a mixed list of σ[my]··=Sign(sk in,tx)
+fresh Bitcoin accounts as output. Crucially, peers can verify broadcast σ[my]
+whetherthetransactiontherebyconstructedtransfersthecorrect receive σ[p] from all p∈P
+amount of funds to their fresh output account. Only if all peers where Verify(VKin[p],σ[p],tx)
+agree and sign the transaction, it becomes valid. So in the missing P off do (cid:46) Peers refusing to sign are malicious
+case of CoinShuffle++, the explicit confirmation provided by return P off
+Submit(tx,σ[])
+DiceMix is a list of valid signatures, one from each peer, on
+return ∅ (cid:46) Success!
+the CoinJoin transaction.
+11(e.g., Tor network [23]) for mixing coins. Nevertheless, to restricted towards external observers, i.e., the mixing service
+ensure unlinkability of inputs of the CoinJoin transaction with itself can still determine the owner of the funds. Second and
+network-level details such as IP addresses, using an external more important, the users have to transfer their funds to the
+anonymous channel is highly recommended both for running tumbler,whichcouldjuststealthembyrefusingtoreturnthem.
+DiceMix and actually spending the mixed funds later.
+1)Accountable Tumblers: Mixcoin [13] mitigates the sec-
+4)Compatibility and Extensibility: Since CoinJoin trans- ond problem by holding the tumbler accountable if it steals
+actions work in the current Bitcoin network, CoinShuffle++ the funds, but theft is still possible. Blindcoin [57] improves
+is immediately deployable without any change to the system. upon Mixcoin in that the tumbler additionally cannot break
+Moreover, the fact that DiceMix is generic in the CONFIRM() anonymity.
+function makes it possible to define variants of CoinShuffle++ 2)BlindlySignedContractsandTumbleBit: BlindlySigned
+to support a wide range of crypto-currencies and signature
+Contracts [36] and its successor TumbleBit [35] propose an
+algorithms, including interactive signature protocols.
+untrusted tumbler based on the combination of blind signatures
+Forexample,theintegrationofSchnorrsignaturesisplanned and smart contracts to solve both aforementioned challenges,
+inanupcomingBitcoinsoftwarerelease[10].Thismodification i.e., theft and anonymity. To perform ordinary mixing this
+will enable aggregate signatures using an interactive two-round approach requires at least two transactions to be confirmed
+protocol among the peers in a CoinJoin transaction [44]. The sequentially (in two different blocks), whereas CoinShuffle++
+first round of this two-round protocol does not depend on the requires just one transaction.
+details of the transactions and can be run in parallel to the TumbleBit supports using the second transaction to send
+third round (DC) of CoinShuffle++; this keeps the number of a payment to a recipient directly, which is then on par with
+required communication rounds at 4f +2. CoinShuffle++, which also requires one transaction for mixing
+and one transaction for sending a payment to a recipient.
+Given that signatures are often the largest individual part
+However, this mode of TumbleBit comes with limitations.
+of the transactions, aggregate signatures greatly reduce the size
+First, it requires coordination between the tumbler and the
+of transactions and thus the transaction fee, thereby making
+recipient. Second, it requires more fees than CoinShuffle++,
+mixing using CoinJoin transactions even cheaper.
+because the CoinJoin transaction used in CoinShuffle++ is
+5)ResistanceagainstDoSAttacksbySybils: CoinShuffle++ cheap, in particular if using aggregate signatures. Third, it
+makessurethatdisruptivepeersinamixingwillbeexcludedin requires the payment amount to be exactly the mixing amount,
+due course. To avoid that the same peers cannot disrupt further which hinders availability severely, because it is very difficult
+protocol runs either, the bootstrapping mechanism (if executed to find enough users that are willing to send the exact same
+onthebulletinboard)canblocktheunspenttransactionoutputs amountoffundsatasimilartime.WithCoinShuffle++,instead,
+in the blockchain used by the disruptive peers for a predefined the second transaction, i.e., the actual spending transaction is
+period of time, e.g., an hour. (They should not blocked forever a normal transaction and supports change addresses, at which
+because peers could be unresponsive for legitimate reasons, peers get their remaining funds back.
+e.g., unreliable connectivity.)
+B. Other P2P Mixing Approaches
+This ensures that the number of unspent transactions
+outputs belonging to the attacker limits his ability to disrupt InCoinParty[62],asetofmixingpeersisusedtomixfunds
+CoinShuffle++ on a particular bulletin board. The attacker can ofusers.Itisassumedthat1/3ofthemixingpartiesarehonest.
+try to overcome the blocking by spending the corresponding This trust assumption is not in line with the philosophy of
+funds to create new unspent transaction outputs (child outputs Bitcoin, which works in a P2P setting without strong identities,
+of the blocked outputs); however, this is expensive because he where Sybil attacks are easily possible.
+needs to pay transactions fees. Moreover, the bootstrapping
+CoinShuffle++,instead,doesnotmakeanytrustassumption
+mechanism can block not only the used transaction outputs but
+onthemixingparticipants,exceptthattheremustbetwohonest
+also their child outputs.
+peers, which is a fundamental requirement for any protocol
+providing anonymity.
+VII. RELATEDWORKINCRYPTO-CURRENCIES
+Xim [8] improves on its related previous work [6] in that
+We give an overview of the literature on privacy-preserving it uses a fee-based advertisement mechanism to pair partners
+protocols for crypto-currencies. Related work for P2P mixing for mixing, and provides evidence of the agreement that can
+protocols is discussed throughout the paper. be leveraged if a party aborts. Even in the simple case of a
+mixing between two peers, Xim requires publishing several
+A. Tumblers Bitcoin transactions in the Bitcoin blockchain, which takes on
+A tumbler provides a backwards-compatible centralized average at least ten minutes for each transaction.
+mixing service [11] to unlink users from their funds: several In contrast, CoinShuffle++ requires to submit a single
+users transfer their funds to the tumbler, which returns them to transaction to the Bitcoin blockchain independently on the
+theusersatfreshaddresses.Themainadvantageofacentralized number of peers.
+approach is that it scales well to large anonymity sets, because
+C. Privacy-preserving Crypto-currencies
+the anonymity set is the set of all users using the service in
+somepredefinedtimewindow.However,byusingtheseservices Bitcoin is by far the most widespread crypto-currency and
+naively, a user must fully trust the tumbler: First, anonymity is will most probably retain this status in the foreseeable future,
+12so users are in need of solutions enhancing privacy in Bitcoin. M
+M′
+Nevertheless, several promising designs of crypto-currencies p
+with built-in privacy features are available.
+BB
+1)Zerocoin and Zerocash: Zerocoin [48] and its follow-
+up work Zerocash [7], whose implementation Zcash has been
+deployedrecently[4],arecrypto-currencyprotocolsthatprovide
+anonymity by design. Although these solutions provide strong
+privacy guarantees, it is not clear whether Zcash will see
+Fig. 5: A P2P Mixing Protocol under Attack. Peer p is
+widespreadadoption,inparticulargivenitsrelianceonatrusted
+partitioned from the bulletin board BB. The dashed rectangles
+setup due to the use of zkSNARKS.
+indicate the message sets M and M(cid:48) of the peers in the
+2)CryptoNote: The CryptoNote design [58] relies on ring respective rectangle.
+signatures to provide anonymity for the sender of a transaction.
+In contrast to CoinShuffle++, an online mixing protocol is not
+necessary and a sufficient anonymity set can be created using
+A. Example: A Deanonymization Attack on Dissent
+funds of users currently not online. However, this comes with
+two important drawbacks for scalability. We illustrate the attack on the Dissent shuffle protocol [22],
+[55].5 In the last communication round of the Dissent shuffle
+First,CryptoNoterequireseachtransactiontocontainaring protocol, every peer publishes a decryption key. All decryption
+signatureofsizeO(n),wherenisthesizeoftheanonymityset, keys taken together enable the peers to decrypt anonymized
+whereas our approach based on CoinJoin needs only constant ciphertexts,resultinginthefinalsetM ofanonymizedmessages.
+space per user. Storing the ring signatures requires a lot of (The rest of the protocol is not relevant for our attack.) The
+precious space in the blockchain, and verifying them puts a attack on the shuffle protocol now proceeds as follows (Fig. 5):
+large burden on all nodes in the currency network. (In other
+words, the advantage of CoinShuffle++ is that it moves the 1) The network attacker does not interfere with the protocol
+anonymization work to an online mixing protocol, which is until the last communication round. In the last round,
+independent of the blockchain.) the attacker partitions the network into a part with
+only one honest peer p and a part with the remaining
+Second, CryptoNote is not compatible with pruning, a peers. Consequently, the last protocol message by peer
+featuresupportedbytheBitcoinCoreclient[9].Pruningreduces p (containing her decryption key) does not reach the
+the storage requirements of nodes drastically by deleting spent other peers. As the attacker has learned all decryption
+transactionsfromlocalstorageonceverified.Thisisimpossible keys (including that of p), he can decrypt the final set of
+in CryptoNote because it is not entirely clear whether funds messages M, but nobody else can.6 However, anonymity
+in the blockchain have been spent or not. A CoinJoin-based is not broken so far.
+approach such as CoinShuffle++ does not suffer from this 2) The remaining peers must eventually conclude that peer
+problem and is compatible with pruning. p is offline and exclude her; otherwise they will not
+be able to continue the protocol, because they cannot
+assume that p will ever be reachable again. The strategy
+VIII. ADEANONYMIZATIONATTACKON by which Dissent provides termination in such a situation
+STATE-OF-THE-ARTP2PMIXINGPROTOCOLS is through a wrapper protocol that instructs the remaining
+peers to attempt a second run of Dissent without peer
+In this section, we show a deanonymization attack on state- p. In this second run, the remaining peers resubmit their
+of-the-art P2P mixing protocols. input messages used in the first run [22, Section 5.4]. The
+attackerdoesnotinterferewiththissecondrun,andsothe
+At the core of the problem is handling of peers that appear run will succeed with a final set M(cid:48) of mixed messages.
+to be offline. They cannot be handled like active disruptors: 3) Observe that M(cid:48)\M = {m }, since p is the only peer
+p
+While sacrificing the anonymity of some peer p is not at all present in the first run but not in the second. This breaks
+a problem if peer p is proven to be an active disruptor and anonymity of p.
+thusmalicious, sacrificingthe anonymity of p isa seriousissue
+and can renders a protocol insecure if p goes offline. Peer p Theissueontheformalsideisanarguablytooweaksecurity
+couldinfactbehonest,becausethereisno“smokinggun”that definition. The core of the Dissent protocol [22], [55] does not
+allows the other peers to conclude that p is malicious.
+5ThereareseveralprotocolsnamedDissent.First,thereisaP2Pmixing
+protocolproposedbyCorrigan-GibbsandFord[22]andformallyprovensecure
+Ourattackisbasedonthewell-knownandverybasicobser-
+bySytaet.al.[55].Second,thereisprotocol[60]inaclient/serversetting,
+vation that an offline peer cannot possibly have sent a message,
+whichrequirestrustinoneofseveralserversandisconsequentlynotrelevant
+which comes in many shapes in basically every anonymous inourcontext.Theformer(P2P)protocolbyCorrigan-GibbsandFord[22]
+communication protocol with reasonable latency [14], [61]. hastwovariants,ashuffleprotocolandabulkprotocol.Theshuffleprotocolis
+While the attack relies on this very basic observation, it has supposedtoprovideanonymitybutisrestrictedtoallpeershavingamessage
+of the same size, whereas the bulk protocol does not share this restriction.
+been overlooked in the literature that a hard requirement to
+WhenwesayDissent,wealwaysmeantheshuffleprotocol[22,Section3].
+terminate successfully in the presence of offline peers makes 6Dissenthasthepropertythatapassivenetworkobserver(notparticipating
+existing P2P mixing protocols vulnerable. intheprotocol)canalsoreconstructM.
+13provideterminationonitsownbutjustaformofaccountability, learnsm (bycontrolofS).Thentheattackerselectsanindexi∗
+i
+which states that at least one active disruptor can be exposed fromthesetofhonestpeers.Startingwithroundr,theattacker
+in every failed run of the protocol. The underlying idea is to only delivers protocol messages not from p i∗ and not from his
+use the wrapper protocol to ensure termination by starting a ownpeersinA;allthesepeersappearofflinefortheremaining
+new run of Dissent without the exposed disruptor whenever a peers in R··=P \({p i∗}∪A). By assumption, |R|≥2, and
+run has failed. hence by the termination property, those remaining peers in R
+will finish the protocol with a public result set M(cid:48) (cid:40)M.
+TheformalanalysisoftheDissent,however,doesnotcover
+the wrapper protocol. It considers only a single run of Dissent, We distinguish cases. If i∗ = i, then p ∈/ R. Since
+i
+and correctly establishes anonymity and accountability for a additionally R is a minority, which has not seen any protocol
+single run. It has been overlooked that anonymity is lost under messages from p after round r−1, the peers in R do not
+i
+sequential composition of several runs of Dissent using the know m , and thus m ∈/ M(cid:48). If instead i∗ (cid:54)=i, then p ∈R,
+i i i
+same input messages, as prescribed in the wrapper protocol. and the correctness of the protocol implies m ∈M(cid:48).
+i
+While Corrigan-Gibbs and Ford [22] acknowledge and In other words, the attacker learns whether m i belongs to
+mention the problem that the last protocol message may be peer p i∗ or not by checking whether m i ∈/ M(cid:48). This breaks
+withheld and thus some peer (or the network attacker) may the anonymity of p i∗.
+learn the result of the protocol while denying it to others [22,
+Section 5.5], their discussion is restricted to reliability and fails C. How DiceMix Avoids the Attack
+to identify the consequences for anonymity.
+To avoid the intersection of message sets, DiceMix draws
+fresh messages in each run. Also, whenever some honest peer
+B. Generalizing the Attack
+p excludes an unreachable honest peer p(cid:48) (and sacrifices the
+The underlying reason for this intersection-like attack is a anonymity of p(cid:48)), the correct confirmation property will ensure
+fairnessissue:theattacker,possiblycontrollingsomemalicious that the current run will not terminate successfully for peer
+peers,canlearn(partsof)thefinalmessagesetM ofaprotocol p(cid:48), because p(cid:48) and p will have different views on the current
+run while denying M to the other peers. If now some peer p set P of unexcluded peers. Thus no anonymity is required for
+appears to be offline, e.g., because the attacker blocks network the current run and malicious and offline peers can be handled
+messages, the remaining peers must finish the protocol without equally (as done throughout the previous sections).
+p with a message set M(cid:48), which unlike M does not contain
+m p. Thus the attacker has learned that m p belongs to p. IX. CONCLUSIONS
+Since fairness is a general problem in cryptography without In this work we present DiceMix, a P2P mixing protocol
+anhonestmajority,itisnotsurprisingthattheattackcanbegen- based on DC-nets that enables participants to anonymously
+eralized. Next we show a generic attack that breaks anonymity publish a set of messages ensuring sender anonymity and
+for every P2P mixing protocol that provides termination and termination. DiceMix avoids slot reservation and still ensures
+supports arbitrarily chosen input messages. that no collisions occur, not even with a small probability.
+This results in DiceMix requiring only 4+2f communication
+Attack Description: We assume an execution of a P2P
+roundsinthepresenceoff misbehavingpeers.Weimplemented
+mixingprotocolwithpeersetP ={p ,...,p }andtheirsetof
+1 n
+DiceMix and showed its practicality even for a large number
+fixed input messages M ={m ,...,m }. We further assume
+1 n
+of 50 to 100 peers.
+that the attacker controls the network and a majority A⊂P
+of peers in the execution such that |P|/2<|A|≤|P|−3. We use DiceMix to design CoinShuffle++, a practical
+decentralized coin mixing protocol for Bitcoin. Our evaluation
+For the sake of presentation, we assume that no two peers
+results show that CoinShuffle++ is a promising approach to
+send a protocol message in the same communication round.
+ensure unlinkability of Bitcoin transaction while requiring no
+(This models that the network attacker can determine the order
+change to the current Bitcoin protocol.
+of simultaneous messages arbitrarily.)
+For some i, let r be the first communication round after ACKNOWLEDGMENTS
+whichinputmessagem ofpeerp isknowntoacollusionofa
+i i
+minority S ofpeers withp ∈/ S.7 Sucha roundexists,because We thank Bryan Ford for insightful discussions, and the
+i
+every peer outputs M at the end of a successful protocol anonymous reviewers for their helpful comments. We also
+execution, and M contains m . Note that knowledge of m thank Henry Corrigan-Gibbs and Dan Boneh for sharing the
+i i
+does not imply that the collusion S of peers collectively knows manuscript of [20]. This work was supported by the German
+that m belongs to peer p ; it just means that the collusion Ministry for Education and Research (BMBF) through funding
+i i
+knows that the bitstring m is one of the peers’ input messages. for the German Universities Excellence Initiative.
+i
+Assume that S ⊂ A, i.e., S is entirely controlled by the
+REFERENCES
+attacker. The attacker lets the first r−1 protocol rounds run
+normally. In round r, he collects the protocol message and [1] “AN.ON(anonymity.online),”https://anon.inf.tu-dresden.de/.
+[2] “BitcoinDeveloperGuide,”https://bitcoin.org/en/developer-guide.
+7ThisisthefirstroundrforwhichanefficientextractionalgorithmEexists [3] “NXT1.7release,”http://www.nxtinfo.org/2015/11/30/nxts-upcoming-
+suchthatE outputsmi withnon-negligibleprobability,giventhefullstateof 1-7-release-featuring-coin-shuffling-singleton-assets-account-control-
+allpeersinS afterroundr. and-an-improved-forging-algorithm/.
+14[4] “Zcash,”https://z.cash/. [34] W.Hart,F.Johansson,andS.Pancratz,“FLINT:FastLibraryforNumber
+Theory,”2015,version2.5.2,http://flintlib.org.
+[5] E.Androulaki,G.O.Karame,M.Roeschlin,T.Scherer,andS.Capkun,
+“Evaluatinguserprivacyinbitcoin,”inFC’13. [35] E.Heilman,F.Baldimtsi,L.Alshenibr,A.Scafuro,andS.Goldberg,
+“TumbleBit:AnuntrustedtumblerforBitcoin-compatibleanonymous
+[6] S. Barber, X. Boyen, E. Shi, and E. Uzun, “Bitter to better. how to
+payments,”inNDSS’17.
+makeBitcoinabettercurrency,”inFC’12.
+[36] E.Heilman,F.Baldimtsi,andS.Goldberg,“Blindlysignedcontracts:
+[7] E.Ben-Sasson,A.Chiesa,C.Garman,M.Green,I.Miers,E.Tromer,
+Anonymouson-blockchainandoff-blockchainBitcointransactions,”in
+and M. Virza, “Zerocash: Decentralized anonymous payments from
+BITCOIN’16.
+Bitcoin,”inS&P’14.
+[37] E. Kaltofen and V. Shoup, “Fast polynomial factorization over high
+[8] G.Bissias,A.P.Ozisik,B.N.Levine,andM.Liberatore,“Sybil-resistant
+algebraicextensionsoffinitefields,”inISSAC’97.
+mixingforBitcoin,”inWPES’14.
+[38] W.KautzandR.Singleton,“Nonrandombinarysuperimposedcodes,”
+[9] BitcoinCore,“0.11.0releasenotes,”https://github.com/bitcoin/bitcoin/ IEEETrans.Inf.Theor.,vol.10,no.4,pp.363–377,2006.
+blob/v0.11.0/doc/release-notes.md#block-file-pruning.
+[39] S.Kochen,A.Sokolov,andK.Fuller,“IRCv3.2server-timeextension,”
+[10] ——,“Segregatedwitness:thenextsteps,”https://bitcoincore.org/en/ 2012,http://ircv3.net/specs/extensions/server-time-3.2.html.
+2016/06/24/segwit-next-steps/#schnorr-signatures.
+[40] P. Koshy, D. Koshy, and P. McDaniel, “An analysis of anonymity in
+[11] Bitcoin Wiki, “Mixing services,” https://en.bitcoin.it/wiki/Category: BitcoinusingP2Pnetworktraffic,”inFC’14.
+Mixing Services.
+[41] A. Krasnova, M. Neikes, and P. Schwabe, “Footprint scheduling for
+[12] J.Bonneau,A.Miller,J.Clark,A.Narayanan,J.A.Kroll,andE.W. dining-cryptographernetworks,”inFC’16.
+Felten, “SoK: Research perspectives and challenges for bitcoin and
+[42] D.Krawisz,“MyceliumShufflepuff(aninplementationofCoinShuffle),”
+cryptocurrencies,”inS&P’15.
+https://github.com/DanielKrawisz/Shufflepuff.
+[13] J.Bonneau,A.Narayanan,A.Miller,J.Clark,J.Kroll,andE.Felten, [43] G. Maxwell, “CoinJoin: Bitcoin privacy for the real world,” Post on
+“Mixcoin:AnonymityforBitcoinwithaccountablemixes,”inFC’14. BitcoinForum,2013,https://bitcointalk.org/index.php?topic=279249.
+[14] N.Borisov,G.Danezis,P.Mittal,andP.Tabriz,“Denialofserviceor [44] ——, “Signature aggregation for improved scalablity,” 2016, https://
+denialofsecurity?”inCCS’07. bitcointalk.org/index.php?topic=1377298.0.
+[15] J.BosandB.denBoer,“DetectionofdisruptersintheDCprotocol,” [45] S.MeiklejohnandC.Orlandi,“Privacy-enhancingoverlaysinBitcoin,”
+inEUROCRYPT’89. inBITCOIN’15.
+[16] D. Cash, E. Kiltz, and V. Shoup, “The twin Diffie-Hellman problem [46] S.Meiklejohn,M.Pomarole,G.Jordan,K.Levchenko,D.McCoy,G.M.
+andapplications,”J.Cryptol.,vol.22,no.4,2009. Voelker,andS.Savage,“Afistfulofbitcoins:Characterizingpayments
+[17] D.Chaum,“Thediningcryptographersproblem:Unconditionalsender
+amongmenwithnonames,”inIMC’13.
+andrecipientuntraceability,”J.Cryptol.,vol.1. [47] A.Mellit,“PARI/GPPythoninterface,”https://code.google.com/archive/
+p/pari-python/.
+[18] ——, “Untraceable electronic mail, return addresses, and digital
+pseudonyms,”Comm.ACM,vol.4,no.2,1981. [48] I.Miers,C.Garman,M.Green,andA.D.Rubin,“Zerocoin:Anonymous
+distributede-cashfromBitcoin,”inS&P’13.
+[19] R.ChienandW.Frazer,“Anapplicationofcodingtheorytodocument
+retrieval,”IEEETrans.Inf.Theor.,vol.12,no.2,1966. [49] S.Nakamoto,“Bitcoin:Apeer-to-peerelectroniccashsystem,”https:
+//bitcoin.org/bitcoin.pdf,2008.
+[20] H.Corrigan-GibbsandD.Boneh,“Bandwidth-optimalDC-nets,”private
+communication. [50] V. Y. Pan, “Faster solution of the key equation for decoding BCH
+error-correctingcodes,”inSTOC’97,1997,pp.168–175.
+[21] H.Corrigan-Gibbs,D.Boneh,andD.Mazie`res,“Riposte:Ananonymous
+messagingsystemhandlingmillionsofusers,”inS&P’15. [51] F. Reid and M. Harrigan, “An analysis of anonymity in the Bitcoin
+system,”inSXSW’13.
+[22] H.Corrigan-GibbsandB.Ford,“Dissent:Accountableanonymousgroup
+messaging,”inCCS’10. [52] T. Ruffing, P. Moreno-Sanchez, and A. Kate, “CoinShuffle: Practical
+decentralizedcoinmixingforBitcoin,”inESORICS’14,2014.
+[23] R. Dingledine, N. Mathewson, and P. Syverson, “Tor: The second-
+[53] M.Spagnuolo,F.Maggi,andS.Zanero,“BitIodine:Extractingintelli-
+generationonionrouter,”inUSENIXSecurity’04.
+gencefromtheBitcoinnetwork,”inFC’14,2014.
+[24] D.Dolev,R.Reischuk,andH.R.Strong,“Earlystoppinginbyzantine
+[54] T.K.SrikanthandS.Toueg,“Simulatingauthenticatedbroadcaststo
+agreement,”J.ACM,vol.37,no.4,1990.
+derivesimplefault-tolerantalgorithms,”DistributedComputing,vol.2,
+[25] L.A.DunningandR.Kresman,“Privacypreservingdatasharingwith no.2,1987.
+anonymous ID assignment,” IEEE Trans. Inf. Forensic Secur., vol. 8,
+[55] E. Syta, H. Corrigan-Gibbs, S.-C. Weng, D. Wolinsky, B. Ford, and
+no.2,2013.
+A.Johnson,“SecurityanalysisofaccountableanonymityinDissent,”
+[26] M.Florian,J.Walter,andI.Baumgart,“Sybil-resistantpseudonymization TISSEC,vol.17,no.1,2014.
+andpseudonymchangewithouttrustedthirdparties,”inWPES’15.
+[56] PARI/GP 2.3, The PARI Group, Bordeaux, http://pari.math.u-
+[27] C. Franck, “Dining cryptographers with 0.924 verifiable collision bordeaux.fr/.
+resolution,”AnnalesUMCS,Informatica,vol.14,no.1,2014.
+[57] L.ValentaandB.Rowan,“Blindcoin:Blinded,accountablemixesfor
+[28] C.FranckandJ.vandeGraaf,“Diningcryptographersarepractical,” Bitcoin,”inBITCOIN’15.
+arXivCoRRabs/1402.2269,https://arxiv.org/abs/1402.2269. [58] N. van Saberhagen, “CryptoNote,” 2013, https://cryptonote.org/
+[29] E. S. V. Freire, D. Hofheinz, E. Kiltz, and K. G. Paterson, “Non- whitepaper.pdf.
+interactivekeyexchange,”inPKC’13,2013. [59] B.White,J.Lepreau,L.Stoller,R.Ricci,S.Guruprasad,M.Newbold,
+[30] S.Goel,M.Robson,M.Polte,andE.G.Sirer,“Herbivore:Ascalable M. Hibler, C. Barb, and A. Joglekar, “An integrated experimental
+andefficientprotocolforanonymouscommunication,”CornellUniversity, environmentfordistributedsystemsandnetworks,”SIGOPSOper.Syst.
+Tech.Rep.2003-1890. Rev.,vol.36,2002.
+[31] D. M. Goldschlag, M. Reed, and P. Syverson, “Hiding Routing [60] D.I.Wolinsky,H.Corrigan-Gibbs,B.Ford,andA.Johnson,“Dissent
+Information,”inInformationHiding:FirstInternationalWorkshop,1996. innumbers:Makingstronganonymityscale,”inOSDI’12.
+[32] P. Golle and A. Juels, “Dining cryptographers revisited,” in EURO- [61] D.I.Wolinsky,E.Syta,andB.Ford,“Hangwithyourbuddiestoresist
+CRYPT’04.
+intersectionattacks,”inCCS’13.
+[62] J.H.Ziegeldorf,F.Grossmann,M.Henze,N.Inden,andK.Wehrle,
+[33] H.W.Gould,“TheGirard-Waringpowersumformulasforsymmetric
+“CoinParty:Securemulti-partymixingofbitcoins,”inCODASPY’15.
+functionsandFibonaccisequences,”FibonacciQuarterly,vol.37,no.2,
+1999,http://www.fq.math.ca/Issues/37-2.pdf.
+15

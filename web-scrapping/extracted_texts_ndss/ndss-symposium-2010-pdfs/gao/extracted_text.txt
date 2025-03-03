@@ -1,0 +1,1287 @@
+On the Safety of Enterprise Policy Deployment
+YudongGao Xu Chen NiPan Z.MorleyMao
+UniversityofMichigan-AnnArbor
+{stgyd,chenxu,nipan,zmao}eecs.umich.edu
+Abstract figurations still cause significant network downtime [18].
+In today’s networks, policy related misconfigurations are
+Enterprisepolicymanagementischallenginganderror- prevalent[6,18]andcandirectlyleadtoleakageofsensitive
+prone. Comparedto existing work thatfocusedonanalyz- information,impactoncriticalnetworkinfrastructure,per-
+ing misconfigurations, our work is the first to address the formancedegradation,orotherundesirableconsequences.
+issues that arose during policy deployment, i.e., effecting Althoughthereisaconceptualdesigngoalforanenter-
+policy changes. In this paper, we demonstrate that naive prise network, the actual policy realization is usually de-
+approaches to policy deployment can easily create secu- composedinto manypieces, in the formof policyobjects.
+rityvulnerabilities,suchasgrantingaccessofsensitivere- Eachpolicyobjectcontrolsaspecifictypeofconfiguration,
+sourcestounprivilegedusersortemporarilyallowingmali- such as the IPsec configuration for all computers, or fine-
+cioustraffictocriticalnetworkinfrastructure. Tosystemat- tunes certain policy for a targeted group of entities, such
+icallysolvethisproblem,weformallydefinesecureandin- assetting thenetworkproxyserverforallsalespersonnel.
+secureintermediatestates,andfurtherproposeanefficient Twomainreasonscontributetothisstatusquo. Ontheone
+algorithmtofindadeploymentprocedurewithoutinsecure hand, the sheer number of entities to manage and the va-
+intermediatestates. Weimplementedandevaluatedoural- riety of roles each entity plays is large, and continues to
+gorithmonGroupPolicyframework,whileonlyharnessing growforanyactiveenterprise. Ontheotherhand,thepol-
+existing support and requiring no modification to the cur- icytomanageinenterprisesisbecomingincreasinglycom-
+rentinfrastructure. Ourevaluationshowsthatoursolution plicatedasthepolicymanagementsystemadvances[9]. In
+addsminimaloverheadtotheoveralldeploymenttimewhile modernenterprises,administratorsneedtoconfigurefornu-
+provablyeliminatinginsecureintermediatestates. meroustypes of setups, includingaccess control, software
+installation, system preference, etc. As such, it is hard, if
+not impossible, to come up with a holistic policy setup to
+1 Introduction covereverything.Instead,generatingdecomposedandspe-
+cialized policy objects is much more scalable in terms of
+Managing enterprise networks is extremely challeng- manageability,allowingthedistributionofthemanagement
+ing. While there are many different aspects involved, workloadamongmultipleadministrators.
+such as hardware maintenance, topology design, middle- Enterprisepolicymanagementsystemstodayindeedrely
+box placement, in this paper, we focus on policy manage- on the specification and integration of policy objects [26,
+ment,whichspansacrossresourceaccesscontrol,network 24];however,thisapproachhasseverallimitations:1)Con-
+security management, etc. Broadly speaking, policy man- flictresolutionisaprocedurethatdeterminestheactualpol-
+agement [6, 29, 25] in an enterprise network environment icy when multiple choices are available. Although it is a
+needs to meet the requirements of security, performance, general problem for policy management, it is particularly
+manageability, and failure resilience. The actual realiza- relevant when policy objects are used, because the policy
+tions may include restricting a machine containing sensi- setups in different objects may not agree with each other
+tive data to be accessed by only a small group of users, and thus require a resolution procedure. 2) Transactional
+preventing external traffic from directly reaching internal update is needed when multiple objects together fulfill a
+databases,etc.Aseasyasitmaysound,specifyingacorrect policydesigngoal.Toreflectadesignchange,thoseobjects
+networkpolicyissurprisinglydifficult,duetotheenormous needtobemodifiedinanatomicfashionwithoutexposing
+number of users and end-hosts managed and the compli- intermediatestates. Whileconflictresolutionisarelatively
+catedpolicyforeachentity.Althoughmillionsofdollarsare well-studied topic [17, 1, 4, 31, 16, 30], in this paper, we
+spenteveryyearbylargeenterprisesonITsupport,miscon- focusontheissuesassociatedwithupdateatomicity.Existingpolicymanagementsystemsusuallyhaveacen- ouralgorithmaddsminimaloverheadtotheoveralldeploy-
+trallocationforstoringpolicyobjects,whicharefrequently menttimewhileprovablyeliminatinginsecureintermediate
+read by the managed entities. Unfortunately, support for states.
+transactional update of multiple objects is intentionally
+missinginfavorofperformanceincurrentpolicymanage- 1.1 GroupPolicyBackground
+mentsystems,becausepolicyreadsaremorefrequentthan
+policymodifications(thusawritelockwouldnegativelyim-
+Webaseourstudyongrouppolicy[26]undertheactive
+pactperformance). Asaresult,apolicydesignchangethat
+directory framework [7] because it is the de facto, widely
+relies on modifying multiple policy objects has to be car-
+adopted, role-based policy management systems in enter-
+riedoutinmultiplesteps. Withouttransactionsupport,end-
+priseenvironment[14]. Thebasicconceptsofgrouppolicy,
+hostscanretrieveatransient,inconsistentintermediatepol-
+as we describe next, are comparable to other frameworks,
+icy,easilyleadingtomisconfigurations.Thisproblemisex-
+whichcanbestudiedusingourformulationandalgorithms.
+acerbatedby end-hostsonly updatingpolicy objects infre-
+This section providessome backgroundinformationabout
+quently,thuskeepingthetransientwrongpolicysetupsfor
+activedirectoryandgrouppolicy.
+a surprisingly long time. The persistently connected end-
+ActivedirectoryisanimportantinfrastructureintheMi-
+hostscoulduseawrongpolicyforhoursbeforethenextreg-
+crosoftWindowsServerfamilyformanagingenterprisenet-
+ularly scheduled update. For sporadically connected end-
+works.Anentireenterprisenetworkisdividedintodomains
+hosts, e.g., laptopsthat are only occasionallyconnectedto
+accordingtoorganizationalorgeographicalterms. Objects
+theenterprisenetwork,thisinconsistencywindowcouldbe
+inadomain,includingusersandmachines,aregroupedinto
+daysorlonger.Thefactthatpolicieschangeveryfrequently
+containerscalledOrganizationalUnits(OUs),whichareor-
+for large enterprise networks makes the problem more se-
+ganizedasahierarchicaltreestructure(Figure1).
+vere. Suchchangesarenecessaryforreasonsincludingde-
+Group Policy is an infrastructure for designing and de-
+partmenthierarchyadjustment,personneltransfer,comput-
+ploying desired configurations or policy settings to differ-
+ingresourceintroduction,removalandre-purpose.
+entsetsoftargetobjects. Inparticular,administratorsspec-
+Comparedtomostexistingwork[13,20,23,32,22]that ify network policies at a central location (on domain con-
+focusesonthecorrectnessofstaticpolicyspecifications,de- trollers), and the policies are downloaded, filtered and en-
+tectionandcorrectionofmisconfigurations,suchasblock- forcedonclientsbyasetofclient-sideextensions.
+ing legitimate access or allowing malicious traffic, we are Inthegrouppolicyframework,policysettingsarestored
+thefirsttostudythedynamicaspectofpolicydeployment. in Group Policy Objects (GPOs) [8], which are the man-
+This is the process of committing the new policy, usually agement units of group policy framework. GPOs control
+to the centralpolicystorageand managementserver. This settings in Windows systems such as IPsec policies, reg-
+processisusuallyoverlookedbyadministratorsandcanpo- istrytableentries,softwaresettings(e.g.,InternetExplorer
+tentiallybeexploitedbystealthyadversaries. or Word configurations). A GPO can be linked to one or
+Wefirstmakeacaseforthenecessityofpreservingpol- more OUs, whose members will apply the settings speci-
+icy integrity, i.e., enforcing the administrators’ intention fiedintheGPO.NotethatthemembersofachildOUwill
+throughoutthe deployment phase, by showing how errors alsoapplytheGPOslinkedtotheparentOUs. Asaresult,
+and inconsistencies can easily occur. To systematically a GPO can be linked to multiple OUs, while one OU can
+solve this problem, we formally model the general policy havemultipleGPOsattached-thisreducesthemanagement
+deployment problem. Within our formulation, we define overheadbymaximallyreducingtheamountofoverlapping
+secureandinsecureintermediatestates,andfurtherpropose policyconfigurations.
+an efficient algorithmto find a deploymentprocedurefree Forexample,inthesetupillustratedinFigure1,GPO1
+frominsecureintermediatestates. Suchinsecurestatesare is linked to the domain so it is applied to all the members
+inconsistentwithadministrators’intentionsandcanthusre- insidethisdomain;GPO2 islinkedtotwoOUs: OU
+A
+and
+sult in security vulnerabilities. To the best of our knowl- OU B; OU
+D
+havetwoGPOsattached: GPO3 andGPO4.
+edge, this is the first work to systematically deal with po- Inthiscase,User1receivesGPO1 andGPO2;User3and
+tentialproblemsofpolicydeploymentinenterprisenetwork Mach1receiveGPO1,GPO2,GPO3andGPO4.
+environment.Weimplementedandevaluatedouralgorithm DifferentGPOsmaytrytoconfigurethesameaspecton
+onMicrosoft’sGroupPolicyframework[26,7],whileonly targetcomputers,e.g.,adomain-wideGPOtriestoconfig-
+harnessing existing support and requiring no modification ure a default IPsec policy, while a GPO linked to Servers
+to the current infrastructure. Although currently we are OU specifies an IPsec policy with highersecurity require-
+targeting Group Policy framework, our model is general ments. Inthesecases,GPOsinchildOUswilloverridethe
+enough to be applicable to other policy models to solve same configurations specified in GPOs from parent OUs.
+similar deployment problems. The evaluation shows that ForGPOslinkedtothesameOU,theonewiththehighestallymanuallyperformed,thusleavingaverylargevulnera-
+bilitywindow. Betweenthestartandendofamodification
+sequence, an entity that happens to query the policy stor-
+ageserverwouldreceiveanintermediatestatewithasubset
+ofthemodificationsineffect. Thisintermediatestatecould
+breaksoftwareintegrityorevenopenupsecurityholes,e.g.,
+newemailapplicationinstalledbutwithoutpropernetwork
+filtersspecified.Theseverityofthisproblemisexacerbated
+bythefactthattypicalenterprisenetworkshaveenormous
+numberofuserandcomputerobjects.
+For the sake of illustration, let the duration of an inse-
+Figure1.OrganizationofGroupPolicyFrame cureintermediatestate beT,the averagepolicyupdatein-
+work tervalforeachmachinebeI,andthenumberofcomputers
+in the domain be N. The expected number of computers
+whichdownloadthisinsecurestateisS = N ×T/I. With
+averyconservativeestimationofT = 10sec,I = 90min,
+precedencevalueiseffective.
+N =20,000,westillgetS =37.Inalargeenterprisewith
+AlltheGPOsinonedomainarestoredincentralizeddo-
+frequentpolicymodifications,hundredsor eventhousands
+maincontrollers. For redundancyandreliabilitypurposes,
+of machines can download insecure states in one day. In
+multiple domain controllers can run simultaneously, each
+our lab experimentswith the grouppolicy framework, de-
+holdinga copyoftheGPOs. Whena domain-joinedcom-
+ploying a GPO with a few settings takes several seconds.
+puter boots up, it downloads the GPOs applicable to the
+Inpractice,aGPOhashundredsofsettings,andanupdate
+computerobjectfromoneofthedomaincontrollers.During
+usually involvesmultiple GPOs, leading to a much longer
+user login process, the GPOs applicable to the user object
+T. ManualupdatescaneasilyincreaseT tobeontheorder
+aredownloadedandapplied.Abackgroundprocessoneach
+of minutes. Thus many more computerscan be impacted.
+computerperiodically,withadefaultperiodof90minutes,
+To make matters even worse, machines with insecure set-
+queries domain controllers to download and update modi-
+tings do not perform another policy update until the next
+fiedGPOs.
+policy update event, causing them to stay in a potentially
+insecurestateforhoursorevendays.
+1.2 AnExampleMisconfigurationCausedbyPol
+icyDeployment
+2 Related Work
+Here we performa case studyabouthowerrorsandin-
+consistenciescanbeeasilyintroducedifthepolicydeploy- In a broadsense, our work of enterprisepolicy deploy-
+ment is not carefully inspected, despite the correctness of menttouchesonavastarrayofresearchprojectsincluding
+thepolicyspecification. firewall policy analysis [33, 3], policy configuration mod-
+Consider the case of assigning access to critical re- eling [23, 12, 13, 20], and policy misconfiguration detec-
+sources,e.g.,servermachines,toasmallgroupofprivileged tion[17,16,5,22,2,15,30].
+userswhilepreventingaccessfromotherusers. Acommon The safety issues in policy deployment have received
+approachistofirstdefineabackgroundpolicytoblockall little attention. To the best of our knowledge, Zhang et
+accessto theseresources,andthenoverrideitwitha more al. [33, 3] presented the first work on the safety issues in
+specificpolicywhichgrantsaccesstoonlyprivilegedusers. firewallpolicydeployment. Theyproposedan efficiental-
+Whileeachspecificpolicyisinsertedonebyone,thetran- gorithmwithprovablesafetyguaranteesforfirewallpolicy
+sientstaterightaftercommittingthebackgroundpolicybut deployment, eliminating unsafe intermediate states. Our
+before committing the specific policy for privileged users, work, on the other hand, covers generic policy setup for
+creates a misconfiguration. In this state, legitimate access complex enterprise network environment, where firewall
+ofprivilegedusersistemporarilydisabled. policy setup is a small subset. A detailed comparisoncan
+In large enterprises, policy settings are constantly up- befoundin§3.3.
+datedforavarietyofreasons,e.g.,handlingdepartmenthi- To assist systematic analysis of policy configurations,
+erarchy change, implementing new software policies, and many models have been proposed [23, 12, 13, 20]. The
+preventing recent attacks. Unfortunately, due to a lack of concept of role-based access control was introduced [23]
+transactional support, security vulnerabilities can be ex- toeasepolicymanagementforcollectionsofusersandma-
+ploitedwhenapolicychangeiscarriedoutasmultiplesuc- chines. A role-based policy specification language called
+cessivepolicymodifications. Thesemodificationsareusu- Ponderwasproposedin[12,13]. Ponderisdeclarativeandobject-oriented, and it also supports event triggered obli-
+Table1.NotationTable
+gation policies. McDaniel et al. [20] created a general-
+Notation Meaning
+purposepolicymodelandconcludedthatreconciliationsfor
+Uppercase Letter
+threeormorepoliciesareintractable.Thesemodelsaretoo AGPO
+(e.g.,A)
+generalsincetheytrytocatertoallkindsofapplicationen- Lowercase Letter
+Akey
+vironment,preventingthemfromwidelydeployed. Incon- (e.g.,k)
+trast, the Group Policy framework provides a straightfor- A[k] Keyk’svaluedefinedinGPO
+A
+ward modelfor managingWindowsmachines, and is thus OL OriginalGPOlist
+widelydeployedinenterpriseenvironment. TL TargetGPOlist
+OS Originalstate
+Identifying misconfigurations and reconciling con-
+TS Targetstate
+flicts [17, 16, 5, 22, 2, 15, 30] in policy setup are endur-
+IS Intermediatestate
+ingtopics. JaegerandZhangproposedusingtheconceptof
+Last OL[k] ThelastGPOthatdefinesavalueforkey
+AccessControlSpaces[17]todiscoverthepolicycoverage
+(Last TL[k]) kinOL(TL)
+issue and identify vulnerable or unspecified policy spaces
+GPO < (< ) GPO means that
+A O T B
+automatically. Also related is work by Hicks et al. [16] < (< ) Ahaslower precedence than B inOL
+O T
+onmodelingtheSELinuxMulti-LevelSecuritywithalogi- (TL),
+cal specification, testing properties such “read-down” and → “happenbefore”relationship
+“no write-down” as well as the compliance of two poli- L sumofthesizesofOLandTL
+cies. Their work relies on high-levelsecurity assignments K numberofdifferentkeys
+and constraints, which are difficult to identify in real en- F numberofdifferentfiltersused
+vironment. Bauer et al. [5] employed a machine learning
+approach on access log data to discover association rules.
+However, this approach can only detect cases in which a
+3.1 AGeneralizedModel
+userisdeniedaccesstoagivenobject. Ourworkdoesnot
+rely on the high-level information about the design inten-
+GPOSetup1
+tion.
+There is also related work which applies rule reason- Key ValuesinGPO A
+ing and graph-based algorithm to policy analysis. Mul- WindowsFirewall:Protectallnetwork
+Enabled
+connections
+VAL [22] determines the security impact of software vul-
+Accesstocommandprompt Disabled
+nerabilitiesonaparticularnetwork.Italsousesamodeling
+language and reasoning rules to check for violations with
+givencontrolpolicies. Hamed and Al-Shaer proposedap- In our model, each GPO is viewed as mappings from
+plying graph-based Boolean function manipulation to dis- keysto values. Forexample, in GPO Setup1 thatdefines
+tributed policy analysis [2] and using taxonomy to detect GPO A, “Windows Firewall: Protect all network connec-
+conflicts among policies running on network security de- tions”and“Accesstocommandprompt”arekeys,and“En-
+vices[15]. Wangetal.[30]captureddependenciesbetween abled” and “Disabled” are the corresponding values. The
+policy components with directed acyclic graphs and pro- mappingfromakeytoavalue,suchas“WindowsFirewall:
+posed a linear algorithm for reconciliation. Unlike most Protectallnetworkconnections=Enabled”,iscalledaset-
+workinthisspace,wedonotfocusonidentifyingconflicts ting.IftwoGPOsmapthesamekeytodifferentvalues,the
+inpolicyspecification,butinsteadensuresecureintermedi- settingsinthesetwoGPOsareinconflict,andthesettings
+atestatesduringthedeploymentprocess. intheGPOwithhigherprecedencewouldoverridetheset-
+tings with lower precedence. Each GPO has an effecting
+scope,whichisasetofobjectsthattheGPOcanbeapplied
+to. By default,whena GPO islinkedto anOU, itseffect-
+3 Safe DeploymentFormalization
+ingscopecontainsalltheobjectsintheOU.Filterscanbe
+linkedtoaGPOtorestrictitseffectingscope.
+WeuseanuppercaselettertodenoteaGPO,andalow-
+Tosystematicallyanalyzetheproblemofpolicydeploy- ercaseletterto representakey,andA[k]todenotekeyk’s
+ment,inthissection,wedescribeamodelthatcapturesthe value defined in GPO . For example, in GPO Setup 1,
+A
+fundamentals of policy expression and processing in the A[“WindowsFirewall:Protectallnetworkconnections”]=
+Group Policy framework. This model is general and can “Enabled”. IfGPO doesnotdefineanyvalueforkeyk,
+A
+beeasilyextendedtootherframeworks,aswelaterdemon- thenA[k] = undefined. Table1summarizesthenotation
+stratein§3.3. usedinthispaper.We restrict our discussion to a single OU for brevity. TS,thesystemwillbehaveaccordingtotheexpectationof
+ForthecaseswheremodificationsacrossmultipleOUsare theadministrator,andwesayitisinasecurestate,sinceit
+made, our algorithm can be applied multiple times. Each willnotcreateanyunexpectedsecurityhole.
+runofouralgorithmwillgenerateasequentiallistofmodi-
+Definition3.1. IS is a Secure Intermediate State if and
+ficationsforeachimpactedOU.AlltheGPOslinkedtothe
+only if for each key k in IS, its value equals to either the
+OU constitute a GPO list. They are applied sequentially,
+value in OS, or the value in TS, i.e., IS[k] = OS[k] or
+whereGPOsappearinglaterinthelisthavehigherprece-
+IS[k] = TS[k]. OtherwiseitisanInsecureIntermediate
+dence. All the GPOs inherited fromthe ancestor OUs are
+State.
+notmodifiedduringtheupdateprocess,sincewearetarget-
+ingasingleOUandallthemodificationsarerelatedtothe The valuesOS[k] andTS[k]are secure valuesforkey
+GPOsdirectlylinkedtothisOU.SotheinheritedGPOscan k. Any other values for key k are insecure values. Inse-
+be consolidated into a single GPO, which is linked to the cureintermediatestatesmayeitherblocklegitimateaccess
+frontofthelistandgiventhelowestprecedence.Ourupdate ormistakenlyelevateprivilege,impactingusabilityor cre-
+scenariocanthusbedefinedasfollows: givenanOriginal ating security holes. These cases are not differentiated in
+GPOList (OL):O1,O2,... ,O n, weneedtoupdateitto our model, all of which are judged as insecure values and
+theTargetGPOList(TL):T1,T2,...,T m. shouldbeprevented.
+The result of a GPO list is a state, which also consists
+ofmappingsfromkeystovalues. Thestate’skeysetisthe Definition 3.2. A Secure Update is an update process in
+unionofkeysetsdefinedintheGPOsinthelist;thevalueof whichtheintermediatestateaftereachoperationissecure.
+akeyequalsto thevaluethattakesthehighestprecedence
+Nowweextendthemodeltoconsiderdependentkeys.In
+inthelist.
+a realenvironment,a set of keyscan be dependent,mean-
+Forexample,GPOSetup2isaGPOlistofA,Binwhich
+ingthattogethertheycontroloneparticularbehaviorofthe
+B hashigherprecedence. Theresultingstate of thislist is
+system.Inthiscase,itisthecombinedvaluesofthesekeys,
+showninthelastcolumn. NotethatA’svalue“90min”is
+insteadofeachindividualvalue,thatmatters.Sincemodifi-
+overwrittenbythatofB.
+cationstoanykeyresultinnewcombinationswithunknown
+GPOSetup2 effect,theintermediatestatecanbeinsecure.
+Definition 3.3. Suppose that there is a set D in which all
+Key GPO GPO State
+A B
+keys are dependent, an intermediate state is secure if and
+Group Policy refresh
+90min 180min 180min
+intervalforcomputers only if IS[k] = OS[k] for each key k in D, or IS[k] =
+Access to command TS[k] for each key k in D. Otherwise, it is an insecure
+Enabled Enabled
+prompt intermediatestate.
+Dependent keys exist in real policy management sys-
+TheresultingstateoftheoriginalGPOlist(OL)andthe tems,althoughtheymaynotbeprevalent. Forexample,in
+targetGPOlist(TL)arecalledtheoriginalstate(OS)and Group Policy, the key “Windows Firewall: Allow authen-
+targetstate(TS),respectively. ticated IPSec bypass” instructs the firewall to allow IPSec
+An intermediate state (IS) is the resulting state of the traffic. The value set to this key makes sense only when
+runtimeGPOlistataparticulartimeinstantduringtheup- “WindowsFirewall:Protectallnetworkconnections”isen-
+dateprocess. abled, which turnson the Windowsfirewall. Supposethat
+Wefirstassumethateachkeyisindependentsothatthe currentlythefirewallisoffsoalltrafficisaccepted,andwe
+effectof one key is independentof the values of the other needtoturnonthefirewalltoblockalltrafficexceptthose
+keys. Thenweextendthemodeltocoverdependentkeys authenticatedwithIPSec. Ifthefirewallisenabledfirst,au-
+later. thenticated IPSec traffic will be blocked temporarily until
+Whenallkeysareindependent,eachparticularbehavior thekeytoallowIPSecbypassisset.
+ofthesystemisdeterminedbythevalueofonecorrespond- As another example, the key “Group Policy refresh in-
+ingkey.Forexample,inGPOSetup2,thekey“GroupPol- tervalforcomputers”specifieshowoftengrouppoliciesfor
+icy refresh intervalfor computers” and the key “Access to a computer are updated while the computer is in use, but
+command prompt” are independent. We assume that both if the key “Turn off background refresh of Group Policy”
+OS and TS are stable and secure, since their key values isenabled,backgroundrefreshwillneverhappennomatter
+are carefully assigned by the administrator. (The problem what value is set for the first key. In both cases, one key
+oftellingwhetherthereismisconfigurationinOS orTS is dependsonanothertotakeeffect,andifonlyoneofthemis
+outsidethescopeofthispaper.) Soaslongasthevalueof updated,the intermediatestate is unknownandpotentially
+eachkeyinanintermediatestateequalstothatintheOSor insecure. So all the operations that update the values ofdependent keys from OS[k] to TS[k] should be executed Policy framework. Each of them is supported by a corre-
+simultaneouslyinordertopreservesecurestate. sponding API, which performs the operation atomically.
+Overall,ourgoalistofindasecureupdateusingtheex- Theintermediatestatesduringtheexecutionofthese APIs
+istingAPIsprovidedbytheGroupPolicyframeworkwith- arenotexposed.
+outanymodificationtotheplatformitself. TheseAPIsper-
+form basic policy operations, which are also available on 3.3 Comparison with the Firewall Deployment
+otherpolicymanagementplatforms. Inmostcasesthiscan Model
+be achieved by merely reordering the update operations,
+causing no overhead to the update process. However, in Tothebestofourknowledge,Zhangetal.[33]proposed
+some cases additional GPOs must be inserted during the the first and the only work to formally analyze the policy
+update process to guarantee secure update, which will in- deploymentproblemforfirewallpolices.Thisisourclosest
+evitablyintroduceextraoverhead. Detailsarepresentedin work. But the firewall policy model lacks the expressive-
+§4. ness to describe enterprise policies which are much more
+generalandcomprehensive,makingit impossibleto apply
+3.2 AvailableUpdateOperations their algorithms to enterprise policies deployment, as we
+willdemonstratelater.
+Nextwebrieflyintroducethefirewallpolicymodeland
+In §3.1we presentedthe policymodel, nowwe discuss
+thencompareitwithourpolicymodel.
+howtoincorporateourmodelwiththeGroupPolicyframe-
+Inthefirewallmodel,afirewallpolicyisanorderedlist
+work, so that the model can extract input from the frame-
+ofruleswitha“firstmatch”semantic. Eachfirewallruler
+workandinvoketheAPIstoperformsecurepolicyupdate.
+specifiesanacceptordenyactiononafilteringset,whichis
+Similar policy operating APIs are also provided by other
+asetofflows;apacketpmatchesrifpbelongstoaflowin
+policy managementplatforms, to which our modelcan be
+r’sfilteringset. Forexample,inthesetupofthefollowing
+portedeasily.
+policy
+In our policy deployment scenario, we assume that in-
+formationabouttheOLandTL,andthesettingsofGPOs (1) DenyTCP10.1.1.0/2480
+in both lists are available before each deployment. When
+an administrator finishes staging and planning an update, (2) DenyTCP10.1.2.0/24any
+thisinformationcanbetriviallycollectedfromtheplanning
+(3) PermitIP10.0.0.0/8any
+andmanagementtools,e.g.,theGroupPolicyManagement
+Console[10]intheGroupPolicyframework.Thesearethe HTTPtrafficfrom10.1.1.0/24firstmatchesrule(1)and
+inputtoourmodel. getsblocked,whilethetrafficfrom10.0.0.0/24matchesrule
+To update the GPO list from OL to TL, two types of (3)andgetspermitted.
+operationsarenecessary: listoperations(operationsonthe In thismodel,policydeploymentis aprocesstoupdate
+GPO list) and key operations(operationson the GPO key the runningpolicyfromthe initialpolicytothe targetpol-
+settings). icy. They defined the concept of safe deployment, during
+IfaGPOT iinTLdoesnotappearinOL,“ADDGPO” which any packet that is permitted/deniedby both the ini-
+operationis neededto add T i to the list and assign it with tial and the target policy is always permitted/denied. For
+a proper precedence. “MOVE GPO” operation is used to policy modification languages which support only append
+changetheprecedenceofT i. Similarly,ifO i isnotinTL, anddeleteruleoperations,theyprovethatsafedeployment
+a“REMOVEGPO”operationisneededtoremoveit. These is notalways possible. For more powerfullanguagessup-
+listoperationsautomaticallyassignaproperprecedenceto portingadditionalmoveoperations,theyshowtheexistence
+eachGPOaccordingtoitspositioninTL. of a safe deployment containing the minimum number of
+If T and O refer to the same GPO, but with different operations.
+i j
+keysettings,thenkeyupdateoperationsonO arerequired. Ourproposedmodelissimilartothisfirewallmodel.An
+j
+Therearethreekindsofkeyoperations: “ADDKeyT [k]” OU is linked with a list (analogousto a policy in firewall)
+i
+if k is defined in T but not O , “REMOVE Key T [k]” if ofGPOs(analogoustorulesinafirewallpolicy),andeach
+i j i
+kisdefinedinO butnotT ,or“SETKey”ifbothO and GPO has a precedence(analogousto the rule’sposition in
+j i j
+T define k but O [k] 6= T [k]. Therefore, for each GPO the list). And for a particularkey (analogousto a packet),
+i i i
+thereisatmostonelistoperation;foreachofitskeysetting thevalue(analogoustotheactiononthepacket)isdecided
+k, thereis at mostonekey operation,since the updateop- bytheGPO withthe highestprecedence(analogousto the
+erationsare determinedonlyby the originaland the target firstrulethatmatchesthepacket)amongalltheGPOsthat
+state. setavalueforthiskey.
+These update operations are all available in the Group Notethatourmodelismorecomprehensive:(1) GPOsarereusedacrossOUsi.e.,aGPOcanbelinked 4.1 “Happenbefore”Relationship
+tomultipleOUs1;
+Asdefinedin§3.1,anintermediatestateisinsecurewhen
+(2) Key operationsare supportedto update the settings in itcontainsinsecurevalues,whichdonotoccurineitherOS
+GPOs; or TS. Duringthe updateprocess, there can be time peri-
+ods, e.g., after the originalsecure value OS[k] is removed
+(3) Filters and relatedoperationsare supportedto provide and before the new secure value TS[k] is added, during
+fine-grained control over the effecting scope of each whichtheinsecurevaluesareexposedexternallyinthein-
+GPO. termediatestate,makingthepolicysettingpotentiallyinse-
+cure.
+Incontrast,forthefirewallmodel:
+Forexample,supposewearegoingtoupdateanoriginal
+statedescribedinGPOSetup3tothetargetstatedescribed
+(1) Firewallrulesarenotreusedsinceonlyonefirewalllist
+inGPOSetup4.
+isconsidered;
+GPOSetup3
+(2) Thereis no updateoperationfor rules, because an up- Key GPO GPO GPO State
+A B C
+dateoperationcanbeviewedasremovingtheoldrule keyi 1 2 3 3
+and inserting a new one as long as rules are never keyj 4 5 5
+reused;
+GPOSetup4
+(3) Thereisnoconceptoffilter orscope,andeachrulein
+thelistappliestoallpackets. Key GPO GPO GPO State
+A B C
+keyi 1 1
+In summary, the firewall model can be considered as a keyj 4 5 5
+simplifiedspecial case of ourmodel, if we view each fire-
+wall rule as a GPO without key update operation. So the Both thekeysettingsB[i] = 2andC[i] = 3shouldbe
+algorithmsproposedforthe firewall deploymentmodeldo removed. B[i] = 2isaninsecurevaluesinceitisoverrid-
+not apply, and a new algorithm to guarantee safe deploy- den by C[i] = 3 in OL, and is removed in TL. During
+mentfortheGPOmodelisrequired. the update,if C[i] = 3 is removed,beforeB[i] = 2 isre-
+moved,we wouldenterintoan insecureintermediatestate
+in which B[i] = 2 is unmasked and takes precedence, as
+4 AlgorithmsforSecure PolicyDeployment
+demonstratedinGPOSetup5.
+GPOSetup5
+Based onthe modeldescribedin §3, we presentour al-
+gorithmthataimsto finda secure updatefromOS to TS, Key GPO GPO GPO State
+A B C
+i.e., an ordered sequence of operationsthat guarantees se- keyi 1 2 2
+cure intermediate state after each operation. We first in- keyj 4 5 5
+troducetheconceptof“happenbefore”relationshipamong
+updateoperations,whichshouldbeenforcedtopreventin-
+Topreventthiskindofsituation,someoperationsshould
+securestates. Asetofrulesaredefinedtoidentifyallrele-
+beexecutedfirsttointroducesecurevaluestothelistorto
+vant“happenbefore”relationships,describedbyadirected
+remove insecure values, guaranteeing that insecure values
+graph. Then by breaking strongly connected components
+arealwaysmaskedbysecurevalues.Thisiswhatwecalled
+and performingtopologicalsort on the graph, we can find
+a“happenbefore”relationship.2
+anorderinwhichtheupdateoperationsshouldbeexecuted
+for a secure update. Note that it is possible that there are Definition4.1. If operationX shouldoccurbeforeopera-
+multiple orders which all achieve secure updates. In this tionY inordertomaintainthesecureintermediatestate,we
+caseouralgorithmwillreturntheonewithminimaldeploy- saythatX should“happenbefore”Y.
+mentcost. WealsoprovethatwithanygivenOS andTS,
+ouralgorithmcanalwaysfindsuchanorderforsecureup- Inthepreviousexample,insecurevalueB[i]=2isorig-
+date. inally masked by the secure value C[i] = 3, and both of
+these two values are to be removed. To preventB[i] = 2
+1AlthoughourupdatescenariotargetsoneparticularOUatatime,our
+algorithm takes intoaccount that theGPOslinked tothetarget OUcan 2Notethatthisisalsosimilartotheconcept of“orderconstraint” in
+alsobeusedbytheotherOUswithinthesamedomain,andupdatestothe partialorderplanning[21]inAIarea. Werefertoitas“happenbefore”
+GPOsaffectthestatesofthoseOUsaswell. whichisamoregeneralidea[19].fromappearingintheintermediatestate,itsremovalshould thatifbothOperation andOperation existintheup-
+X Y
+“happenbefore”theremovalofC[i]=3. dateprocess,thenOperation shouldbeexecutedbefore
+X
+The basic idea of our algorithm is to identify “happen Operation to guarantee secure intermediate state. If ei-
+Y
+before” relationships (HBRs) among update operations in therOperation orOperation ismissing,theruleisjust
+X Y
+ordertopreventinsecureintermediatestates. Wedefinesev- ignored. Asdiscussedin§3.2,theoperationsintheupdate
+eralrulestoidentifyalltheHBRs. process are predetermined by OL and TL. What’s more,
+Basically,insecureintermediatestatesoccurwheninse- GPO A refers to each possible GPO while key k refers to
+curevaluestakeprecedenceataparticularmoment.Anop- eachpossiblekey.
+erationmay changea secure state into an insecure state in ThefirstrulemeansthatifaGPOisremovedinTL,its
+threeways: newvaluesshouldbeaddedormodifiedonlyaftertheGPO
+isremoved.
+(1) Addinsecurevalueswhichtakeprecedenceintheinter-
+mediatestate; 1. REMOVE GPO A → ADD/SET Key A[k];
+REMOVE GPO → REMOVE Key A[k]
+A
+(2) Elevate the precedence of existing insecure values so if A=Last [k]
+OL
+theytakeprecedenceintheintermediatestate;
+If GPO is to be removed from the GPO list (still exists
+A
+(3) Remove secure values so the originally masked inse- intheActiveDirectory),allthevaluesaddedorsetarein-
+curevaluesnowtakeprecedence. secure since these values never appear in OS or TS. So
+these values should be added or set safely after GPO is
+A
+Allthesesituationsarepreventedbythe6rulesproposed removed.Noinsecurevaluewillbeintroducedinthiscase.
+laterinthissection.Rule2,3,4,5(a)(b)targetsituations(1) IfA = Last [k],A[k]isasecurevaluewhichcanbe
+OL
+and(2).Theyguaranteethatbeforeeachpossibleoperation usedtomaskeinsecurevalues,andkeepingitinthelistdoes
+is executed, the secure values in TS, which are necessary notintroduceanyinsecurestate. Soitisbeneficialtokeep
+to mask the to-be-addedor to-be-elevatedinsecure values, itlongerinthelist. Ifitistoberemoved,weremoveitonly
+alreadyexist in the list and take precedence. For situation afterAisremoved.
+(3), Rule 1,5(c),6 guarantee that either the proper secure
+valuestomasktheinsecurevaluesalreadyexist,ortheinse- Thesecondruledealswiththecaseswheretherearekey
+curevaluesareremoved.Consequently,theserulesprevent operationsrelatedtoato-be-addedGPO.Thisissimilarto
+insecure values from appearing in any intermediate state, Rule1.
+guaranteeingasafeupdateprocess.
+Beforemovingtothedetailofeachrule,foreaseofex- 2. REMOVE/SET Key A[k] → ADD GPO A
+position,weintroduceseveralnotationsdepictedinTable1.
+If GPO istobeadded,itisnotintheOL. Soallthe
+Last [k] represents the last GPO that defines key k in A
+OL
+valuesassociatedwithA,whicharetoberemovedormod-
+OL,anditskvaluetakesprecedenceinOLandisthusse-
+ified, areinsecuresince theydonotshowupin TS either.
+cure, i.e., Last [k][k] = OS[k]. Here Last [k] refers
+OL OL
+So these values can be removed or modified safely before
+toaGPOinsteadofavalue,sotwobracketsareusedtorefer
+GPO isadded.
+tothekeyvalue. “GPO < GPO ”meansthatGPO A
+A O B A
+appearsearlierthanGPO inOL, therefore,Ahaslower
+B Rule3guaranteesthatwhenaGPOisaddedormoved,
+precedence. Last [k] and “GPO < GPO ” are the
+TL A T B it alreadycontainsallof its secure valueswhich canmask
+correspondingnotionsforTL. Thesymbol“→”isusedto
+insecure values. This rule is commonlyreferred to by the
+representtheHBRconstraint.
+otherrules.
+When a GPO is added or moved via “ADD GPO” or
+“MOVEGPO”, itis assigned a properprecedenceaccord- 3. IFA=Last [k],
+TL
+ing to its position in the TL. We set this precedence ADD/SET Key A[k] → MOVE GPO ,
+A
+higher than those of unprocessed GPOs in the OL. For ADD Key A[k] → ADD GPO ;
+A
+example, to update GPO list GPO ,GPO ,GPO to
+A B C
+GPO ,GPO ,GPO ,wefirstmoveGPO ,andthelist IfA = Last [k], A[k]isasecurevaluesinceittakes
+C B A B TL
+becomes GPO ,GPO ,GPO ; then we move GPO precedence in TL. We safely add A[k] to GPO before
+A C B A A
+and get GPO ,GPO ,GPO . This property is impor- movingoraddingA. SowhenAisaddedormoved,A[k]
+C B A
+tant, and the following rules depend on this property to canbeusedtomaskinsecurevalues.
+guaranteesecureintermediatestates. In some cases the first three rules are redundant, e.g.,
+Nowweintroducetherulesonebyone.Eachrulecomes whenthereisasecurevaluefork inIS,itissafetobreak
+in the formof “Operation → Operation ”, meaning Rule2byaddingGPO firstandthenremovingA[k],since
+X Y AA[k]ismaskedanyway. Buttheseruleshelpfacilitatelater effectonlyaftertheGPOisadded,sotheirmaskingvalues
+discussionswhile introducingnoextraoverheadin theup- needonlybeaddedbeforethe GPOisadded. Thisiscov-
+date. Noneofthemresultsinunnecessarycyclesinthede- eredinRule4. Butitisinsufficientforto-be-movedGPOs,
+pendencygraph,whichisdiscussedlaterin§4.3. since the GPO is in the originallist, and a new value will
+take effect immediately when it is added. So the masking
+Rule 4 is the most important and commonly used rule.
+valuesshouldalsobeaddedbeforeaddingA[k]. Notethat
+It ensures that before a GPO is added to TL or moved to Rule3guaranteesthatbeforeLast [k]isaddedorset,it
+TL
+the rightposition, all the secure valuesneededto mask its
+alreadycontainsallitssecurevalues.
+insecurevaluesarealreadyintherightpositionintheGPO
+Sub-rule(b)isthesameastherulefor“ADDKey”,ex-
+list.
+ceptthatifA = Last [k],themaskingvaluesonlyneed
+OL
+tobeaddedbeforethesettingofA[k],sinceA[k]issecure
+4. Foreach key k in GPO , includingthose keysto be
+A
+anditcanappearinintermediatestates.
+addedwith“ADDKeyA[k]”,
+In sub-rule (c), if A 6= Last [k], A[k] is a insecure
+IfA6=Last [k]andA6=Last [k], OL
+OL TL
+value and it masks no other values in OL. So it can be
+ADD/MOVE GPO Last [k]
+TL
+safely removedbefore GPO is moved without exposing
+→ ADD/MOVE GPO A
+A
+anyinsecurevalues.
+EachGPOthatexistsinbothOLandTLhasanassoci- But if A = Last [k], A[k] is a secure value, and it
+OL
+ated“MOVEGPO”operation. Rule5dealswiththiskind maymask some insecurevaluesin OL. So beforeremov-
+of to-be-movedGPOs and their related key update opera- ing A[k], we should make sure that a new secure value, if
+tions. Eachkindofkeyupdateoperationsiscoveredinone exists(Last [k]6=NULL),isalreadyintheILtomask
+TL
+sub-rule. theseinsecurevalues. So“MOVE/ADDGPO Last [k]”
+TL
+shouldbeexecutedfirst. ButtherecanbecasesthatinTL,
+5. For each GPO A that is in both OL and TL, and Last [k]haslowerprecedencethanA,andLast [k][k]
+TL TL
+A6=Last TL[k]: cannotmasktheto-be-removedk values3 definedinGPOs
+(a)For“ADDKeyA[k]”,
+between Last [k] and A. To prevent them from being
+TL
+ADD/MOVE GPO Last TL[k] unmasked, these to-be-removedvaluesshouldbe removed
+→ ADD Key A[k] beforetheremovalofA[k]. NotethatsinceprocessedGPOs
+(b)For“SETKeyA[k]”,
+alwayshavehigherprecedencethanunprocessedandto-be-
+IFA6=Last OL[k],
+removedGPOs,Last [k]canmaskalltheotherinsecure
+TL
+ADD/MOVE GPO Last TL[k] valuesofk.
+→ MOVE GPO ,
+A ConsidertheexampledemonstratedinGPOSetup3,4,5.
+ADD/MOVE GPO Last [k]
+TL A = Last [i]butithasthelowestprecedenceinTL,so
+TL
+→ SET Key A[k];
+although A[i] takes precedence, it cannot mask B[i] = 2
+IFA=Last [k],
+OL in the intermediatestate. In thiscase, B[i] = 2 shouldbe
+ADD/MOVE GPO Last [k]
+TL removedbeforeC[i]=3isremoved.
+→ SET Key A[k];
+It is also possible that there is no Last [k]
+TL
+(c)For“REMOVEKeyA[k]”,
+(Last [k] = NULL)since all settingsfor key k are re-
+TL
+IFA6=Last [k],
+OL movedin TL, andTS[k] = undefined. In this case, we
+REMOVE Key A[k] → MOVE GPO ;
+A guarantee that all the insecure values masked by A[k], in-
+IFA=Last [k]andLast [k]6=NULL,
+OL TL cludingthevaluestoberemovedby“REMOVEKey”and
+MOVE/ADD GPO Last [k]
+TL “REMOVE GPO” operations, are removed before the re-
+→ REMOVE Key A[k],
+movalofA[k].
+and for each GPO X that Last [k] < X < A
+TL T T ThesituationthatA = Last [k]isalreadycoveredin
+TL
+andsetsk
+Rule3.
+REMOVE Key X[k] → REMOVE Key A[k];
+IF A = Last OL[k] and Last TL[k] = NULL, for Thelastruleisfor“REMOVEGPO”operations.Itguar-
+eachGPOX < T Athatsetskand antees that before executing the “REMOVE GPO” opera-
+REMOVE Key X[k] → REMOVE Key A[k]; tions and their associated “REMOVE Key” operations, ei-
+REMOVE GPO X → REMOVE Key A[k] ther thereare new securevaluesin the list, or all the inse-
+if no "REMOVE Key X[k]" and X ∈/ TL cure values originally masked by the to-be-removed GPO
+areremoved.“ADD/MOVEKey”operationsarecoveredin
+Sub-rule(a)guaranteesthatmaskingvaluesalreadyexist
+inthelistbefore“ADDKey”operationintroducesinsecure 3Ifthesevaluearenotto-be-removed,theywouldoverridethecurrent
+values. Forto-be-addedGPOs,itsinsecurevalueswilltake Last TL[k].Rule1. thescopeofafilter. Theseoperationsalsohavecorrespond-
+ingatomicAPIsinthegrouppolicyframework.
+6. For each GPO A in OL but not in TL, and A = There are additional HBRs among filter related opera-
+Last OL[k], tions,andbetweenfilterrelatedoperationsandGPOlist/key
+IFLast TL[k]exists, operations.
+MOVE/ADD GPO Last TL[k] GPOSetup6
+→ REMOVE GPO
+A
+IFLast TL[k]doesnotexist, Key GPO A GPO B GPO C State
+foreachGPOX < Athatsetskeyk, Filter NULL NULL NULL
+O
+REMOVE Key X[k] → REMOVE GPO A; S xkeyi 1 2 3 3
+REMOVE GPO X → REMOVE GPO S ykeyi 1 2 3 3
+A
+if no "REMOVE Key X[k]" and X ∈/ TL;
+S zkeyi 1 2 3 3
+Thisissimilartothe“REMOVEKey”caseinRule5. If GPOSetup7
+A = Last [k], A[k] may mask key k’s insecure values,
+OL
+Key GPO GPO GPO State
+whichshouldbe removedbeforethe removalof A[k]. We A B C
+Filter NULL F F
+donotneedtoconsiderthecasethatA 6= Last [k]inde- r s
+pendently,sinceitdoesnotmaskanyinsecurevaO luL
+eandthe
+S xkeyi 1 2 2
+presenceofAinthelistdoesnotaffectthevalueofkeyk.
+S ykeyi 1 3 3
+S zkeyi 1 1
+4.2 ExtensiontoSupportFilters
+Forexample,thereisanoriginalstatedescribedinGPO
+Setup 6. Initially, no filter is linked to the GPOs, so the
+In the previous discussion, we assume that no filter is GPOs are applied to all the scopes (S , S , S ). Accord-
+x y z
+used. Inthissection, weextendourproposedalgorithmto ing to the preferencesof the GPOs, each objectin the OU
+supportfilters. A filter defines a scope consisting of users receives “i = 3”. Now suppose we need to perform the
+and machines. When a filter is linked to a GPO, only the followingoperations:
+usersandmachinesinthescopeofthefiltercanapplytothe
+GPO.Withoutfilters,eachGPOisappliedtoalltheobjects (a) LINKFilterF toGPO ,tolimititsscopetoS (e.g.,
+r B x
+(usersandmachines)in theOU bydefault. Ina realenvi- onlyWindowsXPmachines)
+ronment,filtersarewidelyusedtolimittheeffectingscope
+of each GPO, providingfurtherflexibility in management. (b) LINKFilterF stoGPO C,tolimititsscopetoS y (e.g.,
+For example, the following filter limits a GPO’s targets to onlyWindowsVistamachines)
+onlycomputersrunningWindows2000Server:
+ScopeS andS aredisjoint,andtherestoftheobjects
+Select * from Win32 OperatingSystem x y
+intheOUconstitutescopeS . Thetargetstateisshownin
+where Caption = "Microsoft Windows 2000 z
+GPOSetup7.
+Server"
+Consider the order in which we execute these two op-
+The global scope in a domain is divided into a set of
+erations. If filter F is linked to GPO before filter F
+disjointscopes,eachofwhichcontainsoneormoreobjects. s C r
+is linkedto GPO , we wouldgetan intermediatestate in
+A filter consists of a set of disjoint scopes. A GPO can B
+which the objects in S have GPO and GPO applied,
+belinkedwithatmostonefilter,4 whichlimitstheGPOto z A B
+andreceiveaninsecurevalue“i=2”.
+applytoonlytheobjectswithinthefilter’sscopes.IfaGPO
+When we consider filter operations and list/key opera-
+is not linked with any filters, it has a global scope and it
+tions together, the cases are much more complicated be-
+wouldbeappliedtoalltheobjectsintheOUbydefault.
+causetherearemorepossiblecombinations.
+Accountingfiltersinourmodelintroducesanewkindof
+WefirstdefinethreerulestoidentifyHBRsamongfilter
+update operations: “LINK Filter” links a filter to a GPO,
+relatedoperations.
+replacing its original filter if exists; “UNLINK Filter” re-
+movesthefilterlinkedtoaGPO;“MODIFYFilter”changes
+7. MODIFY Filter F → LINK Filter F .
+r r
+4Thisisconsistentwiththeexistinggrouppolicyframework,andmore
+importantly, itisunnecessarytousemultiple filters. GiventhattheOU A filter shouldbe updatedbeforeit is linkedto a GPO,
+hierarchyalreadyprovidescoarse-grainedscopecontrol,asinglefilterwith preventinginsecure valuesin the GPO to be introducedto
+expressivespecificationlanguagee.g.,SQLinthegrouppolicyframework,
+thescopesdefinedinthefilter’soldvalue. Forexample,in
+isflexibleenoughtomeettheneedforfine-grainedscopecontrol.Support
+GPO Setup 8, there are three disjoint scopes: S , S , S .
+ofmultiplefiltersonlyincreasesthecomplexityofpolicymanagementand x y z
+debugging. Initially, no filter is linked to GPO A so it is appliedto allscopesby default; filter F is linked to GPO to limit its this GPO from/to the list. For example, in GPO Setup 6,
+s B
+scopetoS . initially S has GPO ,GPO ,GPO applied when no
+x z A B C
+filterislinked;linkingfilterF toGPO excludesS from
+GPOSetup8 r B z
+GPO ’seffectingscope,leavingonlyGPO ,GPO ap-
+B A C
+Key GPO A GPO B State plied to S z, just as GPO B is removed from S z’s list. In
+Filter NULL F contrast, if we then unlink filter F from GPO , GPO
+s r B B
+S xkeyi 1 2 2 wouldbeappliedtoS zagain,appearinglikeaddingGPO
+B
+S ykeyi 1 1 backtothelistofS z.
+S zkeyi 1 1 Therefore,eachfilteroperationcanbeviewedaslistop-
+erationsthat add, moveor removeGPOs within a number
+Now suppose we want to performthe following opera- of scopes. If a filter operation extends GPO A’s effecting
+tions: scopetocoverS x, itis equivalentto an“ADD GPO A” in
+S ; if a filter operationexcludesS fromGPO ’s effect-
+x x A
+(a) LINKFilterF (initiallyspecifiesS )toGPO ; ingscope,itequalstoa“REMOVEGPO ”inS . Inthe
+t y B A x
+exampleshowninGPOSetup6and7,wehave:
+(b) MODIFYFilterF fromS toS .
+t y z
+(a) “LINKFilterF toGPO ”==“REMOVEGPO in
+If filter F is linkedto GPO beforeits scope is mod- r B B
+t B S andS ”;
+ified, GPO would be applied to S in the intermediate y z
+B y
+state, causing S y to get an insecure value “i = 2” from (b) “LINKFilterF s toGPO C”==“REMOVEGPO C in
+GPO B. Therefore, “MODIFY Filter F t” should be exe- S xandS z”.
+cutedbefore“LINKFilterF toGPO ”.
+t B
+Now each particular scope has only list operations and
+8. UNLINK Filter F r → MODIFY Filter F r. key operations, which is the same as the previous model
+without filters. We can harness the rules discussed pre-
+IfafilteristobeunlinkedfromaGPO,itshouldbeup-
+viously to identify HBRs for the operations within each
+dated after unlinking, so as to avoid the GPO from being
+scope, and then map the list operations back to the origi-
+improperlyappliedtothescopesdefinedinthefilter’snew
+nalfilteroperationstogettherealHBRsforthetargetOU.
+value.
+In the previous example, for S , “REMOVE GPO ” →
+z B
+“REMOVE GPO ”, so for the correspondingoperations,
+9. ForeachGPOwithfilterF linked,andistobelinked C
+r
+“ADDFilterF toGPO ”→“ADDFilterF toGPO ”.
+withanewfilterF , r B s C
+s
+LINK Filter F → MODIFY Filter F . Rulesproposedin§4.1identifyalltheHBRswithineach
+s r
+scope. By applying these rules to each disjoint scope and
+If a filter linked to a GPO is to be overriddenby a new combiningtheidentifiedHBRs,weguaranteesecureinter-
+filter,thenewfiltershouldbelinkedbeforethevalueofthe mediatestatesforallscopesduringtheupdateprocess.
+old filter is updated, preventing the new value of the old
+filterfromintroducinginsecurevalues. 4.3 Graph basedUpdateSequenceDiscovery
+Forexample,consideranotherscenarioinwhichweare
+goingtomakeadifferentupdateontheinitialsetupinGPO Usingtherulesdiscussedin§4.1and§4.2,wecaniden-
+Setup8. Nowthenewupdateoperationsare: tify all the HBRs among the update operations. These
+HBRscanfurtherbeusedtofindasecureupdatesequence
+(a) LINKFilterF (initiallyS )toGPO ;
+t y B that ensures secure intermediate states. To describe these
+(b) MODIFYFilterF fromS toS . HBRs, a directed graph G = (V,E) is used. Each vertex
+s x z
+representsanupdateoperation.IfoperationO→P,weadd
+Now filter F is to be modified instead of filter F . If anedgefromOtoP.
+s t
+F is modifiedbeforeF islinked to GPO , GPO will In this graph, a vertex should “happen before” all the
+s t B B
+be applied to S , and its insecure value “i = 2” will take vertices that can be reached from it along the edges. So
+z
+precedence. So“LINKFilterF toGPO ”→“MODIFY TopologicalSortingcanbeusedtofindanorderedsequence
+t B
+FilterF ”. of operations that conforms to all the HBRs, thus guar-
+s
+NowweconsiderHBRsbetweenfilterrelatedoperations anteeing secure intermediate states. But before executing
+and list/key operations using a perspective from each dis- the topological sorting, Strongly Connected Components
+jointscope. (SCCs) should be eliminated first. A SCC is a set of ver-
+Toaparticulardisjointscope,theeffectoflinkingorun- ticessuchthateachpairofverticesinthissetarereachable
+linkingafiltertoaGPOisequaltothatofremoving/adding fromeachother. Ina SCC, eachvertexV should“happenbefore”allthevertices,includingitself,sinceallofthemare cludeslongerlatencyoftheupdateprocess,additionaltraf-
+reachablefromV. Therefore,allthecorrespondingopera- ficinthenetwork,andcomputationoverheadintheserver.
+tionsinthisSCCshouldbeexecutedsimultaneously,since RecallthatwithoutusingauxiliaryGPOs,ouralgorithmjust
+every possible sequential order of these operations breaks reorders the necessary update operations, adding no over-
+some HBRs. We call this a circular dependency situation headexceptthenegligiblecomputationtime. Tominimize
+(CDS).Forexample,supposewehaveoperationsO, P, Q theoverheadofusingauxiliaryGPOs,weemployagreedy
+inaSCCand“O→P,P →Q,Q→O”. Nomatterwhat algorithm to find the minimal set of keys that need to be
+orderisused,somerulesarealwaysbroken. Forexample, addedtothe auxiliaryGPOs. Basically allSCCs areiden-
+theorder“O, P, Q”breakstherule“Q→O” andthede- tified first, and all the edges between vertex pairs in these
+rived rules “P → O, Q → P”. To eliminate these SCCS SCCsaresortedaccordingtothesizesoftheirP sets. Then
+andfindasecureupdatesequence,weproposeusingauxil- thefirstedgeisremoved,andthekeysinitsP setareadded
+iaryGPOs,whichareextraGPOstemporarilyaddedtothe totheauxiliaryGPOs;ifotheredgessharesomekeysinthe
+listtomaskinsecurevalues. P set with this removededge, the sharedkeyscan also be
+ThekeytoeliminateSCCsistoremovesomeedgesbe- safely removed from the P set of those edges; an edge is
+tween vertex pairs in the SCCs, namely invalidatingsome removedif its P set becomesempty, since the edge is not
+HBRs. Itisimpossibletoremoveedgesusingonlytheex- usedto“protect”keysanymore. Thisprocessiteratesuntil
+istingGPOs,otherwisethecorrespondingHBRsareunnec- alltheSCCswithmorethanonenodeareeliminated.
+essaryandwouldneverexistin thegraph. Sothepossible
+approachistointroduceauxiliaryGPOswithsecurevalues
+forsomekeys,andassignthemhigherprecedencetomask
+4.4 SupportofDependentKeys
+the insecure values that would be exposed by invalidating
+theHBR.
+Each HBR exists to prevent insecure values of one or
+morekeysfromappearingintheintermediatestate. Wede- The previous algorithms assume that all keys are inde-
+notethissetofkeysthatare“protected”bytheHBRasP. pendent. Butaswementionedin§3.1,therearedependent
+keyswhichcontroloneparticularbehaviorofthesystemto-
+Consider the example in GPO Setup 3 and 4, “REMOVE
+KeyB[i]” → “REMOVE KeyC[i]” is used to preventthe gether.Thesekeysshouldbeupdatedsimultaneously,orthe
+insecureintermediatestatesoftheircombinationmayresult
+insecurevalueB[i] = 2fromoccurringintheintermediate
+inunknownbehavior.
+state,soitisusedtoprotectkeyi,anditsP setis{i}.
+IfwetemporarilyaddaGPOwhichsetseverykeyinP Identifyingdependentkeysrequiresdomainknowledge
+withasecurevalue(equaltothevalueinIS orTS)5, and ofthekeys(e.g.,themeaningandeffectoftheGroupPolicy
+givethisGPOhigherprecedencethanalltheexistingGPOs, settings),whichisbeyondthescopeofthispaper.Basically,
+itsvaluescanmaskalltheinsecurevalues. Andobviously twoapproachescanbeusedtoextractdependentkeys: (1)
+it would not introduce any insecure value. In the exam- Usecontrolledexperimentstotesttheeffectofthekeys;(2)
+pleshowninGPOSetup3and4,ifweaddanewGPO D Parsethedefinitiondocuments.
+setting “D[i] = 1” and assign it the highestprecedenceat
+To update a set of dependent keys simultaneously, we
+the very beginning(so the list become A,B,C,D), we can
+addthemtoanauxiliaryGPO,andsettheirvalueseitheras
+execute the two remove key operations safely in arbitrary
+thoseintheOS,orasthoseintheTS,accordingtotheop-
+order,sincethesecurevalue“D[i]=1”alwaystakesprece-
+erationstobeperformedonthem. Hereweassumethereis
+denceandmasksanyothervalueofi.Atlastwecanremove
+nosuchcasewhereonlya(nonempty)subsetofthedepen-
+GPO afteralltheoperationsarecompleted,againwithout
+D
+dent keys are defined in the OS or TS, because the com-
+introducinganyinsecurevalue.
+binedresultwithundefinedvaluesareunknown. So either
+Using auxiliary GPOs eliminates HBRs, breaks SCCs,
+allthedependentkeysinthesetaredefined,orallofthem
+andtranslatesthegraphintoanacyclicone. Thenasecure
+areundefined. IfallthekeysareundefinedinbothOS and
+update sequence can be found trivially with a topological
+TS,theexistingHBRspreventtheirvaluesfromchanging
+sort.
+intoanydefinedvalueduringtheupdateprocess,sowedo
+UsingauxiliaryGPOsinevitablyintroducesoverheadin
+notneedto considerthemindependently. Otherwise, if all
+theupdateprocess,sinceextraoperationsshouldbeusedto
+the keys are undefined in OS and defined in TS, we set
+add,set,andremovetheauxiliaryGPOs. Theoverheadin-
+thevaluesin theauxiliaryGPO asthoseinTS,thenthese
+5IfIS[k]=TS[k]=undefined, thesecure value ofk cannot maskany keysareupdatedsimultaneouslywhentheauxiliaryGPOis
+insecure value. But note that in this case k can only exist in “RE-
+inserted. In contrast, if all the keys are undefined in TS,
+M GPOV OE AG ”.P AO ndA s” in→ ce“ “A AD DD DK Ke ey yA A[ [k k] ]” ”o anr d“R “REM EMO OV VE EK Key eyA A[k [k]” ]”→ ca“ nA tD akD
+e
+wesetthevaluesasthoseinOS,sothesekeysareupdated
+partinatmostoneHBR,kshouldneverappearinanySCC. simultaneouslywhentheauxiliaryGPOisremoved.4.5 ProofofCompleteness tices are reachable from each other in the graph. This is
+veryrare.Andsincecirculardependencysituationsarealso
+Completeness.ForanygivenOLandTL,ouralgorithm rare, O(E) ≈ O(V). So overall the algorithm takes ap-
+canalwaysfindanupdatesequencethatguaranteesasecure proximatelyO(KLM)time. Wedemonstratelaterthatthe
+updateprocess. runtimeoverheadisnegligiblecomparedtothetimeusedto
+Proof. For any given OL and TL, we can always triv- deploytheupdatetotheproductionenvironment.
+ially find a set of operations to update OL to TL, which
+consists of list, key, and filter operations. Our proposed 4.7 Implementation
+rules can identify all the necessary HBRs among this set
+ofoperationstoguaranteesecureintermediatestate during Theimplementationisdividedintothreeparts,whichare
+the update. Using the algorithm proposedin §4.3, we can writteninPerlwithabout4,000linesofcode. Inthecenter
+alwaysfindasecureupdatesequenceinwhicheachHBRis is the Core Engine which implements the algorithm pro-
+either satisfied, or its functionality is fulfilled by auxiliary posedin§4. ItidentifiesalltheHBRsfromtheinputusing
+GPOs. ThissecureupdatesequencecanupdateOLtoTL the definedrules, and generatesa secure update sequence.
+guaranteeingsecureintermediatestates. The input for the core engine includes: OL, TL, key set-
+tings of each GPO, key operations, filter settings, GPO to
+4.6 AlgorithmComplexity filterlinks,filteroperationsandsetsofdependentkeys.The
+core engineis platformindependent,andit can be used to
+findsecureupdatesequenceinotherplatformsusingasim-
+Let K be the number of different keys used in all the
+ilarmodel.
+GPOs involved,L be the sum of the sizes of OL and TL,
+Tointegratethecoreengineintothegrouppolicyframe-
+F be the number of different filters used. The number of
+work,weimplementaGPOParser,whichcaneitherdump
+list operations is less than L, since for each GPO there is
+GPO settings from the domain controller or parse the set-
+atmostonelistoperationtoADD,REMOVEorMOVEit.
+tings from the XML backup files. The other input for the
+ThenumberofkeysettingsisatmostKL,wheneachGPO
+core engine, such as the TL, key update operations, and
+sets all possible keys. The largest possible number of key
+filteroperations,areprovidedbyadministrators,usuallyin
+operationsisalsoKL,sincethereisatmostoneGPOkey
+the form of backup files retrieved from the Group Policy
+operationforeachkeysetting. (L+F)isthelargestpossi-
+ManagementConsole.
+blenumberoffilterrelatedoperations,sinceeachGPOhas
+ThelastpartisaScriptGeneratorthattranslatesthese-
+atmostonecorresponding“LINK/UNLINKFilter”opera-
+cure update sequence into Powershell [11] scripts, which
+tion,andeachfilterhasatmostonecorresponding“MOD-
+invokeGPOAPIstoperformupdatesautomatically.
+IFYFilter”operation.
+Calculating Last [k]/Last [k] for all keys takes
+TL OL
+5 Evaluation
+O(KL)time.Intheworstcase,onlythefirstGPOinthelist
+defineskeyk,andthewholelistshouldbescanned.Apply-
+ingRule1,2,3takesO(KL)time,sinceeachrulescansall In §4.6 we analyzed the runtime complexity of our al-
+thekeyoperations;applyingRule4,5,6takesO(KL)time, gorithm, and argued that it is negligible compared to the
+since each rule scans all the key settings; applying Rule deployment time; in §4.3 we mentioned that using auxil-
+7,8,9 takes O(L(L +F)) time, since each rule scans all iary GPOs inevitably introduce overhead. In this section,
+filterrelatedoperations(L+F)andeachscangoesthrough we demonstrate that the computation overhead is negligi-
+theGPOlist(L)intheworstcase. bleandtheoverheadofauxiliaryGPOsissmallincommon
+Usually L + F ≪ K, so the complexity to identify cases,usingtestcasesgeneratedaccordingtotunedparam-
+HBRs for one scope is O(KL). We further define M = eters. These parameters control the complexity of GPOs
+max(Numberofobjectsintheglobalscope,2F)whichrep- setups,varyingfromcommoncasestoextremecases.
+resentsthenumberofdisjointscopesintheworstcase. So
+identifyingHBRsforallthescopestakesO(KLM)time. 5.1 TimeOverheadQuantification
+Finding SCCs and executing topological sorting take
+O(V +E)time,whereV isthenumberofvertices,i.e.,the We first quantify the overall deployment time and the
+numberofupdateoperations,andEisthenumberofedges, insecuretime. Supposeadeploymenttaskconsistsofase-
+i.e.,thenumberofHBRs. Supposethatthenumberofedges quentiallistofnoperations:O1,O2,...,O n,whichwould
+intheSCCsisE′,thegreedyalgorithmoffindingthemini- beexecutedonebyone.Lett bethetimeneededtoexecute
+i
+malsetofkeysforauxiliaryGPOstakesO(E′ lg(E′ ))with O (to deploy the update) and w be the interval between
+i i
+a sorting. Inthe worstcase, E′ = (L+F +K)2 ≈ K2, O
+i
+and O i+1. Then the time neededto deploy the task is:
+when each pair of operations has a HBR, and all the ver- t1+w1+t2+w2+···+t n.IftheintermediatestateafterO isinsecure,thesystem
+i
+wouldstayinsecureatleastduringtheperiodofw i+t i+1, Table2.ParametersforGPOandKeySettings
+untilO
+i+1
+iscompletedandcanprobablybringthesystem
+back to a secure state. Supposewe have a set S that each
+sizesofthetestcaseswithoutfil-
+operationO
+i
+∈Sleadsthesystemtoaninsecurestateafter n=1..9
+tersanddependentkeys
+O , the overall time that the system stays insecure during
+i num gpo=10×n #ofGPO
+thedeploymentwouldbeP{w i+t i+1, foreachO i ∈S}. num key=30×n #ofdifferentkeys
+avg key use=2 average#thatakeyisused
+5.2 EvaluationMetricsandTestbedSetup
+standarddeviationof#thatakey
+stdev key use=2
+isused
+Wegeneratetestcasesofdifferentupdatescenariosand num ol=5×n #ofGPOistheoriginallist
+deploythemonarealservertomeasure: num tl=7×n #ofGPOinthetargetlist
+num add key=10×n #ofGPOAddkeyoperations
+1. Computationtimeofouralgorithm(sec-exec); num rmv key=10×n #ofGPORemovekeyoperations
+num set key=10×n #ofGPOSetkeyoperations
+2. Time to deploy the update to the productionenviron-
+mentusingarandomupdatesequence,simulatingthat
+bydefault,administratorsormanagementtoolsdothe x 104
+3
+updateinarbitraryorder(rand-overall),andthecorre-
+spondingtime thatthe system staysin insecurestates
+(rand-insec); 2.5
+3. Timetodeploytheupdateusingthesecureupdatese- 2
+quence generated by our algorithm (sec-overall), and
+the corresponding time that the system stays in inse- 1.5
+curestates(sec-insec),whichisalways0.
+1
+Foreachtestcase,wegenerateapowershell[11]scriptto
+initializetheoriginalstateontheserver.Thenwerunoural-
+0.5
+gorithmandarandomalgorithm,generatingasecureupdate
+sequenceandarandomupdatesequence,respectively.Each
+0
+updatesequenceisexecutedonasimulatorfirst. Thissim- 1 2 3 4 5 6 7 8 9
+n: size factor of GPOs
+ulatortestswhethertheintermediatestateaftereachopera-
+tionissecure,andgeneratesthesetS,theoperationswhich
+leadto insecureintermediatestate afterexecution. Update
+sequencesare further translated into powershellscripts, in
+whicheachoperationismappedtoacorrespondingAPIcall
+to deploy the update to the Domain Controller. Each API
+call is coupled with a timing command to capture its exe-
+cutiontime. Thepowershellscriptsarethenexecuted,and
+thet foreachoperationiscollected. Whentheoperations i
+are executed back to back sequentially in scripts, w is so i
+smallthatitisignored. Atlast,combiningS andthet for i
+eachoperation,theoveralltimetodeploytheupdateandthe
+timethatthesystemisinsecureduringthedeploymentcan
+becalculated.
+ThetestbedisaWindowsServer2008R2RCrunningon
+VMWareWorkstation6.5.0,whichinturnrunsonaLenovo
+X200 machine. This virtual machine serves as a Domain
+Controller,onwhichwealsodotheupdatedirectly,sothe
+networkdelayis overlooked. In a realenvironmentwhere
+networkdelay comesinto play, the time to deploy the up-
+date,aswellastheinsecuretime,willincrease,exacerbat-
+ingthevulnerabilitiesintroducedduringthedeployment.
+)sm(emit
+noitucexE
+sec−exec
+sec−insec
+sec−overall
+rand−insec
+rand−overall
+Figure2.Executiontimewithoutfilters
+5.3 ExperimentalResults
+Thissectionpresentsourexperimentalresults. Foreach
+figure,theX-axisisthesizefactorwhichcontrolsthesize
+andcomplexityofthetestcases,andtheY-axisisthetime
+in ms. For each size, 5 differenttest cases are generated,
+andtheresultsshowninthefiguresareaveragevalues. For
+each test case, we measure the execution time of our se-
+cureupdatealgorithm(sec-exec), insecuretime duringde-
+ployment(sec-insec)andoveralltimeoftheupdateprocess
+(sec-overall)usingoursecureupdatesequence,incompar-
+ison to the insecure time during deployment (rand-insec)
+and the overalltime of the updateprocessusing a random
+updatesequence. Each line in the figure depicts the result
+ofonemetric.
+Wefirstconsiderthesituationswithoutfiltersanddepen-
+dentkeys. Testcasesaregeneratedaccordingtotheparam-
+eterslistedinTable2.Table3.ParametersforFilterSettings
+f =1..5 sizeoftestcasewithfilters
+num filter=8×f #offilters
+num scope=4×f #ofdisjointscopes
+avg scope use=3×f average#thatascopeisused
+standard deviation of # that a stdev scope use=2 scopeisused
+probability that a GPO has a rate gpo link filter=0.5 scopelinked
+num link filter=3×f #oflinkfilteroperations
+num unlink filter=5×f #ofunlinkfilteroperations
+num modify filter=5×f #ofmodifyfilteroperations
+12000
+10000
+8000
+6000
+4000
+2000
+0 1 2 3 4 5
+f: size factor of filters
+)sm(emit
+noitucexE
+Table 4. Parameters for Dependent Key Set
+tings
+size of test case with depen-
+d=0..9 dentkeys
+average size of a dependent avg dep set size=1+3×d keyset
+standard deviation of the size stdev dep set size=3 thatadependentkeyset
+num dep sets=3×d #ofdependentkeysets
+cases. The execution time of our algorithm is still small
+acrossalltestcases.
+sec−exec Using random update sequences (no overhead), the de-
+sec−insec
+sec−overall ploymenttimeincreasesslowly,sinceallthetestcasesshare
+rand−insec the same parameter settings in the number of list and key
+rand−overall
+operations, and only the parameters related to filters are
+changed accordingto f. In contrast, the deploymentwith
+secure update sequence incurs perceivable overhead, due
+to the auxiliary GPOs for addressing circular dependen-
+cies. We observe considerable number of circular depen-
+denciesin the test cases, especially in the extremecases 4
+and 5 with a large number of filters, scopes and overlap-
+pingscopesamongfilters. Filterlink/unlinkoperationsfor
+almosteveryGPOandmodificationsforalmosteveryfilter
+alsocontributetomorecirculardependencysituations. As
+aresult,theoverheadintestcases4and5isaround130%.
+Figure3.Executiontimewithfilters
+Thesecanbeviewedasanapproximateupperboundusing
+filters,sincethelargestpossiblefiltersettingsforthegiven
+The parametern is used to controlthe size of the GPO GPO/keysetupsareused. Inarealenvironment,thenum-
+setupineachtestcase. IftdifferentGPOssetvaluesforthe bers of filters and scopes are limited to preserve manage-
+samekeyk,wesayk isusedttimes. Inthetestcases,the ability [27] and performance[28]. Consequently, in com-
+key usage behavior conforms to normal distribution, with mon cases, the overhead is around 30%, which is accept-
+anaveragevalueofavg key useandstandarddeviationof able.
+stdev key use. Theseparametersdirectlyaffectthenum- Notethatwhenfiltersareintroduced,thesystemsuffers
+ber of HBRs. avg key use is set to 2 to investigate the from even longer insecure periods (85%-96%) using ran-
+effectofkeyoverriding. dom update sequences, while the secure update sequences
+The result is shown in Figure 2. The execution time still keep the system in secure states during the entire de-
+of our algorithm is always negligible (less than 1% of the ployment.
+deployment time), even when the test case is very large. Next we further consider dependent keys in the test
+And deployment times using secure (generated by our al- cases. Similarly, we set n = 2 for the GPO setups, and
+gorithm)andrandom(simulatingdefaultadminormanage- in orderto quantifythe overheadintroducedbydependent
+ment tool’s action) update sequence are nearly the same, keys,wefirstsetthenumberoffiltersto0.Dependentkeys
+bothofwhichincreasealmostlinearlywiththesizesofthe are described with dependent key sets, in which the keys
+test cases. But the randomupdate sequenceslead to inse- depend on each other. So in addition to the parametersin
+curestatesduring80−95%ofthedeploymentperiod,while Table2,threemoreparametersinTable4areusedtocon-
+the secure update sequences eliminate all insecure states trolthenumberandsizesofdependentkeysets.
+completely. The result is shown in Figure 4, and the X-axis is the
+For evaluation with filters, we set n = 2 and use the parameter d, which determines how frequent the depen-
+parameterslistedinTable3tocontrolthefiltersettings.The dent keys occur in the test cases. Using random update
+resultisshowninFigure3. TheX-axisistheparameterf sequences (no overhead), the deploymenttime is approxi-
+whichcontrolsthefrequencythatfiltersareusedinthetest mately constant with slight variation, since the number of6000
+5000
+4000
+3000
+2000
+1000
+0 1 2 3 4 5 6 7 8 9 10
+d: size factor of dependent keys
+)sm(emit
+noitucexE
+sec−exec
+sec−insec
+sec−overall
+rand−insec rand−overall
+Figure4.Executiontimewithdependentkeys
+14000
+12000
+10000
+8000
+6000
+4000
+2000
+0 1 2 3 4 5
+w: size factor of GPOs, filters, and dependent keys
+)sm(emit
+noitucexE
+update operations is not affected by the size of dependent
+keysets. Butalmosttheentiredeploymentperiod(>90%)
+isinsecureforeachcase.Withsecureupdatesequences,the
+deployment time first increases with d and then saturates
+whendislargeenough. Intheseextremecases,almostev-
+erykeybelongstooneormoredependentkeysetsandthus
+should be added to the auxiliary GPOs to preserve secure
+intermediatestates.
+Butaccordingtoourexperienceonextractingdependent
+keysfrom Group Policy frameworkby parsing the official
+definition documents, less than 100 out of 3000 keys are
+identifiedasdependentkeys. Althoughtherecouldbefalse
+negativesinourapproach,thepercentageofdependentkeys
+shouldstillbesmall,sincetheseinternaldependenciescom-
+plicate the policy design process and make it more error-
+prone.Consequentlytheoverheadofouralgorithmissmall
+innormalcases.
+Atlastwecombinefiltersanddependentkeystoevaluate
+theoverheadofusingsecureupdatesequencesintheworst
+case. TheresultisshowninFigure5. nisstillsetto2,and
+the X-axis is w, which controls the parameters for filters
+anddependentkeysets(f = d = w) atthesametime. In
+theworstcasewhenw = 5,theoverheadisaround130%,
+whichistheupperboundofusingsecureupdatesequences.
+Notethatthesecasesareextremeandrare,andtheoverhead
+ismuchsmallerinrealscenarios.
+In summary, we demonstrate that naive random update
+sequencesputthe system intoinsecurestates 80%-95%of
+thetime.Thesecureupdatesequences,generatedbyoural-
+gorithmwithnegligiblecomputationoverhead,eliminateall
+insecure states. Without consideringfilters and dependent
+keys,circulardependencysituationsarerare,andthesecure
+update sequences add nearly no overhead to the deploy-
+sec−exec
+sec−insec ment. In contrast, considering filters and dependent keys
+sec−overall
+rand−insec resultsinaconsiderablenumberofcirculardependencysit-
+rand−overall uations,whichrequireusingauxiliaryGPOstopreventin-
+secure states. This leads to deployment overheadsof less
+than30%incommoncasesandanupperboundof130%in
+extremecases.
+6 Conclusion
+In this paper, we demonstrate that unsophisticated ap-
+proaches to enterprise policy deploymentwill create inse-
+cureintermediatestates onclientmachines, leadingto po-
+tential security vulnerabilities. Unfortunately no existing
+Figure5.Executiontimewithdependentkeys
+mechanismscanensuresafedeploymentforenterprisepol-
+&filters
+icy deployment. To address this problem, we propose a
+model generalized from the Group Policy framework, de-
+finetheconceptofsecureintermediatestate,andpresentan
+efficient algorithm to find secure update sequences, based
+ontheideaofidentifying“happenbefore”relationshipsbe-
+tweenupdateoperations. Our algorithmreliesonlyonex-istinginterfacesprovidedbytheunderlyingpolicymanage- [7] W. S. T. Center. Active directory domain services.
+ment platform to achieve transactional safety guarantees, http://technet.microsoft.com/en-us/library/cc770946.aspx.
+without requiring any modifications to the platform itself. [8] W. S. T. Center. Group policy ob-
+jects. http://technet.microsoft.com/en-
+Therulesweusedareproventobecompleteinidentifying
+us/library/cc775691(WS.10).aspx.
+all the possible “happen before” relationships. Our evalu-
+[9] W. S. T. Center. What’s new in group
+ation shows that the computation time of our algorithm is
+policy. http://technet.microsoft.com/en-
+negligiblecomparedtothedeploymenttime,andthesecure
+us/library/dd367853(WS.10).aspx.
+updatesequencesgeneratedby ouralgorithmeliminateall [10] W. T. Center. Group policy planning and de-
+insecurestateswhilemaintaininganacceptableoverheadin ployment guide. http://technet.microsoft.com/en-
+commoncases. us/library/cc754948%28WS.10%29.aspx.
+AlthoughwefocusourdiscussiononGroupPolicyplat- [11] M. Corporation. Windows powershell.
+http://www.microsoft.com/windowsserver2003/ tech-
+form, our model is general enough to be easily ported to
+nologies/management/powershell/default.mspx.
+other policy model to solve similar deploymentproblems.
+[12] N.Damianou,N.Dulay,E.Lupu,andM.Sloman. Thepon-
+Forexample,itcanbetriviallyusedforfirewallpolicyde-
+der policy specification language. Lecture Notes in Com-
+ployment,since the firewallmodelis a specialcase of our
+puterScience,pages18–38,2001.
+model. Extending our model to other policy management [13] N.Dulay, E.Lupu, M.Sloman, andN.Damianou. Apol-
+frameworkswillbeourfuturework. icy deployment model for the Ponder language. In 2001
+IEEE/IFIPInternationalSymposiumonIntegratedNetwork
+ManagementProceedings,pages529–543,2001.
+Acknowledgments
+[14] K. Forster. Windows & .net magazine -
+windows active directory/group policy study.
+We gracefully acknowledge the feedback we received http://windowsitpro.com/article/articleid/44239/complete-
+fromtheanonymousreviewers.Weappreciatetheinspiring results-of-the-group-policy-survey.html.
+[15] H.HamedandE.Al-Shaer. Taxonomy ofconflictsinnet-
+discussions and comments from Feng Qian, Zhiyun Qian,
+work security policies. IEEE Communications Magazine,
+Qiang Xu, Yunjing Xu and Xinyu Zhang. This work was
+44(3):134–141,2006.
+supportedinpartbyNSFCNS-0643612,DARPA,andDe-
+[16] B.Hicks,S.Rueda,L.Clair,T.Jaeger,andP.McDaniel. A
+partmentofArmy. logicalspecificationandanalysisforSELinuxMLSpolicy.
+In Proceedings of the 12th ACM SACMAT, pages 91–100.
+ACMNewYork,NY,USA,2007.
+References
+[17] T.Jaeger, X.Zhang, andA.Edwards. Policymanagement
+usingaccesscontrolspaces. ACMTransactionsonInforma-
+[1] E. Al-Shaer and H. Hamed. Firewall policy advisor for tionandSystemSecurity(TISSEC),6(3):327–364,2003.
+anomalydiscoveryandruleediting. InIntegratednetwork [18] Z.Kerravala. Configurationmanagement deliversbusiness
+management VIII: managing it all: IFIP/IEEE Eighth In- resiliency. TheYankeeGroup,2002.
+ternationalSymposiumonIntegratedNetworkManagement [19] L.Lamport. Time, clocks, andtheordering of events ina
+(IM 2003), March 24-28, 2003, Colorado Springs, USA, distributedsystem. 1978.
+page17.KluwerAcademicPub,2003. [20] P. McDaniel and A. Prakash. Methods and limitations of
+securitypolicyreconciliation. ACMTransactionsonInfor-
+[2] E.Al-ShaerandH.Hamed. Discoveryofpolicyanomalies
+mationandSystemSecurity(TISSEC),9(3):259–291,2006.
+in distributed firewalls. In INFOCOM 2004. Twenty-third
+[21] P.Norvig. Artificialintelligence:amodernapproach. Pear-
+AnnualJoint Conference of the IEEE Computer and Com-
+sonEducation,2003.
+municationsSocieties,volume4,2004.
+[22] X.Ou,S.Govindavajhala,andA.Appel.MulVAL:Alogic-
+[3] E.Al-ShaerandH.Hamed. Modelingandmanagementof
+basednetworksecurityanalyzer. In14thUSENIXSecurity
+firewallpolicies.IEEETransactionsonNetworkandService
+Symposium,2005.
+Management,1(1):2–10,2004.
+[23] R.Sandhu,E.Coyne,H.Feinstein,andC.Youman. Role-
+[4] F. Baboescu and G. Varghese. Fast and scalable con-
+basedaccesscontrolmodels.Computer,29(2):38–47,1996.
+flict detection for packet classifiers. Computer Networks,
+[24] SELinux. Selinux project wiki.
+42(6):717–735,2003.
+http://selinuxprojet.org/page/Main Page.
+[5] L.Bauer,S.Garriss,andM.Reiter. Detectingandresolving [25] Y.Sung,S.Rao,G.Xie,andD.Maltz. Towardssystematic
+policymisconfigurationsinaccess-controlsystems. InPro- designofenterprisenetworks. InProceedingsof the2008
+ceedingsofthe13thACMSACMAT,pages185–194.ACM ACM CoNEXT Conference. ACM New York, NY, USA,
+NewYork,NY,USA,2008. 2008.
+[6] M. Casado, M. Freedman, J. Pettit, J. Luo, N. McKeown, [26] M. S. TechCenter. How core group policy works.
+andS.Shenker. Ethane:Takingcontroloftheenterprise. In http://technet.microsoft.com/en-us/library/cc784268.aspx.
+Proceedings of the 2007 conference onApplications, tech- [27] M. Tulloch. Best practices for designing group pol-
+nologies,architectures,andprotocolsforcomputercommu- icy. http://www.windowsnetworking.com/articles tutorials/
+nications,pages1–12.ACMNewYork,NY,USA,2007. Best-Practices-Designing-Group-Policy.html.[28] M. Tulloch. Optimizing group policy performance.
+http://www.windowsnetworking.com/articles tutorials/
+Optimizing-Group-Policy-Performance.html.
+[29] D. Verma, I. Center, andY. Heights. Simplifyingnetwork
+administrationusingpolicy-basedmanagement. IEEEnet-
+work,16(2):20–26,2002.
+[30] H. Wang, S. Jhat, M. Livny, and P. McDaniel. Security
+policyreconciliationindistributedcomputingenvironments.
+In FifthIEEE International Workshop on Policies for Dis-
+tributed Systemsand Networks, 2004. POLICY2004. Pro-
+ceedings,pages137–146,2004.
+[31] L.Yuan,J.Mai,Z.Su,H.Chen,C.Chuah, andP.Mohap-
+atra. FIREMAN:Atoolkitforfirewallmodelingandanal-
+ysis. In IEEE Symposium on Security and Privacy, pages
+199–213.Citeseer,2006.
+[32] L.Yuan,J.Mai,Z.Su,H.Chen,C.Chuah,andP.Mohapa-
+tra.FIREMAN:AToolkitforFIREwallModelingandAnal-
+ysis. In IEEE Symposium on Security and Privacy, pages
+199–213,2006.
+[33] C. Zhang, M. Winslett, and C. Gunter. OntheSafetyand
+EfficiencyofFirewallPolicyDeployment. InIEEESympo-
+siumonSecurityandPrivacy,pages33–50,2007.

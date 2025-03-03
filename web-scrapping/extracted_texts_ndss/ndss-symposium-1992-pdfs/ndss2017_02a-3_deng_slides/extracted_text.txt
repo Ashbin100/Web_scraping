@@ -1,0 +1,410 @@
+On the Safety and Efficiency of
+Virtual Firewall Elasticity Control
+Juan Deng†, Hongda Li†, Hongxin Hu†, Kuang-Ching Wang†, !
+Gail-Joon Ahn‡, Ziming Zhao‡ and Wonkyu Han‡!
+†!
+‡!
+NDSS 2017Outline
+n Introduction!
+n Overview of VFW Controller!
+n Our Approach!
+Dependency Analysis and Semantic Consistency!
+l
+Flow Update Analysis!
+l
+Buffer Cost Analysis!
+l
+Optimal Scaling!
+l
+n Implementation and Evaluation!
+2!Traditional Hardware-based Firewall
+● Fixed location!
+● Constant capacity!
+Internal Networks
+External Networks
+3!Virtualized Environments
+Virtualized Network Zones
+Blur & Fluid Perimeters
+Zone
+2 Zone
+Zone
+3
+1
+Service
+Migration
+Datacenter
+2
+Datacenter
+Datacenter
+1
+3
+Infrastructure
+4!Traffic Volume Variation
+Expensive option: !
+cDaDpoaSc aittyt a≥c kp eoank F etrba.f fi20c1 l6o ad!
+Gbps
+400
+320
+240 Significant
+Variation
+160
+80
+0
+2/19 2/22 2/25
+Time
+Source: https://blog.cloudflare.com/a-winter-of-400gbps-weekend-ddos-attacks/
+5!New Trends
+● Network Function Virtualization (NFV)!
+● Create and destroy software instances
+dynamically!
+Virtualization Platform!
+● Software-Define Networking (SDN)!
+● Dynamic traffic steering!
+SDN Switch
+Virtual Firewall!
+NFV SDN
+6!Firewall as a Service
+n Virtual firewall in commercial virtualized environments!
+§ Amazon AWS!
+§ VMware vCloud!
+§ VCE Vblock!
+§ Microsoft Azure!
+§ Google Cloud Platform!
+n Virtual firewall used to protect traditional enterprise
+networks!
+§ Middlebox Outsourcing [SIGCOMM’ 12]!
+Cloud Provider
+Internet
+7!Elastic Virtual Firewall Scaling
+n Overload à ! elastic scaling out!
+n Underload à ! elastic scaling in!
+Overload
+Underload
+(packet loss)
+!
+!
+SDN Switch
+Safe, Efficient and Optimal!
+8! 08:40!Policy Migration in VFW Scaling
+Copy!
+SSeeqq!! SSrrcc__iipp!! DDsstt__iipp!! AAccttiioonn!!
+vv11!! AA!! BB!! DDeennyy!!
+vv22!! CC!! DD!! AAllllooww!!
+……!! ……!! ……!! ……!!
+VFW VFW
+1 2
+SSppllit!it!
+Seq! Src_ip! Dst_ip! Action!
+Sve1q!! SrcA_!ip! DsBt_!ip! ADcetnioyn!!
+vv21!! CA!! DB!! ADlelonwy!!
+……!! ……!! ……!! ……!!
+Virtual Firewall
+Performance VS. Rule Size!
+VFW VFW
+1 2
+9! 08:40!Challenges - Semantic Consistency
+Sequence! Src_ip! Dst_ip! Action!
+Sequv1e!nce! 1S0.r1c0_.i1p.!5! 1D92s.t1_.i1p.!*! ADcetinoyn!!
+Dependent
+v2! 10.10.1.*! 192.1.1.9! Allow!
+……!! ……!! ……!! ……!!
+VFW
+1 VFW
+2
+SDN
+Switch
+Safety Problem:!
+Flow Table
+Allow illegal traffic !
+SSeeqquueennccee!! SSrrcc__iipp!! DDsstt__iipp!! AAccttiioonn!!
+ff11!! 1100..1100..11..**!! 119922..11..11..99!! TToo VVFFWW
+12!!
+10.10.1.5 à 192.1.1.9
+ff22!! 1100..1100..11..55!! 119922..11..11..**!! TToo VVFFWW
+11!!
+……!! ……!! ……!! ……!!
+10!Challenges - Correct Flow Update
+Sequence! Src_ip! Dst_ip! Action!
+v1! 10.10.*.5! 192.1.2.*! Allow!
+Sequv2e!nce! 1S0.r1c0_.i*p.6! ! 1D92s.t1_.i1p.!*! ADcetinoyn!!
+v3! 10.10.*.7! 192.1.1.*! Allow!
+v4! 10.10.*.8! 192.1.1.*! Deny!
+……!! ……!! ……!! ……!!
+Incorrect
+Not exactly
+delivery
+VFW
+VFW
+1 matched!
+2
+Flow Table
+SDN
+Switch
+Seq! Src_ip! Dst_ip! Action!
+f1! 10.10.1.*! 192.1.1.*! TToo VVFFWW
+21!!
+10.10.1.5à 192.1.2.9 f2! 10.10.1.*! 192.1.2.*! To VFW
+1!
+10.10.1.6à 192.1.1.9
+…! …! …! …!
+10.10.1.7à 192.1.1.9
+10.10.1.8à 192.1.1.9
+11!Challenges - Buffer Overflow Avoidance
+Not enough buffer
+(Packet loss)
+VFW
+1 VFW
+2
+R/S
+How much buffer is required?!
+SDN
+In-flight Traffic Switch
+12!Challenges - Optimal Scaling
+n Goal: minimum resource consumption!
+Scaling-out: least new instances!
+l
+Scaling-in: most killed instances!
+l
+n Constraints!
+Satisfy SLAs! Minimize Update! Avoid Buffer Overflow!
+13! 08:40!Overview of VFW Controller
+VFW Controller Resource
+Condition Detection!
+Virtual
+Firewal l
+Migration and
+Update Contro!l
+Dependency Analysis! Virtualization Layer!
+Provision
+Servers
+Contro!l
+Flow Update Buffer Cost
+Analysis! Analysis!
+SDN
+Switches
+Optimal Scaling Calculation!
+14! 08:40!Dependency Analysis
+Group
+InDdirireecctt D Deeppeennddeennccyy
+Packet Space:!
+Intra-dependency!
+<src_ip, dst_ip, src_port, dst_port, protocol>!
+r1:<10.10.1.*, 192.1.1.9, any, any, TCP> PS(r )
+1
+Direct dependency!
+r2:<10.10.2.*, 192.1.1.*, any, any, TCP> Indirect depPeSn(dre)n cy!
+2
+Direct dependency!
+r3:<10.10.2.5, 192.1.2.*, any, any, TCP> PS(r )
+3
+15! 08:40!Dependency Analysis
+Relation betwIneteenr -fidreepweanlld aenndc fly!ow rules!
+FirewaCllo Rnuglreu Genroceu p (V) FlowS Ruupleer sGpraocuep (F)
+PS(V ) ⊃ PS(F)
+PS(V ) = PS(F)
+Intersection
+Subspace
+PS(V )∩ PS(F) ⊂ PS(V )
+PS(V ) ⊂ PS(F)
+PS(V )∩ PS(F) ⊂ PS(F)
+16! 08:40!Semantic Consistency
+Causes of semantic inconsistency!
+Group-based Migration!
+GGrroouupp Group
+1 2
+Group is broken!
+VFW VFW
+1 2
+GGrroouupp
+Group
+1 2
+Order is not preserved!
+VFW
+VFW
+2
+1
+17! 08:40!Flow Update Analysis
+V: firewall rule group to be migrated
+F: flow rule group inter-dependent with V
+Congruence Superspace
+f ∈F
+V or F “CHANGE” all
+F V i
+PS(V) = PS(F) PS(V) ⊃ PS(F)
+Subspace Intersection
+or
+V
+V “CHANGE” or “INSERT”
+F
+F
+PS(V) ⊂ PS(F) PS(V)∩ PS(F)⊂ PS(V)
+PS(V)∩ PS(F)⊂ PS(F)
+18! 08:40!Flow Update Analysis
+For each
+v ∈V, f ∈F
+i j
+v v
+v f i i
+f or f
+i j
+j j
+PS(v )∩ PS( f ) =φ PS(v ) = PS( f ) PS(v ) ⊇ PS( f )
+i j i j i j
+f
+No Update “CHANGE”
+j
+f
+v f
+j
+v or
+i j
+i
+PS(v )∩PS(f )⊂ PS(v )
+PS(v )⊂ PS( f ) i j i
+i j
+PS(v )∩PS(f )⊂ PS(f )
+i j j
+“INSERT” f ′ where PS( f ′ ) = PS(v )∩ PS( f )
+j j i j
+19!Buffer Cost Analysis
+1.Transfer(vspace) 1.Accept(vspace)
+VFW
+Controller
+3.Migrate(vspace)
+VFW
+VFW
+2
+1
+2.Update (fspace)
+1
+5.Update (fspace)
+2
+Buffer
+SDN Switch
+b1,b2 :bandwidth
+d1,d2,d3:transmission delay
+λ : sending rate of the affected flows
+β= (∑λ)× {d1+ d3− d2 + b1+ b2}
+20! 08:40!Optimal Scaling Calculation
+X = {x ,..., x } x ∈{0,1} are indicators
+11 mn ij
+n Goals!
+Scaling-out
+firewall rule group V is moved to instance j à x = 1
+ij
+i
+m n
+∑ ∑ x γ
+min
+ij i Minimize extra instances!
+i=1 j=1
+Scaling-in
+Solved by !
+instancIen tj egise mr Lerigneeda orn Pinrsotagnrcae mimàin x g! = 1
+ij
+n m
+! ∑ ∑ x
+max
+Maximize merged instances!
+ij
+j=1 i=1
+n Constraints!
+Satisfy SLAs! Minimize Update! Avoid Buffer Overflow!
+21!Implementation
+n Implementation!
+l Xen-4.4.1, ClickOS [NSDI’14]
+Floodlight, Open vSwitch
+l
+Simple stateful firewall: 7 new Click
+l
+elements, ~3000 lines of C++.
+VFW Controller: python interface, based
+l
+on Hassel Library [NSDI’12]
+n Testbed
+CloudLab (https://www.cloudlab.us/)
+l
+Experiment profile is available:
+l
+https://www.cloudlab.us/p/SeNFV/Firewall-VLANs
+08:40!
+22!Evaluation
+n Intra-dependency in real-world firewall policies!
+Policy! Rule(#)! Group(#)! Largest Group
+Member (#)!
+A! 12! 2! 3!
+B! 18! 3! 5!
+C! 25! 3! 6!
+D! 52! 7! 7!
+E! 83! 9! 7!
+F! 132! 10! 9!
+G! 354! 10! 12!
+H! 926! 13! 18!
+23! 08:40!Evaluation
+n Capability to quickly scale!
+Split with UDP flow overload Split with TCP flow overload
+< 1 second!
+24! 08:40!Evaluation
+n Migration impact on throughput!
+Throughput Degradation Throughput Degradation
+Impact on UDP throughput Impact on TCP throughput
+25! 08:40!Evaluation
+n Performance of optimal scaling calculation!
+6 addition virtual firewall instances,
+1000 firewall rule groups to split
+Scaling-out calculation
+100 underloaded virtual firewall instances
+Scaling-in calculation
+26!Conclusion
+● NFV+SDN push forward a new !
+breed of firewalls, virtual firewalls!
+…
+!
+Virtualization Platform!
+● VFW Controller enables safe, efficient
+and optimal virtual firewall scaling!
+● Implementing and evaluating VFW
+Controller!
+27! 08:40!Q & A
+!!
+This work was partially supported by grants from National Science
+Foundation (NSF-ACI-1642143 and NSF-ACI-1642031)
+28! 08:40!State Of The Art
+n Safe Migration!
+Split/Merge
+l [NSDI’13]!
+OpenNF
+l [SIGCOMM’14]!
+n NFV and SDN for security!
+Bohatei [USENIX Security’15]!
+l
+n SDN Firewall!
+FlowGuard
+l [HotSDN’14]!
+n Firewall policy deployment
+[S&P’07]!
+n Distributed firewall [CCS’00]!
+29! 08:40!Study of Real-world Firewall Policies
+Policy! Rule(#)! Group(#)!
+A! 12! 2!
+B! 18! 3!
+C! 25! 3!
+D! 52! 7!
+E! 83! 9!
+F! 132! 10!
+G! 354! 10!
+H! 926! 13!
+Rule Dependencies in Real-world Firewall Polices
+30! 08:40!Evaluation
+n Rule size impact on performance!
+31! 08:40!Challenges (Semantic Consistency)
+SSeeqquueennccee! ! SSrcrc__ipip! ! DDsst_t_ipip! ! AAcctitoionn! ! Sequence! Src_ip! Dst_ip! Action!
+vv11v!1! ! 11010.01.1.010.0.11.1..55.5!!! 11919292.2.11.1..11.1..**.!*!! DDDeeennnyy!y!! v2! 10.10.1.*! 192.1.1.9! Deny!
+v2…!! 10.10….1!.*! 192.1….1!.9! De…ny!! vv33!! 1100..1100..11..**!! 119922..11..11..**!! AAllllooww! !
+v3! 10.10.1.*! 192.1.1.*! Allow! …! …! …! …!
+…! …! …! …!
+OrigVinFaWl VFW MerVgFeWd VFW
+1 2
+10.10.1.5 à 192.1.1.1 10.10.1.5 à 192.1.1.1
+Semantic Consistency!
+32! 08:40!

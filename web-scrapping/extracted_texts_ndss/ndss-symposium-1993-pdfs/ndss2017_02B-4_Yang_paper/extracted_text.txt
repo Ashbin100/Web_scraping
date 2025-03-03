@@ -1,0 +1,1324 @@
+Fake Co-visitation Injection Attacks to
+Recommender Systems
+Guolei Yang Neil Zhenqiang Gong Ying Cai
+Iowa State University Iowa State University Iowa State University
+yanggl@iastate.edu neilgong@iastate.edu yingcai@iastate.edu
+Abstract—Recommender systems have become an essential category of recommender system to implement the two rec-
+component in a wide range of web services. It is believed that ommendation tasks, which we call co-visitation recommender
+recommender systems recommend a user items (e.g., videos on system, is likely being widely used by web service providers
+YouTube,productsonAmazon)thatmatchtheuser’spreference. (e.g., YouTube [2], Amazon [3]) due to its effectiveness and
+In this work, we propose new attacks to recommender systems.
+simplicity. Co-visitation recommender systems leverage co-
+Our attacks exploit fundamental vulnerabilities of recommender
+visitation information between items, and the key idea is that
+systems and can spoof a recommender system to make recom-
+two items that were frequently co-visited in the past are likely
+mendations as an attacker desires. Our key idea is to inject fake
+to be co-visited in the future.
+co-visitations to the system. Given a bounded number of fake
+co-visitations that an attacker can inject, two key challenges are
+It was widely believed that recommender systems should
+1) which items the attacker should inject fake co-visitations to,
+recommend a user items that match the user’s preference.
+and 2) how many fake co-visitations an attacker should inject
+However, Xing et al. [4] recently proposed pollution attacks
+to each item. We address these challenges via modelling our
+to user-to-item recommendation, in which the recommender
+attacks as constrained linear optimization problems, by solving
+whichtheattackercanperformattackswithmaximalthreats.We systemisspoofedtorecommendanytargetitem(e.g.,avideo
+demonstrate the feasibility and effectiveness of our attacks via advertisement on YouTube) to a victim user. Their key idea
+evaluations on both synthetic data and real-world recommender is to inject fake information, which is related to the target
+systems on several popular web services including YouTube, item,intothevictimuser’sprofileviacross-siterequestforgery
+eBay, Amazon, Yelp, and LinkedIn. We also discuss strategies (CSRF) [5] attacks. However, pollution attacks suffer from
+to mitigate our attacks. the following limitations: 1) pollution attacks rely on CSRF,
+which makes it hard to perform the attacks at a large scale,
+I. INTRODUCTION and 2) pollution attacks are not applicable to item-to-item
+recommendation because the attacker cannot change the item
+In the era of information explosion, people face an over-
+that the user is currently visiting.
+whelming number of choices when looking for information
+of their interests on the Internet. “... a wealth of information In this work, we propose new attacks to spoof recom-
+creates a poverty of attention and a need to allocate that mender systems to make recommendations as an attacker
+attentionefficiently...”[1].Recommendersystemsplayacurial desires. Our attacks do not rely on CSRF, can be performed
+role to allocate user attention and help users locate relevant at a large scale, and are applicable to both user-to-item and
+informationinawiderangeofwebservicessuchasYouTube, item-to-item recommendations. In particular, we focus on co-
+eBay, and Amazon. visitationrecommendersystems.Ourkeyideaistoinjectfake
+co-visitations to the system, and we call our attacks fake co-
+In a recommender system, we have a set of users (e.g.,
+visitationinjectionattacks.Wenotethatattackingco-visitation
+registered users, unregistered visitors) and items (e.g., videos
+recommender systems via injecting fake co-visitations is a
+on YouTube, products on eBay). Two widely used recom-
+naturalidea.Ourkeycontributionistoperformthefirstformal
+mendation tasks are user-to-item recommendation and item-
+and systematic study on fake co-visitation injection attacks.
+to-item recommendation. In a user-to-item recommendation,
+the system recommends items to a user based on the user’s First,weproposeanovelthreatmodel.Inourthreatmodel,
+profile (e.g., the browsing history, the items the user liked we define two attacks to recommender systems. They are
+or disliked). In an item-to-item recommendation, a list of promotionattacksanddemotionattacks.Apromotionattackis
+items are recommended to a user when the user is visiting an to spoof the recommender system to recommend a target item
+item. This recommendation is commonly known as features (e.g., a video advertisement on YouTube, a product on eBay)
+like “People who viewed this also viewed”. One particular to as many users as possible. Recommending a target item to
+moreusersincreasestheitem’suserimpression,whichinturn
+couldleadtomoreuservisits/clicksoftheitemandeventually
+Permission to freely reproduce all or part of this paper for noncommercial purchases of certain products. On the contrary, a demotion
+purposes is granted provided that copies bear this notice and the full citation
+attack is to spoof the recommender system to recommend an
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author itemtoasfewusersaspossible.Anattackercanusedemotion
+(for reproduction of an entire paper only), and the author’s employer if the attacks to demote its competitors’ items. Moreover, we con-
+paper was prepared within the scope of employment. sider three categories of attackers with different background
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+knowledge (i.e., high knowledge, medium knowledge, and low
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23020 knowledge). These background knowledge model a variety ofweb services and attack scenarios. For instance, in a high • Wedemonstratethefeasibilityandeffectivenessofour
+knowledge scenario, the attacker knows the recommendation attacksonbothsyntheticandreal-worldrecommender
+system’s model details, which represents an upper bound of systemsusedbyseveralpopularwebservices.Wealso
+what an attacker can achieve; in a low knowledge scenario, discuss strategies to mitigate our attacks.
+theattackeronlyknowsthepubliclyavailablerecommendation
+lists made by the system.
+II. BACKGROUNDANDRELATEDWORK
+Second, we propose fake co-visitation injection attacks
+A. Co-visitation Recommender Systems
+to implement promotion and demotion attacks for different
+background knowledge. Our key idea is to use scripts to Recommender system has become an essential component
+automatically co-visit a target item and some items, which in many web services (e.g., YouTube, eBay, Amazon, and
+we call anchor items, such that the target item appears in the Yelp). In a recommender system, we have a set of users and
+anchor items’ item-to-item recommendation lists. In practice, items. A user could be a registered user or an unregistered
+the number of fake co-visitations that an attacker can inject visitor of a web service. Items are different on different web
+is often bounded (though it is still large) due to resource services, e.g., items are videos on YouTube, while they are
+constraints and some mitigation techniques deployed by the products on Amazon. The goal of a recommender system is
+service providers [6]. Given a bounded number of fake co- to recommend a user items that match the user’s preference.
+visitations, two key challenges for an attacker are 1) which
+items should be selected as anchor items, and 2) how many Many recommender systems (e.g., content-based systems
+fake co-visitations should be injected between the target item [7, 8] and collaborative filtering based systems [2, 3, 9–12])
+and each anchor item, such that the threat of the attack is havebeendevelopedinthepasttwodecades.Wereferreaders
+maximized,e.g.,thetargetitemisrecommendedtothelargest to surveys [13, 14] on recommender systems for details.
+number of users for promotion attacks. We address these Among these systems, one particular collaborative filtering
+challenges via modelling our attacks as constrained linear based system, which we call co-visitation recommender sys-
+optimization problems, by solving which an attacker obtains tem, is likely being widely used by web services because
+the anchor items and the number of fake co-visitations for of its effectiveness and simplicity. For instance, co-visitation
+each anchor item. recommender system is used by YouTube to recommend
+videos according to Google’s official report [2], and it is used
+Third, we demonstrate the feasibility and effectiveness
+by Amazon to recommend products according to Amazon’s
+of our attacks via performing extensive evaluations on both
+publication[3].Inthiswork,wefocusonco-visitationrecom-
+synthetic recommender systems and real-world recommender
+mender systems.
+systems. In particular, we demonstrate that the recommender
+systems used by several popular web services including
+YouTube,eBay,Amazon,Yelp,andLinkedInarevulnerableto
+27
+ourattacks.Forinstance,intheexperimentofYouTube,using 8
+22
+asinglecomputerwithmoderatecomputingpower,weareable 5
+topromote20targetvideoswithinthreeweeks,eachofwhich 12
+4 6 13
+appearsintheitem-to-itemrecommendationlistsofmorethan 9
+200 anchor videos on average; for each target video, the total 11 7 35
+number of views of the anchor videos is more than 6×105
+on average. We note that, after our attacks, a target video is
+going to be shown to any user who views any of these anchor Fig.1:Illustrationofaco-visitationgraph.Theweightonedge
+videos. Moreover, our attack can promote a target video to be (i,j)isthenumberoftimesthatitemsiandj wereco-visited,
+in the user-to-item recommendation list of a newly registered while the weight on node i is the total number of times that i
+user with a small number of fake co-visitations. was visited.
+Finally,wediscussstrategiestomitigateourattacks.Forin-
+Co-visitation graph: Two items were co-visited by a user if
+stance, for web services like YouTube, one mitigation strategy
+the user visited both of them. For instance, on YouTube, two
+tobalancebetweensecurityagainstourattacksandusabilityis
+videos are co-visited by a user if the user watched one video
+to hide the exact number of views for a video and only shows
+after watching the other one in the same browser session [2].
+its range. We demonstrate, via evaluations on synthetic data,
+The key component of a co-visitation recommender system
+that this strategy can mitigate our attacks significantly.
+is a data structure that we call co-visitation graph. Fig. 1
+We summarize our main contributions as follows: illustrates an example co-visitation graph. We denote a co-
+visitation graph as G=(V,E), where each node i is an item
+• Wepresentthefirstformalandsystematicstudyabout
+and an edge (i,j) means that items i and j were co-visited by
+fake co-visitation injection attacks to co-visitation
+atleastoneuser.Eachedge(i,j)intheco-visitationgraphhas
+recommender systems.
+a weight, which is the number of times that i and j were co-
+• We propose a novel threat model to cover a variety of visited.Wecallthenumberoftimesthatanitemiwasvisited
+attackers with different goals and background knowl- thepopularityofi.Intheco-visitationgraph,werepresentthe
+edge. We formulate the fake co-visitation injection popularity of an item i as the node weight of i. Note that, in
+attacks as constrained linear optimization problems, the co-visitation graph, the node weight (i.e., popularity) of a
+bysolvingwhichanattackercanperformattackswith node i is no less than its weighted degree, which is the sum
+maximal threats. of the weights of its edges. This is because users could visit
+2YouTube ebay Amazon
+Fig. 2: Item-to-item recommendation in YouTube, eBay, and Amazon.
+services might use different such functions. For instance,
+Co-­‐visita)on Other
+graph informa)on YouTube [2] uses f(w ,w ) = w · w . Amazon [3] uses
+item-­‐to-­‐item recommenda-on i j i j
+CosineSimilaritybetweentheviewvectors(i.e.,anentryofthe
+Recommenda)on vectoris1ifthecorrespondinguserviewedthecorresponding
+Item i Top-­‐N recommended items
+engine item, otherwise the entry is 0) of two items as their similarity.
+Sincetheentriesoftheviewvectorshavebinaryvalues,Cosine
+Co-­‐visita)on Other Similaritybet √weentwoitemsisreducedtobeEquation1with
+graph informa)on user-­‐to-­‐item recommenda-on f(w i,w j)= w i·w j.
+Givenanitemithatauserisvisiting,thesystemfirstranks
+Profile of Recommenda)on
+user u engine Top-­‐N recommended items the items using their similarities with i and then recommends
+the top-N items with the largest similarities to the user. We
+denote the top-N recommended items for the item i as a
+Fig. 3: Item-to-item recommendation vs. user-to-item recom- sorted list L . Note that this item-to-item recommendation
+i
+mendation. method favours unpopular items. Specifically, an item with
+a small popularity is more likely to be recommended than an
+item with a large popularity if they have the same number
+the item i without visiting other items. We denote by w and of co-visitations with the item i. YouTube’s co-visitation rec-
+ij
+w the weights of edge (i,j) and node i, respectively. ommender system [2] avoids recommending highly unpopular
+i
+items via excluding items whose popularities are smaller than
+Aco-visitationrecommendersystemmainlyleveragessuch
+apopularitythresholdτ whenpreparingthetop-N recommen-
+co-visitation graph to recommend items to a user. The key
+dation list.
+intuition is that items that were frequently co-visited in the
+past are likely to be co-visited in the future. Specifically, We note that, although co-visitation graph is the core
+twopopularrecommendationtasksareitem-to-itemrecommen- information that is leveraged by co-visitation recommender
+dation and user-to-item recommendation. In an item-to-item systems, other information (e.g., item diversity [2]) could also
+recommendation, when a user is visiting an item i, the system be considered to tune the recommended items. However, in
+showsthetop-N recommendeditemsthataresimilartoi.Ina this work, we focus on co-visitation graph and as we will
+user-to-item recommendation, the system recommends top-N demonstrate, manipulating co-visitation graph is sufficient to
+items to a user via considering the user’s visiting history. The attack co-visitation recommendation systems at scale.
+visiting history could include all items the user has visited if
+Fig. 2 shows item-to-item recommendations in YouTube1,
+the user logs in the web service, or it could include items the
+eBay, and Amazon. Although the details of the recommender
+user has visited in a browser session if the user does not log
+systems used by eBay and Amazon are not publicly known,
+in or the user is an unregistered visitor. Fig. 3 compares item-
+from their service names (e.g., “People who viewed this also
+to-item recommendation and user-to-item recommendation.
+viewed”), we suspect that they are very likely using co-
+Item-to-item recommendation: The service provider com- visitationrecommendersystems.TheparametersN areusually
+putesthesimilaritybetweeneachco-visitedpairofitems(each 20, 5, and 4 in the three web services, respectively.
+edge in the co-visitation graph corresponds to such a pair)
+via the co-visitation graph. Intuitively, items i and j are more User-to-item recommendation: The profile of a user con-
+sists of the items that the user has visited. User-to-item
+similariftheyaremorefrequentlyco-visited;giventhenumber
+ofco-visitationsbetweeniandj,theytendtobelesssimilarif recommendation considers the user profile when making rec-
+ommendations. The details of how to leverage user profile
+theyaremorepopular.Tocapturesuchintuitions,thesimilarity
+s between item i and item j is calculated as follows [2]: might be different for different web services. For instance, on
+ij
+w
+s = ij , (1) 1AccordingtoXingetal.[4],forlogged-inusers,atmosttwoofthetop-N
+ij f(w ,w ) recommendeditemsonYouTubearechosenbyuser-to-itemrecommendation
+i j
+insteadofitem-to-itemrecommendation.Forsimplicity,wetreatallofthem
+where f(w i,w j) is a function of w i and w j. Different web asitem-to-itemrecommendation.
+3YouTube [2], for each item i that was visited by the user, the Specifically, in their privacy attacks, an attacker first obtains
+system computes its top-N recommended items L via item- a partial profile of a user. For instance, on Amazon, some
+i
+to-item recommendation. Then YouTube treats the union of users will review the products that they purchased. Through
+these items L as a candidate set and recommends the user collecting these publicly available reviews, the attacker can
+i
+top-N items among the candidate set. To increase diversity obtain a subset of products that the target user purchased.
+of recommended items, YouTube enlarges the candidate set Then the attacker monitors the temporal changes of item-to-
+via repeatedly adding in the top-N recommended items of the itemrecommendationlistsoftheseproducts.Ifanitemappears
+current items in the candidate set [2]. Again, apart from the intherecommendationlistsofalargenumberofproductsthat
+coreco-visitationgraph,otherinformationcouldbeconsidered are in the target user’s partial profile, the attacker infers that
+to tune the top-N recommended items. the user purchased the item. The authors demonstrated that
+this privacy attack is feasible on various popular web services
+This work focuses on item-to-item recommendation, but
+including Amazon, LibraryThing, Hunch, and Last.fm.
+ourattacksarealsoapplicabletouser-to-itemrecommendation.
+III. PROBLEMDEFINITION
+B. Attacks to Recommender Systems
+1)Security Attacks: We first review existing security at- TABLE I: Categorization of an attacker’s background knowl-
+tacks to recommender systems. edge
+Pollution attacks to user-to-item recommender sys- Scenario Explanation
+tems: Xing et al. [4] recently proposed pollution attacks Co-visitation graph G,
+High knowledge
+to the user-to-item recommendation and demonstrated that popularity threshold τ
+YouTube, Amazon, and Google search are vulnerable to the Recommendation lists L,
+Medium knowledge
+attacks. The goal of pollution attacks is to spoof the system item popularities W
+to recommend a target item to a specific victim user. The Low knowledge Recommendation lists L
+key idea is to inject fake information into the victim user’s
+profile (e.g., browsing history) via cross-site request forgery
+(CSRF) [5]. Pollution attacks suffer from two key limitations: A. Attacker’s Background Knowledge
+1) pollution attacks rely on CSRF, which makes it hard to
+perform the attacks at a large scale, and 2) pollution attacks We consider three scenarios where attackers can access
+arenotapplicabletoitem-to-itemrecommendationbecausethe different background knowledge of the recommender system.
+attacker cannot change the item that the user is visiting. Our
+High knowledge: In this scenarios, an attacker has access to
+attacks do not rely on CSRF, can be performed at scale, and
+theco-visitationgraphGandthepopularitythresholdτ thatis
+are applicable to both item-to-item recommendation and user-
+used to tune the top-N recommended items. This represents a
+to-item recommendation.
+strongattackerbecausetheattackerknowsthekeycomponents
+Profile injection attacks to recommender systems using of the co-visitation recommender system. An attacker could
+user-item rating matrices: A few studies [15–17] have obtain these information from an insider of the web service
+demonstrated that recommender systems (e.g., [3, 9, 10]) through underground market or the attacker itself could be an
+leveraging a user-item rating matrix are vulnerable to profile insider. This scenario represents an upper bound of the threats
+injectionattacks(alsocalledshillingattacks).Specifically,ina introduced by our attacks. We represent high knowledge as a
+user-item rating matrix, each row corresponds to a registered pair (G,τ).
+user and each column corresponds to an item; an entry in
+Medium knowledge: In this scenario, an attacker writes a
+the matrix is the rating score that the corresponding user
+web crawler to collect some items and their item-to-item top-
+gave to the corresponding item; a rating score represents the
+N recommendation lists from the web service. We note that
+corresponding user’s preference to the corresponding item;
+webservicesoftenmaketheitem-to-itemrecommendationlists
+and most entries of the matrix are missing since a user only
+publicly available so unlogged-in visitors can also see them.
+provides feedback about a small number of items. Given such
+Therefore, an attacker can collect these recommendation lists.
+a matrix, these recommender systems infer the values of the
+Recall that we denote by L the item-to-item top-N recom-
+missing entries and then recommend users items with the i
+mendation list of an item i. We denote the recommendation
+largest inferred values.
+lists collected by an attacker as a set L={L ,L ,··· ,L },
+1 2 m
+Profile injection attacks aim to make a target item be where m is the number of items whose recommendation lists
+recommendedtomoreusers.Specifically,inaprofileinjection are collected by the attacker.
+attack, an attacker first registers a large number of fake
+Somewebservicesshowitems’popularitytousers/visitors,
+accounts in the service. Then each fake account gives certain
+and thus an attacker has access to items’ popularities. For
+rating scores to a carefully chosen subset of items. These
+instance, YouTube shows visitors the number of views (i.e.,
+profile injection attacks are not applicable to co-visitation
+popularity) of a video. For convenience, we denote by a set
+recommender systems that do not rely on the rating matrices.
+W = {(i,w )|i ∈ I} the popularities of all the items that
+i
+2)PrivacyAttacks: Calandrinoetal.[18]proposedprivacy the attacker encountered when collecting L, where the set I
+attacks to infer a user’s profile (e.g., the products that the user consists of all the items that the attacker encountered (i.e., the
+purchased on Amazon) via analyzing the publicly available m items whose recommendation lists were collected by the
+recommendations that are made by the recommender system. attacker and items in these recommendation lists), and w is
+i
+4the popularity of item i. We represent medium knowledge as 2)UserImpressions: Themetricnumberofitemsdoesnot
+a pair (L,W). consider item popularities. Appearing in the recommendation
+list of a more popular item means that the target item is
+Lowknowledge: Inthisscenario,anattackerwritesacrawler going to be recommended to more users/visitors. Therefore,
+to collect L = {L 1,L 2,··· ,L m}, the item-to-item top-N we propose new metrics, which incorporate item popularities,
+recommendation lists of m items. However, we assume the to evaluate the threats of promotion and demotion attacks.
+servicedoesnotprovideitempopularities,andthustheattacker
+does not have access to them. This scenario represents the Top-k user impression: When a target item i appears in
+t
+least knowledge that a co-visitation recommendation system an item i’s item-to-item recommendation list, the target item
+canleaktoanattacker.Forinstance,eBayandAmazonbelong is exposed to any user who visits item i. In other words, the
+to this category of services. target item obtains one user impression for any user visit to i.
+If the item i has more visits in the future, the target item will
+B. Definition of Attacks obtain more user impressions. Having more user impressions
+couldleadtomorevisitsofthetargetitem,whichsubsequently
+We consider two families of attacks to co-visitation rec-
+could lead to more purchases (if the item is a product or an
+ommender systems, namely promotion attacks and demotion
+ads about a product).
+attacks. In a promotion attack, an attacker aims to make a
+target item (e.g., a video on YouTube) be recommended to as We note the likelihood of turning a user impression to a
+many users as possible, while the attacker’s goal is to make a visit or even purchase could depend on the specific ranking
+target item be recommended to as few users as possible in a position of the target item in the recommendation list. For
+demotion attack. Formally, we define them as follows: instance,thehighestrankeditemmighthaveahighervisitrate
+thanthelowestrankeditem.Toincorporatetheimpactofitem
+Definition 1 (Promotion Attacks): Given a target item and
+ranks in the recommendation list, we define a user impression
+an attacker with certain background knowledge about the co-
+as a top-k user impression if the target item is ranked top-k
+visitationrecommendersystem,apromotionattackistoabuse
+on the recommendation list, where k ≤N.
+therecommendersystemsothatitrecommendsthetargetitem
+to as many users as possible.
+Probability of top-k user impression: Measuring top-k
+Definition 2 (Demotion Attacks): Given a target item and user impressions for a target item requires knowledge about
+an attacker with certain background knowledge about the co- the number of visits to certain items in the future, which
+visitation recommender system, a demotion attack is to abuse might not be available at the time of attacks. Therefore, we
+therecommendersystemsothatitrecommendsthetargetitem propose probability of top-k user impression (UI), which is
+to as few users as possible. the probability the target item obtains a top-k user impression
+for a random user visit. Suppose a random user visits an item
+Limited resources: We consider an attacker injects fake co- in a web service, we denote by p the probability that this
+i
+visitations between the target item and other selected items random user visits item i. Let I be the set of items whose
+to perform promotion and demotion attacks. We assume the top-k recommended items includi et the target item i . Then the
+t
+number of fake co-visitations that an attacker can inject is probability of top-k user impression of i is UI =(cid:80) p .
+limited. We adopt this threat model for two reasons. First,
+t i∈Iit i
+an attacker could have limited resources, e.g., IP addresses, Althoughtheexactp i isnotavailableatthetimeofattacks,
+computingresources.Ifanattackerinjectsaverylargeamount wecanestimateitusingthepopularityoftheitemiinthepast.
+of fake co-visitations from a single IP address, the service Several studies [19–22] found that many natural phenomena
+providercaneasilydetecttheattackandblocktheattacker[6]. followapowerlaw.Inourcase,powerlawphenomenaimplies
+Therefore,theattackercaninjectaboundednumberoffakeco- that an item that was popular in the past is likely to be
+visitationswithoutbeingdetected,thoughthisboundednumber popular in the future. More specifically, the probability p i is
+could still be large. Second, suppose an attacker deploys our proportional to the current popularity of the item i in power
+attacks as a service. An organization wants to use this service law phenomena. Formally, p i is estimated as follows [23]:
+to promote its product, but this organization has a limited w
+budget to pay for the service. In this scenario, the limited p i = w +w +i ···+w , (2)
+budget can be translated to a bounded number of fake co- 1 2 n
+visitations. An attacker’s goal is to maximize the threats of where n is the total number of items and w is the popularity
+i
+the promotion or demotion attacks, when the number of fake of i in the past. Therefore, we have:
+co-visitations that can be injected is fixed.
+(cid:80)
+w
+UI=
+i∈Iit i
+. (3)
+C. Evaluation Metrics w +w +···+w
+1 2 n
+1)NumberofItems: Onenaturalmetrictomeasurepromo- Intuitively,UI=x%indicatesthatx%ofwebsitevisitorswill
+tion attacks and demotion attacks is to use the increased (for see the item in the recommendation lists of some other items.
+promotionattacks)ordecreased(fordemotionattacks)number
+of items whose item-to-item recommendation lists include the Measuring threat of promotion attacks: Suppose a target
+target item. For instance, suppose the target item originally item i is originally among the top-k recommendation list in
+t
+appears in the recommendation lists of 10 items, and the a set of items which we denote as I , where k ≤ N. After
+it
+number increases to be 30 after the promotion attack, then a promotion attack, this set of items is enlarged to be J .
+it
+the promotion attack’s threat is 20 items. We define the threat of this promotion attack as increased
+5probability of top-k user impression (IUI), which we formally between j and the items in L keeps unchanged, then the
+j
+represent as follows: recommendation list L and the relative rankings of the items
+j
+IUI=(cid:80) p (4) in L j keep unchanged. In order to make the target item i t
+i∈Jit−Iit i appearinthetop-krecommendationlistofj,theattackerneeds
+to inject m fake co-visitations between the items i and j,
+jk t
+Measuring threat of demotion attacks: Suppose the set of where m jk satisfies two conditions:
+itemswhosetop-k recommendeditemsincludethetargetitem
+s(cid:48) >s(cid:48) (6)
+i ts hrr ee ad tu oc fe td hit so db ee moJ ti it onaf ate ttr aca kd ae sm do et ci ro en asa et dtac pk ro. bW abe ild ite yfi on fe toth pe - w it +mj ji kt ≥τj ,kj (7)
+k user impression (DUI), which we define as follows:
+where s(cid:48) is the similarity between j and the target item i ,
+DUI=(cid:80) p (5) and s(cid:48) ji it s the similarity between j and the k-th ranked itemt
+i∈Iit−Jit i
+k
+aftj ek rj
+the attack. Formally, we have s(cid:48) = (w +m )
+An attacker’s goal is to maximize the IUI or DUI for a /fj (w j+m jk,w it+m jk)ands(cid:48) jkj =w jkjji /t f(w j+j mit jk,w kj jk ),
+target item with given background knowledge and resource. where w jit is the number of co-visitations between j and i t,
+We note that when all item popularities are known, we will w j isj’spopularity,w it isi t’spopularitybeforetheattack,and
+always use IUI or DUI to measure our attacks. For instance, the function f is the normalization factor that we discussed in
+a service provider, who has access to popularities of all its Section II-A. In our formulation, we assume that the number
+items, can calculate IUI and DUI to measure the security of of co-visitations between the item j and each item in its
+its recommender system against our attacks. recommendation list does not increase significantly during the
+attacking process.
+IV. CO-VISITATIONINJECTIONATTACKS
+Intuitively, Equation 6 guarantees the similarity between
+We discuss fake co-visitation injection attack strategies for theitemj andthetargetitemislargerthanthatbetweenj and
+attackers with different background knowledge. thek-thrankediteminj’srecommendationlistaftertheattack,
+whileEquation7guaranteesthetargetitem’spopularitypasses
+thethresholdtesting.Thetwoconditionscanbetransformedto
+A. Promotion Attacks
+linear constraints on m for various normalization functions
+jk
+In promotion attacks, an attacker selects a set of items f, e.g., the widely used product normalization function (i.e.,
+whose recommendation lists haven’t included the target item f(w ,w )=w ·w ) and sqrt-product normalization function
+i j i √j
+yet. We call these items anchor items. Then the attacker (i.e., f(w ,w ) = w ·w ). Details of such transformations
+i j i j
+injects fake co-visitations between the target item and each are given in Appendix A. These two linear constraints enable
+anchor item to make the target item appear in its top-k us to compute the minimum value of m that is required to
+jk
+recommendation list. Specifically, to inject fake co-visitations attack the anchor item j.
+between items, the attacker can write a script and use it
+to automatically and repeatedly visit them simultaneously or Attacking multiple anchor items: The attacker selects a
+consecutively (e.g., view the two items in the same browser set of anchor items that can be successfully attacked using
+session). We note that, in practice, attacker’s resources are bounded resources to maximize the threat. For convenience,
+bounded, and thus the number of fake co-visitations that an we use a binary variable a j to represent whether the item j is
+attackercaninjectisbounded.Therefore,inpromotionattacks, selected as an anchor item or not, i.e., a j = 1 means j is an
+the attacker’s goal is to maximize the increased probability anchoritem.Withthesevariables,weformulatethepromotion
+of top-k user impression (IUI) for a given number of fake attack as an optimization problem:
+co-visitations that can be injected. Two key challenges in (cid:80)
+maximize IUI = a ·p (8)
+promotion attacks are: 1) how to select the anchor items, and j∈Vk j j
+(cid:80)
+2) how many fake co-visitations should be injected for each subject to j∈Vka j ·m jk ≤m (9)
+anchor item. s(cid:48) >s(cid:48) , ∀j ∈V (10)
+jit jkj k
+We first show how to solve the challenges with high w +m ≥τ, ∀j ∈V (11)
+it jk k
+knowledge; then we transform a medium-knowledge attack to a ∈{0,1}, ∀j ∈V (12)
+j k
+ahighknowledgeattackbyestimatingthemissingparameters;
+andfinallywetransformalow-knowledgeattacktoamedium- whereV k isthesetofitemswhosetop-k recommendationlists
+knowledge attack by estimating the item popularities. do not include the target item.
+1)High Knowledge: With this background knowledge, an Intuitively, in our formulation, Equation 8 indicates that
+attackercanaccesstheco-visitationgraphGandthepopularity the attacker aims to maximize the IUI; Equation 9 encodes
+threshold τ used to filter out unpopular items when producing theresourceconstraint;Equation10and11aretheconstraints
+the recommendation lists. Suppose the attacker can inject that the number of fake co-visitations m jk should satisfy to
+totally m fake co-visitations. The probability p that a random attack anchor item j. We transform the optimization problem
+i
+user visits the item i is determined by Equation 2. to a linear programming problem. Specifically, we first derive
+the minimum value of m using Equation 10 and 11. Then,
+jk
+Attacking one anchor item: Suppose j is a selected anchor we replace the variable m with its minimum value in Equa-
+jk
+item and L is the top-k recommendation list for j. Further- tion9.Theresultingproblemisastandardlinearprogramming
+j
+more,wedenotebyk therankedk-thiteminL .Wenotethat problem,whichhasbeenstudiedextensivelyandcanbesolved
+j j
+if we add visitations to j while the number of co-visitations efficiently by various algorithms (e.g., Ellipsoid method [24]).
+6• Step 1: The attacker solves the optimization problem thatitempopularityisalinearregressionofthefeaturevalues.
+inEquation8,e.g.,usingEllipsoidmethod[24].After Specifically, g(f ,f ,··· ,f ) = a + (cid:80)F a f . From a
+1 2 F 0 t=1 t t
+this step, the attacker obtains the set of anchor items machinelearningperspective,theparameters(e.g.,a ,a ,···,
+0 1
+(i.e., an item with a j = 1 is an anchor item) and the a F for linear regression) in the function g can be learnt with
+number of fake co-visitations that the attacker needs a training dataset, which consists of some items with both
+to inject to each anchor item. popularitiesandfeaturevalues.However,withlowknowledge,
+the attacker does not know the item popularities.
+• Step 2: The attacker uses a script to automatically
+inject m fake co-visitations between the target item
+jk To address this challenge, we propose the attacker grad-
+i and each anchor item j.
+t ually injects fake co-visitations and monitors the changes of
+therecommendationlists,duringwhichtheattackerrefinesthe
+2)Medium Knowledge: With medium knowledge, the at-
+parameters of g. For a web service, the attacker only needs to
+tacker can access the popularity of each item and see its
+estimate g once and use it for future attacks.
+recommendationlist,buttheattackercannotobtainthenumber
+of co-visitations between items (i.e., edge weights of the co-
+Learning parameters of g: The attacker first collects a set
+visitation graph) nor the popularity threshold τ. Once the
+ofpubliclyavailablefeaturesofsomeitems.Thentheattacker
+attacker has access to the popularity threshold τ and the
+starts with random initial parameter values for the function g
+similarity s for each item j in the set of items that the
+jkj
+and uses g to compute the estimated item popularities. With
+attacker has collected, the attacker can use our attacks that
+the estimated popularities, the attacker performs attacks with
+we develop for high knowledge. Therefore, our key idea is to
+medium knowledge. However, the key difference is that the
+transformattackswithmediumknowledgetoattackswithhigh
+attacker injects fake co-visitations to anchor items one by one
+knowledge via estimating the missing parameters.
+and monitors the changes of the recommendation lists. For
+Specifically, we estimate upper bounds of the missing an anchor item j, if the target item i appears in its top-k
+t
+parameters,whichgivesalowerboundofthethreatanattacker recommendation list before injecting m fake co-visitations,
+jk
+canachievewithagivennumberoffakeco-visitationsthatcan which indicates j’s popularity might be overestimated, the
+beinjected.First,weestimatethepopularitythresholdτ asthe attackerdecreasestheparametersofgbyhalf;ifthetargetitem
+popularity of the least popular item on the recommendation does not appear in the top-k recommendation list after m
+jk
+lists. Second, we have s jkj ≤ s j(k−1)j ≤ s j(k−2)j ≤ ··· ≤ fake co-visitations, which means the popularity of j might be
+s j1j,i.e.,thesimilaritybetweenjandthekthrankeditemk j in underestimated, the attacker doubles the parameters of g. Via
+j’srecommendationlistissmallerthanthosebetweenjandthe repeatedlyadjustingtheparametersofg,theattackerisableto
+(k−1)th, (k−2)th, ···, 1stranked itemsof j’srecommenda- learnapredictortoestimateitempopularity.Withthefunction
+tionlist.Moreover,s = wjx ≤ max{wj,wx}.Therefore, g, the attacker transforms an attack with low knowledge to an
+we can estimate anj ux pperf( bw oj, uw nx d) of sf(w .j, Iw nx) particular, we attackwithmediumknowledge,andthenfollowstheprocedure
+jkj
+first compute the upper bound of s for all items x that are in Section IV-A2 to perform attacks.
+jx
+ranked higher than k , and then take the minimum of these
+j
+upperboundsasanupperboundfors .Withtheseestimated
+jkj
+B. Demotion Attacks
+parameters, the attacker follows the steps in attacks with high
+knowledge to perform attacks. However, since the number of
+Demotion attack aims at decreasing UI of a target item
+injectedco-visitationsm areestimated,theymightbelarger
+jk i . We achieve this goal via removing i from the top-k
+t t
+than what are really needed. Therefore, the attacker gradually
+recommendation lists of the selected anchor items. Let L be
+j
+injects co-visitations and monitors the recommendation lists
+the recommendation list of an anchor item j that contains i
+t
+of the anchor items; if the target item appears in the top-
+as the uth ranked item (u ≤ k). The attacker cannot remove
+k recommendation list of an anchor item, the attacker stops
+existing co-visitations, but it can improve the ranking of the
+injecting co-visitations to this anchor item.
+(u+1)th, (u+2)th, ···, (k +1)th ranked items until i is
+t
+Wenotethatweassumetherecommendationlistisasorted not on the top-k recommendation list. This can be viewed as
+list when estimating the parameters. However, if the list is not a promotion attack which treats these items as target items.
+sorted,wecanstillestimateupperboundsoftheseparameters. Therefore, we apply the promotion attacks that we discuss in
+For details, please refer to Appendix B. Moreover, techniques the previous section to perform demotion attacks. The only
+like XRay [25] could also be used to estimate the missing difference is that the selected anchor items should contain the
+parameters. targetitemi t.Withthisdifference,weformulatethedemotion
+attack (with high knowledge) as the following optimization
+3)LowKnowledge: Withlowknowledge,theattackeronly
+problem:
+obtainstherecommendationlistsofasetofitems.Wepropose
+to estimate the item popularities and transform the attack maximize DUI =(cid:80) a ·p (14)
+to an attack with medium knowledge. Specifically, previous j∈Vk j j
+work [26] has shown that item popularity can be represented subject to(cid:80) j∈Vka j ·(cid:80)k x+ =1 u+1m jx ≤m (15)
+asafunctionofasetoffeatures(e.g.,numberofuserreviews, k+1
+number of purchases) about the item. Formally, we have xm =ui +n 1{s(cid:48) jx}>s(cid:48) jit, ∀j ∈V k (16)
+w =g(f ,f ,··· ,f ), (13) k+1
+j 1 2 F min {w +m }≥τ, ∀j ∈V (17)
+x jx k
+where F is the number of features. For instance, in our x=u+1
+a ∈{0,1}, ∀j ∈V (18)
+experiments we assume g is a linear function, which means j k
+7where V k is the set of items that contain i t in their top-k 0.2
+r se cc oo rem om fe an nd yat oio fn thl eis (ts u, +E 1q )u ta ht ,io (n u+16 2)g tu ha ,r ·a ·n ·t ,ee (s k+the 1)s thim ri al na kri et dy
+UI
+(%)
+0.15
+DP ero mm oit ti io on n a at tt ta ac ck ks s
+ate
+(%)
+100
+DP ero mm oit ti io on n a at tt ta ac ck ks s
+i g mt ue em a nr dai n as tt ieg oer nsea lt it h se a tr .tt Tth h ha e en s neth tp ha r et o ao m tf to at th ce ke d et i ra ter ag m pe pst lii c et ae snm oa ui p rt p, pe ra a on r md in oE ttq ih ou e nat r ai e to c tn ao cm1 k7 s-
+ge
+IUI / D 0.1 success r 68 00
+w ati tt ah ckd sif wfe ir te hnt thb eac ck og rrr eo su pn od ndk inn gow bl ae cd kg ge rot uo ndpe krf no or wm led de gm e.ot Tio hn
+e
+Avera 0.05 Attack 24 00
+0 0
+only difference is that the optimization problem in Equation 8 High Medium Low High Medium Low
+is replaced with Equation 14. Background knowledge Background knowledge
+(a)IUI/DUIofattacks (b)Attacksuccessrate
+V. EXPERIMENTSONSYNTHETICDATA
+Fig. 4: Impact of the attacker’s background knowledge.
+We evaluate fake co-visitation injection attacks using syn-
+thesized datasets in this section.
+system produces a top-10 item-to-item recommendation list
+with a popularity threshold τ =500. The attacking parameter
+A. Experiment Design k is set to be 5 (e.g., the attacker wants to promote a target
+item to be among top-5 in the recommendation list of the
+Design goals: We aim to answer the following questions:
+anchor items), and the attacker has resources to inject 5000
+fakeco-visitations.Weassumeproductnormalizationfunction
+• How does different background knowledge (i.e., high,
+tocomputesimilarity.Whenwestudytheimpactofonefactor
+medium, and low knowledge) impact the threats of
+(e.g., attacker’s background knowledge), we will vary this
+fake co-visitation injection attacks?
+factor while fixing other parameters.
+• How does the structure of the co-visitation graph im-
+pactthethreatsoffakeco-visitationinjectionattacks? Simulating background knowledge: In high knowledge,
+the attacker knows the co-visitation graph and the popularity
+• How do the attacker’s resources (i.e., the number of threshold. In medium knowledge, the attacker knows the item
+fakeco-visitationsthattheattackercaninject)andthe popularitiesandthetop-10recommendationlistforeachitem.
+attacking parameter k impact the threats of fake co- In low knowledge, the attacker knows the top-10 recommen-
+visitation injection attacks? dation list for each item; we assume the number of reviews
+about each item is available to the attacker, and the attacker
+Synthesizing co-visitation graphs: The key component of a uses it as a feature to estimate item popularities. Specifically,
+co-visitation recommender system is the co-visitation graph. we randomly generate the number of reviews for each item
+We generate a co-visitation graph with 100,000 nodes. Differ- such that the correlation coefficient between item popularities
+ent structures of this graph could have different impact on our and reviews equals 0.8.
+attacks. We leverage three popular graph generation models
+(i.e., regular graph, Erdos-Renyi (ER) random graph [27], and B. Results
+power-law random graph [23]), which are developed by the
+network science community, to generate the structure of the We assume 10 new target items which are not in the
+co-visitation graph. Specifically, in a regular graph, each node co-visitation graph for promotion attacks, while we pick 10
+has the same degree; to generate a ER graph or a power law items uniformly at random from the co-visitation graph for
+graph, we gradually add nodes to the graph and each new demotionattacks.Ourreportedresultsareaveragedamongthe
+node is linked to d existing nodes. These d nodes are picked corresponding 10 target items.
+uniformlyatrandominERgraphmodelwhiletheyarepicked
+Impact of the attacker’s background knowledge: Fig. 4
+withprobabilitiesthatareproportionaltotheircurrentdegrees
+shows the results for attackers with different background
+in power-law graph model. In our experiments, we assume
+knowledge.Theattacksuccessrateisdefinedasthenumberof
+d = 10. Recall that an edge in the co-visitation graph means
+successfully attacked anchor items over the number of anchor
+thatthetwocorrespondingitemswereco-visitedatleastonce.
+items that are selected by our attacks. An anchor item is
+The co-visitation graph also has node weights (i.e., item successfully attacked if the target item appears in its top-k
+popularities) and edge weights (i.e., number of co-visitations recommendation list. Formally, we define Attack Success Rate
+between two items). Since item popularity often follows a (AST) as:
+power-lawdistributioninreal-worldrecommendersystems,we
+#successfully attacked anchor items
+generate item popularities from a power-law distribution with AST = (19)
+#selected anchor items
+exponent 2 and they range from 100 to 20,000. Since an item
+thatareco-visitedwithmoreitemsmightbemorepopular,we
+First, as expected, attacks with high knowledge achieve
+assignalargergeneratedpopularitytoanitemwithlargernode
+larger threats (i.e. IUI for promotion attacks and DUI for
+degree in the co-visitation graph. Then we randomly assign
+demotionattacks)thanattackswithmediumknowledge,which
+integer edge weights such that the weighted node degree is no
+inturnachievelargerthreatsthanattackswithlowknowledge.
+larger than the node weight for each node in the graph.
+However, we also find that, even if only low knowledge is
+Unless otherwise mentioned, we use power-law graph available, the attacks can still achieve threats that are almost
+model to generate the co-visitation graph, the recommender 1/3 of those achieved with high knowledge.
+80.2 0.3 0.3
+Promition attacks 140 Promition attacks High knowledge High knowledge
+)
+Aveage
+IUI /
+DUI
+(%
+r
+00 ..
+0
+01
+.
+55
+1
+Demotion attacks
+Attack
+success
+rate
+(%) 11 02 246800
+0000
+Demotion attacks
+Average IUI
+(%)
+000 ...
+00
+012
+..
+555
+12
+Med Liu om
+w
+k kn no ow wl le ed dg ge
+e
+Average DUI
+(%)
+000 ...
+00
+012
+..
+555
+12
+Med Liu om
+w
+k kn no ow wl le ed dg ge
+e
+0 0 0 0
+Regular ER PowerLaw Regular ER PowerLaw 2 4 6 8 10 2 4 6 8 10
+Co-visitation graph structure Co-visitation graph structure k k
+(a)IUI/DUIofattacks (b)Attacksuccessrate (a)Promotionattack (b)Demotionattack
+Fig. 5: Impact of the co-visitation graph’s structure. Fig. 7: Impact of k.
+0.3 0.3 0.3 0.25
+High knowledge High knowledge Our attack Our attack
+%) 0.25 Med Liu om w k kn no ow wl le ed dg ge e %) 0.25 Med Liu om w k kn no ow wl le ed dg ge e %) 0.25 RP ao np du ola mr- -i it te em m- -a at tt ta ac ck k %) 0.2 RP ao np du ola mr- -i it te em m- -a at tt ta ac ck k
+UI ( 0.2 UI ( 0.2 UI ( 0.2 UI ( 0.15
+Aveage I
+r
+00 ..
+0
+01
+.
+55
+1
+Average D 00 ..
+0
+01
+.
+55
+1
+Average I 00 ..
+0
+01
+.
+55
+1
+Average I
+0
+.0 0. 51
+0 0 0 0
+2000 4000 6000 8000 10000 2000 4000 6000 8000 10000 2000 4000 6000 8000 10000 High Medium Low
+Number of injected co-visitations Number of injected co-visitations Number of injected co-visitations Background knowledge
+(a)Promotionattack (b)Demotionattack (a) (b)
+Fig. 6: Impact of the number of fake co-visitations. Fig. 8: Comparing with baseline attacks.
+Second, the attack success rate is 100% with high knowl- • Popular-item-attack. This attack injects co-
+edge, because the attacker knows all necessary information, visitations between a target item and the most
+and our attack algorithm can accurately compute the number popular item until the target item appears in its
+of fake co-visitations need to be injected. With medium top-k recommendation list, and then attacks the next
+knowledge, the attack success rate slightly decreases because most popular item, until there are no more fake
+the key parameters are estimated. With low knowledge, the co-visitations to inject.
+attack success rate further decreases as the item popularities
+• Random-item-attack.Thisattackrandomlyselectsan
+are estimated by a linear regression.
+anchoritem,injectsco-visitationsuntilthetargetitem
+appearsinitstop-k recommendationlist.Thisprocess
+Impact of co-visitation graph’s structure: We compared
+our attacks for three types of co-visitation graphs, i.e., reg- is repeated until no more fake co-visitations to inject.
+ular graph, Erdos-Renyi (ER) random graph, and power-law
+Fig. 8a shows the average IUI of our promotion attack
+random graph. The result is showed in Fig. 5. We find graph
+and the baseline attacks under medium knowledge. Our attack
+structures have relatively small impact on our attacks, though
+achieves the highest threat when the same amount of fake
+the attacker can achieve slightly better results when the co-
+co-visitations are injected. Fig. 8b compares the performance
+visitation graph is close to a ER graph.
+of our proposed attack with the baseline attacks where the
+attackers have different background knowledge. Our attack
+Impact of the attacker’s resources and k: Fig. 6 shows the
+substantially outperforms the baseline attacks in all situations.
+impactofthenumberoffakeco-visitationsthatcanbeinjected
+onthethreatsofourattacks.Notsurprisingly,ourattackshave
+Summary: We have the following observations:
+larger threats when the attacker has resources to inject more
+fake co-visitations. Fig. 7 shows the attacking results as a • High-knowledge attacks are more effective than
+function of k. A user impression is counted when the target medium-knowledge attacks, which in turn are more
+item appears in top-k recommendation list of an anchor item. effective than low-knowledge attacks.
+Our results verify that when k is smaller, both IUI and DUI
+becomesmaller.Thisisbecause,whenthenumberoffakeco- • Graph structures have small impact on our attacks.
+visitations is fixed, the attacker can attack less anchor items • Ourattackshavelargersuccessrateswhentheattacker
+and each anchor item needs more fake co-visitations.
+has resources to inject more fake co-visitations or a
+larger k is considered as a threat.
+Comparing with baseline attacks: An attacker may also
+performsimpleattacksonco-visitationrecommendersystems, • Our attacks achieve significantly larger success rates
+e.g.,injectco-visitationswithrandomlyselectedanchoritems. than the baseline attacks that simply select the most
+We compare our promotion attacks with two baseline attacks. popular items or random items as anchors.
+9VI. ATTACKINGREAL-WORLDSYSTEMS
+600 120
+A. Experiment Overview Anchors selected Anchors selected
+500 Successful attacks 100 Successful attacks
+s s
+We evaluate our fake co-visitation injection attacks on
+chor
+400
+chor
+80
+real-world recommender systems of several popular websites, an an
+including YouTube (the feature “Up Next video”), eBay (the
+er
+of 300
+er
+of 60
+feature “People who viewed this item also viewed”), Amazon mb 200 mb 40
+u u
+(the feature “People who viewed this also viewed”), Yelp N 100 N 20
+(the feature “People also viewed”), and LinkedIn (the feature
+0 0
+“People Also Viewed”). Among these websites, YouTube is 3 6 9 12 15 18 21 3 6 9 12 15 18 21
+Day Day
+categorized as medium knowledge because its item popularity
+(a)Promotionattacks (b)Demotionattacks
+is publicly visible. All the other websites provide only recom-
+mendation lists, and thus they are categorized as low knowl-
+edge. We consider view-based co-visitation, because injecting 8x10^5 1x10^3
+Promotion attacks d Promotion attacks
+e
+purchase-based co-visitation (e.g., features like “People also Demotion attacks d Demotion attacks
+p thu erc ih tea mse sd .”) is too expensive as the attacker needs to purchase
+pularity6x10^5
+ons
+nee 68 xx 11 00 ^^ 22
+temW ue sii nm gpl Cem #.en Wte ed ia nn tea gu rato tema thti ec c oo p- ev nisi st oa uti ro cn ein wj ee bctio crn awsy les r-
+Sum
+of
+po 24 xx 11 00 ^^ 55
+e
+co-visitati
+24 xx 11 00 ^^ 22
+GRUB into our system to collect item information from ak
+F
+the websites. Our experiment platform is a windows server 0x10^0 0x10^0
+3 6 9 12 15 18 21 0 1000 2000 3000 4000 5000
+with Intel Xeon 64-bit 8-core CPU running on 2.93GHz and Day Anchor popularity
+32GBRAM.Oursystemautomaticallyinjectsco-visitationsby (c) Popularity of successfully attacked (d)Costvs.anchorpopularity
+repeatedly opening item web pages consecutively within the anchors
+same browser session (and using the same user account when
+Fig. 9: Attacking YouTube.
+login is required). Since none of the attacked web services
+provides high-knowledge, we first used approximately 1 week
+to estimate missing parameters on all these recommender
+systemswithourproposedmethods.Wethencontinuetoattack Ethical considerations: To the best of our knowledge, there
+these web services for 3 weeks, and record the accumulated isnoknownmethodologythatcouldobtainourresultswithout
+attacking results. We divide the 3 weeks period into multiple anyeffectonthereal-worldrecommendersystems,thoughwe
+12 hour attacking windows. At the beginning of each 12 hour want to stress that our experiments have very low risks to
+window, our system evaluates the attacking results, updates the service providers and users. For the service providers, our
+its budget, and then re-selects anchor items if necessary. This attacks will affect their co-visitation graphs via changing the
+includes selecting new anchors if the attack on some anchors weights of a very small number of edges. For a user, the risk
+failed after 2 or more attacking windows. is that some items are recommended to him/her due to our
+attacks.
+Wealsoattemptedtoavoidtheinjectedco-visitationsbeing
+filtered out by the web services. To this end, we inject co- We take several actions to mitigate such risks. First, we
+visitations with random time intervals to avoid any fixed limit our experiments to small scale attacks that are enough
+patterns.Additionally,consecutivelyinjectedco-visitationsare to demonstrate effectiveness and feasibility of our attacks.
+generated to include different items. We also disguised the IP Second, we reported our attacks to the service providers. Our
+addressofourexperimentplatform.Specifically,wepurchased experimentsstrictlyfollowed theresponsibledisclosurepolicy
+a VPN service which provides more than 100 VPN servers forvulnerabilitytestingofthewebservices.Weconfirmedthat
+with IP addresses all over the world. Our system frequently our research is IRB exempt.
+switchesbetweentheseserverstovisitthewebsites,inorderto
+avoid an IP address being blocked due to abnormal activities. B. Attacking Results
+The cost of such VPN service is around 10$ per month at the
+YouTube: Before attacks, we randomly crawled information
+time we conducted the experiments.
+of approximately 100,000 videos using the same video selec-
+Foreachwebservice,werandomlyselectasetof40target tion method as introduced in [26]. We collected title, view
+items, 20 for promotion attacks and the rest for demotion count (popularity), and recommendation list of each video.
+attacks. Anchor items are selected among the set of items All target items are selected from these videos. Anchor items
+that we collected from each web service according to our are selected according to our attacks, but we avoid extremely
+attacks. Specifically, for each target item, we first generate a popular items, e.g., items being viewed for over 1 million
+set of candidate anchor items. These candidates are selected times. This is because attacking such items requires more
+by searching items containing similar keywords and/or falls resources (i.e., time or computing power) than our experiment
+in the same category as the target item. This is to make the platformhas,butourattacksarealsoapplicabletosuchpopular
+attacks more realistic. Because it might be suspicious if users items. Specifically, we select anchor items with the number of
+co-visit two items that are completely unrelated. We average total views between 500 to 10,000. We set k to be 9 because
+our results over the target items for promotion and demotion top-9videosinarecommendationlistareshownwhenavideo
+attacks, respectively. is being watched.
+10100
+80
+60
+40
+20
+2500 5000 7500 10000
+)%(
+smeti
+dekcatta
+yllufsseccuS
+Number of injected co-visitations
+)%(
+smitciv
+dekcatta
+yllufsseccuS
+100
+80
+60
+40
+20
+20 15 10 5
+Number of injected co-visitations
+(a)
+)%(
+smeti
+dekcatta
+yllufsseccuS
+k
+)%(
+smitciv
+dekcatta
+yllufsseccuS
+300 100
+270 Anchors selected 90 Anchors selected Successful attacks Successful attacks
+s 240 s 80
+or or
+h 210 h 70 c c
+an 180 an 60
+of 150 of 50
+er 120 er 40
+b b m 90 m 30
+u u
+N 60 N 20
+30 10
+0 0
+3 6 9 12 15 18 21 3 6 9 12 15 18 21
+k Day Day
+(b) (a)Promotionattack (b)Demotionattacks
+Fig. 10: Attacking user-to-item recommendation in YouTube.
+1600
+Promotion attacks
+1400 Demotion attacks
+We limit the number of injected co-visitations to approx- se 1200
+a
+imately 2400 per 12 hour window. To make our injected co- ch 1000
+visitations be more likely to be counted by YouTube, our
+pur
+800
+system kept playing the opened video streams for about 3 m
+of
+600
+minutes. Note that computing the exact IUI or DUI requires Su 400
+knowledge of precise popularity of every video on YouTube, 200
+0
+which we do not have access to. Thus we report two related 3 6 9 12 15 18 21
+measurements. The first one is the number of selected anchor Day
+items and the number of anchor items that are successfully (c) Purchases of successfully attacked
+attacked.Forpromotionattacks,ananchoritemissuccessfully anchors
+attacked if the target item appears in its recommendation list Fig. 11: Attacking eBay.
+aftertheattack;whilefordemotionattacks,itmeansthetarget
+item disappears from its recommendation list. The second one
+is sum of popularity of successfully attacked anchor items. user viewed are not publicly available, each user does have an
+Fig. 9 shows our results. The results are averaged over the openlistofvideoshe/she“liked”and“subscribed”,whichcan
+20 target items for promotion attacks and demotion attacks, be used as anchor items in our attacks.
+respectively.Wehaveobservedadelayof24-48hoursbetween
+attacksandaffectedrecommendationlistsupdate.Suchadelay To evaluate our attack without affecting real users, we
+is also widely observed on other attacked web services. registered 25 fake accounts. We had each of them watch up to
+100randomlyselectedvideos,aswellaslikeand/orsubscribe
+We observe that more than a half of selected anchor an arbitrary number of the watched videos. YouTube has then
+itemsaresuccessfullyattackedforbothpromotionattacksand generated a list of recommendations for each fake account.
+demotionattacks.Forpromotionattacks,thesumofpopularity We use these fake accounts as victims to perform attacks.
+of the successfully attacked anchor videos reaches more than The attack goal is to make a randomly selected target video
+6×105. A target item will be shown to any user who visits to appear on top-k user-to-item recommendation lists of the
+a successfully attacked anchor video in the future. Fig. 9d victims, i.e., promoting a specific video to a targeted group of
+shows that more co-visitations are needed to attack anchor users. The attacker only requires the list of videos the victims
+videos with larger popularities. This is because videos that likedandsubscribed,whichwedemonstratetobesufficientto
+appearedontherecommendationlistofapopularanchorvideo launch effective attacks in our experiments.
+are also likely to be popular, and thus have higher number
+of co-visitations with the anchor video. A larger number Fig.10ashowsthefractionofsuccessfullyattackedvictims
+of co-visitations is needed for the target video to compete whose user-to-item recommendation lists contain the target
+withpopularvideosontherecommendationlist.Nevertheless, video as we inject more fake co-visitations. The k is set to be
+attacking popular anchor items is not our attack’s goal. Our 10 since it is the size of the first page of the recommendation
+attacks aim to optimize user impressions of target items, list. We repeated the attack for 10 times, each time using a
+and popular items may or may not be selected as anchors. different target video, and we report the average results. As
+Moreover, demotion attacks require larger number of fake co- expected, the fraction of successfully attacked victims grows
+visitationsthanpromotionattacks,sincedemotionattacksneed as the number of fake co-visitations increases.
+to promote multiple videos in order to exclude the target item
+Wealsostudiedtheimpactofkvalueontheattacksuccess.
+from the recommendation list.
+In this experiment, the total number of fake co-visitations is
+In addition to experiments on the item-to-item recom- fixed to be 5000. The k value is adjusted from 20 to 5 and
+mendation, we also evaluate our attacks for the user-to-item the result is showed in Fig. 10b. As expected, the fraction of
+recommendation on YouTube. According to [2], the user- successfully attacked victims drops when we decrease k.
+to-item recommendation list generated for a registered user
+is based on the co-visitation information of videos the user eBay: We collected information of over 7,000 items on
+viewedbefore.Therefore,user-to-itemrecommendationisalso eBay with a crawler and use them as candidates for target
+vulnerable to our attacks. Although the exact list of videos a and anchor items. These items are randomly crawled from
+11200 30 100 30
+180 Anchors selected Anchors selected Anchors selected Anchors selected
+s 160 Successful attacks s Successful attacks s 80 Successful attacks s Successful attacks
+chor
+140
+chor
+20
+chor chor
+20
+n 120 n n 60 n
+a a a a
+of 100 of of of
+er 80 er er 40 er
+mb 60 mb 10 mb mb 10
+Nu 40 Nu Nu 20 Nu
+20
+0 0 0 0
+3 6 9 12 15 18 21 3 6 9 12 15 18 21 3 6 9 12 15 18 21 3 6 9 12 15 18 21
+Day Day Day Day
+(a)Promotionattacks (b)Demotionattacks (a)Promotionattacks (b)Demotionattacks
+Fig. 12: Attacking Amazon. Fig. 14: Attacking LinkedIn.
+100 30 Amazon: We found that Amazon shows a “People who
+Anchors selected Anchors selected viewed this also viewed” recommendation list, but only for
+ors 80 Successful attacks ors Successful attacks items that are purchased by less than about 5 times within
+nch 60 nch 20 a certain time period. Once the item sales increase, this
+a a
+of of recommendation list is replaced by a purchase-based recom-
+ber 40 ber 10 mendation list (“Items frequently bought together”). In our
+m m
+Nu 20 Nu experiments, we found that some successfully attacked anchor
+items no longer have the view-based recommendation lists.
+0 0 This makes it hard to track attacking results and to perform
+3 6 9 12 15 18 21 3 6 9 12 15 18 21
+Day Day adaptive attacks for such items. Therefore, we remove these
+(a)Promotionattacks (b)Demotionattacks items from our experiment statistics, and report results of
+items with stable recommendation lists. The result is shown
+Fig. 13: Attacking Yelp.
+in Fig. 12. k is set to be 4, and the number of injected fake
+co-visitations is 3000 per 12 hour.
+all categories on eBay. When an item is sold out on eBay,
+Yelp: Items on Yelp are location-sensitive, e.g., a restaurant
+it will be removed from recommendation lists. Therefore, it
+will appear in the recommendation list of another restaurant
+is meaningless to use sold out items as target or anchor.
+only if they locate in the same city. Therefore, we require
+Additionally,thefeature“Peoplewhoviewedthisalsoviewed”
+the selection of target and anchor items to be in the same
+feature is not enabled for all items at all time. Taking these
+city. We crawled information of over 4000 restaurants in New
+featuresintoconsideration,welimitourtargetandanchoritem
+York city, San Francisco, Los Angeles, and Chicago as item
+selection process to items with stable supply (i.e., they have
+set. Yelp didn’t explicitly state if the recommender system
+more than one hundred in stock and/or being listed for more
+considers co-visitation from registered users only, but for the
+than 30 days) and with the recommendation feature enabled
+bestresult,weusedmultiplefakeaccountstolaunchtheattack.
+at the time of attack. The number of views of each item is
+We estimate item popularity using the number of reviews as
+not visible so it is estimated based on item features including
+well as their rank in local restaurant list, and the number
+the number of purchases and the number of reviews. The k
+of fake co-visitations injected is 3000 per 12 hour. The size
+value is set to be 5, which is the size of recommendation
+of recommendation list is only 3, thus we also set k to be
+lists on eBay. Our system injects 2400 co-visitations per 12
+3. The attacking result is illustrated in Fig. 13. On average
+hour. In our preliminary experiments, we observed that eBay
+our attack can successfully make a target item appear in the
+strongly favors co-visitations generated by registered users
+recommendationlistofmorethan20restaurants.Notethatthe
+overanonymousvisitors.Thus,wemanuallyregistered10fake
+itemsetofYelpissignificantlysmallercomparingtoYouTube
+accounts to perform the attacks.
+oreBay,makingithardertofindsuitableanchoritems.Wealso
+Wereportthenumberofselectedanchoritemsandsuccess- observedthatsomeitemsintherecommendationlistappearto
+fullyattackedanchoritemsinFig.11.Sinceitempopularityis beimmunefromourco-visitationinjectionattacks.Wesuspect
+notknown,wealsoreportthesumofpurchasesofsuccessfully that such items might be from a sponsor, who pays Yelp to
+attacked anchor items as a related measurement for popular- alwaysshowitsiteminrecommendationlist.Itisalsopossible
+ity (Fig. 11c). Overall, compared with YouTube, attacks on thattherecommendationlistisnotgeneratedcompletelybased
+eBay demonstrate a smaller number of selected anchor items onthenumberofco-visitations,butalsoinvolvesotherfactors
+and a smaller fraction of successfully attacked anchor items. such as user reviews.
+The reason is that eBay is a low-knowledge attack scenario,
+and some fake co-visitations are wasted on failed attacking LinkedIn: Finally, we test our attacking system against the
+attempts. In contrast, YouTube is a medium-knowledge attack “PeopleAlsoViewed”listonLinkedIn.LinkedInrequiresvery
+scenario since it shows item popularity. This result indicates complete personal information and valid email address. Thus,
+that limiting an attacker’s background knowledge about item we used 5 actual user accounts for our attack. Using these
+popularity is an useful way to mitigate our attacks. 5 users as seeds, we crawled publicly available information
+12of about 200 people, and used these people and their direct
+connections as item set which include about 1200 people. The 0.2
+r thes eu nlt u( mFi bg e. r1 o4 f)s aho taw rgs et tha itt eo mu ’r sa att pa pc ek as raa nre ceef if nec rt eiv ce oman md ei nn dcr ae tia os ne
+UI
+(%)
+0.15
+DP ero mm oit ti io on n a at tt ta ac ck ks s
+ate
+(%)
+100
+DP ero mm oit ti io on n a at tt ta ac ck ks s
+list by approximately 15 on average.
+e
+IUI /
+D
+0.1 uccess
+r
+68 00
+g s
+A. Limiting
+BackV gI rI o. undC KO nU oN wT lE eR dgM eEASURES Avera 0.05 Attack 24 00
+0 0
+None 500 1000 2000 None 500 1000 2000
+Our experiments in Section V show that limiting the
+Discrete granularity Discrete granularity
+attacker’s background knowledge can substantially reduce the
+(a)IUI/DUIofattacks (b)Attacksuccessrate
+threats of our attacks. For instance, when the service provider
+showstherecommendationlistsoftheitemsbutdoesnotshow Fig. 15: Effect of discretizing popularity of items.
+theitempopularities,i.e.,theattackerhaslowknowledgeabout
+the recommender system, threats of our attacks are reduced,
+though they are still feasible and effective. This implies that
+serviceprovidercanhideitempopularitiesinordertomitigate fake co-visitations (because the attacker needs time to solve
+our attacks. However, in certain web services (e.g., YouTube), CAPTCHAsanditischallengingfortheattackertosolvethem
+item popularities are useful information for users; hiding item with 100% accuracy) and increase the costs for attackers.
+popularities may affect user experience.
+Detecting fake co-visitations: Another mitigation strategy
+We propose to discretize item popularities and show the is to detect fake co-visitations. Once fake co-visitations are
+popularity range instead of the exact popularity for each detected, the service provider can remove them from the co-
+item. This could achieve a trade-off between security of the visitation graph or reduce their importance if the detector
+recommender system against our attacks and user experience. is not very accurate. From a machine learning perspective,
+Fig.15showsourattackresultswithmediumknowledgewhen detecting fake co-visitations is an anomaly detection problem.
+we discretize item popularities using different granularities. For instance, if an unpopular item suddenly has many co-
+Theco-visitationgraphandexperimentalsettingsarethesame visitations with some items, then it is possible that an attacker
+with those we used in Section V. When the item popularity is trying to promote this item via our fake co-visitation
+is discretized, our attacks sample a random number in the injectionattacks.Viaanalyzingtemporaldynamics(e.g.,using
+popularity range of an item and treat it as the item popularity. similar techniques in Viswanath et al. [31]) of visits and
+We observe that, when item popularity is discretized with a co-visits, the service provider could detect certain fake co-
+granularity of 2000, the threats of our attacks drop by about visitations and mitigate our attacks. We were not able to
+40%, making an attack with medium knowledge similar to an explore this mitigation strategy since we do not have access
+attack with low knowledge. to the visits and co-visits with temporal information.
+Using co-visitations from registered users: The service
+B. Limiting Fake Co-visitations
+provider can also choose to distinguish between visits from
+Another direction of mitigating our attacks is to limit the registered users and those from unlogged-in visitors, and give
+number of fake co-visitations that an attacker can inject. higher weights to visits from registered users. Moreover, the
+service provider can constrain that a registered user can only
+CAPTCHA: CAPTCHA is a widely used security technique contribute to a limited number of co-visitations to each pair
+to distinguish between human and computer. We note that of items. As a result, fake co-visitation injection attacks rely
+none of the real-world recommender systems that we attacked on registering a large amount of fake accounts and using
+has deployed CAPTCHAs. A web service can show a visitor them to perform co-visitations. These fake accounts could be
+CAPTCHA challenges if the number of visiting requests from detectedviaSybildetectionmethods.Forinstance,whensocial
+thesameIPaddresswithinagivenshortperiodoftimeislarger relationships between accounts are available, we can leverage
+than a threshold. The threshold achieves a trade-off between SybilBelief [32] to detect fake accounts.
+user experience and attacker’s success. Specifically, legitimate
+users/visitorsmightbeaffectedbyCAPTCHAsifthethreshold VIII. DISCUSSION
+is too small, while a too large threshold allows attackers
+to inject many fake co-visitations. Setting a good threshold Other attacks: We note that web services often provide a
+requires analyzing behaviors of users in the recommender search functionality to help users locate relevant items. An at-
+system. For instance, if a majority of users issue 10 visiting tackercouldleveragethisfunctionalitytoperformattacks.For
+requests within 5 minutes, then the threshold can be set to be instance, an attacker could add popularly searched keywords
+10 for 5 minutes. to the title of the target item to perform promotion attacks.
+Such methods, usually called Search Engine Optimization
+We note that recent studies [28, 29] demonstrated that
+(SEO) [33], is complementary to our fake co-visitation based
+CAPTCHAchallengescanbeautomaticallysolvedbymachine
+methods, and they can be used together in practice.
+learning techniques with relatively high accuracies, and an at-
+tackercanoutsourceCAPTCHAchallengestohumanworkers Moreover, an attacker could simply visit a target item to
+using crowdsourcing platforms [30]. However, CAPTCHA is make it more popular, and presumably it will appear in search
+easy to deploy and it can still slow down the injection of results more frequently, which serves as a promotion attack.
+13However, it is hard for this method to perform optimized Pollution attacks on personalized services. In USENIX
+attacks. This is because how an item’s popularity is related Security, pages 671–686, 2013.
+to its ranking in the search results is not publicly known and [5] William Zeller and Edward W. Felten. Cross-site request
+mayvaryfromservicetoservice,whichimpliesthatitishard forgeries: Exploitation and prevention. Technical report,
+foranattackertooptimizethenumberofvisitstoatargetitem Princeton University, 2008.
+inordertopromoteittobeacertainrankinthesearchresults. [6] Miriam Marciel, Rube´n Cuevas, Albert Banchs, Roberto
+Furthermore, it is hard to evaluate the success of this method Gonzalez, Stefano Traverso, Mohamed Ahmed, and Ar-
+because how exactly users use the search functionality is also turo Azcorra. Understanding the detection of view fraud
+not publicly known. This limitation implies that, when an invideocontentportals. InWWW,pages357–368,2016.
+attacker develops the attacks as a service, the attacker cannot [7] K. Lang. Newsweeder: Learning to filter netnews. In
+quantifythesuccessoftheattackstoanorganizationwhopays ICML, 1995.
+for the service. [8] M. Pazzani and D. Billsus. Learning and revising
+user profiles: The identification of interesting web sites.
+Attacking YouTube’s deep learning based recommender Machine Learning, 27:313–331, 1997.
+systems: Google researchers recently proposed a deep learn- [9] P. Resnick, N. Iacovou, M. Sushak, P. Bergstrom, and
+ing based user-to-item recommender system for YouTube J. Riedl. Grouplens: An open architecture for collabora-
+(especially for mobile version of YouTube) [34]. This new tive filtering of netnews. In CSCW, 1994.
+recommender system is much more complex than the co- [10] Y Koren, R Bell, and C Volinsky. Matrix factorization
+visitation recommender system that we focus on. It is unclear techniques for recommender systems. Computer, 8:30–
+whetherourattacksarealsoeffectiveatattackingsuchuser-to- 37, 2009.
+item recommender systems. Nevertheless, it is an interesting [11] BinLiu,DeguangKong,LeiCen,NeilZhenqiangGong,
+future work to study security of such deep learning based Hongxia Jin, and Hui Xiong. Personalized mobile app
+recommender systems. recommendation: Reconciling app functionality and user
+privacy preference. In WSDM, 2015.
+IX. CONCLUSIONANDFUTUREWORK [12] Bin Liu, Yao Wu, Neil Zhenqiang Gong, Junjie Wu,
+Hui Xiong, and Martin Ester. Structural analysis of
+In this work, we perform the first formal and systematic
+user choices for mobile app recommendation. ACM
+study on fake co-visitation injection attacks to recommender
+Transactions on Knowledge Discovery from Data, 11(2),
+systems. First, we propose a novel threat model, which covers
+2016.
+a variety of attackers with different goals and background
+[13] GediminasAdomaviciusandAlexanderTuzhilin. Toward
+knowledge. Second, we formulate fake co-visitation injection
+thenextgenerationofrecommendersystems:Asurveyof
+attacks as constrained optimization problems. An attacker can
+thestate-of-the-artandpossibleextensions. IEEETKDE,
+perform attacks with maximum threats via solving the opti-
+17(6), 2005.
+mization problems. Third, we demonstrate the feasibility and
+[14] J. Bobadilla, F. Ortega, A. Hernando, and A. Gutie´rrez.
+effectiveness of our attacks via evaluations on both synthetic
+Recommender systems survey. Knowledge-Based Sys-
+recommender systems and real-world recommender systems
+tems, 46:109–132, 2013.
+used by popular web services such as YouTube, eBay, and
+[15] M. O’Mahony, N. Hurley, N. Kushmerick, and G. Sil-
+Amazon. We plan to explore new methods to defend and
+vestre. Collaborative recommendation: A robustness
+mitigate our attacks in the future.
+analysis. ACM Transactions on Internet Technology,
+4(4):344–377, 2004.
+ACKNOWLEDGEMENTS
+[16] Shyong K Lam and John Riedl. Shilling recommender
+systems for fun and profit. In WWW, 2004, pages 393–
+We thank the anonymous reviewers for their insightful
+402.
+comments,whichhavehelpedimprovethepapersubstantially.
+[17] Bamshad Mobasher, Robin Burke, Runa Bhaumik, and
+This work is supported by the Department of Electrical and
+Chad Williams. Toward trustworthy recommender sys-
+Computer Engineering of the Iowa State University through a
+tems:Ananalysisofattackmodelsandalgorithmrobust-
+startup package.
+ness. ACMTransactionsonInternetTechnology,7(4):23,
+2007.
+REFERENCES
+[18] Joseph A. Calandrino, Ann Kilzer, Arvind Narayanan,
+[1] Herbert A Simon. Designing organizations for an Edward W. Felten, and Vitaly Shmatikov. “you might
+information-rich world. 1971. alsolike:”privacyrisksofcollaborativefiltering. InIEEE
+[2] James Davidson, Benjamin Liebald, Junning Liu, Palash Symposium on Security and Privacy, 2011.
+Nandy, Taylor Van Vleet, Ullas Gargi, Sujoy Gupta, [19] Meeyoung Cha, Haewoon Kwak, Pablo Rodriguez,
+Yu He, Mike Lambert, Blake Livingston, et al. The Yongyeol Ahn, and Sue Moon. I tube, you tube, ev-
+youtube video recommendation system. In ACM confer- erybody tubes: Analyzing the world’s largest user gen-
+ence on Recommender systems, pages 293–296. ACM, erated content video system. In ACM/USENIX Internet
+2010. Measurement Conference, 2007.
+[3] Greg Linden, Brent Smith, and Jeremy York. Ama- [20] Michalis Faloutsos, Petros Faloutsos, and Christos
+zon.com recommendations item-to-item collaborative fil- Faloutsos. On power-law relationships of the internet
+tering. IEEE Internet Computing, 7(1):76–80, 2003. topology. In SIGCOMM, 1999.
+[4] Xinyu Xing, Wei Meng, Dan Doozan, Alex C Snoeren, [21] Aaron Clauset, Cosma Rohilla Shalizi, and M. E. J.
+Nick Feamster, and Wenke Lee. Take this personally: Newman. Power-law distributions in empirical data.
+14SIAM Rev., 51(4):661–703, 2009. we have the following linear constraint:
+[22] Neil Zhenqiang Gong, Wenchang Xu, Ling Huang, Pra-
+teek Mittal, Emil Stefanov, Vyas Sekar, and Dawn Song.
+w +m w
+Evolution of social-attribute networks: Measurements, jit jk > jkj (23)
+modeling,andimplicationsusinggoogle+. InIMC,2012. (w j +m jk)(w it +m jk) (w j +m jk)w kj
+[23] A.-L. Baraba´si and R. Albert. Emergence of scaling in w +m w
+jit jk > jkj (24)
+random networks. Science, 286:509–512, 1999. w +m w
+[24] Leonid G Khachiyan. Polynomial algorithms in linear (cid:18)
+wit
+(cid:19)
+jk wkj
+w
+programming. USSR Computational Mathematics and 1− jkj m > it jkj −w (25)
+Mathematical Physics, 20(1):53–72, 1980. w kj jk w kj jit
+[25] Mathias Le´cuyer, Guillaume Ducoffe, Francis Lan, An-
+drei Papancea, Theofilos Petsios, Riley Spahn, Augustin For the sqrt-product normalization function, the transfor-
+Chaintreau, and Roxana Geambasu. Xray: Enhancing mation is similar. After substituting with the sqrt-product
+the web’s transparency with differential correlation. In function, we get:
+23rd USENIX Security Symposium (USENIX Security
+14), 2014.
+w +m w
+[26] GloriaChatzopoulou,ChengSheng,andMichalisFalout- jit jk > jkj (26)
+(cid:112) (cid:112)
+sos. A first step towards understanding popularity in (w j +m jk)(w it +m jk) (w j +m jk)w kj
+youtube. In IEEE INFOCOM Workshops, pages 1–6. (w +m )2 w2
+IEEE, 2010. jit jk > jkj (27)
+w +m w
+[27] P.Erdo˝sandA.Re´nyi. Onrandomgraphsi. Publ.Math. it jk kj
+Debrecen, 6, 1959.
+m2
+−(cid:18)w
+jkj +2w
+(cid:19)
+m >
+w itw j2
+kj −w (28)
+[28] Elie Bursztein, Matthieu Martin, and John C. Mitchell. jk w jit jk w jit
+Text-based captcha strengths and weaknesses. In ACM
+kj kj
+CCS, pages 125–138, 2011. Sinceonlynon-negativerealrootofEquation28ismeaningful
+[29] Elie Bursztein, Romain Beauxis, Hristo Paskov, Daniele inourcontext,wecanapproximateitasacorrespondinglinear
+Perito, Celine Fabry, and John Mitchell. The failure constraint:
+of noise-based non-continuous audio captchas. In IEEE α +(cid:112) α2−4α
+SymposiumonSecurityandPrivacy,pages19–31,2011. m > 1 1 2, (29)
+jk 2
+[30] Inside india’s captcha-solving economy. http://blogs.
+zdnet.com/security/?p=1835. 2016-02-07. wherethetwoconstantcoefficientsareα =
+wjkj
++2w and
+[31] Bimal Viswanath, Muhammad Ahmad Bashir, Mark
+1 wkj jit
+Crovella,SaikatGuha,KrishnaP.Gummadi,Balachander α
+=−witw j2
+kj +w .
+Krishnamurthy, and Alan Mislove. Towards detecting
+2 wkj jit
+anomalous user behavior in online social networks. In
+B. Unsorted Recommendation List
+Usenix Security, 2014.
+[32] Neil Zhenqiang Gong, Mario Frank, and Prateek Mittal. Inourattackswithmediumandlowknowledge,weassume
+Sybilbelief: A semi-supervised learning approach for that the recommendation lists are sorted by the similarity
+structure-based sybil detection. IEEE Transactions on between items. In the case that the list is unsorted, we assume
+Information Forensics and Security, 9(6):976–987, 2014. the N items in the recommendation list are still the top-N
+[33] Harold Davis. Search engine optimization. ” O’Reilly itemswithhighestsimilarityscores,onlytheorderingsamong
+Media, Inc.”, 2006. them are random. The attacker’s goal, however, is to make the
+[34] PaulCovington,JayAdams,andEmreSargin. Deepneu- target item appear in the top-N recommendation list. k is no
+ral networks for youtube recommendations. In RecSys, longerameaningfulattackingparameter.WemodifyEquation
+2016. 6 accordingly to reflect the new constraint:
+N
+s(cid:48) >min{s(cid:48) } (30)
+APPENDIX jit
+k=1
+jkj
+A. Formulating Linear Constrains Additionally, the parameter estimation process for medium
+knowledge attacker also needs to be modified. Without order
+We show details of transforming two common normal-
+information,theattackercanonlyestimatealooseupperbound
+ization functions into corresponding linear constrains (as in
+for s by s ≤
+max{wj,wx}.
+Nevertheless, this loose upper
+Equation 6) in formulating the optimization problem. First, jx jx f(wj,wx)
+bound can be updated during the aforementioned adaptive
+for the product normalization function, we have:
+attacking process.
+s(cid:48) >s(cid:48) (20)
+jit jkj
+Via substituting with
+w +m
+s(cid:48) = jit jk (21)
+jit (w +m )·(w +m )
+j jk it jk
+w
+s(cid:48) = jkj , (22)
+jkj (w +m )·w
+j jk kj
+15

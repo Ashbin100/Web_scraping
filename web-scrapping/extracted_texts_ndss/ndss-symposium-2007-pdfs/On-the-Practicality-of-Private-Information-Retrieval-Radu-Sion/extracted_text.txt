@@ -1,0 +1,780 @@
+On the Computational Practicality of Private Information Retrieval
+Radu Sion∗ Bogdan Carbunar
+Network Security and AppliedCryptographyLab PervasivePlatformsand Architectures
+ComputerSciences, StonyBrookUniversity MotorolaLabs
+sion@cs.stonybrook.edu carbunar@motorola.com
+Abstract Herewediscusssingle-servercomputationalPIRforthe
+purpose of preserving client access patterns leakage. We
+Weexplorethelimitsofsingle-servercomputationalpri- show that deployment of non-trivial single server private
+vateinformationretrieval(PIR)forthepurposeofpreserv- information retrieval protocols on real hardware of the re-
+ingclientaccesspatternsleakage.Weshowthatdeployment centpastwouldhavebeenordersofmagnitudemoretime-
+ofnon-trivialsingleserverPIRprotocolsonrealhardware consuming than trivially transferring the entire database.
+oftherecentpastwouldhavebeenordersofmagnitudeless The deployment of computational PIR would in fact in-
+time-efficientthantriviallytransferringtheentiredatabase. crease overallexecutiontime, aswellasthe probabilityof
+We stress that these results are beyondexisting knowledge forward leakage, when the deployedpresenttrapdoorsbe-
+of mere “impracticality” under unfavorable assumptions. come eventually vulnerable – e.g., today’s queries will be
+They rather reflect an inherent limitation with respect to revealedoncefactoringoftoday’svalueswillbecomepos-
+modernhardware,likelytheresultofacommunication-cost sibleinthefuture.
+centricprotocoldesign. Wearguethatthisislikelytohold Westressthatthisisbeyondexistingknowledgeofmere
+onnon-specializedtraditionalhardwarein the foreseeable “impracticality” under unfavorable assumptions. On real
+future. Wevalidateourreasoninginanexperimentalsetup hardware,noexistingnon-trivialsingleserverPIRprotocol
+onmodernoff-the-shelfhardware. Ultimately,wehopeour could have possibly had outperformedthe trivial client-to-
+resultswillstimulatepracticaldesigns. servertransferofrecordsinthepast,andislikelynottodo
+so in the future either. This is due to the fact that on any
+known past general-purposeVon Neumann hardware, it is
+simply more expensiveto PIR-processone bit of informa-
+1 Introduction
+tionthantotransferitoveranetwork.
+Inparticular,thisimpactsthetypeofcomplexityreason-
+Private InformationRetrieval, (PIR) has been proposed
+ingasfoundin[28](section2.4,page971). Thecomplexi-
+asaprimitiveforaccessingoutsourceddataoveranetwork,
+tiesdiscussedtheredonotconsiderthesignificantcomputa-
+whilepreventingitsstorertolearnanythingaboutclientac-
+tiontimesassociatedwithindividualoperations. Whilethe
+cesspatterns[27].
+claimed “linear in n” behavior of server-side computation
+In initial results, Chor et al.[27] proved that in an in- seemssatisfactory,unfortunately,theconstantsproveto be
+formation theoretic setting in which queries do not reveal ordersofmagnitudehigherthaninthecaseoftrivial(linear
+any information at all about the accessed data items, any communication) transfer of data, in effect invalidating the
+solution requires Ω(n) bits of communication. To avoid caseforPIRasawhole.
+thisoverhead,ifmultiplenon-communicatingdatabasescan
+Wearenowizards. Thefuturepredictionsectionofour
+hold replicated copies of the data, PIR schemes with only
+resultsisatmostwell-documentedguess-work. Indeed,in
+sub-linear communication overheads are shown to exist
+the event of an un-expectedsurge in processing speed per
+[27]. Wediscussrelatedsingle-serverPIRschemesinSec-
+deployedprocessorgate(if notsimultaneouslyreflectedin
+tion4. TherelatednotionofsymmetricPIR(SPIR)[36,56]
+network performance increases) it is possible that current
+handles the scenario in which privacy of server data is of
+single-serverPIRprotocolscouldbecomeuseful.Butthisis
+concern and a client is allowed to retrieve only a limited
+unlikelytohappenuntilMoore’sLawimpactincomputing
+numberofdatabits. WediscussSPIRinSection5.1.
+performance will significantly out-perform Nielsen’s Law
+∗Sionissupported inpartthroughtheNSFCyberTrustAwardCNS- ofnetworkbandwidth. Moreover,suchasurgewillnotim-
+0627554andbytheStonyBrookOfficeoftheVicePresidentforResearch. mediatelymakePIRusableasitwillalsolikelyincreasetherequiredminimumkeysizesduetofasterfactoringavailable specializedhigh-throughputhardwareexistsorwillbecome
+toadversaries. available. This, however, does not contradictthe thesis of
+Scope. Weconsidersingle-servercomputationalPIRonly. this paper. Indeed, the resultsbelow show thatinvesting a
+While we believe also the practicality of the multi-server few ordersof magnitudemorecash resourcesat the server
+caseishamperedbyhard-to-realizenon-collusionassump- sidecouldyieldjustenoughcomputationspeedtokeepup
+tions, we will not explore multi-serverPIR here. We note with trivialdatabasetransfer. Nevertheless, requiringsuch
+thatmorecomputationallyefficient,sub-linearcommunica- large amounts of resources constitutes an impractical de-
+tion protocols for multi-server PIR exist, including clever ployment instance in itself. We consider instead realistic
+pre-processingschemes[20]andtheuseofauxiliaryservers scenarios,usingtopofthelinehardwarelikelyavailableto
+[35] to “hide” the computation costs away from the main commercialandgovernmentalinstitutions.
+databaseserver. We discusshowourresultsapplytoSPIR Pentium 4. Forillustration and experimentalconsistency
+scenarios,inSection5.1. purposeswewillfocusonthelatesttopofthelineIntel[3]
+Also, itisnotinourintentiontosurveytheinnerwork- Pentium4(P4)[43]ratedaround10500-11500(DhryStone)
+ings (beyond complexity considerations) of various PIR MIPSinvariousinstancesandcorefrequencies[38,61].We
+mechanismsorofassociatedbutunrelatedresearch.Wein- mentionthattheresultsofthispaperholdregardlessofmi-
+vite the reader to explore a multitude of existing sources, nor differences in architectural components and function-
+includingtheexcellent,almostcompletesurveybyWilliam ality reasoning [40], includingAMD [1] and Motorola [5]
+Gasarch [31,32]. We will however briefly discuss gen- chips. Inparticulartheyaretrueevenifthearithmeticabil-
+eral lower bounds on server-side per-data-bit computation itiesoftheprocessingplantweretobeoneorderofmagni-
+as well as the associated communication complexity. For tudefaster. Moreover,choosingthex86asthearchitecture
+illustration purposes we will exemplify our numbers with ofchoiceisjustifiedbytherecentshifttowardx86hardware
+one single-server PIR instance, namely [46], based on the evenintraditionalcompetitorsofIntel/Microsoft[16].
+quadraticresiduosityassumption. For brevity we will discuss only relevant functionality
+Ultimately, we hopethisworkwill stimulatethe design andperformanceelementsofthe P4, namelyits arithmetic
+ofpracticalsingleserverPIRprotocols. abilities[17,18]:
+2 Building Blocks
+“[TheP4containsthreearithmeticandlogicunits(ALU)],
+We start by outlining a few building block elements to one complex, slow ALU and two simple, fast ALUs. [...]
+ourargument: arithmetic capabilities of moderncommod- ThecomplexALUhandlescomplexintegerinstructionslike
+ity hardware, the state of the art in modulararithmetic (in multiply,divide,andsomespecial-purposeregisterinstruc-
+particularmultiplications),aswellasaninstanceofawell- tions. InstructionssenttothisALUgenerallytake fourcy-
+knownsingle-servercomputationalPIRmechanism. clestocomplete. [...] TheP4’sexecutioncoreexhibitsone
+majorpeculiaritythatsets itapartfromanyotherarchitec-
+2.1 Hardware ture: twoofitsintegerexecutionunitsrunattwicethecore
+clockspeed. Thisallowseachdouble-speeduniteffectively
+Givenspecificationinformationavailabilityaswellasa toactastworegular-speedunits,becauseeachunitcantake
+largemarketshareofsmallbusinessandservermarkets,we inandspitouttwoinstructionsperclockcycle(oneonthe
+willillustrateourresultsfortopofthelineserverCPUx86 clock’srisingedgeandoneonitsfallingedge).[...]That’sa
+architecture hardware. We argue that the results hold cer- lotofintegerhorsepower,andindeedtheP4doesquitewell
+tainlyforotherarchitecturesinthepastandarelikelytodo inintegerbenchmarks,especiallyathigherclockspeeds.]”
+so also for traditional commodity Von Neumann architec-
+ForsimplificationreasonswewillfavorthecaseforPIR
+tures in the future [37]. Moreover, we are not concerned
+andassumethatthedeployedCPUwillbeabletoperform
+with expensive specialized fast modular arithmetic hard-
+at least 1 digit multiplication per cycle. Additionally, we
+ware.Whilecommerciallyavailableacceleratorsdonotsur-
+pass our considered baseline 1, arguably, more expensive, note that we will consider this also for older architectures
+(certainly requiring more cycles per multiplication), again
+1For example, the IBM 4764 PCI-X Cryptographic Coprocessor favoringPIR.
+(PCIXCC)[14]cangeneratearoundroughly900RSAsignaturespersec-
+ond.A3.6GHzP4yieldsacomparablethroughputof400usingtheGNU Parallelism. Itisalsoimportanttonotethattheadditionof
+Multiple Precision Arithmetic Library 4.2.1 [12]. Investing an order of multipleunitsofcomputation(whetherasmulti-corearchi-
+magnitude more for such hardware for the sole purpose of accelerating tectures[41]orastraditionalmulti-processorsystems)can
+modulararithmeticbecomesquestionable. Webelievethereasonforthis
+only speed up computationso much. The minimaldegree
+anomalyissimplythelackofamarket,asx86performanceismorethan
+adequateforcurrentapplicationsandcanbecheaplymass-produced. ofparallelismthatwouldmakePIRpracticalisexploredinSection6. Ultimately this reducesto balancinga trade-off FromSection2.1wehavet 1 andthus:
+d ≈ M
+betweenfinancialandperformanceconcerns.
+N 2
+MIPS. For the prediction section of our results, we will t (N ) | | (2)
+use MIPS (Millions of Instructions Per Second) figures as mul | | ≈ M d2
+×
+a baseline to provide an approximate scale for future per-
+We note thatin ourexperimentalevaluationin Section 3.2
+formance. While commonlyused as a metric of processor
+thisresultvalidateswell.
+speed,MIPSconstituteatitsbestjustarelativemeasureof
+performanceforgeneralpurposeapplications[68]. Never-
+2.3 QuadraticResiduosityPIR
+theless, theless I/O intensivenatureofmodulararithmetic
+makesMIPSabetterpredictortouseinthiscase. Addition-
+Itisknownthatsingle-serverPIRrequiresafulltransfer
+ally,thisisreasonablebecausetheclaimsbelowholdwithin
+ofthedatabase[27,28]forcomputationallyunboundedad-
+oneorderofmagnitudeormore(i.e.,eveniftheCPUwere
+versaries(servers).Forboundedadversaries,computational
+one order of magnitude faster). Moreover, we will favor
+PIR(cPIR)mechanismshavebeenproposed.
+PIR byalways using optimistic speed estimates(assuming
+Forillustrationpurposes,wewillconsiderhereonesuch
+thefastestCPU).LetM denotetheMIPSfigureforthecur-
+protocol[46].Wenotethatourresultsholdimmediatelyfor
+rentlyconsideredCPU.
+othermechanismssuchas[24,26,49].Thisisduetothefol-
+lowingtworeasons.First,eventhoughthesenewercPIRso-
+2.2 FastModularArithmeticAlgorithms
+lutionshavea lowercommunicationcomplexitythan[46],
+ouranalysisignoresthecommunicationcostsofcPIR.Sec-
+In this section we briefly survey current fast modular ond,anO(n)lowerboundonserver-sidecomputationcom-
+multiplicationalgorithms. plexityistrivialtoestablish–andforprivacy,theper-bitop-
+BeyondMontgomeryreduction[52,54]whichresultsin eration(s) for current protocols rely on expensive modular
+a cost of 2m2 +2m digit operations (m is the number of arithmetic leveraged in the instantiation of some trapdoor.
+digitsintheoperands)amultitudeofresultshaveaimedat Infact,inSection4weshowthatthecomputationcostsof
+reducing the constants. For example, the method in [65] [24,26,49]exceedthoseof[46].
+yieldsthefollowingexecutiontimes: Thehardnessproblemofchoiceisthequadraticresidu-
+osity assumptionand its equivalent, factoring. We investi-
+gatePIRcomputationtimesandcompareagainstthealter-
+t mul≈(m2 +7m)t d+(4m2 +20m)t a+(4m2 +2m)t
+mem
+(1)
+nativeoftransferringtheentiredatabasetotheclient.
+InthefollowingwebrieflydiscussthecPIRmechanisms
+wherewedenotedbyt ,t andt thedigitmultipli-
+d a mem
+in [46]. The n bits of the database are organizedlogically
+cation,digitadditionandmemoryaccesstimes.
+at the server as a bi-dimensional matrix M of size √n
+Forillustrationpurposeswewillmakeafewsimplifying ×
+√n. To retrieve bit M(x,y) with computational privacy,
+assumptions,favorabletothedeploymentofcomputational
+theclient:
+PIR.Wewillignoreadditionsandmemoryaccessesaswell
+asinsignificantfactorsin(1).Wewillapproximatethenum-
+randomlychoosestwoprimenumberspandq ofsim-
+berofdigitsintheoperandsby m ≈ |N d| where |N |isthe • ilar bit length, computes their product, N = pq and
+bit-sizeofN anddisthebit-sizeofadigit.Wedefine:
+sendsittotheserver.
+N
+t mul(N ) (| |)2 t
+d •
+generates √n numbers s 1,s 2,...,s √n, such that s x
+| | ≈ d × is a quadratic non-residue (QNR) and the rest are
+quadraticresidues(QR)inZ .
+Normally[48,50]wehaved = log (10) 3.3. Thedeci- ∗N
+2
+≈
+sionforthevalueofdshouldbemadebasedonthecomput-
+sendss ,s ,...,s totheserver.
+ingplatformandtheprogramminglanguageusedtoimple- • 1 2 √n
+mentmodularreduction[21].Toaccountforpipeliningand Foreach“column”j (1,√n)inthe√n √nmatrix,
+inter-ALUoptimizationsontheconsideredIntelplatforms, theserver: ∈ ×
+in the evaluation experimentswe will make the empirical,
+PIR-favorable approximation of d 5 (operating in base computestheproductr = Q q whereq =
+≈ • j 0<i<√n ij ij
+32). This decision is favoring PIR because in effect it is s2ifM(i,j)=1andq =s otherwise3.
+reducingthenumberofdigitsinthemainoperands2. i ij i
+3Infactthisapparentlyworksalsowithlessworkbymakingqij =si
+2Thusalsoreducingtheclaimedcomplexityofserver-sideoperations, ifM(i,j)=1andqij =1otherwise. Intheremainderofthepaperwe
+if1digitoperationisperformedpersecondasdiscussedinSection2.1. willfavorPIRbyonlyassuming1multiplicationperbitisrequiredsendsr ,...,r totheclient 2.4 KeySizes
+• 1 √n
+Theclientthensimplychecksifr isaQRinZ which
+y ∗N
+impliesM(x,y)=1,elseM(x,y)=0. By operating under an assumption of a computation-
+Thelaststepcanbedonealsorecursively,furtherreduc- allyboundedadversary,itisimportanttoassessassociated
+ingcommunication. Thishowever,only leadsto increases bounds and relate them to the deployed privacy-enabling
+incomputationtimes,andwouldmakethecasefordeploy- trapdoor. Becausethesingle-servercomputationalPIRset-
+ing PIR vs. transferring the data even more difficult. We tingofchoicereliesonthequadraticresiduosityassumption
+willthusratherjustlookatthelesserPIRcostofthesimple wewillconsiderherethe(equivalent)assumedhardnessof
+protocolabove. factoringasametricforachievedprivacy.
+LetM betheCPUprocessingspeedmeasuredinMIPS RSALabs[8]hasstartedevaluatingandrecommending
+andBtheavailable(bps)networkbandwidthbetweenclient keysizesforRSAsince1995[11]when768bitsizeswere
+and server. We will denote t = 1 the time required deemed appropriate for most application. Both the RSA
+t B
+to transmit one bit between the server and the client, and [9]andtheNationalInstituteofStandardsandTechnology
+t (b)thetimerequiredtoverifythequadraticresiduosity (NIST) key schedules [58] (last updated in August 2005)
+qrv
+ofoneb-bitnumber. propose1024bitsminimumuntil2010. Secretsthatareto
+TheabovecomputationalPIRprotocolwillincurthefol- live beyond 2010, but not after 2030, are to be protected
+lowingcost(includingcommunicationandexecutiontime): byminimum2048bitRSAkeys.Beyond2030,aminimum
+keysizeof3072bitandaboveisrecommended[9](weomit
+T pir =nt mul(N )+2√n(N )t t+√nt qrv(N ) (3) the symmetric key sizes and discussion for brevity). See
+| | | | | |
+also theRSA FactoringChallengeeffort[7]. Additionally,
+Wewillsimplifyfurther,byignoringanyothercostsbesides
+in 2004, the NESSIE (New European Schemes for Signa-
+thent (N )factor:
+mul | | turesIntegrityandEncryption)Project[6]recommendeda
+T n t (N ) minimumof1536bitsforRSAsignatures.
+pir mul
+≈ × | |
+WeemphasizethatthisisfavorabletoPIR,byignoringthe
+target 1995 2000 2010 2011 2030 2030
+quadraticresiduosityverificationof√n N -bitnumbers(as − − −
+| | bits 768 1024-1536 2048 3072
+wellasthePIRcommunicationcosts),whichcanbesignif-
+icant.Wewillcompareagainstthetimerequiredtotransfer
+Figure1.RSAkeysizeschedule.
+theentiredatabase:
+T =n t
+trans t
+× These recommendations are important to consider also
+Let us then consider ∆T, the difference in executiontime in the light of new specialized factoring hardware such as
+between a protocols involving PIR vs. simple complete the Weizmann Institute Relation Locator [10] that claims
+databasetransfertotheclient: factoringtimesofnomorethan1yearfor1024bitsizes,at
+a costof a fewdozenmillionUSdollars. In the following
+∆T =T T n (t (N ) t )
+pir trans mul t we will use these recommendations(Figure1) to establish
+− ≤ × | | −
+thevaluesof N fordifferentpointsintime.
+It can be seen that if the server-side 1-bit processing time
+| |
+exceedsa1-bittransmissiontime,thesingle-servercompu-
+tationalPIRprotocolwilltakelonger(∆T >0)thansimply
+3 Timeline
+transferringthedatabaseovertotheclient.
+Next,toevaluatetheaboveinaPIR-favorablescenario,
+wewillassumethatveryfastmodulararithmeticalgorithms To evaluate the behavior of boundary condition (4) we
+are putin place, as discussed abovein Section 2.2. Using will basically analyze its left side. Specifically, we will
+equation(2)inSection2.2,wewrite: compare the time required to perform a modular N -bit
+| |
+multiplication, t with the time taken to transferone bit
+N 2 1 mul
+(( | | )>0) (∆T >0) (4) ofinformation,t t.
+M d2 − B ⇒
+× Asalowerboundbaselinewe considerIntelCPUs [25,
+Equation (4) represents the boundary condition that deter- 42], and a variety of network setups, including average
+mines whether single-server computational PIR is slower home-userlast-mileconnectionbandwidths[4],Ethernetas
+thandownloadingtheentiredatabaseto theclient. InSec- well as commercial high-end inter-site connections [2,70,
+tion3weevaluatethisconditionandshowthatitsleftside 72]. These are arguably settings in which PIR would be
+holdstrueontraditionalhardware. verylikelyofdeploymentuse.3.1 Past: 1995-2005
+We start by discussing the evolution of t and t be-
+mul t
+tween1995and20054.
+year M B B B
+2 3
+1995 200 0.028 10 0.256
+1997 300 0.056 100 0.768
+1998 400 1.000
+1999 744 0.768 1000 10
+2000 1500
+2001 2500 1.000 100
+2005 15000 4.000 10000 1000
+2006 25000 6.000 10000 1500
+Figure 2. Estimated average values for x86
+CPU MIPS, end-user home commodity Inter-
+net (B), Ethernet LAN (B ) and commercial
+2
+high-endinter-site(B )bandwidth(Mbps),be-
+3
+tween1995and2006.
+Figure2showsaveragesofMIPS(M)[25,42]andband-
+width(B)valuesforcommodityhardwareandvarioustypes
+ofnetworks[2,30,70,72],between1995and2006.
+0.001
+0.0001
+1e−05
+1e−06
+1e−07
+1e−08
+1e−09
+1e−10
+1e−11
+1994 1996 1998 2000 2002 2004 2006
+)s(
+emit
+on a high-end connection. Note that the increase of N
+| |
+from 768 to 1024 bits, reflects also in the increase of PIR
+costbetween1995and1997.
+3.2 Present: 2006
+We nowconsidercurrenthardwareandstart byvalidat-
+ing equation (2). This is important so as to ensure bet-
+ter prediction ability for Section 3.3. For this purpose,
+we benchmarked 1024 bit operations on a Intel(R) Pen-
+tium(R) 4 CPU running at 3.60GHz with 1GByte RAM,
+using the GNU Multiple Precision Arithmetic Library 5
+4.2.1 [12]. For modular multiplication GMP uses Mont-
+gomery’s REDC [54] method [12]. Running in semi-
+controlled light-load multi-user mode on a Linux box, we
+obtained a throughput of around 0.273 million 1024-bit
+modularmultiplicationspersecond.
+Forthisprocessor,ratedataround11000MIPS(seeSec-
+tion 2.1), this value is predicted with surprising accuracy
+by equation (2) – considering all the simplifying assump-
+tions made in deriving it. The value predicted is around
+0.275million.Thehigheractualthroughputislikelydueto
+pipelining,predictivebranchingandmulti-ALUoperations.
+For cross-validation purposes, we further repeated the
+same experiments on other platforms, including a Pen-
+tium(R) M CPU running at 1.80GHz, rated at 6500-7500
+1995−2006: cost of one multiplication vs. cost of 1 bit transmission
+(Dhrystone) MIPS [53,62] (despite its lower clock-rate).
+pir
+home connection We achievedsimilar goodprediction: 0.197million 1024-
+Ethernet LAN
+commercial inter−site bit modularmultiplicationswere benchmarked,0.189mil-
+lionwerepredictedbyequation(2).
+In the Pentium(R) 4 CPU setup above, PIR process-
+ingonesinglebitwouldrequirearound3700nanoseconds.
+Consideringevena home-usercable-modembandwidthof
+only 10Mbps 6 transferring one bit would require roughly
+100 nanoseconds. Even if one would consider significant
+transferprotocoloverheadsthiswouldstillbeover30times
+fasterthanPIRprocessing.
+year Drastically Limited Bandwidth. For extremely limited
+bandwidth however, it seems like PIR could be more ef-
+Figure 3. Comparison between the time re-
+ficient. In this particular scenario, PIR seems to become
+quired to perform PIR and the time taken
+usable for bandwidthsof 300Kbpsor less. This is not the
+to transfer the database, between 1995 and
+case immediately however. The PIR-favorable simplifica-
+2005. PIRisordersofmagnitudeslower. (log-
+tions and previously ignored factors now become signifi-
+arithmic)
+cant.Forexample,onaslowconnection,the2√n(N )PIR
+| |
+associatednetworktrafficinequation(3)cannotbeignored
+anymore. Thiswill(i)furtherreducethebandwidththresh-
+In Figure 3 (logarithmic scale) we plot t and t for
+mul t
+oldbelowwhichPIRisusableand(ii)makethisthreshold
+hardwarebetween1995and2005(seealsoFigure2).Itcan
+dependentonn(thusimpracticalindeployment).
+be seen that the time required for performing one N -bit
+| |
+multiplicationhasconsistentlybeenoneorderofmagnitude
+5WhichprovedfasterthantheOpenSSL0.9.7jLibrary[63],thuswas
+largerthanthetimeoftransferringonebitonalow-endcon- choseninstead.
+nectionandtwoordersofmagnitudelargerthanthetransfer 6At the time of this writing, one of the author’s home connec-
+tion offers 15Mbps down-stream and 5Mbps up-stream throughputs for
+4Single-servercomputationalPIRwasintroducedin1995. $29.95/month.We illustrate this borderline behavior in Figure 4. The
+dependency of n becomes apparent when considering 10
+MBytes vs. 1 MBytes databases. It can be seen that for
+10 MBytes databases, PIR become profitable if the band-
+widthisbelow210Kbps,whereasinthecaseofa1MByte
+database,thisthresholdgoesdownto70Kbps.Itisalsoim-
+portanttonotethatfor√n < N thisPIRprotocolwould
+| | requiremorecommunicationthanatrivialdatabasetransfer
+(thusitcannotbeusedforsmalldatabases,e.g. <1MBit).
+1000
+800
+600
+400
+200
+0
+50 100 150 200 250 300
+)sces(
+semit
+0.0001
+1e−06
+1e−08
+1e−10
+1e−12
+1e−14
+1e−16
+2010 2015 2020 2025 2030 2035
+1MB transfer
+1MB cPIR
+10MB transfer
+10MB cPIR
+bandwidth (Kbps)
+Figure 4. Low Bandwidth (t < t , condi- mul t
+tion(4)doesnothold): behaviorofexecution
+times for cPIR for the Pentium(R) 4 CPU set-
+tingvs. databasetransfertimes. Ifits(previ-
+ouslyignored)communicationoverheadsare
+considered, the bandwidth thresholds below
+whichcPIR becomesusable(fasterthantriv-
+ialtransfer)furtherdecrease.
+3.3 Future: 2006-2035andbeyond
+Wehaveshownthatsingle-servercomputationalPIRhas
+not been yet an efficient alternative to a straightforward
+databasetransferforthepurposeofprivacyofclientaccess
+patterns. Now we exploreif this is likely to changein the
+next30years. Wemodeladvancesinprocessingpowerby
+Moore’s Law [55]. We model future bandwidth figure by
+Nielsen’sLawofInternetBandwidth[57].
+Initscurrentform,believedtoholdforatleasttwomore
+decades [25,42], Moore’s Law states that the number of
+transistors on integrated circuits doubles every 18 months
+(increases 100 times every ten years). Intel notes the law
+holdsverywell, roughlydoublingtheprocessorMIPSfig-
+uresevery two years [42]. Nielsen’s Law states that high-
+end network bandwidth grows at least by 50% per year
+(increases 57 times every ten years). It has been so far
+(over)validated[2,70,72].
+)s(
+emit
+2006 − 2036: cost of one multiplication vs. cost of 1 bit transmission
+pir
+home connection
+Ethernet LAN
+commercial inter−site
+year
+Figure 5. Prediction of future PIR execution
+vs. database transfer times. PIR is orders of
+magnitudeslower. (logarithmic)
+Itisapparentthatprocessingpowerincreasesfasterthan
+theavailablebandwidth. Theincreaseinprocessingpower
+howeverimplies not only decreases in t but also man-
+mul
+dateslarger N valuesasfactoringspeedswillincreasetoo.
+| |
+Itisimportanttoevaluatewhichofthesetrends(ifany)will
+dominate. Figure 5 (logarithmic scale) plots the predicted
+evolution for t and t between 2005 and 2035 by also mul t
+considering the recommended key schedules discussed in
+Section 2.4. It can be seen that t can be predicted to mul
+continue to be at least one order of magnitude larger than
+t (even for slow home connections!), effectivelyneutral- t
+izing the impact of the accelerated increase in processing
+powervs. bandwidth. InotherwordsPIR executiontimes
+arelikelytocontinuetobeordersofmagnitudehigherthan
+trivialdatabasetransfers.
+4 OtherProtocols
+We arguedabovethatdeployinganysingle-servercom-
+putational PIR protocol is necessarily less efficient than a
+simpletransferoftheentiredatabase,inrealscenarios. We
+havedonesobyillustratingourresultswiththeaidofapar-
+ticularwell-knowncomputationalPIRmethod.
+In this section we aim to understand if other existing
+single-server PIR variants can surpass these results and in
+fact be efficient enough to become usable. We previously
+(Section 2.3) argued that this is unlikely due to the O(n)
+lowerboundonserver-sideprocessingmandatingexpensive
+trapdooroperationsperbit, forprivacy. We now elaborate
+onexistingsingle-serverPIRmechanisms.
+Cachin et al.[24] propose the use of the φ-Hiding As-
+sumptionto performPIR with poly-logarithmiccommuni-
+cationcomplexity. Wenotetheprotocolrequirestheserver
+to perform n exponentiations modulo m. As the securityoftheprotocolreliesontheassumedhardnessoffactoring 5 LimitationsofOurArgument
+m,thisimmediatelyimpliesthatthebitsizeofmhastobe
+atleastasrecommendedinSection2.4. Thiswouldrender WenowbrieflydescribeseveralexistingPIRextensions
+themethodsignificantlymoreexpensivethanthequadratic forwhichouranalysisseemstonotdirectlyapply.
+residuosityPIRversiondiscussedabove,asmodularexpo-
+nentiationiscostlier. 5.1 SymmetricPrivateInformationRetrieval
+Lipmaa [49] extends the work of Stern [71] to provide
+aPIRschemewithO(log2(n))communicationcomplexity.
+Intheanalysisabove,wespecificallydidnotaddressthe
+However,theserverperformsmorethan nexponentiations
+symmetricPIRcase. Wedosohere.
+moduloks+j, j = 1..α, wherek isapublickeyandsand
+In the multi-server space, Gertner et al. [36] propose
+α are fixed. Since the bit size of the modulus is k s, we
+a transformation from any PIR scheme to a SPIR scheme
+| |
+expecttheseexponentiationstobecertainlymoreexpensive
+at the expense of an increased numberof non-cooperating
+thanthemodularmultiplicationsanalyzedinourwork.
+servers. Naor and Pinkas [56] have shown a PIR-to-SPIR
+Chang [26] introduces a single database computational
+transformation for any PIR scheme for the single server
+PIRschemeforwhichtheserversidecommunicationcom-
+case. The transformation uses their 1-out-of-n Oblivi-
+plexity is O(log(n)). This scheme relies on Paillier [59].
+ous Transfer (OT) protocol. The idea of the transforma-
+Thecomputationcomplexitysignificantlyexceedsthecom-
+tion is for the server to generate l = logn key pairs,
+plexityofourconsideredalgorithmabove[46]astheserver (k0,k1),..,(k0,k0) and mask its i-th data item, i = 1..n,
+isrequiredtooperateinZ . Thustheresultshold7. 1 1 l l
+∗n2 withasubsetofthekeys(onefromeachpair),correspond-
+KushilevitzandOstrovsky[47]generalizeasetofprevi-
+ingtothebinaryrepresentationof i. Thatis,iftheserver’s
+ousresultsandshowthatPIRcanbeperformedwithcom-
+values are x ,..,x and the binary representation of i is
+1 n
+munication strictly less than n when using one-way trap- i ..i ,thentheservermasksvaluex usingkeyski1,..,kil.
+1 l i 1 l
+door permutations (TDPs). They propose a protocol that
+Let x be the value the client wants to retrieve and let y
+i i
+requirestheclienttosendO(k2)bitsandtheservertoreply
+denotethemaskedx value. Usinganyexisting1-out-of-2
+i
+withn n/2k bits, wherek isa securityparameterofthe OT protocol, the client retrieves only one key out of each
+−
+TDPs. Inaddition,theserverhastoperformn/k TDPson
+pair, the one correspondingto the binaryrepresentationof
+stringsofkbitsandnbitwiseXORs. theindexofinterest(ki1,..,kil).
+1 l
+Thustheprotocoldecreasescommunicationbyn/2kbits The PIR-to-SPIR transformation uses any PIR scheme
+at the expenseof n/k TDPs. Forconsistency, it is natural to transfer to the client only the masked item of interest.
+to require the PIR method to offer at least the security at-
+Thetransformationaddsto thecommunicationcomplexity
+tained under the hardness of factoring trapdoor as consid- of the PIR scheme only logn invocations of the 1-out-of-
+eredabove. Unlessacheaperinstanceofsuchtypeoftrap- 2 OT protocol. The perquerycomputationcomplexityin-
+doorcanbematerialized,forthetimebeingitisreasonable
+creaseswithnlognpseudo-randomfunctionevaluations.
+toassumethetrapdoorisatleastascomputationallyinten- However, as argued in this paper, trivial PIR (transfer-
+sive as modular squaring 8. In fact our argumentrequires
+ringthe entiredatabaseattheclient)is moreefficientthan
+less,namelythatthetrapdoorisatleastasexpensiveasone
+performing computation intensive PIR with reduced com-
+halfthecostofamodularmultiplication. munication costs. Consequently, it seems that having the
+Thisistruebecausetheprotocoleffectivelyreducesthe client simply transfer all n masked items, y ,..,y would
+1 n
+argumentofPIR’spracticalitytoacomparisonbetweenthe be more efficient in this case. The symmetric assurances
+costofthetrapdoorandhalfofthecostoftransferringabit. still hold, since the client can retrieve only one key out of
+Thisin factstrengthensthe argumentagainstPIR thatwas each key pair, it can unmask only one of the n items. In
+madeabove,whichreliedoncomparingthecostoftransfer- conclusion,symmetricPIRseemstobeachievablewithout
+ringafullbitwiththecostofthetrapdoor. Thus,theabove theaidofnon-trivialcomputationalPIRschemes.
+resultshold.
+Mann[51]extendstheworkof[46]withatrapdoorpred- 5.2 Computation-AmortizedPIR
+icatewithhomomorphicproperties;theserverisrequiredto
+performnmodularmultiplications.
+Ishaietal. [44]proposedtheuseofbatchcodestoamor-
+7Infactwehavedesignedandexperimentallyevaluatedacustomized, tize the server-side computation complexity of PIR over
+moreefficient(than[26])useofPaillierforPIRandvalidatedthefactthat k queries performed by a single client. The solution al-
+[46]ismuchfaster. lows the simultaneousretrieval of k data items using only
+8ItisknownthatTDPsimplytheexistence ofpublickeyencryption n1+o(1) server-side computation. Thus, its applicability is
+mechanisms.KnownTDPsareRSA,Rabin[64]andPaillier.RSArequires
+constrained to cases where clients can wait for the collec-
+onemodularexponentiationandRabinreliesonmodularsquaring.Paillier
+[60]requirestwoexponentiationsandamultiplicationinZ∗ . tionofkqueries.In[45]thesameauthorshavealsoinvesti-
+n2gatedmulti-clientcomputationandcommunicationamorti- 6 Conclusions
+zationtechniques.Theyproposetheuseoftwo-wayanony-
+mouscommunicationchannelsandamortizationovermulti-
+Weexploredsingle-serverPIRforclientaccessprivacy.
+pleclientsinordertoprovideaPIRsolutionclosetooptimal
+We showed that single-server PIR protocols, running on
+intermsofbothcommunicationandcomputation.Itssecu-
+modern high-end non-specialized hardware and networks,
+rityreliesonthehardnessofinterpolatingnoisylow-degree
+aremostlyordersofmagnitudeslowerthanthetrivialtrans-
+curvesinalowdimensionalspace.
+fer of the entire database to the client. We illustrated this
+Specifically, the server stores the database entries as for past hardware and experimentally validated our claim
+coefficients of a c-variate polynomial q of degree d = on currenthardware. We predictedthe resultsto hold also
+O(n1/c), where n is the database size. For each item x i inthefuturebasedonconsiderationsoffuturenetworkand
+in the database, there exists a point z i Fc, such that computationdevices.
+∈
+q(z i) = x i (where F is a field). For a query for item Weexploredsettingsinwhichexistingsingle-serverPIR
+x i a client randomlygenerates c polynomialsof degree k, protocolsmaybecomeusable. Inparticular,thisisthecase
+p 1,..,p c such that z i = (p 1(0),..,p c(0)). It then picks for scenarios involving highly limited bandwidth (tens of
+kd + 1 points from F and generates for each such point KBps or less) networks. Moreover, such protocolscan be
+asub-queryconsistingof theevaluationofits c polynomi- leveraged if large (10-1000CPUs) amounts of server pro-
+als on the point. It then sends the resulting c pointsto the cessing units are availableto overcomethe ordersof mag-
+server,throughananonymizer.Uponreceivingasub-query, nitudedifferencebetweenper-bitprivacyprocessingandbit
+theserverevaluatesq onthecpointsofthesub-query,and network transfer. This is likely impractical from a dollar-
+anonymouslysendsbacktheresult. Thus,theserverispre- costpointofview.PurchasinghundredsofCPUstoachieve
+ventedfromcorrelatingsub-queriesandclients. Using the the same privacylevelas offeredby transferringthe entire
+answerstokd+1sub-queries,theclientcanreconstructx i. dataoveracheapnetworklinkishardlysound. Informally,
+Toprovidecomputationalprivacy,theabovemechanism single-server PIR can only become usable if communica-
+requireseach client to add “noise” to its query. That is, a tion can be traded forordersof magnitudemore computa-
+clientneeds to mix its previous kd+1 sub-querieswith a tion. Wearguethisisanunrealisticpropositiongivenlikely
+setofrandompoints. Thetotalamountofnoisesentbyall mainstreamorevenspecializedapplicationscenarios.
+uncorrupted(not cooperatingwith the server) clients must Recommendations. We hope this work will stimulate
+beω(kn1+1/c).Eachsub-query,includingeachnoisepoint,
+work on practical designs [13]. We believe it is important
+issentseparatelythroughtheanonymizer. toexploreprotocolsforsingle-serverPIRinthepresenceof
+While themaximumnumberofclientsconcurrentlyac- server-sidetrustedhardware[15,69].Thisshouldallowthe
+cessing the database, C, can be on the orderof thousands, delegationofclient-logicincloserproximitytothedataand
+thesizeofaveragedatabasescanbeontheorderofmillions might yield significant benefits. The dominantcomponent
+ofitems.Hence,thenumberofnoisecontainingsub-queries of current solutions [19,39,73] is the periodic reshuffling
+perclient query, ω(kn1+1/c/C) is likely to be quitelarge. of the database, performedby the secureCPU. Theperiod
+For instance, for a database of one million items, concur- isdeterminedbythesizeofthesecureCPU’stamperproof
+rentlyaccessedby10000clientsandforvaluesofk =5and cache. Forreshuffling,theoperationsperformedbythese-
+c=20,thenumberofnoisesub-queriesperqueryneedsto cureCPUareencryptions,decryptionsandcommunication
+belargerthan1000. This,togetherwiththerelativelyhigh withthehost.Asonov[19]proposedasolutionthatrequires
+latency of anonymizers9 (on the orderof hundredsof mil- O(n√n)operationsforareshuffle.IlievandSmith[39]use
+liseconds),canleadtohighresponsetimes. BenesnetworkstodecreasethisoverheadtoO(nlogn)op-
+Experiments in Tor [29] (similarly in [23]) show erations. Wang et al.[73] further reduce this overhead to
+anonymizer-inducedlatenciestobeanywhereinthe0.1-5s O(n)operations.
+range. Even in the presence of optimal query pipe-lining, We argue that “run client p¨roxy¨ınsidesecure CPU” ap-
+and,underthefavorable(yetunrealistic)assumptionthatall proaches[19,39,73]arelikelytofailastypicallysuchhard-
+clients“arrive” simultaneouslyat the anonymizer,this can ware is ordersof magnitudeslower than main CPUs (e.g.,
+resultinsignificantoverheads,oftenrenderingtrivialmulti- due to heat dissipation concerns). The main CPU will re-
+clienttransferofthe databasemoreefficient. Moreover,in main starkly under-utilized and the entire cost-proposition
+[29]theauthorsnotethefactthat,withincreasingnetwork of having fast (unsecured) main CPUs and an expensive
+loads (e.g., many clients – as required by the mechanisms and slow secured CPU will be defeated. We believe effi-
+above),“thechanceofbuildingaslowcircuitisincreasing”, cientprotocolsarelikelytoaccessthesecurehardwarejust
+thusleadingtoincreasedlatenciesinaverageexpectation. sparsely,incriticalportions,notsynchronizedwiththemain
+dataflow.
+9Lowlatencyanonymizersareopentotimingattacks[22]. Additionally,novelPIRprotocolswithlowerserver-sideper-bitcomputationrequirementsshouldbedesigned.Main [16] Apple. Apple to Use Intel Microprocessors Beginning
+directionsof research here include(i) the design of block- in 2006. Online at http://www.apple.com/pr/
+levelprotocolsthatamortizeexpensivemodularoperations library/2005/jun/06intel.html,June2005.
+over larger block sizes, and (ii) protocols based on novel [17] Arstechnica.com. The Pentium 4 and the G4e: an
+hardproblemsthatallowcheaperserver-sidearithmetic. architectural comparison – Part II: the execution core.
+Online at http://arstechnica.com/articles/
+In promising ongoing work [33,34] a method replac-
+paedia/cpu/p4andg4e2.ars/2,Nov.2001.
+ingmodularmultiplicationwithmodularaddition(basedon
+[18] Arstechnica.com. The Pentium: An Architectural History
+novelsecurityresults[66,67]),hasbeenproposed.
+of the World’s Most Famous Desktop Processor (Part II).
+Online at http://arstechnica.com/articles/
+7 Acknowledgments paedia/cpu/pentium-2.ars/3,July2004.
+[19] D.Asonov.QueryingDatabasesPrivately:ANewApproach
+toPrivateInformationRetrieval. SpringerVerlag,2004.
+We would like to thank Dan Boneh, Giovanni Di
+[20] A. Beimel, Y. Ishai, and T. Malkin. Reducing the servers
+Crescenzo, Bill Gasarch, Aggelos Kiayias, Rafail Ostro-
+computationinprivateinformationretrieval: PIRwithpre-
+vsky,GeneTsudik,RebeccaWright,MotiYung,aswellas
+processing. Lecture NotesinComputer Science, 1880:55–
+ouranonymousreviewersfortheirgreatfeedbackthrough-
+??,2000.
+outtheprocessthatledtothispaper.
+[21] A.Bosselaers,R.Govaerts,andJ.Vandewalle. Comparison
+ofthreemodularreductionfunctions. InCRYPTO’93:Pro-
+References ceedingsofthe13thannualinternationalcryptologyconfer-
+enceonAdvancesincryptology,pages175–186,1994.
+[22] Brian N. Levine and Michael K. Reiter and Chenxi Wang
+[1] AdvancedMicroDevices. Onlineathttp://www.amd.
+and Matthew Wright. Timing attacks in low-latency mix-
+com.
+basedsystems. InProceedingsofFinancialCryptography,
+[2] IntelandEthernet.Onlineathttp://www.intel.com/
+2004.
+standards/case/caseethernet.htm.
+[3] IntelCorporation. Onlineathttp://www.intel.com. [23] M.BurnsideandA.Keromytis.Lowlatencyanonymitywith
+[4] Introduction to DSL. Online at http://www. mixrings. InProceedingsofthe9thInternationalInforma-
+informit.com/articles/article.asp?p= tionSecurityConference(ISC),2006.
+31699&seqNum=3&rl=1. [24] C. Cachin, S. Micali, and M. Stadler. Private Information
+[5] Motorola. Onlineathttp://www.motorola.com. RetrievalwithPolylogarithmicCommunication.InProceed-
+[6] New European Schemes for Signatures Integrity and En- ingsofEurocrypt,pages402–414.Springer-Verlag,1999.
+cryption. Online at http://www.cryptonessie. [25] C. D. Carothers. Evolution of Intel microprocessors:
+org/. 1971 to 2007. Online at http://www.cs.rpi.edu/
+[7] RSA Factoring Challenge. Online at www. ∼chrisc/COURSES/CSCI-4250/SPRING-2004/
+rsasecurity.com/rsalabs/challenges/ slides/cpu.pdf,2004.
+factoring/. [26] Y. Chang. Single-Database Private Information Retrieval
+[8] RSA Labs. Online at http://www.rsasecurity. withLogarithmicCommunication.InProceedingsofthe9th
+com/rsalabs. Australasian Conference on Information Security and Pri-
+[9] TWIRL and RSA Key Size. Online at http: vacyACISP.Springer-Verlag,2004.
+//www.rsasecurity.com/rsalabs/node.
+[27] B.Chor,O.Goldreich,E.Kushilevitz,andM.Sudan.Private
+asp?id=2004.
+informationretrieval.InIEEESymposiumonFoundationsof
+[10] TWIRL: The Weizmann Institute Relation Locator. On-
+ComputerScience,pages41–50,1995.
+line at http://www.wisdom.weizmann.ac.il/
+[28] B.Chor,E.Kushilevitz,O.Goldreich,andM.Sudan.Private
+∼tromer/twirl/.
+informationretrieval. J.ACM,45(6):965–981,1998.
+[11] RSA CryptoBytes, Summer 1995. Online at ftp:
+[29] R.DingleDine, N.Mathewson, andP.Syverson. Tor: The
+//ftp.rsasecurity.com/pub/cryptobytes/
+second-generationonionrouter. InProceedingsofthe13th
+crypto1n2.pdf,1995.
+USENIXSecuritySymposium,2004.
+[12] GMP:GNUMultiplePrecisionArithmeticLibrary. Online
+[30] Ethernet Alliance. A historical perspective of ether-
+athttp://www.swox.com/gmp/,2005.
+net. http://www.ethernetalliance.org/
+[13] Achieving Practical Private Information Retrieval (Panel).
+technology/presentations.
+Online at https://www.cs.stonybrook.edu/
+∼sion/research/PIR.Panel.Securecomm. [31] W. Gasarch. A WebPage on Private Information
+2006/,2006. Retrieval. Online at http://www.cs.umd.edu/
+[14] IBM 4764 PCI-X Cryptographic Coprocessor (PCIXCC).
+∼gasarch/pir/pir.html.
+Online at http://www-03.ibm.com/security/ [32] W.Gasarch.Asurveyonprivateinformationretrieval,2004.
+cryptocards/pcixcc/overview.shtml,2006. [33] W.GasarchandR.Sion. PersonalCommunication,2006.
+[15] IBM Cryptographic Hardware. Online at http:// [34] W.GasarchandA.Yerukhimovich.ComputationalInexpen-
+www-03.ibm.com/security/products/,2006. sivePIR(unpublishedmanuscript),2006.[35] Y.Gertner,S.Goldwasser,andT.Malkin. Arandomserver [52] A. J. Menezes, P. C. van Oorschot, and S. A. Vanstone.
+modelforprivateinformationretrievalorhowtoachievein- HandbookofAppliedCryptography. CRCPress,2001.
+formationtheoreticPIRavoidingdatabasereplication. Lec- [53] MobilityGuru.com. TheFirstPentium-MNotebookPutTo
+tureNotesinComputerScience,1518:200–??,1998. The Test. Online at http://www.mobilityguru.
+[36] Y.Gertner,Y.Ishai,E.Kushilevitz,andT.Malkin. Protect- com/2003/02/05/thefirst pentium/page10.
+ingdataprivacyinprivateinformationretrievalschemes. In html.
+STOC ’98: Proceedings of the thirtieth annual ACM sym- [54] P.Montgomery. ModularMultiplicationwithoutTrialDivi-
+posiumonTheoryofcomputing,pages151–160,NewYork, sion.MathematicsofComputation,44(170):519–521,1985.
+NY,USA,1998.ACMPress. [55] G.Moore. Crammingmorecomponentsontointegratedcir-
+cuits. ElectronicsMagazine,April1965.
+[37] J. L. Hennessy and D. Goldberg. Computer Architecture:
+[56] M.NaorandB.Pinkas. Oblivioustransferandpolynomial
+A Quantitative Approach. Morgan Kaufmann Publishers,
+evaluation. InSTOC’99: Proceedingsofthethirty-firstan-
+1996.
+nualACMsymposiumonTheoryofcomputing,pages245–
+[38] Hothardware.com. Pentium 4 670 3.8GHz Performance
+254,NewYork,NY,USA,1999.ACMPress.
+Profile. Online at http://www.hothardware.com/
+[57] J. Nielsen. Nielsen’s Law of Internet Bandwidth. Online
+viewarticle.aspx?articleid=686.
+at http://www.useit.com/alertbox/980405.
+[39] A. Iliev and S. W. Smith. Protecting client privacy with
+html,Apr.1998.
+trustedcomputingattheserver. IEEESecurityandPrivacy,
+[58] N. I. of Standards and T. (NIST). The key manage-
+3(2):20–28,2005.
+ment guideline. Online at http://csrc.nist.gov/
+[40] Intel. IntelItanium2ProcessorReferenceManualForSoft-
+CryptoToolkit/tkkeymgmt.html,Aug.2005.
+ware Development and Optimization. Intel Corporation,
+[59] P.Paillier.Public-keycryptosystemsbasedoncompositede-
+2004.
+greeresiduosityclasses.InProceedingsofEuroCrypt,1999.
+[41] Intel. Intel Multi-Core Processing. Online at http:// [60] P.Paillier. A trapdoorpermutationequivalent tofactoring.
+www.intel.com/cd/ids/developer/asmo-na/
+InPKC’99:ProceedingsoftheSecondInternationalWork-
+eng/strategy/multicore/index.htm,May2006.
+shop on Practiceand Theoryin PublicKeyCryptography,
+[42] Intel Circuit Research Labs. Gigascale Integration- pages219–222,London,UK,1999.Springer-Verlag.
+Challenges and Opportunities. Online at http: [61] PCStats.com.IntelPentium43.2GHzExtremeEditionPro-
+//www.intel.com/cd/ids/developer/ cessorReview. Onlineathttp://www.pcstats.com/
+asmo-na/eng/182440.htm. articleview.cfm?articleid=808.
+[43] Intel Corporation. Intel Pentium 4 Processor. Online at [62] PCStats.com. Shuttle XPC SD11G5 Small Formfactor
+http://www.intel.com/products/processor/ PC Review. Online at http://www.pcstats.com/
+pentium4. ArtRSS.cfm?articleid=1905.
+[44] Y.Ishai,E.Kushilevitz,R.Ostrovsky,andA.Sahai. Batch [63] T. O. Project. OpenSSL: The open source toolkit for
+codesandtheirapplications. InSTOC’04: Proceedingsof SSL/TLS.www.openssl.org,April2003.
+the thirty-sixth annual ACM symposium on Theory of com [64] M. O. Rabin. Digitalized signatures and public-key func-
+puting,pages262–271,2004. tionsasintractableasfactorization. Technicalreport,Cam-
+[45] Y.Ishai,E.Kushilevitz,R.Ostrovsky,andA.Sahai. Cryp- bridge,MA,USA,1979.
+tography from anonymity. In Proceedings of 47st Annual [65] RainerBluemelandRalfLaueandSorinA.Huss. Ahighly
+IEEESymposium ontheFoundations ofComputer Science efficient modularMultiplicationAlgorithmforFiniteField
+(FOCS),2006. ArithmeticinGF(P).InProceedingsofECRYPTWorkshop,
+[46] E.KushilevitzandR.Ostrovsky. Replicationisnotneeded: CryptographicAdvancesinSecureHardware,2005.
+[66] O. Regev. New lattice based cryptographic constructions.
+single database, computationally-private information re-
+JournaloftheACM,51(6):899–942,2004.
+trieval. In Proceedingsof FOCS.IEEEComputer Society,
+[67] O. Regev. Lattice-based cryptography. In Proceedings of
+1997.
+Crypto,2006.
+[47] E.KushilevitzandR.Ostrovsky. One-waytrapdoorpermu-
+[68] R.D.Silverman. ExposingtheMythicalMIPSYear. Com-
+tationsaresufficientfornon-trivialsingle-serverprivatein-
+puter,32(8):22–26,1999.
+formationretrieval. InProceedingsofEUROCRYPT,2000.
+[69] S. W. Smith and D. Safford. Practical server privacy with
+[48] J.-Y. Leuand A.-Y. Wu. A scalablelow-complexity digit-
+securecoprocessors. IBMSystemsJournal,40(3):683–695,
+serialVLSIarchitectureforRSAcryptosystem. InProceed-
+2001.
+ingsoftheIEEEWorkshopSignalProcessingSystemsSIPS,
+[70] C.E.Spurgeon. Ethernet: TheDefinitiveGuide. O’Reilly
+1999.
+andAssociates,2000.
+[49] H.Lipmaa. Anoblivioustransferprotocolwithlog-squared
+[71] J. Stern. A new and efficient all-or-nothing disclosure of
+communication. CryptologyePrintArchive,2004.
+secretsprotocol. InProceedingsofAsiaCrypt,pages357–
+[50] MadsOesterbyOlesenandHenrikSandmannandChristo- 371,1998.
+pher Mosses. Implementing Fast Modular Arithmetic [72] A.S.Tanenbaum. ComputerNetworks.PrenticeHall,2002.
+(Course). Online at http://www.daimi.au.dk/ [73] S.Wang,X.Ding,R.Deng,andF.Bao. Privateinformation
+∼cmosses/crypt/,2002. retrievalusingtrustedhardware. In 11thEuropeanSympo-
+[51] E.Mann.Privateaccesstodistributedinformation.Master’s siumOnResearchInComputerSecurity(ESORICS),2006.
+thesis,Technion-IsraelInstituteofTechnology,1998.

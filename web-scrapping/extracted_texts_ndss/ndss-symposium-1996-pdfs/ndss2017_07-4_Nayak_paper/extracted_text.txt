@@ -1,0 +1,1296 @@
+HOP: Hardware makes Obfuscation Practical
+Kartik Nayak∗, Christopher W. Fletcher†, Ling Ren‡, Nishanth Chandran§, Satya Lokam§, Elaine Shi(cid:107) and Vipul Goyal§
+∗UMD – kartik@cs.umd.edu
+†UIUC – cwfletch@illinois.edu
+‡MIT – renling@mit.edu
+§Microsoft Research – {nichandr, satya, vipul}@microsoft.com
+(cid:107)Cornell University – rs2359@cornell.edu
+Abstract—Programobfuscationisacentralprimitiveincryp- Recently,thecryptographycommunityhashadnewbreak-
+tography,andhasimportantreal-worldapplicationsinprotecting through results in understanding and constructing program
+software from IP theft. However, well known results from the obfuscation [21]. However, cryptographic approaches to-
+cryptographic literature have shown that software only virtual wards program obfuscation have limitations. First, it is well-
+black box (VBB) obfuscation of general programs is impossible.
+understood that strong (simulation secure) notions of program
+InthispaperweproposeHOP,asystem(withmatchingtheoretic
+obfuscation cannot be realized in general [4] — although
+analysis) that achieves simulation-secure obfuscation for RAM
+they are desired or necessary in many applications such
+programs, using secure hardware to circumvent previous impos-
+as the aforementioned ones. Second, existing cryptographic
+sibility results. To the best of our knowledge, HOP is the first
+implementationofaprovablysecureVBBobfuscationschemein constructions of obfuscation (that achieve weaker notions of
+any model under any assumptions. security, such as indistinguishability obfuscation [22]) incur
+prohibitive practical overheads, and are infeasible for most
+HOPtrustsonlyahardwaresingle-chipprocessor.Wepresent
+interesting application scenarios. For example, it takes ∼ 3.3
+a theoreticalmodel for ourcomplete hardwaredesign and prove
+hours to obfuscate even a very simple program such as an
+its security in the UC framework. Our goal is both provable
+80-bit point function (a function that is 0 everywhere except
+security and practicality. To this end, our theoretic analysis
+accounts for all optimizations used in our practical design, at one point) and ∼ 3 minutes to evaluate it [37]. Moreover,
+includingtheuseofahardwareObliviousRAM(ORAM),hard- these cryptographic constructions of program obfuscation rely
+ware scratchpad memories, instruction scheduling techniques on new cryptographic assumptions whose security is still
+and context switching. We then detail a prototype hardware beinginvestigatedbythecommunitythroughabuild-and-break
+implementationofHOP.Thecompletedesignrequires72%ofthe iterativecycle[14].Thus,torealizeapracticalschemecapable
+area of a V7485t Field Programmable Gate Array (FPGA) chip. of running general programs, it seems necessary to introduce
+Evaluatedonavarietyofbenchmarks,HOPachievesanoverhead
+additional assumptions.
+of8×∼76×relativetoaninsecuresystem.Comparedtoallprior
+(notimplemented)workthatstrivestoachieveobfuscation,HOP In this direction, there has been work by both the cryp-
+improves performance by more than three orders of magnitude.
+tography and architecture communities in assuming trusted
+Weviewthisasanimportantsteptowardsdeployingobfuscation
+hardware storing a secret key. However, proposals from the
+technology in practice.
+cryptography community to realize obfuscation (and a closely
+related primitive called functional encryption) have been
+I. INTRODUCTION
+largelytheoretical,focusingonwhatminimaltrustedhardware
+Program obfuscation [29], [4] is a powerful crypto- allows one to circumvent theoretical impossibility and realize
+graphic primitive, enabling numerous applications that rely simulation-secure obfuscation [27], [15], [17]. Consequently
+on intellectually-protected programs and the safe distribution these works have not focused on practical efficiency, and
+of such programs. For example, program obfuscation enables they often require running the program as circuits (instead of
+a software company to release software patches without dis- as RAM programs) and also utilize expensive cryptographic
+closing the vulnerability to an attacker. It could also enable a primitives such as fully homomorphic encryption (FHE) and
+pharmaceutical company to outsource its proprietary genomic non-interactive zero knowledge proofs (NIZKs). On the other
+testing algorithms, to an untrusted cloud provider, without hand,proposalsfromthearchitecturecommunitysuchasIntel
+compromisingitsintellectualproperties.Here,thepharmaceu- SGX[42],AEGIS[53],XOM[38],Bastion[13],Ascend[18]
+tical company is referred to as the “sender” whereas the cloud and GhostRider [40] are more practical, but their designs
+provider is referred to as the “receiver” of the program. do not achieve cryptographic definition of obfuscation. In
+this paper, we close this gap by designing and implementing
+a practical construction of program obfuscation for RAM
+Permission to freely reproduce all or part of this paper for noncommercial programs using trusted hardware.
+purposes is granted provided that copies bear this notice and the full citation
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author Problem statement. The problem of obfuscation can be
+(for reproduction of an entire paper only), and the author’s employer if the described as follows. A sender, who owns a program, uses an
+paper was prepared within the scope of employment. obfuscate procedure to create an obfuscated program. It then
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+sends this obfuscated program to a receiver who can execute
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23349 the program on inputs of her choice. The obfuscated programSender: runsobfuscate Receiver: runsexecute such as measuring power analysis or heat dissipation, we also
+(onmultipleinputs) do not defend against hardware fault injection [8], [3], [34].
+Sendercanobfuscatedifferentprograms We assume that the program to be obfuscated is trustworthy
+withsamekey obfuscate send input
+Receivercanexecuteaprogramon toreceiver output and will not leak sensitive information on its own, including
+multipleinputs program obfuscated execute through possible software vulnerabilities such as buffer over-
+prog (fromsender) flows[7].Thereexisttechniquestomitigatetheseattacks,and
+we consider them to be complementary to our work.
+Fig. 1: Obfuscation Scenario. The sender obfuscates pro-
+grams using the obfuscate procedure. It sends (possibly mul-
+tiple) obfuscated program(s) to the receiver. The receiver can Challenges. It may seem that relying on secure hardware
+execute any obfuscated program with any input of its choice. as described above easily ‘solves’ the program obfuscation
+problem. This is not the case: even with secure hardware, it
+is still not easy to develop a secure and practical obfuscation
+scheme. The crux of the problem is that many performance
+should be functionally identical to the original program. For
+optimizations in real systems (and related work in secure
+anygiveninput,theobfuscatedprogramrunsfortimeT (fixed
+processors [18], [40], [45]) hinge on exploiting program-
+fortheprogram)andreturnsanoutput.1 Thereceiveronlyhas
+dependent behavior. Yet, obfuscation calls for completely
+a black box-like access to the program, i.e., it learns only
+hidingallprogram-dependentbehavior.Indeed,westartedthis
+the program’s input/output behavior and the bound on the
+projectwithastrawmanprocessorthatgivesofftheimpression
+runtime T. In obfuscation, the inputs/outputs are public (not
+of executing any (or every) instruction during each time step
+encrypted).
+– so as to hide the actual instructions being executed. Not
+To make use of a trusted secure processor (which we surprisingly, this incurs huge (∼10,000×; c.f. Section III-B)
+call a HOP processor), our obfuscation model is modified as overheads over an insecure scheme, even after employing a
+follows (cf. Figure 1). HOP processors are manufactured with state-of-the-art Oblivious RAM [26], [19] to improve the effi-
+a hardwired secret key. The HOP processor (which is trusted) ciencyofaccessingmainmemory.Moreover,inanobfuscation
+is given to the receiver, and the secret key is given to the setting, the receiver can run the same program multiple times
+sender. Using the secret key, the sender can create multiple for different inputs and outputs. Introducing practical features
+obfuscated programs using the obfuscate procedure and send such as context switching — where the receiver can obtain
+them to the receiver. The receiver then runs the execute pro- intermediate program state — enables this level of flexibility
+cedure (possibly multiple times) to execute the program with but also enables new attacks such as rewinding and mix-and-
+(cleartext) inputs of her choice. As mentioned, the receiver matchexecution.ObliviousRAMs,inparticular,arenotsecure
+(adversary) learns only the final outputs and nothing else. In againstrewindingandmix-and-matchattacksandanimportant
+other words, we offer virtual blackbox simulation security, challenge in this work is to protect them against said attacks
+where the receiver learns only as much information as if she in the context of the HOP system.
+were interacting with an oracle that computes the obfuscated
+program. In particular, the receiver should not learn anything
+fromtheHOPprocessor’sintermediatebehaviorsuchastiming
+or memory access patterns, or the program’s total runtime A. Our Contributions
+(since each program always runs for a fixed amount of time
+set by the sender). Given the above challenges, a primary goal of this paper
+is to develop and implement an optimized architecture that is
+Key distribution with public/private keys. We assume sym- still provably secure by the VBB obfuscation definition. We
+metric keys for simplicity. HOP may also use a private/public stressthatalltheperformanceoptimizationsmadeinthepaper
+key distribution scheme common in today’s trusted execution are included and proven secure in our theoretic analysis: we
+technology. The obfuscate and execute operations can be de- want our practical design to match the theory to the extent
+coupledfromtheexactsetupandkeydistributionsystemused possible.Weviewthisasanimportantsteptowardsdeploying
+to get public/private keys into the HOP processor. A standard obfuscation technology in practice.
+setup for key distribution [28], [42] is as follows: First, a
+trustedmanufacturer(e.g.,Intel)createsaHOPprocessorwith In more detail, we make the following contributions:
+a unique secret key. Its public key is endorsed/signed by the
+manufacturer. Second, the HOP processors are distributed to
+1. Theoretical contributions: We provide the first theoretic
+receiversandthecertifiedpublickeysaredistributedtosenders
+framework to efficiently obfuscate RAM programs directly on
+(software developers). The modification to our scheme in the
+secure hardware. One goal here is to avoid implicitly trans-
+public key setting is described in Appendix B. Note that the
+forming the obfuscated program to its circuit representation
+key goal of obfuscation is to secure the sender’s program
+(e.g., [17]), as the RAM to circuit transformation can incur
+and this relies on the secrecy of the private key stored in
+a polynomial blowup in runtime [23]. We also wish for our
+the processor. Thus, it is imperative that the sender and the
+analysis to capture important performance optimizations that
+manufacturer are either the same entity or the sender trusts
+matterinanimplementation;suchastheuseofacryptographic
+the manufacturer to not reveal the secret key to another party.
+primitive called Oblivious RAM [25], [26], on-chip memory,
+instructionscheduling,andcontextswitching.Asabyproduct,
+Non-goals. We do not defend against analog side channels
+partofouranalysisachievesanewtheoreticalresult(extending
+1T isanalogoustoaboundoncircuitsizeinthecryptographyliterature. [27]): namely, how to provide program obfuscation for RAM
+2programs directly assuming only ‘stateless’ secure hardware.2 of computation. Bitansky et al. [5] show a construction for
+We also show interesting technical subtleties that arise in programobfuscationfrom“leaky”hardware.Similarly,Chung
+constructing efficient RAM-model program obfuscation from et al. [15] considered basing the closely related primitive of
+stateless hardware. In particular, we highlight the different functional encryption on hardware tokens. Unfortunately, all
+techniques used to overcome all possible forms of rewinding the above works require the obfuscated program run using a
+and mix-and-match attacks (which may be of independent universalcircuit(orsimilarmodel)toachievefunctionprivacy.
+interest). Putting it all together, we provide a formal proof of They do not support running RAM programs directly. This
+securityfortheentiresystemundertheuniversallycomposable severely limits the practicality of the above schemes, as we
+(UC) simulation framework [10]. demonstrate in Section VI-E.
+2. Implementation with trusted hardware: We design and Oblivious RAMs. To enable running RAM programs directly
+implement a hardware prototype system (called HOP) that on secure hardware, we use a hardware implementation of
+attains the definition of program obfuscation and corresponds Oblivious RAM (ORAM) to hide access patterns to external
+to our theoretic analysis. To the best of our knowledge, this memory. ORAM was introduced by Goldreich and Ostrovsky
+effort represents the first implementation of a provably secure where they explored the use of tamper-proof hardware for
+VBB obfuscation scheme in any model under any assump- software protection [26]. Recently, there has been a lot of
+tions. For performance, our HOP prototype uses a hardware- work in making ORAMs practical. In this paper, we use an
+optimized Oblivious RAM, on-chip memory and instruction efficient hardware implementation of Path ORAM [52] called
+scheduling (our current implementation does not yet support Tiny ORAM [20], [19].
+contextswitching).Asmentionedearlier,ourkeydifferentiator
+from prior secure processor work is that our performance op- Secure processors. Secure processors such as AEGIS [53],
+timizationsmaintainprogramprivacyandexhibitnoprogram- XOM [38], Bastion [13] and Intel SGX [42] encrypt and
+dependent behavior. With these optimizations, HOP performs verify the integrity of main memory. Applications such as
+5× ∼ 238× better than the baseline HOP design across VC3 [48] that are built atop Intel SGX can run MapReduce
+simple to sophisticated programs while the overhead over computations [16] in a distributed cloud setting while keeping
+an insecure system is 8× ∼ 76×. The program code size code and data encrypted. However, these secure processors
+overheadforHOPisonlyanadditiveconstant.Ourfinaldesign do not hide memory access patterns. An adversary observing
+requires 72% area when synthesized on a commodity FPGA communication patterns between a processor and its memory
+device. Of independent interest, we prove that our optimized canstillinfersignificantinformationaboutthedata[43],[58].
+scheme always achieves to within 2× the performance of a
+There have been some recent secure processor proposals
+schemethatdoesnotprotectthemainmemorytimingchannel
+that do hide memory access patterns [18], [41], [40], [45].
+(Section III-C).
+Ascend [18] is a secure processor architecture that protects
+privacyofdataagainstphysicalattackswhenrunningarbitrary
+II. RELATEDWORK
+programs.Phantom[41]similarlyachievesmemoryoblivious-
+ness,andhasbeenintegratedwithGhostRider[40]toperform
+Obfuscation. The formal study of virtual black-box (VBB)
+programanalysisanddecidewhethertouseanencryptedRAM
+obfuscation was initiated by Hada [29] and Barak et al. [4].
+or Oblivious RAM for different memory regions. They also
+Unfortunately, Barak et al. showed that it is impossible to
+employ a scratchpad wherever applicable. Raccoon [45] hides
+achieve program obfuscation for general programs. Barak
+data access patterns on commodity processors by evaluating
+et al. also defined a weaker notion of indistinguishability
+all program paths and using an Oblivious RAM in software.
+obfuscation (iO), which avoids their impossibility results.
+Garg et al. [22] proposed a construction of iO for all circuits The primary difference between the above schemes and
+based on assumptions related to multilinear maps. However, HOP is the following. All of the above schemes focused on
+theseconstructionsarenotefficientfromapracticalstandpoint. protecting input data, while the program is assumed to be
+There are constructions for iO for RAM programs proposed public and known to the adversary. GhostRider [40] even
+where the size of the obfuscated program is independent of utilizes public knowledge of program behavior to improve
+the running time [6], [11], [36]. However, by definition, these performance through static analysis. Conversely, obfuscation
+constructions do not achieve VBB obfuscation. and HOP protect the program and the input data is controlled
+by the adversary. We remark, however, that HOP can be
+In order to circumvent the impossibility of VBB obfusca- extendedtoadditionallyachievedataprivacysimplybyadding
+tion,Goyaletal.[27]consideredvirtualblack-boxobfuscators
+routines to decrypt the (now private) inputs and encrypt the
+on minimal secure hardware tokens. Goyal et al. show how final outputs before they are sent to the client (now different
+to achieve VBB obfuscation for all polynomial time com- from the HOP processor owner). Naturally, the enhanced
+putable functions using stateless secure hardware tokens that securitycomeswithadditionalcost.Weevaluatethisoverhead
+only perform authenticated encryption/decryption and a single of additionally providing program-privacy by comparing to
+NANDoperation.Inarelatedlineofwork,Do¨ttlingetal.[17]
+GhostRider in Section VI-E.
+show a construction for program obfuscation using a single
+stateless hardware token in universally input-oblivious models Secure computation. There is a line of work addressing
+how to build a general purpose MIPS processor for garbled
+2Roughlyspeaking,aHOPprocessorwhichallowsthehosttoarbitrary
+circuits [51], [56]. When one party provides the program, the
+context switch programs on/off the hardware is equivalent to ‘stateless’
+system is capable of performing private function secure func-
+hardware in the language of prior work [27], [15]. This is explained further
+inSectionIII. tion evaluation (PF-SFE). Similarly, universal circuits [55],
+3[35], [33] in combination with garbled circuits (which can determines a value T – the amount of time (in processor
+be evaluated efficiently with techniques in [30]) or other cycles) that the program, given any input, runs on HOP. Then,
+multipartycomputationprotocolscanbeusedtohideprogram the sender encrypts (obfuscates) the program together using
+functionality from one of the parties. The work of Katz [32] an authenticated encryption scheme. T is authenticated along
+reliesontrustedhardwaretokenstocircumventthetheoretical and included with the program but is public. The obfuscated
+impossibility of UC-secure multi-party computation under program is sent to the receiver. The receiver then sends the
+dishonest majority. However, all the above results are in the obfuscated program and her own input to the HOP processor.
+context of secure computation, which is inherently interactive TheHOPprocessordecryptsandrunstheprogram,andreturns
+andonlyallowsone-timeuse,i.e.,foreveryinput,bothparties a result after T processor cycles. The HOP processor makes
+are involved in the computation. On the contrary, obfuscation no external memory requests during its execution since the
+requires that a party non-interactively execute the obfuscated program and data fit on chip. Security follows trivially.
+program several times on multiple inputs.
+B. Adding External Memory
+Heuristic approaches to obfuscation. There are heuristic
+Unfortunately, since on-chip storage is scarce (commercial
+approaches to code obfuscation for resistance to reverse engi-
+processors have a few MegaBytes of on-chip storage), the
+neering [58], [31], [47]. These works provide low overheads,
+above solution can only run programs with small working
+but do not offer any cryptographic security.
+sets. To handle this, like any other modern processor, the
+HOP processor needs to access an external memory, which
+Terminology: Hardware Tokens.Trustedhardwareiswidely is possibly controlled by the malicious receiver.
+referredtoashardwaretokensinthetheoreticalliterature[32],
+When the HOP processor needs to make an access to this
+[27], [17], [15]. Secure tokens are typically assumed to be
+receiver memory, it needs to hide its access patterns. For the
+minimaltrustedhardwarethatsupportlimitedoperations(e.g.,
+purposes of this discussion, the access pattern indicates the
+aNANDgatein[27]).However,runningprogramsinpractice
+processor’s memory operations (reads vs. writes), the memory
+requiresfull-fledgedprocessors.Inthispaper,werefertoHOP
+addresses for each access and the data read/written in each
+as “secure hardware” or a “secure processor”. As a processor,
+access. We hide access pattern by using an Oblivious RAM
+HOP will store a lot more internal state (e.g., a register file,
+(ORAM), which makes a polylogarithmic number of physical
+etc.).Wenotethatfromatheoreticperspective,bothHOPand
+memory accesses to serve each logical memory request from
+‘simple’ hardware tokens require a number of gates which is
+the processor [52]. The ORAM appears to HOP as an on-chip
+polylogarithmic in memory size.
+memory controller that intercepts memory requests from the
+HOP processor to the external memory. That is, the ORAM is
+Terminology: Stateful vs. Stateless tokens. The literature
+ahardwareblockontheprocessorandistrusted.(Moreformal
+further classifies secure tokens as either stateful tokens or
+definitions for ORAM are given in Section IV-A.)
+stateless. A stateful token maintains state across invocations.
+On the other hand, a stateless token, except for a secret key, Each ORAM access can take thousands of processor cy-
+does not maintain any state across invocations. While HOP cles [19]. Executing instructions – once data is present on-
+maintainsstateacrossmostinvocationsforbetterperformance, chip – is still as fast as an insecure machine (e.g., several
+wewillaugmentHOPtosupporton-demandcontextswitching cycles). To hide when ORAM accesses are actually needed,
+— giving the receiver the ability to swap out an obfuscated HOP must make accesses at a static program-independent
+program for another at any time (Section III-E), which is frequency (more detail below). As before, HOP runs for T
+common in today’s systems. In an extreme scenario, the time on all inputs and hence achieves the same privacy as the
+adversary can context switch after every processor cycle. In scheme in Section III-A.
+thiscase,HOPbecomesequivalenttoa“stateless”tokenfrom
+atheoreticalperspective[27],[15],andoursecurityproofwill Generating T and security requirements. When accessing
+assume stateless tokens. receiver-controlled memory, we must change T to represent
+some amount of work that is independent of the external
+III. OBFUSCATIONFROMTRUSTEDHARDWARE memory’s latency. That is, if T is given in processor cycles,
+the adversary can learn the true program termination time by
+In this section, we describe the HOP architecture. We running the program multiple times and varying the ORAM
+will start with an overview of a simple (not practical) HOP accesslatencyeachtime(causingadifferentnumberoflogical
+processor to introduce some key points. Each subsection after instructionstocompleteeachtime).Topreventthis,wechange
+that introduces additional optimizations (some expose security T to mean ‘the number of external memory read/writes made
+issues, which we address) to make the scheme more practical. with the receiver.’
+We give security intuition where applicable, and formally
+prove security for the fully optimized scheme in Section IV. Integrity. To ensure authenticity of the encrypted program in-
+structions and data during the execution, HOP uses a standard
+Merkle tree (or one that is integrated with the ORAM [46])
+A. Execution On-Chip
+and stores the root of a Merkle tree internally. The receiver
+Let us start with the simplest case where the whole obfus- cannot tamper with or rewind the memory without breaking
+cated program and its data (working set) fit in a processor’s the Merkle tree authentication scheme.
+on-chip storage. Then, we may architect a HOP processor to
+be able to run programs whose working sets don’t exceed Efficiency.Whiletheaboveschemecanhandleprogramswith
+a given size. In the setup phase, first, the sender correctly large working sets, it is very inefficient. The problem is that
+4eachinstructionmaytriggermultipleORAMaccesses.Togive this may sound like it will severely hurt performance given
+offtheimpressionofrunninganyprogram,wemustprovision pathological programs, we show that this simple strategy does
+forthisworstcase:runningeachinstructionmustincurthecost “well” on arbitrary programs and data, formalized below.
+of the worst-case number of ORAM accesses. This can result
+in ∼ 10,000× slowdown over an insecure processor.3 The Claim: For any program and input, the above N results in
+nexttwosubsectionsdiscusstwotechniquestosecurelyreduce ≤50% of processor cycles performing dummy work.
+this overhead by over two orders of magnitude. These ideas
+We refer the reader to Appendix A for a proof of this
+are based on well-known observations that many programs
+claim. We consider this proof to be of independent interest.
+have more arithmetic instructions than memory instructions,
+The claim implies that in comparison to a solution that
+and exhibit locality in memory accesses.
+does not protect the main memory timing channel, our fixed
+schedule introduces a maximum overhead of 2× given any
+C. Adding Instruction Scheduling
+program–whethertheyarememoryorcomputationintensive.
+The key intuition behind our first technique is that many Said another way, even when more sophisticated heuristics
+programs execute multiple arithmetic instructions for every than a fixed schedule are used for different applications, the
+memory access. For example, an instruction trace may be performance gain from those techniques is a factor of 2 at
+the following: ‘A A A A M A A M’, where A, M refer to most.
+arithmetic and memory instructions respectively.
+Security.Wenotethatourinstructionschedulingschemedoes
+OuroptimizationistolettheHOPprocessorfollowafixed
+not impact security because we use a fixed, public N for all
+and pre-defined schedule: N arithmetic instructions followed
+programs.
+byonememoryaccess.Intheaboveexample,givenaschedule
+of A4M, the processor would insert two dummy arithmetic
+D. Adding on-chip Scratchpad Memory
+instructions to adhere to the schedule. A dummy arithmetic
+instructioncanbeimplementedbyexecutinganopinstruction.
+Oursecondoptimizationaddsascratchpad:asmallunitof
+The access trace observable to the adversary would then be: trustedmemory(RAM)insidetheprocessor,accessestowhich
+A A A A M A A A A M are not observable by the adversary.4 It is used to temporarily
+TheboldfaceAlettersrefertodummyarithmeticinstructions store a portion of the working set for programs that exhibit
+introduced by the processor. locality in their access patterns.
+Likewise, if another part of the program trace contains a
+long sequence of arithmetic instructions, the processor will Running programs with a scratchpad. We briefly cover
+insert dummy ORAM accesses to adhere to the schedule. how to run programs using a scratchpad here. More
+(implementation-specific) detail is given in Section V-A.
+Gains. For most programs in practice, there exists a schedule At a high level, data is loaded into the scratchpad from
+with N > 1 that would perform better than our baseline ORAM/unloaded to ORAM using special (new) CPU instruc-
+schemefromSectionIII-B.For(N+1)instructions,thebase- tions that are added to the obfuscated program. These instruc-
+lineschemeperforms(N+1)arithmeticandmemoryaccesses. tionsstaticallydeterminewhentoloadwhichdatatospecified
+WithanANM schedule,ouroptimizedschemeperformsonly offsets in the scratchpad. Now, the scratchpad load/unload
+one memory access which translates to a speedup of N× in instructions are the only instructions that access ORAM (i.e.,
+the best case, when the cost of the memory access is much are the only ‘M’ instructions). Memory instructions in the
+higher than an arithmetic instruction. To translate this into originalprogram(e.g.,normalloadsandstores)merelylookup
+performance on HOP - given that HOP must run for T time the scratchpad inside the processor (these are now considered
+- consider the following: If N >1 does improve performance ‘A’ instructions). We will assume the program is correctly
+for the given program on all inputs, it means the sender can compiled so that whenever a program memory instruction
+specify a smaller T for that program, while still having the looks up the scratchpad, the data in question has been put
+guarantee that the program will complete given any input. A there sometime prior by a scratchpad load/unload instruction.
+smaller T means better performance.
+Securityintuition.Whentheprogramaccessesthescratchpad,
+SettingN andsecurityintuition.WedesignallHOPproces- it is hidden from the adversary since this is done on-chip. As
+sorstousethesamevalueofN forallprogramsandallinputs before, the only adversary-visible behavior is when ORAM is
+(i.e.,N issetatHOPmanufacturingtimeliketheprivatekey). accessedandthiswillbegovernedbytheprogram-independent
+More concretely, we set schedule from Section III-C.
+ORAMlatency
+N = Program independence.WenotethatHOPwithascratchpad
+Arithmeticlatency isstillprogramindependent.Multipleprogramscanbewritten
+In other words, the number of processor cycles spent on (and obfuscated) for the same HOP processor. One minor
+arithmetic instructions and memory instructions are the same. limitation, however, is that once an obfuscated program is
+For typical parameter settings, N > 1000 is expected. While compiled,itmustbecompiledwith‘minimumscratchpadsize’
+specified as a new parameter and cannot be run on HOP
+3Our ORAM latency from Section VI is 3000 cycles. The RISC-V
+ISA[12]weadoptcantrigger3ORAMaccesses,onetofetchtheinstruction, 4We remark that we use a software-managed scratchpad (as opposed to
+1or2moretofetchtheoperand,dependingonwhethertheoperandstraddles a conventional processor cache) as it is easier to determine T when using a
+anORAMblockboundary. scratchpad.
+5processors that have a smaller scratchpad. This is necessary Preventing mix-and-match. To prevent this attack, we en-
+because having a smaller scratchpad will increase T by some force that the receiver must submit an encrypted state state,
+unknown amount. If the program is run on a HOP processor corresponding to an execution at some point t, along with a
+withalargerscratchpad,itwillstillfunctionbutsomescratch- matching read from time t for the same execution. To achieve
+pad space won’t be used. this, observe that state is encrypted with a IND-CPA + INT-
+CTXT-secure authenticated encryption scheme, and that the
+Gains. In the absence of a scratchpad, the ratio of arithmetic state carries all necessary information to authenticate the next
+to memory instructions is on average 5:1 for our workloads. memory read. The state contains information unique to the
+When using a scratchpad, a larger amount of data is stored specific program, the specific program execution, and to the
+by the processor, thus decreasing memory accesses. This specific instruction that the token expects.
+effectively decreases the execution time T of the program and
+substantially improves performance for programs with high Preventing rewinding during program execution. An ad-
+locality (evaluated in Section VI-C). versary may try to gain more information by rewinding an
+execution to a previous time step, and replaying it from
+that point on. To prevent an adversary from learning more
+E. Adding context switching and stateless tokens
+information in this way, we make sure that the token simply
+A problem with the proposals discussed so far is that once replays an old answer should rewinding happen — this way,
+a program is started, it cannot be stopped until it returns a the adversary gains no more information by rewinding. To
+response. But a user may wish to concurrently run multi- achieve this, we make sure that any execution for a (program,
+ple obfuscated programs for a practical deployment model. inp) pair is entirely deterministic no matter how many times
+Therefore,wedesigntheHOPprocessortosupporton-demand youreplayit.Allrandomnessrequiredbythetoken(e.g.,those
+contextswitch,i.e.,thereceivercaninvokeacontextswitchat required by the ORAM or memory checker) are generated
+any point during execution. This, however, introduces security pseudorandomly based on the tuple (K, H , H ) where K is
+S R
+problems that we need to address. a secret key hardwired in the token, H is a commitment to
+R
+the receiver’s input and H :=digest(mem ) is a Merkle root
+A context switch means that the current program state S 0
+of the program.
+should be swapped out from the HOP processor and replaced
+with another program’s state. Since such a context switch can
+Preventing rewinding during input insertion.Inoursetting,
+potentially happen at every invocation, the HOP processor no
+theobfuscatedprogram’sinputsinparechosenbythereceiver.
+longer stores state and is a stateless token. In such a scenario,
+Since inputs can be long, it may not be possible to submit the
+we design it to encrypt all its internal state, and send this
+entireinputinoneshot.Asaresult,thereceiverhastosubmit
+encrypted/authenticated state (denoted state) to the receiver
+the input word by word. Therefore the malicious receiver may
+(i.e.,theadversary)onacontextswitch.Wheneverthereceiver
+rewind to a point in the middle of the input submission, and
+passescontrolbacktothetoken,itwillpassbacktheencrypted
+change parts of the input in the second execution. Such a
+state as well, such that the token can “recover” its state upon
+rewinding causes two inputs to use the same randomness for
+every invocation.
+some part of the execution.
+Challenges. Although on the surface, this idea sounds easy To prevent such an input rewinding attack, we require
+to implement, in reality it introduces avenues for new attacks that the adversary submit a Merkle tree commitment H :=
+R
+that we now need to defend against. For the rest of the paper, digest(inp) of its input inp upfront, before submitting a long
+and in-line with real processors, we assume the only data input word by word. H uniquely determines the rest of
+R
+that remains in HOP is the per-chip secret key (Section I). the execution, such that any rewinding will effectively cause
+Anotableattackistherewindingattack.Inthisattack,instead the token to play old answers (as mentioned above), and the
+of passing to the token the correct and fresh encrypted state adversary learns nothing new through rewinding.
+as well as fresh values of memory reads, a malicious receiver
+can pass old values.5 The receiver can also mix-and-match
+IV. FORMALSCHEME
+values from entirely different executions of the same program
+or different programs. The rest of the section outlines how to We now give a formal model for the fully optimized HOP
+preventtheaboveattacks.Weremarkthatwhilethebelowhave processor (i.e., including all subsections in Section III) and
+simplefixes,theproblemsthemselvesareeasytooverlookand proveitssecurityinUCframework.SectionIV-Adescribesthe
+underscore the need for a careful formal analysis. Indeed, we preliminaries. Section IV-B describes the ideal functionality
+discovered several of these issues while working through the for obfuscation of RAM programs. Sections IV-C and IV-D
+security proof itself. describe our formal scheme and proof in the UC framework.
+5Hereisapossibleattackbywhichtheadversarycandistinguishbetween
+two access patterns. Consider the access pattern {a,a} i.e., accessing the A. Preliminaries
+sameblockconsecutively.Ifatree-basedORAM[49]isused,afterthefirst
+access,theblockisremappedtoanewpathl(cid:48) andthenewpathl(cid:48) wouldbe The notations used in this section are summarized in
+subsequentlyaccessed.Iftheadversaryrewindsandexecutesagain,theblock TableI.Wedenotetheassignment-operatorwith:=,whilewe
+maybemappedtoadifferentpathl(cid:48)(cid:48).Thus,fortwodifferentexecutions,two use = to denote equality. Encryption of data is denoted by an
+different paths (l(cid:48) and l(cid:48)(cid:48)) are accessed for the second access. Note that for
+overline,e.g.,state=Enc (state),whereEncdenotesaIND-
+another access pattern {a,b} for a (cid:54)= b, the same paths would be accessed K
+CPA+INT-CTXT-secureauthenticatedencryptionschemeand
+evenafterrewinding,thusenablingtheadversarytodistinguishbetweenaccess
+patterns. K is the key used for encryption.
+6rdata:=0
+TABLE I: Notations
+mem[1..(cid:96) ]:=inp
+in
+for t∈[1,2,...,T]:
+K Hardwiredsecretkeystoredbythetoken
+mem0 Aprogramasalistofinstructions (cpustate,op):=Π(cpustate,rdata)
+inp Inputtotheprogram if op=(write,addr,wdata)
+mem Memoryrequiredforprogramexecution
+mem[addr]:=wdata
+outp Programoutput
+(cid:96)in,(cid:96)out,w Bit-lengthsofinput,output,andmemoryword else if op=(read,addr,⊥)
+N Numberofwordsinmemory rdata:=mem[addr]
+T Timeforprogramexecution
+RAM.params {T,N,(cid:96)in,(cid:96)out,w} Output rdata // rdata stores the output
+oramstate StatestoredbyORAM
+sstorestate Statestoredbysstore
+HR Digestofreceiver’sinput,i.e.,digest(inp)
+HS Digestofsender’sprogram,i.e.,digest(mem0) For notational simplicity, we assume that output length
+H(cid:48) Merklerootofthemainmemory (cid:96) is small and can be stored in rdata. However, our
+out
+results can be extended easily to larger values of (cid:96) . For
+out
+succinctness, we denote (T, N, (cid:96) , (cid:96) ,w) by RAM.params.
+in out
+Universal Composability framework. The Universal Com- Wherever its clear from context, we abuse notation to denote
+posability framework [10] considers two worlds – 1. real RAM[Π,T,N,(cid:96) ,(cid:96) ,w] as RAM.
+in out
+world where the parties execute a protocol π. An adversary A
+controlsthecorruptedparties.2.idealworldwhereweassume
+Oblivious RAM. Let mem denote a memory array that
+the presence of a trusted third party. The parties interact with
+supports two types of operations: a) On (read,addr), it
+a trusted third party (also called ideal functionality F) with
+outputs mem[addr]; b) On (write,addr,wdata), it sets
+a protocol φ. A simulator S tries to mimic the actions of A.
+mem[addr] := wdata, and outputs ⊥. In this paper, we
+Intuitively,theamountofinformationrevealedbyπ inthereal
+defineanObliviousRAMasastateful,probabilisticalgorithm
+world should not be more than what is revealed by interacting
+that interacts with a memory array mem. It is denoted as
+with the trusted third party in the ideal world. In other words,
+ORAMN,w where N and w are public parameters denoting
+we have the following: an environment E observes one of the
+the memory capacity in terms of number of words, and the
+twoworldsandguessestheworld.ProtocolπUC-realizesideal
+bit-width of a word. mem denotes the initial state of the
+functionality F if forany adversary A there existsa simulator
+memory, where all but the first N locations are set to 0.
+S,suchthatanenvironmentE cannotdistinguish(exceptwith
+An ORAM converts memory contents mem to mem(cid:48). An
+negligible probability) whether it is interacting with S and φ
+ORAM takes two types of inputs: op := (read,addr), and
+or with A and π.
+op:=(write,addr,wdata).Afterreceivinginputop ,ORAM
+i
+interacts with mem(cid:48), and produces read/write operations into
+mem(cid:48) as output, denoted by o(cid:126)p . These operations o(cid:126)p implic-
+Random Access Machines. We now give definitions for i i
+itly define memory contents of mem.
+Random Access Machine (RAM) programs, a basic processor
+model for RAM programs. Let RAM[Π,T,N,(cid:96) ,(cid:96) ,w]
+in out
+denote a family of RAM programs with the following public WesaythatanORAMalgorithmiscorrect,ifforanyn,for
+parameters: Π denotes the next instruction circuit; T denotes any input sequence (op 1,...,op n), ORAM outputs correctly.
+the number of steps the program will be executed; w denote Inotherwords,thememorycontentsofmemimplicitlydefined
+the bit-width of a memory word; and N, (cid:96)
+in
+and (cid:96)
+out
+denote by mem(cid:48) after execution of (o(cid:126)p 1,...,o(cid:126)p n) is identical to the
+thememory,inputandoutputlengthsrespectively(intermsof memorycontentsofmemdefinedbyexecuting(op 1,...,op n)
+number of words). on mem. We say that an ORAM scheme ORAM is oblivious
+if there exists a polynomial-time simulator Sim such that
+no polynomial time adversary A can distinguish between
+We consider programs RAM := (cid:104)cpustate,mem(cid:105) ∈ the transcript of the real ORAM execution and a simulated
+RAM[Π,T,N,(cid:96) in,(cid:96) out,w] to be a tuple, where cpustate transcript that Sim outputs. Sim is given only N and w, even
+denotes the CPU’s initial internal state, and mem denotes an
+when the simulated memory access are provided one-by-one
+initial memory array. In these programs, for each step of the
+to A.
+execution, the next instruction function is executed over the
+oldcpustateandthemostrecentlyfetchedwbitmemoryword
+Remark: ORAM initialization. In this paper, we assume an
+denoted rdata:
+ORAM starts out with a memory array where the first N
+words are non-zero (reflecting the initial unshuffled memory),
+followedbyallzeros.MostORAMschemesrequireaninitial-
+(cpustate,op):=Π(cpustate,rdata) izationproceduretoshuffletheinitialmemorycontents.Inthis
+paper, we assume that the ORAM algorithm performs a linear
+scanoffirstN memorylocationsandinsertsthemintoORAM.
+This is used by the simulator in our proof to extract the input
+Asaresult,cpustateisupdated,andanextread/writeinstruc-
+usedforexecutionoftheprogram.Weusetheconventionthat
+tion op is fetched. Initially, rdata is set to 0.
+such initialization is performed by the ORAM algorithm upon
+the first read or write operation — therefore our notation does
+On input inp, the execution of RAM[T,N,(cid:96) ,(cid:96) ,w] := not make such initialization explicit. This also means that the
+in out
+(cid:104)Π,cpustate,mem(cid:105) is defined as the following: firstORAMoperationwillincurahigheroverheadthanothers.
+7FRAM[sender, receiver ] obfuscated program consists of only the encrypted program
+obf
+and metadata, for a program of size P bits, the obfuscated
+On receive (“create”, RAM) from sender for the first time: program has size P +O(1) bits. In the real world, the sender
+Create a unique nonce denoted pid sends the hardware token implementing functionality F
+token
+Store (pid,RAM), send (“create”, pid) to receiver to the receiver. The receiver can use the same stateless token
+to execute multiple obfuscated programs sent by the sender.
+On receive (“execute”, pid,inp) from receiver:
+assert (pid,RAM) is stored for some RAM
+outp:=RAM(inp), send outp to receiver F [sender, receiver ]
+token
+// Store the secret key K in the token
+Fig. 2: Ideal Functionality FRAM. Although there can be
+obf On receive (“store key”, K) from sender:
+multiple instances of this ideal functionality, we omit writing
+Store the secret key K, ignore future “store key” inputs
+the session identifier explicity without risk of ambiguity. In
+Send “done” to sender
+this paper, we adopt the same UC notational conventions as
+Pass, Shi, and Tramer [44]. In particular, we parametrize each
+// This step commits the receiver to his input through H
+functionality and protocol by its session identifier, and the R
+On receive (“initialize”, header,H ) from receiver:
+identifiers of the parties involved — although in this paper, R
+Parse K :=(K ,K ,K )
+we omit writing the session identifier explicitly without risk 1 2 3
+(cpustate ,H ,RAM.params) := Dec (header); abort
+of ambiguity. 0 S K1
+if fail
+state:={ssid:=(H ,H ), time :=0,
+S R
+B. FRAM: Modeling Obfuscation in UC rdata:=0, cpustate:=cpustate 0,
+obf sstorestate:=(“init”,H ,H ,H(cid:48) :=0),
+S R
+TheidealfunctionalityforobfuscationFRAM isdescribed oramstate:=“init”,params:=RAM.params}
+obf
+in Figure 2. The sender sends the description of a RAM send state:=Enc (state) to receiver
+K1
+program, RAM ∈ RAM and a program ID pid, using the
+“create” query. The functionality stores this program, pid, the On receive ( ) from F internal: // ORAM queries
+senderandreceiver.Whenthereceiverinvokes“execute”query state:=Enc (F .state)
+K1 internal
+on an input inp, it evaluates the program on inp, and returns send ( , state) to receiver
+output outp.
+On receive ( , state) from receiver: // ORAM queries
+C. Scheme Description state:=Dec (state), abort if fail
+K1
+Instantiate a new instance F ,
+We now provide the complete description of our scheme. internal
+set F .state:=state, and F .K :=K
+We model the secure hardware token through the F internal internal
+token Send to F
+functionality (Figure 3). Our construction realizes FRAM in internal
+obf
+the F -hybrid model [27] and is described in Figure 4. F
+token internal
+alias
+In order to account for all possible token queries that may Define F internal.state := (ssid,time,rdata,cpustate,
+berequiredforanORAMscheme,F reliesonaninternal,
+sstorestate,oramstate,params)
+token
+transient instance of F to execute each step of the
+internal // execute program
+program evaluation. Each time F yields control to the
+token On receive (“execute one step”) from F :
+receiver, the entire state of F is destroyed. Whenever token
+the receiver calls back F in wte ir tn hal state, F once again 1: assert time≤params.T
+creates a new, transient into stk ae nn ce of F t ,ok se en ts its state to 2: (cpustate,op)←Π(cid:48)(cpustate,rdata)
+thedecryptedstate,andinvokesF interi nn ate lr tn oa el xecutenextstep. 3: S sse tn od re[Pop RFto (O ssR idA )M ,s[ sP toR rF esK ta2 t( ess ]id ⇔),ora Fmstate ,] wa⇔
+it
+K3 token
+for output from ORAM, abort if sstore aborts;
+The sender. Let the program to be obfuscated be
+/* instantiate ORAM with state oramstate, instanti-
+RAM:=(cid:104)cpustate ,mem (cid:105) where mem is a list of program
+0 0 0
+ate sstore with state sstorestate, connect ORAM’s
+instructions. The sender first creates the token containing a
+communication tape to sstore’s input tape, connect
+hardwired secret key K where K := (K ,K ,K ). K is
+1 2 3 1
+sstore’s communication tape to caller F . This
+used as the encryption key for encrypting state, K is used as token
+2
+represents a multi-round protocol. */
+the key to a pseudorandom function used by the ORAM and
+K is used as the key for a pseudorandom function used by 4: If op=(read,...), let rdata:= output
+3
+sstore (described later). This is modeled by our functionality 5: time:=time+1
+using the “store key” query (Figure 4 line 1). The sender 6: Iftime=params.T:send(“okay”,rdata)toF token
+Else send (“okay”, ⊥) to F
+then encrypts mem (one instruction at a time) to obtain token
+0
+mem . It creates a Merkle root H := digest(mem ), which
+0 S 0
+is used by F
+token
+during execution to verify integrity of the Fig. 3: Functionality F token. For succinctness, encryption
+program. The sender creates an encrypted header header := of some data is represented using an overline on it, e.g.,
+E {Tnc ,K N1 ,( (cid:96)cp ,u (cid:96)stat ,e w0, }H
+.
+S T, hR eAM se. np da er ram ses) ndw sh her ee adR eA r,M m.p ea mram
+,
+s an=
+d
+s Ct Tat Xe T= -seE cn uc rK e1 a( us tt ha et ne) ti, cw ath ee dre enE cn ryc pd tie on not se cs ha emIN e.D “-C ”PA den+ oI teN sT a-
+in out 0
+RAM.paramsastheobfuscatedprogramtothereceiver.Asthe wildcard field that matches any string.
+8Prot obf[sender, receiver ] cs0 cs1 cs2 csN 1 csN
+Sender: rd0 Π1 op1rd1 Π2 op2rd2..o.pN −1−rdN−1 ΠN opN
+On receive (“create”, RAM=(cid:104)cpustate ,mem (cid:105)) from env:
+0 0
+Scratchpad
+1: If not initialized: K := (K 1,K 2,K 3) ←$ {0,1}3λ, send
+rdata
+(“store key”, K) to F token, await “done” cpustate op cpustate
+2: mem 0 :={Enc K1(mem 0[i])} i∈|mem0| Fig. 5: Augmented Random Access Machine. In this figure,
+3: H S :=digest(mem 0) // H S: program Merkle root cpustate is denoted by cs and rdata is denoted by rd .
+4: header:=Enc K1(cpustate 0||H S||RAM.params) i i i i
+5: Send (header,mem 0,RAM.params) to receiver
+to sstorestate := (H ,H ,H(cid:48) := 0), where H denotes
+S R S
+Receiver: the Merkle root of the encrypted program provided by the
+On receive (“execute”, pid,inp) from env: sender,H denotestheMerklerootofthe(cleartext)input
+R
+1: Await (header,mem 0,RAM.params) from sender s.t. and H(cid:48) denotes the Merkle root of the memory mem. By
+RAM.params.H =pid if not received already convention,weassumethatifaMerkletreeoranysubtree’s
+S
+2: Initialize mem:=mem 0||inp||(cid:126)0 hashis0,thentheentiresubtreemustbe0.Theoperational
+3: Send(“initialize”,header,H R :=digest(inp))toF token, semantics of sstore is as follows: upon every data access
+await state from F request (read,addr) or (write,addr,wdata):
+token
+4: for t in {1,...,T}: • If addr is in the mem 0 part of the memory (the sender-
+5: Send (“execute one step”, state) to F token providedencryptedprogram),interactwithmemanduse
+6: Await(oper,state)fromF token; //stateoverwritten H S to verify responses. Update H S appropriately if the
+with the received value request type is write.
+7: Until oper= (“okay”, ), repeat: //multiple memory • If addr is in the inp part of the memory (the receiver-
+requests for the RAM step due to ORAM providedinput),interactwithmemanduseH R toverify
+8: perform the operation oper on mem and let the responses.
+response be res • Otherwise, interact with mem and use H(cid:48) to verify
+9: forward (res, state) to F token, and await responses. Update H(cid:48) appropriately.
+(oper,state) from F ; Uponsuccessfulcompletion,sstoreoutputsthedatafetched
+token
+10: Parse oper:= (“okay”, outp), output outp for read requests, and outputs 0 or 1 for write requests.
+Note that the sstore algorithm simply aborts if any of the
+Fig. 4: Protocol Prot obf. Realizes F oR bfAM in the F token- responses fail verification.
+hybrid model.
+3) Augmented Random Access Machines. We now extend
+the RAM model to support instruction scheduling and
+a scratchpad (Sections III-C and III-D). RAM can be
+The receiver. On the receiver’s side, the token functionality
+augmented to use a next instruction circuit Π(cid:48) := ΠN for
+makes use of an ORAM and a secure store sstore. The token
+a fixed N, with the following modifications:
+functionality(trustedhardwarefunctionality)ismodeledbyan
+augmented RAM machine. a) 1 Π(cid:48) is a combinational circuit, which consists of N next-
+instruction circuits Π cascaded as shown in Figure 5.
+i
+b) TheΠ ’suseanadditionalsharedmemory,referredtoas
+1) ORAM. ORAM takes in [κ := PRF (ssid),oramstate] i
+(where ssid := (H ,H )) as
+internalK2
+secret state of the
+scratchpad. Each Π
+i
+(except Π 1) operates on the output
+S R of Π and an operand rdata read from scratchpad.
+algorithm. κ is a session-specific seed used to generate all i−1 i−1
+The next instruction circuit Π(cid:48) outputs op to retrieve
+pseudorandom numbers needed by the ORAM algorithm N
+rdata from mem, which is subsequently used by Π .
+—recallthatallrandomnessneededbyORAMisreplaced 1
+On input inp, the execution of RAM[T,N,(cid:96) ,(cid:96) ,w] :=
+by pseudorandomness to avoid rewinding attacks. As men- in out
+(cid:104)Π(cid:48),cpustate,mem(cid:105) is similar to what was defined in
+tioned in Section IV-A, we assume that the ORAM initial-
+SectionIV-AbutusesΠ(cid:48)asthenextinstructioncircuit. The
+izationisperformedduringthefirstread/writeoperation.At
+augmentedrandomaccessmachineRAM(cid:48) modelsaRAM
+this point, the ORAM reads the first N memory locations
+thatperformsN instructionsfollowedbyanORAMaccess.
+to read the program and the input, and inserts them into
+Ifsomeop cannotbeservedbythescratchpad,subsequent
+the ORAM data structure within mem. i
+Π for i+1≤j ≤N do not update cpustate and output
+j j
+2) Secure store module sstore. sstore is a stateful deter- op =op to load the required data in scratchpad.
+N i
+ministic secure storage module that sits in between the Remark.Foraugmentedrandomaccessmachinesthatuses
+ORAM module and the untrusted memory implemented ascratchpad,rdatawouldtypicallybelargerthanamemory
+by the receiver. Its job is to provide appropriate mem- word (e.g. 512 bits).
+ory encryption and authentication. sstore’s internal state
+includes κ := PRF (ssid) and sstorestate. sstorestate We now explain how the receiver executes the program
+K3
+containsasuccinctdigestofprogram,inputandmemoryto usingthetokendescribedinFigure3andprotocolinFigure4.
+performmemoryauthentication.κisasession-specificseed
+used to generate all pseudorandom numbers for memory Program execution. For ease of explanation, let us first
+encryption. assumethattheORAMisinitializedandcontainstheprogram
+At the beginning of an execution, sstorestate is initialized andinput.TheexecutionforanyinputproceedsinT timesteps
+9TrustBoundary
+(Figure4line4).Ateachtimestep,thereceiverinteractswith
+the token with two types of queries. For each type of query,
+F decrypts state (aborts if decryption fails), instantiates Modified Data ORAM
+token
+F internal with state and forwards the request to F internal. At RISC-VProc Scratchpad Controller DRAM
+the end of query, the state is sent to the receiver along with (ORAM
+the query response. Bank)
+Instruction Encryption Encryption
+Scratchpad Unit Unit
+• Execute one step: This is shown in Figure 3 and Figure 4
+line 5. When this query is invoked, F executes
+internal
+the next instruction circuit Π(cid:48) of the RAM machine to Output ObfuscatedProgram+Input
+obtainanupdatedcpustateandanop∈{read, write}.
+HostProcessor
+Once operation op is performed by the ORAM algorithm,
+F internal updates state.time to reflect the execution of the Fig. 6: HOP Architecture
+instruction (Figure 3 line 5). The message “okay” is then
+sent to the receiver. At time = T, F returns the
+internal
+program output to the receiver (Figure 3 line 6).
+• ORAM queries: ORAMs can use a multi-round protocol Proof. We refer the reader to the full version of the paper for
+(with possibly different types of queries) to read/write a detailed proof of security.
+(Figure 3 line 3). It interacts with mem stored at the
+receiverthroughF token (Figure4lines7-9).Toaccountfor V. IMPLEMENTATION
+instantiation of any ORAM, F is shown to receive any
+token
+The final architecture of HOP (with the optimizations
+query from receiver (indicated by wildcard ( ) in Figures 3
+from Section III) is shown in Figure 6. We now describe
+and 4). These queries are sent to F and vice-versa.
+internal
+implementation-specific details for each major component.
+For each interaction with mem, sstore encrypts (resp. de-
+crypts) data sent to (resp. from) the receiver. Moreover, sstore A. Modified RISC-V Processor and Scratchpad
+authenticates the data sent by the receiver. This completes the
+WebuiltHOPwithaRISC-Vprocessorwhichimplements
+description of execution of the program.
+a single stage 32bit integer base user-level ISA developed
+at UC Berkeley [12]. A RISC-V C cross-compiler is used
+Initialization. To initialize the execution, the receiver first to compile C programs to be run on the processor. The
+starts by storing the program and input inp in its memory RISC-V processor is modified to include a 16 KB instruction
+mem := mem 0||inp||(cid:126)0. It commits to its input by invoking scratchpad and a 512 KB data scratchpad (Section III-D). The
+“initialize” (Figure 4 line 3) and sending a Merkle root RISC-V processor and the compiler are modified accordingly
+of its input (H R = digest(inp)) along with header := to accommodate the new scratchpad load/unload instructions
+Enc K1(cpustate 0||H S||RAM.params). F token initializes the (described below). While HOP uses a single stage RISC-V
+parameters, creates state and sends it to the receiver. processor, our system does not preclude additional hardware
+optimizations in commodity processors such as multi-issue,
+The ORAM and sstore are initialized during the first
+branch predictor, etc. Our only requirement to support such
+invocationto“execute one step”,i.e.,t=1inFigure4,line4.
+processorstructuresistheabilitytocalculate,forthatprogram
+The required randomness is generated pseudorandomly based
+over all inputs, a suitably conservative maximum runtime T.
+on (K ,H ,H ) for ORAM and (K ,H ,H ) for sstore.
+2 S R 3 S R
+As mentioned in Section IV-A, during initialization, ORAM
+New scratchpad instructions. For our prototype, we load
+in F reads mem word by word (not shown in figure).
+token 0 the scratchpad using a new instruction called spld, which is
+For each word read, sstore performs Merkle tree verification
+specified as follows:
+with H := digest(mem ). Similarly, when the input is read,
+S 0
+sstore verifies it with H R := digest(inp). sstorestate and spld addr,#mem,spaddr
+oramstate uniquely determine the initialization state. Hence,
+if the receiver rewinds, the execution trace remains the same. Inparticular,addrisusedtospecifythestartingaddressofthe
+The commitment H ensures that the receiver cannot change memory that needs to be loaded in scratchpad. #mem is the
+R
+hisinputafterinvoking“initialize”.Thiscompletestheformal number of memory locations to be loaded on the scratchpad
+scheme description of the UC functionality F . starting at addr and spaddr is the location in scratchpad
+token
+to store the loaded data. When the processor intercepts an
+spld instruction, it performs two operations: 1. It writes back
+D. Proof of Security the data stored in this scratchpad location to the appropriate
+addressinmainmemory(ORAM).2.Itreads#memmemory
+Theorem 1. Assuming that Enc is an INT-CTXT + IND- locations starting at main memory address addr into scratch-
+CPA authenticated encryption scheme, ORAM satisfies obliv- pad locations starting at spaddr. Of course, spld’s precise
+iousness (Section IV-A), sstore adopts a semantically secure design is not fundamental: we need a way to load an on-chip
+encryption scheme and a collision resistant Merkle hash tree memory such that it is still feasible to statically determine T.
+scheme and the security of PRF, the protocol described in
+Figures3and4UCrealizesFRAM (Figure2)intheF - Example scratchpad use. Figure 7 shows an example sce-
+obf token
+hybrid model. nariowherespldisused.Theprogramshowsapartofthecode
+101: int decompress(char *chunk) {
+TABLE II: Resource allocation and utilization of HOP on
+2: int compLen = 0;
+XilinxVirtexV7485tFPGA.Foreachrow,firstlineindicates
+3: // initial processing
+the estimate. % utilization is mentioned in parentheses. LUT:
+4: burrowsWheeler(chunk, compLen);
+SliceLookUpTable,FFs:Flip-flopsorsliceregisters,BRAM:
+5: // more processing
+Block RAM.
+6: writeOutput(chunk);
+7: return compLen;
+LUT FFs LUT-Mem BRAM
+8: }
+TotalEstimate 169472 51870 81112 566.5
+9: void main() { (%Utilization) (55.8%) (8.5%) (62.0%) (55.0%)
+10: char *inp = readInput(); HOPEstimate 103462 39803 38725 437
+11: for (i = 0; i < len(inp); i += len) { (%Utilization) (34.0%) (6.6%) (47.7%) (42.4%)
+12: spld(inp + i, CSIZE, 0); (HOP−ORAM)Estimate 21626 6579 1 83
+13: len = decompress(inp + i); (%Utilization) (7.1%) (1.1%) (∼0%) (8.1%)
+14: } EstimatewithMerkletree 221041 81410 81126 566.5
+15: } (%Utilization) (72.8%) (13.4%) (62.0%) (55.0%)
+Fig. 7: Example program using spld: bzip2
+A. Methodology
+We measure program execution time in processor cycles,
+used for decompressing data using the bzip2 compression
+andcomparewithourownbaselinescheme(toshowtheeffec-
+algorithm. The algorithm decompresses blocks of compressed
+tivenessofouroptimizations),aninsecureprocessoraswellas
+dataandoutputsdataofsizeCSIZEindependently.Eachblock
+relatedpriorwork.Foreachprogram,wechooseparametersso
+of data may be read and processed multiple times during
+that our baseline scheme requires about 100 million cycles to
+different steps of compression (run-length encoding, Burrows-
+execute. We also report processor idle time, the time spent on
+Wheeler transform, etc.). Hence, each such block is loaded
+dummy arithmetic instructions and dummy memory accesses
+into the scratchpad (line 12) before processing. This ensures
+to adhere to an ANM schedule (Section III-C).
+that every subsequent access to this data is served by the
+scratchpad instead of memory (thereby reducing expensive
+For the programs we evaluate (except bzip2; c.f., Sec-
+ORAM accesses). After decompressing the block, spld is
+tion VI-D), we calculate T manually. We remark that the
+executed for the next block of compressed data.
+average input completion time and worst case time are very
+similar for these programs. To find T for larger programs,
+B. ORAM Controller
+one may use established techniques in determining worst case
+WeuseahardwareORAMcontrollercalled‘TinyORAM’ execution time (e.g., a tool from [54]).
+from [19], [20]. The ORAM controller implements an ORAM
+In our prototype, evaluating an arithmetic instruction takes
+tree with 25 levels, having 4 blocks per bucket. Each block
+1 cycle while reading/writing a word from the scratchpad
+is 512 bits (64 Bytes) to match modern processor cache line
+takes 3 cycles. Given the parameters in Section V-B, an
+size.Thiscorrespondstoatotalmemoryof4GB.TheORAM
+ORAM access takes 3000 cycles. For our HOP configurations
+controller uses a stash of size 128 blocks and an on-chip
+with a scratchpad, we require both scratchpad read/writes and
+position map of 256 KB. For integrity and freshness, Tiny
+arithmeticinstructionstotake3cyclesinordertohidewhichis
+ORAM uses the PosMap MAC (PMMAC) scheme [19]. We
+note that PMMAC protects data integrity but does not achieve
+occurring.FollowingSectionIII-C,wesetN =3000whennot
+malicious security. We estimate the cost of malicious security using a scratchpad; with a scratchpad, we use N =1000. For
+ourevaluation,weconsiderprogramsrangingfromthosewith
+using a hardware Merkle-tree on ORAM in Table II. We
+high locality (e.g., bwt-rle) to those that show no locality
+disable the PosMap Lookaside Buffer (PLB) in Freecursive
+(e.g., binsearch).
+ORAM to avoid leakage through the total number of ORAM
+accesses.
+C. Encryption Units B. Area Results
+For all encryption units, we use tinyaes from Open-
+Wesynthesized,placedandroutedHOPonaXilinxVirtex
+Cores[2].Theencryptionunitscommunicatewiththeexternal
+V7485t FPGA for parameters described in Section V. HOP
+DRAM (bandwidth of 64 Bytes/cycle) as well as the host
+operates at 79.3 MHz on this FPGA. The resource allocation
+processor. Data is encrypted before writing to the DRAM.
+and utilization figures are mentioned in Table II. The first
+Similarly, all data read from the DRAM is decrypted first
+three rows represent the total estimate, estimate for HOP
+beforeprocessedbytheORAMcontroller.Anotherencryption
+(i.e. excluding RISC-Vprocessor, and the scratchpad) and an
+unit is used to decrypt the obfuscated program before loading
+estimate for HOP that does not account for ORAM. The last
+it into the instruction scratchpad.
+row shows the total overhead including an estimate for a
+Merkle tree scheme. Excluding the processor, scratchpad and
+VI. EVALUATION
+ORAM,HOPconsumes<9%oftheFPGAresources.Wesee
+We now present a detailed evaluation of HOP for some that the total area overhead of HOP is small and can be built
+commonly used programs, and compare HOP to prior work. on a single FPGA chip.
+11103
+102
+101
+100
+binsearchheappop sum findmaxradixsort hist bwt-rle
+noitucexEerucesnIotnwodwolS
+Comparison to insecure processor. The remaining perfor-
+Baseline ANM ScratchpadwithANM
+mance overhead of the optimized HOP (the third bar) comes
+from several sources. First, the performance of ORAM: The
+number of cycles to perform a memory access using ORAM
+is much higher than a regular DRAM. In HOP, an ORAM
+accessis40×moreexpensivethananinsecureaccess.Second,
+dummy accesses to adhere to a schedule: As shown in Sec-
+tion III-C, the performance overhead due to dummy accesses
+≤2×.Forprogramssuchasbwt-rle,HOPhasaslowdown
+aslowas8×.ThisisprimarilyduetothereductioninORAM
+accessesbymaintainingasmallworkingsetinthescratchpad.
+D. Case Study: bzip2
+Fig. 8: Execution time for different programs with (i) baseline
+To show readers how our system performs on a realistic
+scheme, (ii) ANM schedule and (iii) Scratchpad + ANM.
+andcomplexbenchmark,weevaluateHOPontheopen-source
+algorithm bzip2 (re-written for a scratchpad, cf. Figure 7).
+We evaluate the decompression algorithm only, as the decom-
+pression algorithm’s performance does not heavily depend on
+C. Main Results
+the input if one fixes the input size [1]. This allows us to run
+Figure8showstheexecutiontimeofHOPvariantsrelative an average case input and use its performance to approximate
+to an insecure processor. For each program, there are three the effect of running other inputs. To give a better sense for
+bars shown. The first bar is for the baseline HOP scheme how the optimizations are impacted by different inputs, we
+(i.e., Section III-B only); the second bar only uses an ANM don’t terminate at a worst-case time T but rather terminate as
+schedule without a scratchpad (adds Section III-C); and the soon as the program completes.
+third bar is our final scheme that uses a scratchpad and the
+We run tests on two inputs, both highly compressible
+ANM schedule (adds Section III-D). All schemes are relative
+strings. For the first input, HOP achieves 106× speedup over
+toaninsecureprocessorthatdoesnotuseORAMorhidewhat
+the baseline scheme and 17× slowdown over the insecure
+instruction it is executing. We assume this processor uses a
+version. For the second input, HOP achieves 234× speedup
+scratchpad that has the same capacity as HOP in Section V-A.
+over the baseline and 8× slowdown over the insecure version.
+Thetimerequiredtoinserttheprogramanddataisnotshown.
+Thus, the gains and slowdowns we see from the prior studies
+extend to this more sophisticated benchmark.
+ComparisonofHOPvariants.Ascanbeenseeninthefigure,
+the ANM schedule without a scratchpad gives a 1.5×∼18×
+E. Comparison with Related Work
+improvement. Adhering to an ANM schedule requires some
+dummy arithmetic or memory instructions during which the We now compare against prior work on obfuscation with
+processorisessentiallyidle.Weobservethatforourprograms, hardware (these prior works were not implemented) and sev-
+the idle time ranges between 43% and 49.9% of the execution eral works with related threat models.
+time, consistent with the claim in Section III-C. 1)Comparison to prior obfuscation from trusted hardware
+proposals [15], [17], [27]: We now compare against [15],
+Effect of a scratchpad. The effect of a scratchpad largely [17], [27] which describe obfuscation using trusted hardware.
+depends on program locality. We thus classify programs in Note that none of these schemes were implemented.
+our evaluation into four classes:
+Part of the proposals in [15], [17] require programs to
+1) Programs such as binsearch, heappop do not show be run as universal circuits under FHE while [27] evaluates
+locality.Thus,ascratchpaddoesnotimproveperformance. programs as universal circuits directly on hardware (i.e., by
+2) Programs such as sum, findmax stream (linear scan) feeding the encrypted inputs of each gate into a stateless
+hardwareunit:whereitdecryptstheinputs,evaluatesthegate,
+over the input data. Given that an ORAM block is larger
+and re-encrypts the output). We will now compare HOP to
+than a word size (512 bits vs 32 bits in our case), a
+these circuit-based approaches. Again, we stress that all of
+scratchpad in these streaming applications can serve the
+[15], [17], [27] require the use of trusted hardware for their
+next few (7 with our parameters) memory accesses after
+complete scheme and thus can be viewed similarly to HOP
+spld. A larger ORAM block size can slightly benefit these
+from a security perspective.
+applications while severely penalize programs with no
+locality, and therefore is not a good trade-off. Table III shows the speedup achieved by HOP relative
+3) Programsthatmaintainasmallworkingsetatalltimeswill to universal circuits run under FHE (left) and bare hardware
+greatly benefit from a scratchpad. We evaluate one such (right). We assume the cost of a universal circuit capable of
+program bwt-rle, which performs Burrows-Wheeler evaluating any c gate circuit is 18∗c∗logc gates [39]. We
+transform and run length encoding, and is used in com- compare the approaches on the findmax and binsearch
+pression algorithms. benchmarks, using a dataset size of 1 GB for each. We show
+4) Lastly,someprogramsareamixoftheabovecases—some findmax as it yields a very efficient circuit and a best-case
+data structures can be entirely loaded into the scratchpad situation for the circuit approach (relative to the correspond-
+whereas some cannot (e.g. a Radix sort program). ing RAM program); binsearch shows the other extreme.
+12For [15], [17], we assume a BGV-style FHE scheme [9], adhere to a particular schedule. For programs with predictable
+usingtheNTRUcryptosystem,withpolynomialdimensionand accesspatterns(sum, findmax, hist),GhostRider’sper-
+ciphertext space parameters chosen using [24], to achieve 80 formance is similar to that of an insecure processor.
+bits of security.6 For [27], we assume each NAND gate takes
+20cyclestoevaluate(10cyclesforinputdecryptionwithAES,
+0cyclesforevaluation,10cyclesforre-encryption).ForHOP, F. Time for Context Switch
+we assume the parameters from Section V.
+Since it was not required for our performance evaluation,
+FHE[15],[17] Hardware[27] wehavenotyetimplementedcontextswitching(SectionIII-E)
+On+Off On On+Off On in our prototype. Recall, context switching means the receiver
+findmax 1∗109 2∗109 4∗103 1∗104 interrupts the processor, which encrypts and writes out all the
+binsearch 4∗109 4∗1015 6∗103 1∗1010
+processor state (including CPU state, instruction scratchpad,
+data scratchpad, ORAM position map and stash) to DRAM.
+TABLE III: HOP speedup (×) relative to universal circuit ap-
+proaches.findmaxandbinsearchareover1GBdatasets. We estimate the time of a context switch as follows. The total
+amount of data stored by our token is ∼800 KB (Section V).
+Assuming a DRAM bandwidth of 10 GB/s and a matching
+In the Table, On+Off (‘online and offline’) assumes one encryption bandwidth, it would take ∼ 160µs to perform a
+searchqueryisrun:inthatcase,HOP’sperformanceisreduced context switch to run another program. Note that this assumes
+due to the time needed to initially load the ORAM. The On all data for a swapped-out context is stored in DRAM (i.e.,
+(‘online only’) column shows the amortized speedup when the ORAM data already in the DRAM need not be moved).
+manysearchqueriesaremadewithoutchangingtheunderlying If it must be swapped out to disk because the DRAM must
+searchdatabase(i.e.,withoutre-loadingtheORAMeachtime). makeroomforthenewcontext,thecontextswitchtimegrows
+Thisshowsaninherentdifferencetoworksbasedonuniversal proportional to the ORAM size.
+circuits: those works represent programs as circuits, where
+optimizedalgorithmssuchasbinsearchdonotseespeedup.
+In all cases, HOP shows orders of magnitude improvement to VII. PRACTICALDEPLOYMENTANDAPPLICATIONS
+the prior schemes.
+In this section, we present practical deployment consider-
+We note that our comparison to [15], [17] is conserva- ations and potential applications for a HOP processor.
+tive: we only include FHE’s time to perform AND/OR gate
+operations and not the cost of auxiliary FHE operations (re- Parties involved in the system. In a practical deployment,
+linearization, modulus switching, bootstrapping, etc). Lastly, there would be three parties involved in this system: The
+FHE is only one part of [15], [17]: we don’t include the cost sender is a software provider (e.g. Microsoft), the receiver
+of NIZK protocols, etc. which those schemes also require. is the end user and the manufacturer is a hardware company
+(e.g.,Intel,TSMC).Softwareprovidersareincentivizedtouse
+2)Comparison with iO [37]: We compare HOP with an
+this framework to hide the IP of their proprietary programs so
+implementation of indistinguishability obfuscation (iO) that
+as to sell those programs to customers without being pirated.
+does not assume a trusted hardware token. Note that while
+Hardware manufacturers are incentivized to provide security
+VBB obfuscation is not achievable in general, iO is a weaker
+in order to retain the software providers as customers (e.g.,
+notion of obfuscation. With [37], evaluating an 80-bit point
+Intel SGX was initially envisioned as a buy-in service).
+function (a simple function that is 0 everywhere except at one
+point) takes about 180 seconds while HOP takes less than a
+msec, which is about 5-6 orders of magnitude faster. Potential applications. The focus of this paper is to build
+hardware that satisfies the definition of VBB obfuscation.
+3)Comparison with GhostRider [40]: Recall from Sec- Thus, our model assumes obfuscation of ‘batch programs’ –
+tion II that GhostRider protects input data to the program those which take inputs, and compute non-interactively until
+but not the program. Since our privacy guarantee is strictly a result is produced. Some examples of such programs are
+greater than GhostRider, we now compare to that work to compilers, compression algorithms, machine learning algo-
+show the cost of extra security. Note: we compare to the rithms, etc. In our setting, the program itself should contain
+GhostRidercompilerandnottheimplementationin[40]which somesensitiveIP(towarrantobfuscation).Giventhepervasive
+uses a different parameterization for the ORAM scheme. This nature of batch programs, we see HOP being applicable in
+comparison shows the additional cost that is incurred by HOP both commercial and military settings. We note that even the
+to hide the program. We don’t show the full comparison for military outsources its fabrication (and therefore its trust) to
+lack of space, but point out the following extreme points: For external foundries (e.g., global foundries handles runs for the
+programs with unpredictable access patterns (binsearch, NSA).
+heappop), GhostRider outperforms HOP by ∼ 2×. HOP’s
+additional overhead is from executing dummy instructions to Beyondbatchprograms,itispossibletosupportstreaming
+applicationswithlittlechangetothemodel.Inparticular,while
+6Whenrepresentedascircuits,bothfindmaxandbinsearchlooklike HOP runs, it can accept streams of public data (e.g., a video
+a linear PIR. Over a 1 GByte dataset, we evaluate this function with a 10- feed) in a similar fashion to Stream Ascend [57]. Importantly,
+levelFHEcircuit,whichgivesanFHEpolynomialdimension(n)of∼8192
+thishasnoimpactonsecurity,aslongasHOPdoesn’tchange
+and ciphertext space q of ∼ 2128 (using terminology from [9]). With these
+its observable behavior given the data in the stream and the
+parameters,asinglepolynomialmultiplication/additionusingNTL[50]costs
+14ms/.4msona3GHzmachine. program accepts this data at fixed intervals of time.
+13VIII. CONCLUSION [14] J.H.Cheon,K.Han,C.Lee,H.Ryu,andD.Stehle´,“Cryptanalysisof
+themultilinearmapovertheintegers,”inEUROCRYPT,2015.
+This paper makes two main contributions. First, we con-
+[15] K.-M. Chung, J. Katz, and H.-S. Zhou, “Functional encryption from
+struct an optimized hardware architecture - called HOP - for
+(small)hardwaretokens,”inASIACRYPT,2013.
+runningobfuscatedRAMprograms.Wegiveamatchingtheo-
+[16] J.DeanandS.Ghemawat,“Mapreduce:simplifieddataprocessingon
+retic model for our optimized architecture and prove it secure. largeclusters,”CommunicationsoftheACM,2008.
+A by-product of our analysis shows the first obfuscation for
+[17] N.Do¨ttling,T.Mie,J.Mu¨ller-Quade,andT.Nilges,“Basingobfusca-
+RAM programs using ‘stateless’ tokens. Second, we present tiononsimpletamper-proofhardwareassumptions.”IACRCryptology
+a complete implementation of our optimized architecture and ePrintArchive,2011.
+evaluate it on real-world programs. The complete design [18] C. W. Fletcher, M. v. Dijk, and S. Devadas, “A secure processor
+requires 72% the area of a V7485t Field Programmable Gate architectureforencryptedcomputationonuntrustedprograms,”inSTC,
+2012.
+Array (FPGA) chip. Run on a variety of benchmarks, HOP
+achieves an average overhead of 8× ∼ 76× relative to an [19] C. W. Fletcher, L. Ren, A. Kwon, M. van Dijk, and S. Devadas,
+“Freecursiveoram:[nearly]freerecursionandintegrityverificationfor
+insecure system. To the best of our knowledge, this effort
+position-basedobliviousram,”inASPLOS,2015.
+represents the first implementation of a provably secure VBB
+[20] C. W. Fletcher, L. Ren, A. Kwon, M. Van Dijk, E. Stefanov, D. Ser-
+obfuscation scheme in any model under any assumptions.
+panos, and S. Devadas, “A low-latency, low-area hardware oblivious
+ramcontroller,”inFCCM,2015. IEEE,2015.
+ACKNOWLEDGMENT [21] S. Garg, “Program obfuscation via multilinear maps,” in Security and
+CryptographyforNetworks,2014.
+We would like to thank anonymous reviewers for their
+[22] S. Garg, C. Gentry, S. Halevi, M. Raykova, A. Sahai, and B. Waters,
+insightful feedback. This work is supported in part by NSF “Candidate indistinguishability obfuscation and functional encryption
+grants CNS-1314857, CNS-1453634, CNS-1518765, CNS- forallcircuits,”inFOCS,2013.
+1514261, an ONR-YIP Award, a Packard Fellowship, a Sloan [23] C.Gentry,S.Halevi,S.Lu,R.Ostrovsky,M.Raykova,andD.Wichs,
+Fellowship, a Google Ph.D. Fellowship, Google Faculty Re- “Garbled ram revisited,” in Annual International Conference on the
+search Awards, a DARPA Brandeis grant, a DARPA Safeware
+TheoryandApplicationsofCryptographicTechniques,2014.
+grant and a VMware Research Award. This work was done in [24] C.Gentry,S.Halevi,andN.P.Smart,“Homomorphicevaluationofthe
+aescircuit,”inAdvancesinCryptology–CRYPTO2012,2012.
+part while a subset of the authors were visiting the Simons
+Institute for the Theory of Computing, supported by the [25] O.Goldreich,“Towardsatheoryofsoftwareprotectionandsimulation
+by oblivious rams,” in ACM symposium on Theory of computing
+SimonsFoundationandbytheDIMACS/SimonsCollaboration
+(STOC),1987.
+in Cryptography through NSF grant CNS-1523467.
+[26] O.GoldreichandR.Ostrovsky,“Softwareprotectionandsimulationon
+obliviousrams,”J.ACM,1996.
+REFERENCES [27] V.Goyal,Y.Ishai,A.Sahai,R.Venkatesan,andA.Wadia,“Founding
+cryptographyontamper-proofhardwaretokens,”inTCC,2010.
+[1] “bzip2manpages,”http://www.bzip.org/1.0.5/bzip2.txt.
+[28] D. Grawrock, Dynamics of a Trusted Platform: A Building Block
+[2] “Opencores,”http://opencores.org/.
+Approach,1sted. IntelPress,2009.
+[3] D. Agrawal, B. Archambeault, J. R. Rao, and P. Rohatgi, “The em
+[29] S.Hada,“Zero-knowledgeandcodeobfuscation,”inASIACRYPT2000,
+sidechannel(s),”inInternationalWorkshoponCryptographicHardware
+2000.
+andEmbeddedSystems. Springer,2002,pp.29–45.
+[30] K.Ja¨rvinen,V.Kolesnikov,A.-R.Sadeghi,andT.Schneider,“Garbled
+[4] B. Barak, O. Goldreich, R. Impagliazzo, S. Rudich, A. Sahai, S. P.
+circuitsforleakage-resilience:Hardwareimplementationandevaluation
+Vadhan,andK.Yang,“Onthe(im)possibilityofobfuscatingprograms,”
+ofone-timeprograms,”inCHES2010,2010.
+inCRYPTO,2001.
+[31] M.Kainth,L.Krishnan,C.Narayana,S.G.Virupaksha,andR.Tessier,
+[5] N.Bitansky,R.Canetti,S.Goldwasser,S.Halevi,Y.T.Kalai,andG.N.
+“Hardware-assistedcodeobfuscationforfpgasoftmicroprocessors,”in
+Rothblum,“Programobfuscationwithleakyhardware,”inAdvancesin
+Design,Automation&TestinEuropeConference&Exhibition,2015.
+Cryptology–ASIACRYPT2011. Springer,2011,pp.722–739.
+[32] J. Katz, “Universally composable multi-party computation using
+[6] N. Bitansky, S. Garg, H. Lin, R. Pass, and S. Telang, “Succinct
+tamper-proof hardware,” in Annual International Conference on the
+randomized encodings and their applications,” in Proceedings of the
+TheoryandApplicationsofCryptographicTechniques,2007.
+Forty-Seventh Annual ACM on Symposium on Theory of Computing.
+ACM,2015,pp.439–448. [33] A´. Kiss and T. Schneider, “Valiant’s universal circuit is practical,” in
+EUROCRYPT,2016.
+[7] A. Bittau, A. Belay, A. Mashtizadeh, D. Mazie`res, and D. Boneh,
+“Hackingblind,”inIEEES&P,2014. [34] P. C. Kocher, J. Jaffe, and B. Jun, “Differential power analysis,” in
+[8] D. Boneh, R. A. DeMillo, and R. J. Lipton, “On the importance of CRYPTO’99,1999.
+checking cryptographic protocols for faults,” in International Confer- [35] V.KolesnikovandT.Schneider,“Apracticaluniversalcircuitconstruc-
+ence on the Theory and Applications of Cryptographic Techniques, tionandsecureevaluationofprivatefunctions,”inFCDS,2008.
+1997.
+[36] V. Koppula, A. B. Lewko, and B. Waters, “Indistinguishability obfus-
+[9] Z. Brakerski, C. Gentry, and V. Vaikuntanathan, “(Leveled) Fully cationforturingmachineswithunboundedmemory,”inProceedingsof
+HomomorphicEncryptionwithoutBootstrapping,”inITCS,2012. theForty-SeventhAnnualACMonSymposiumonTheoryofComputing.
+[10] R. Canetti, “Universally composable security: A new paradigm for ACM,2015,pp.419–428.
+cryptographicprotocols,”inFOCS,2001. [37] K.Lewi,A.J.Malozemoff,D.Apon,B.Carmer,A.Foltzer,D.Wagner,
+[11] R. Canetti, J. Holmgren, A. Jain, and V. Vaikuntanathan, “Succinct D.W.Archer,D.Boneh,J.Katz,andM.Raykova,“5gen:Aframework
+garbling and indistinguishability obfuscation for RAM programs,” in forprototypingapplicationsusingmultilinearmapsandmatrixbranch-
+ProceedingsoftheForty-SeventhAnnualACMonSymposiumonTheory ingprograms,”inProceedingsofthe2016ACMSIGSACConferenceon
+ofComputing. ACM,2015,pp.429–437. ComputerandCommunicationsSecurity. ACM,2016,pp.981–992.
+[12] C.CelioandE.Love,“Thesodorprocessorcollection,”http://riscv.org/ [38] D. Lie, C. Thekkath, M. Mitchell, P. Lincoln, D. Boneh, J. Mitchell,
+download.html#tab sodor. andM.Horowitz,“Architecturalsupportforcopyandtamperresistant
+software,”ACMSIGPLANNotices,2000.
+[13] D.ChampagneandR.B.Lee,“Scalablearchitecturalsupportfortrusted
+software,”inHPCA,2010. [39] H.Lipmaa,P.Mohassel,andS.Sadeghian,“Valiant’suniversalcircuit:
+14Improvements, implementation, and applications,” Cryptology ePrint by a continuous run of memory instructions. Denote the i-th
+Archive,Report2016/017,2016,http://eprint.iacr.org/2016/017. epoch as AniMpi. For example, the program
+[40] C. Liu, A. Harris, M. Maas, M. Hicks, M. Tiwari, and E. Shi, A A A A M A A M M M
+“Ghostrider: A hardware-software system for memory trace oblivious has 2 epochs, with n =4,p =1,n =2,p =3.
+1 1 2 2
+computation,”inASPLOS,2015.
+[41] M.Maas,E.Love,E.Stefanov,M.Tiwari,E.Shi,K.Asanovic,J.Ku- Without loss of generality, we align the start of each
+biatowicz,andD.Song,“Phantom:Practicalobliviouscomputationin epoch with the beginning of an ANM schedule. Given our
+asecureprocessor,”inCCS,2013. choice of N, we examine the number of processor cycles
+[42] F. McKeen, I. Alexandrovich, A. Berenzon, C. V. Rozas, H. Shafi, spent doing dummy operations in each epoch. For the rest
+V. Shanbhogue, and U. R. Savagaonkar, “Innovative instructions and of the analysis, we abbreviate |M| = ORAMlatency and
+softwaremodelforisolatedexecution.”inHASP@ISCA,2013.
+|A|=Arithmeticlatency.
+[43] O.Ohrimenko,M.Costa,C.Fournet,C.Gkantsidis,M.Kohlweiss,and
+D.Sharma,“Observingandpreventingleakageinmapreduce,”inCCS, Consider the start of epoch i (i.e., the first A instruction).
+2015. To progress from the start of the epoch to the first M
+[44] R.Pass,E.Shi,andF.Tramr,“Formalabstractionsforattestedexecution instruction(excluded)intheepoch,weperform|A|∗N∗(cid:98)ni(cid:99)+
+secureprocessors.”
+|A|∗(n mod
+N)realcyclesand|M|∗(cid:98)ni(cid:99)+|A|∗(N−N
+(n
+[45] A.Rane,C.Lin,andM.Tiwari,“Raccoon:Closingdigitalside-channels i N i
+mod N)) dummy cycles worth of work. To progress from the
+throughobfuscatedexecution,”inUSENIXSecurity,2015.
+first M instruction (including) to the end of the epoch, we
+[46] L. Ren, X. Yu, C. Fletcher, M. van Dijk, and S. Devadas, “Design
+perform |M|∗p real cycles and |A|∗N ∗(p −1) dummy
+space exploration and optimization of path oblivious ram in secure i i
+processors,”inSymposiumonComputerArchitecture,2013. cycles worth of work. Note that by our definitions of epochs,
+[47] S.SchrittwieserandS.Katzenbeisser,“Codeobfuscationagainststatic we have that p i ≥1.
+anddynamicreverseengineering,”inInformationHiding,2011.
+Alsonotethat|M|=|A|∗N byourchoiceofN.Combin-
+[48] F. Schuster, M. Costa, C. Fournet, C. Gkantsidis, M. Peinado, ingthesetwotimeperiods,wespend|M|∗((cid:98)ni(cid:99)+p )+|A|∗(n
+G.Mainar-Ruiz,andM.Russinovich,“Vc3:Trustworthydataanalytics N i i
+inthecloudusingsgx,”inIEEES&P,2015. mod N)realcyclesand|M|∗((cid:98)n Ni(cid:99)+p i−1)+|A|∗(N−(n i
+mod N)) dummy cycles worth of work.
+[49] E. Shi, T.-H. H. Chan, E. Stefanov, and M. Li, “Oblivious ram with
+O(log3N)worst-casecost,”inASIACRYPT,2011.
+[50] V.Shoupetal.,“Ntl:Alibraryfordoingnumbertheory,”2001. APPENDIXB
+[51] E.M.Songhori,S.Zeitouni,G.Dessouky,T.Schneider,A.-R.Sadeghi,
+OBFUSCATIONINTHEPUBLIC-KEYSETTING
+andF.Koushanfar,“Garbledcpu:Amipsprocessorforsecurecompu-
+Forthesakeofsimplicity,wedescribeourconstructionand
+tationinhardware,”inDAC,2016.
+proof in the model where a single sender embeds a symmetric
+[52] E.Stefanov,M.vanDijk,E.Shi,C.Fletcher,L.Ren,X.Yu,andS.De-
+key into a secure processor and provides this to the receiver
+vadas,“PathORAM–anextremelysimpleobliviousramprotocol,”in
+CCS,2013. along with the obfuscated program to execute. However, we
+[53] G.E.Suh,D.Clarke,B.Gassend,M.VanDijk,andS.Devadas,“Aegis: notethatwecanextendourresultstoreusethetokenandallow
+architecture for tamper-evident and tamper-resistant processing,” in multiple senders to obfuscated the program for a receiver. For
+ConferenceonSupercomputing,2003. example, suppose two senders S and S would like to both
+1 2
+[54] L. Tan, “The worst case execution time tool challenge 2006: The ex- send encrypted programs to be executed by a receiver R on a
+ternaltest,”inLeveragingApplicationsofFormalMethods,Verification
+hardwaretoken(providedbyatrustedhardwaremanufacturer).
+andValidation,2006.ISoLA2006.,2006.
+Thehardwarewouldthenbeinitializedwithasecretkeysk
+[55] L.G.Valiant,“Universalcircuits(preliminaryreport),”inSTOC,1976. enc
+of a public-key CCA secure encryption scheme (with public
+[56] X.S.Wang,S.D.Gordon,A.McIntosh,andJ.Katz,“Securecompu-
+key pk ) along with a verification key vk of a signature
+tationofmipsmachinecode,”ePrint2015/547,Tech.Rep.,2015. enc sig
+scheme (with signing key sk ). The signing key sk would
+[57] X. Yu, C. W. Fletcher, L. Ren, M. v. Dijk, and S. Devadas, sig sig
+be owned by a trusted certificate authority and would also be
+“Generalized external interaction with tamper-resistant hardware with
+bounded information leakage,” in Proceedings of the 2013 ACM storedinthetoken.Now,inourconstruction,wewouldreplace
+Workshop on Cloud Computing Security Workshop, ser. CCSW ’13. the symmetric key CCA secure authenticated encryption with
+New York, NY, USA: ACM, 2013, pp. 23–34. [Online]. Available: a public key CCA secure encryption, where all ciphertext are
+http://doi.acm.org/10.1145/2517488.2517498
+authenticated with a signature scheme. When S wishes to
+1
+[58] X. Zhuang, T. Zhang, and S. Pande, “Hide: an infrastructure for
+send an obfuscated program P to a receiver R, S would
+efficientlyprotectinginformationleakageontheaddressbus,”inACM 1 1
+SIGPLANNotices,2004. pick a signing key/verification key pair (sk S1,vk S1). S 1 will
+obtainasignatureofvk fromthetrustedcertificateauthority
+S1
+(denote this signature by σ and note that this signature will
+APPENDIXA
+verify under the verification key vk ). Now, S will encrypt
+PROOFOFSCHEDULEOVERHEAD
+P with pk and authenticate all
+s cig
+iphertexts
+w1
+ith sk and
+1 enc S1
+provide these ciphertexts along with σ to the receiver. The
+Claim: For any program and input, the setting of N from
+receiver will feed in encrypted ciphertexts along with σ to
+SectionIII-Cresultsin≤50%ofprocessorcyclesperforming
+the token. The token, when decrypting ciphertexts, will first
+dummy work. In other words, the schedule incurs ≤ 2× per-
+check the validity of vk by verifying σ and the signatures
+formanceoverheadrelativetothebestpossibleA-M schedule S1
+of all the ciphertexts. If all the checks pass, the token will
+(which is insecure over the timing channel) and incurs no
+decrypt the ciphertexts using sk . When encrypting state to
+enc
+dummy work.
+be sent back to the receiver, the token will encrypt it with
+Proof:Withoutlossofgenerality,webreakupaprogram pk enc and sign it with sk sig. This will mimic the symmetric
+into a sequence of instruction epochs, where each epoch key CCA secure authenticated encryption scheme that we use
+consistsofacontinuousrunofarithmeticinstructionsfollowed in our single sender/receiver scheme.
+15

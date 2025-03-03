@@ -1,0 +1,1020 @@
+Optimized Group Rekey for Group Communication
+Systems
+Ohad Rodeh, Kenneth P. Birman, Danny Dolev
+1
+Abstract
+centralized servers for key dissemination. The servers are
+Inthispaperwedescribeanefficientalgorithmfortheman- single points of failure. Our solution uses a Group Com-
+agementofgroup-keys. Ouralgorithmisbasedonaproto- municationSystem(GCS);itiscompletelydistributedand
+col for secure IP-multicast and is used to manage group- fault-tolerant.Itachieveslowlatencyinthecaseofmember
+keys in group-communication systems. Unlike prior work, join/leave,anditsperformanceisonparwiththecentralized
+basedoncentralizedkey-servers,oursolutioniscompletely solution.
+distributed and fault-tolerant and its performance is com- A GCS providesreliable multicast and membership ser-
+parabletothecentralizedsolution. vices to groups of processes, complying with the the Vir-
+tual Synchrony (VS) [11] reliability model. All processes,
+insidea group, haveknowledgeofthe setofcurrently live
+and accessible members. When some process crashes, or
+a networkpartitionoccurs, processesreceiveaviewnotifi-
+1 Introduction cation event, describing the current membership. This is
+also called a view-change. GCSs provide Virtually Syn-
+Increasingly many applications require multicast services, chronous [11] communication to applications in spite of
+for example, teleconferencing, distributed interactive sim- changingnetworkconditionsandprocesscrashes. TheVS
+ulation, collaborative work. To protect multicast message reliability guarantee is, in simple terms, “atomic failure”.
+content,suchapplicationsrequiresecuremulticast. This means that if a process crashes in a group, then the
+Amulticastgroupcanbeefficientlyprotectedusingasin- remainingmembersviewthisat“thesametime”. Remain-
+glesymmetricencryptionkey.Thiskeyissecurelycommu- ingprocessesdeliverthesamesetofmessagespriortothe
+nicatedtoallgroupmemberswhichsubsequentallyuseitto view-change, hence, they getthe view notification “simul-
+encrypt/decryptgroupmessages. Thegroup-keyissecurely taneously”. VSrequiresthat,whenprogressismade,mem-
+switched whenever the group membership changes, there- bersmaintainagreementuponthemembership–arequire-
+bypreventingoldmembersfromeavesdroppingoncurrent mentwhichimpliesthat,undercertain patternsoffailures,
+groupconversations. Thechallengeistocreateanefficient progressmaynotbepossible[5]. Fortunately,suchpattern-
+andfastkey-switchalgorithmthatcanhandlelargegroups s of failureare veryunlikely. Consequently,GCS systems
+andahighrateofmembershipchanges. live within certain limitations. For example, the Ensem-
+The general case of a multicast group includes scenar- blesystemmembershipmechanismmayfailtostabilize,if
+ios where the group size is very large, up to thousands or extreme network conditions occur. It may block and un-
+millionsofmembers, andwherethere arefewsenders and block the group for extended periods. GCSs guaranty that
+manyreceivers. Italsoincludesamorespecificcasewhere if the network is stable for a long enough period, then the
+there is symmetry between group members. By this we membershipwillstabilize. Insuchcases, the group-leader
+mean that any member may be a source of multicast mes- iseasytochoose:itistheprocesswithlexicographically“s-
+sagesaswellasarecipient. Thisworkfocusesonthesym- mallest”name. Afamilyofsuchsystemshavebeendevel-
+metriccase. opedin variousplaces inthe world. Apartial listincludes
+IP-multicast is a widespread low-level multicast primi- Totem[13], Spread [29], Relacs[17], Timewheel[15] and
+tive. IP-multicast security has been extensively discussed Phoenix [2]. Ensemble, our GCS, evolved from Isis [9],
+in the literature [1, 7, 4, 3, 21, 26] and efficient solution- Horus[25],andTransis[27].
+s have been proposed to secure it. These protocols all use
+1TheauthorsweresupportedinpartbytheIsraeliMinistryofSciencegrantnumber032-7892,byDARPA/ONRundergrantN00014-92-J-1866,and
+NSFgrantEIA97-03470.Groupcommunicationscalabilityisinherentlylimitedby
+the number of members in the group. The VS model re-
+quires all members to constantly participate in GCS pro-
+tocols,sendacknowledgments,requestsforretransmission,
+flowcontrolinformationandmore. Asthenumberofpro-
+cesses in the group increases, the probability that some
+of them will become temporarily unresponsive increases.
+Thisisespeciallytrueonoff-the-shelfOSes(Unix
+(cid:0)(cid:2) (cid:1)
+and
+NT
+(cid:0)(cid:3) (cid:1)
+firststepinvolvesextendingapowerfulkeyingarchitecture
+tosupporthighavailability.Elsewhere,weplantoreporton
+the second half, which will investigate systems issues and
+performance considerations arising when such a system is
+engineeredfor high performanceand studied carefullyun-
+dercontrolledtestsituations.
+The GCS approach emphasizes the peer-to-peer model,
+where all members are equally trusted. The group should
+)thatdonotguaranteeareal-timeenvironment. We beabletocontinuefunctioningintheeventofapartitionof
+have managed to scale Ensemble to run on 100 processes member failure. It is possible to create a key-architecture
+butnomore. AstudyhasbeenpublishedontheVSscala- where a centralized key-server, replicated for high avail-
+bilityproblemsee[10].Therefore,scalability,inthisarticle ability, chooses and disseminates a group-keyto the other
+meansupto100members. members. However, should the key-servers split from the
+ToovercometheVSscalabilityproblem[10]suggestsre- rest of the group — the group would no longer be able to
+ducing the reliability model. Other approaches use light- rekeyitself. While itispossibleto usehybrid approaches,
+weightgroupslayeredontopofacore-group. Infact,most thispaperdoesnotuseacentralized/replicatedserver.
+GCSsdescribedabovehavelight-weightgroupextensions.
+Suchanapproachuses a client/serverarchitecture where a
+2 Model
+smallnumberofserversruntheactualGCSprotocols,pro-
+vidingGCSservicestoalargenumberofclients.
+Our solution is designed for group communication sys- The“universe”forthepurposesofthispapersiscomprised
+tems that operate with at most one-hundred members per of a set of machines connected through the Internet. Ma-
+group,a limitconsistentwiththescalabilitycurrentlypos- chines, or processes, can communicate with each other by
+sibleinsystems likeEnsemble. Work isinprogresstode- passingmessagesthroughthenetwork.Thesystemisasyn-
+velopanew,morescalable,approachtogroupmembership chronous:clockdriftsareunboundedandmessagesmaybe
+management for Ensemble [10], and in conjunction with arbitrarily delayed or lost in the network. We do not con-
+this we will revisit the scalability of our security architec- siderByzantinefailures. Thenetworkcansplitintoseveral
+ture. We note that our algorithm makes use of the virtual disjoint components allowing only machines in the same
+synchronypropertiesofferedbyEnsembleandhencecould componenttopassmessagestoeachother.
+onlybeusedinasettingsupportingtheseproperties. A GCS overcomes these network “inconveniences” and
+AsecureGCSensuresthatallmembersinaviewareau- presents the application with a simple interface. As de-
+thenticandauthorized. Itprovidesasecurekeywithwhich scribedearlier,aGCSallowsthecreationofprocessgroups
+allgroupcommunicationisprotected. Membersoutsidethe inwhichreliableorderedmulticastandpoint-to-pointmes-
+groupcannotlisteninongroup-communications. Apartial saging is supported. Processes may dynamically join and
+list of such GCSs include Antigone [20] and Spread [28]. leave a group, and group components can merge through
+Some GCSs are resistant to Byzantine faults, a partial list theGCSprotocolsandstate-transfer.
+includesTotem[12],andRampart[23]. Weassumeprocessesingrouphaveaccesstotrustedau-
+Our solution is related to other group-key architectures thenticationandauthorizationservices,aswellastoalocal
+developed for GCSs. These works begin with seminal re- key-generation facility. We also assume that the authenti-
+search by Reiter [16, 24] and Gong [6], continuing to re- cationserviceallowsprocessestoopensecurechannels. A
+cent research on Ensemble [19]. These results show how secure channel between a pair of processes allows the se-
+group keying can be integrated with a Group Membership cureexchangeofprivateinformation.
+Protocol(GMP)tosupportsuchfunctionsassecurelyman- Ensembleallowsthecreationofsecure-groupswhereal-
+aging keys at the group members, securely rekeying, sup- l group members agree on a single symmetric key. Only
+porting secure channels between members (discussed be- trustedandauthorizedmembersareallowedintothegroup.
+low),MAC-ingmessagesandencryptingthedatasegments Since all members use the same key to MAC and encrypt
+of messages. The term MAC, as used here, is defined in theirmessages,nointrudercanattackthegrouporpurport
+the IETF terms as an HMAC [22]. An HMAC is a Keyed tobepartofit.Sinceallgroupmembershavethesameview
+Hash[8]thatcanbebasedonanyinteractivecryptographic ofthemembership,wenumberthemlexicographicallyfrom
+hash(e.g.,MD5orSHA-1). Itisusedprotecttheintegrity
+ofamessage.
+Herewereportonthefirsthalfofanefforttointegrateas-
+calablekeyingarchitecturewiththeEnsemblesystem. This
+(cid:4)
+to (cid:5) . Whenwerefertothegroupleader,weimplicitlyre-
+fertomembernumber1(denoted (cid:6)(cid:8) (cid:7) ).
+Weusethenotations:
+(cid:6)(cid:10) (cid:9)(cid:12) (cid:11)(cid:13) (cid:6)(cid:10) (cid:14)(cid:16) (cid:15)(cid:17)(cid:19) (cid:18)(cid:21) (cid:20)(cid:23) (cid:22) Member (cid:6)(cid:10) (cid:9) sends message (cid:20) tomembers (cid:6)(cid:10) (cid:14)(cid:25) (cid:24)(cid:26) (cid:6)(cid:10) (cid:17) .
+(cid:27)(cid:29) (cid:28)(cid:31) (cid:30)! # " %
+(cid:15)
+$
+(cid:22) A tuple consisting of message
+(cid:28)
+MAC-ed
+with key &’ (cid:7) , and
+(cid:28)
+MAC-ed with key &) ( . Note
+that such a tuple can be protected in a manner that
+would prevent intruders from tampering with either
+componentofthepair.
+GroupMembers: aredenotedby (cid:6) (cid:7)+ *, *, * (cid:6). - .
+Subgroupkeys: aredenotedby &) / ,where 0 isthesubset
+ofmembers
+This paper relies strongly on the VS guarantee that all
+members agree onthe group-view. This allows operations
+suchas:
+1
+Agreementonthegroupleader,justchoose
+1
+(cid:6)(cid:8) (cid:7)
+Split the group intwo: if there are (cid:5) members, split
+into
+(cid:4)
+2 *(cid:29) *, * (cid:5)+ 35 4(cid:16) 6 and 2(cid:5)+ 35 48 7
+(cid:4)
+*(cid:29) *, * (cid:5)(cid:3) 6 .
+Hence, we cannot use a reduced reliability model, and we
+focusonsecuringGCSabstractions.
+Ideally,onewouldhopethatdistributedprotocolscanbe
+provedlive and safe. Key management protocols must al-
+soprovideagreementandauthenticityproperties. Herewe
+define these properties formally, and discuss the degree to
+whichourprotocolssatisfythem.
+Liveness: Wesaythataprotocolisliveif,forallpossible
+runs of the protocol, progress occurs. In our work,
+progresswouldinvolvetheinstallationofnewmem-
+bership views with associated group keys, and the
+successfulrekeyingofgroups.
+Safety: We say that a protocol issafe if itdoes notreveal
+thegroupkeytounauthorizedmembers.
+Agreement: the protocol should guarantee that all group-
+membersdecideonthesamegroup-key.
+Authenticity: Anauthenticgroup-keyisonechosenbythe
+group-leader.
+Inthearticlebodywe describeprotocolsinatersefash-
+ion. Here we describe the manner in which a protocol is
+actuallyexecuted,andhowitslivenessisensured. Aproto-
+colisdescribedasaseriesofsend/multicasteventsbetween
+members,andaslocalcomputationsteps.Forexample,pro-
+tocol 9 (below)securelyswitchesthegroupkey.
+Protocol 9
+Thisprotocolissafesinceitusessecurechannelstogroup
+members, all of which are trusted. However, as stated
+above,
+:
+1)Thegroupleaderchoosesanewkey.
+2) The leader uses secure channels to send the key
+securelytothemembers.
+9 is not live. Notice that the protocol requires all
+processestoreceivethenew-key.Ifsomememberfailsand
+neverrecoversduringtheexecutiontheprotocolblocks. To
+make the protocol fault-tolerant we restart the protocol in
+caseofaviewchange. Anotherproblemwefaceisprotocol
+termination. Beforestartingtouseakey,participantsneed
+toknowthatallmembersoftheviewhavereceivedthatkey.
+Thatis,allgroupmembersshouldbenotifiedthatthepro-
+tocolhasterminated. We useatwophaseprotocolforthis
+purpose:
+1) Each group member, once it receives the group-
+keyfromtheleader,sendsanacknowledgment(inthe
+clear)totheleader.
+2)Theleader,onceitreceivesacknowledgmentsfrom
+allgroupmembers,multicastsaProtoDonemessage.
+3) A member that receives a ProtoDone message
+knows that the protocol has terminated and the new
+keycannowbeused.
+Noprotocolsolvingthisclassofproblemscanguarantee
+liveness in an asynchronous networking environment (see
+FLP [5]). However, our protocol is able to make progress
+”most of the time.” The scenarios under which the proto-
+colwouldfailtomakeprogressareextremelyimprobable,
+involvingan endless sequence of network partitioning and
+remerge events, or of timing failures that mimic process
+crashes. Theoretically,such things can happen, but in any
+real network, these sequences of events would not occur,
+henceourprotocolshouldmakeprogress.
+Weimplicitlyaddtheabovestepstoallprotocols,there-
+byimprovingtheirtolerancetofailure. However,doingso
+does not“overcome”the FLPresult, nonetheless, our pro-
+tocolswouldbeliveinarealisticsettings,andtheapproach
+allowsustospecifyprotocolsinamoresuccinctfashion.
+Theprotocoldescribedaboveensuresagreementbecause
+a single member acts as leader. The leader decides on a
+keyand disseminates itto therest ofthe group. Hence, a-
+greement is satisfiedtrivially. All the protocolswe use, in
+essence, use agreed leader or sub-leaders that choose and
+disseminatekeys. Hence,agreementiseasilysatisfied,and
+we do not discuss it further, nor provideagreement proof-
+s. Authenticity is satisfied from the GCS security proper-
+ties. Onlyanauthorizedauthenticatedprocesscanbecome
+agroup-member. Hence,anykeyacceptedbyamemberis
+sentbyanothermember. Theoriginatorbyvirtueofbeing
+agroupmemberisauthenticatedandauthorized. Thus,we
+donotdiscussauthenticityrequirementsfurther.3 The centralized solution (
+:
+)
+HerewedescribeaprotocolbyWong,GoudaandLam[3].
+A keygraph is defined as a directed tree where the leafs
+are the group members and the nodes are keys. A mem-
+ber knows all the keys on the way from itself to the root.
+Thekeysaredistributedusingakey-server. InFigure3we
+seeatypicalkey-graphforagroupof8members.
+Each member (cid:6). ; shares a key with the server, &< ; , and
+also shares keys with subgroups in the tree. For example,
+member (cid:6)(cid:8) (cid:7) knowskeys &’ (cid:7)(cid:16) (cid:24)= &’ (cid:7)(cid:26) (> (cid:24)? &. (cid:7)A @> (cid:24)= &’ (cid:7)(cid:26) B . It shares &’ (cid:7)
+withtheserver, & (cid:7)(cid:26) ( withmember (cid:6) ( , & (cid:7)A @ withmembers
+(cid:6) ( (cid:24)(cid:26) (cid:6)(cid:10) C> (cid:24)? (cid:6) @ ,and & (cid:7)(cid:26) B withmembers (cid:6) (cid:7) (cid:24) *, *, * (cid:6) B .
+The tree is built by the key server, itinitially has secure
+channelswitheachofthemembers. Itusesthesechannel-
+s to create the higher level keys. For example, in order to
+createkey & (cid:7)(cid:26) ( itencrypts & (cid:7)(cid:26) ( withkeys & (cid:7) and & ( , and
+sends
+(cid:27)
+& (cid:7)(cid:26) (
+(cid:30) "
+(cid:15)
+$
+tomembers (cid:6) (cid:7) (cid:24)(cid:26) (cid:6) ( . Onlymembers (cid:6) (cid:7)
+and (cid:6) ( will be able to decrypt this message and retrieve
+&’ (cid:7)(cid:26) ( . In the same manner keys & C @5 (cid:24)= &< D= E> (cid:24)? &) F? B are estab-
+lished. To establish &’ (cid:7)G @ the server chooses &’ (cid:7)A @ encrypts
+itwith &. (cid:7)G ( and & C @ andsends
+(cid:27)
+&. (cid:7)A @
+(cid:30)! # "H $ %
+(cid:15)
+IK J
+tomembers
+(cid:6)(cid:8) (cid:7)(cid:16) (cid:24) *(cid:29) *, * (cid:6). @ . Insimilarmanner &) D? B isestablished. Key &’ (cid:7)G B
+isthenencryptedwith &’ (cid:7)G @5 (cid:24)= &< D= B andmulticast.
+Figure3describesthisthroughatime-linediagram.First,
+keys & (M L (cid:27) & (cid:7)G ( (cid:24)? &< C @ (cid:24)= & D? E (cid:24)? & F= B (cid:30) arecreated. Then,keys
+&
+@ L (cid:27)
+& (cid:7)A @ (cid:24)? & D= B
+(cid:30)
+are created based on &
+(
+. Finally, the
+group-key & (cid:7)(cid:26) B isestablishedusing &
+@
+.
+Thegroupkeyneedstobereplacedifsomememberjoins
+orleaves. Thisisperformedthroughkey-treeoperations.
+Join: Assumemember (cid:6)(cid:10) N joinsthegroup. 0 picksanew
+(random) group-key & (cid:7) N encrypts it with &< N> (cid:24)= & (cid:7)G B
+and multicastsitto thegroup. Member (cid:6). N uses &< N
+to decrypt it, and the existing members use & (cid:7)G B to
+decryptit.
+Leave: Assume member (cid:6) (cid:7) leaves, then the server need-
+s to replace keys & (cid:7)G @ , and & (cid:7)(cid:26) B . It chooses new
+key & ((cid:26) @ , encrypts it with & ( (cid:24)= &< C @ and sends to
+(cid:6) ( (cid:24)? (cid:6). C5 (cid:24)(cid:26) (cid:6) @ . It then chooses & (? B and uses & ((cid:26) @ and
+& D? B todisseminateit.
+In this scheme each member stores OH P! Q (> R (cid:5)T S keys, while
+theserverkeepsatotalof (cid:5) keys. Theserveruses (cid:5) secure
+channels to communicate with the members. As, simplis-
+ticly,describedsofartheprotocoltakescentralizedprotocol
+can take OH P! QV U
+Treesbecomeimbalancedaftermanyadditionsanddele-
+tions,anditbecomesnecessarytorebalancethem. Discus-
+sion of tree-rebalancing is out of the scope of this paper.
+Someworkhasbeendonetorebalancekey-treesin[14].
+4 Our solution
+Theproblemwiththeprevioussolutionisthatitisnotfault-
+tolerant,andreliesonacentralizedserverwhichhasknowl-
+edgeofallthekeys. Wedesireacompletelydistributedso-
+lution. Our protocol uses no centralized server, and mem-
+bersplaysymmetricroles.
+We describe our solution here with some simple exam-
+ples. Theactualalgorithmismuchmorecomplexandcan-
+notbepresentedhereforlackofspace.Theinterestedread-
+erisreferredto[18].Specifically,wedonotdiscusshowthe
+distributed key-tree is balanced and rebalanced after join-
+leavesequences.
+Firstwedescribethebasicprotocol,denoted
+messages to complete. In fact, all protocol
+messagescanbecombinedintoasinglemulticastmessage
+sentfromthekey-servertotheclients.
+It is possible, and in fact more efficient, to use trees of
+degreelargerthan2.Hereandthroughthepaperwediscuss
+binarytreesforsimplicity. Theanalysisfortreesofdegree
+threeormoreisessentiallythesameforthecentralizedso-
+lutionaswellasouralgorithm.
+W . Inorder
+to make protocol W completely distributed we use the no-
+tionofsubtreesagreeingonamutualkey. Informally,this
+meansthattwogroupsofmembers, X and Y ,securelyagree
+onamutualencryptionkey. Assumethat (cid:6). Z is X ’sleader,
+(cid:6)(cid:10) [ is Y ’s leader, X has group key &< \ , and Y has group
+key &< ] . Theprotocolusedto agreeona mutualkeyis as
+follows:
+1. (cid:6) Z choosesanewkey & \^ ] ,andsendsitto (cid:6) [ using
+asecurechannel.
+2. (cid:6) Z encrypts & \^ ] with & \ andmulticastsitto X ; (cid:6) [
+encrypts & \_ ] with & ] andmulticaststo Y .
+3. Allmembersof X(cid:8) ‘. Y securelyreceivethenewkey.
+Formally, agree is defined as a protocol by which two
+subtrees, X and Y , possessing secret keys &< \ and &) ] re-
+spectively, choose a new key and securely communicate it
+toallmembers X(cid:19) ‘a Y . Thiscostsonepoint-to-pointandtwo
+multicast messages. We say that all members of X and Y
+participateinagree,inspiteofthefactthatactually (cid:6) Z de-
+cidesonthekey,becauseallmembersin Xb ‘(cid:10) Y havesome
+role(activeorpassive)intheprotocol.
+We saythat (cid:6) Z is theleader of Xc ‘(cid:8) Y , and itisalso the
+leader of X . We denote the subtree of which df eh g is
+the leader by g Rd(cid:2) S . For example, in the context of (cid:27)
+(cid:27)
+(cid:4)
+i^
+(cid:24)=
+(cid:24)(cid:26)
+4^
+j
+(cid:24)? (cid:30) i_
+(cid:24)=
+(cid:24)(cid:26)
+g
+j_ (cid:24)l kV (cid:24)=
+R k5 S
+m^ L (cid:24)l nV (cid:27) (cid:24)?
+kV
+o
+(cid:24)=
+(cid:30)
+m^
+(cid:24)?
+(cid:24)q
+g
+n(cid:25)
+(cid:4)
+R
+(cid:24)? o
+S (cid:30)
+L
+gp (cid:24)= g R 4(cid:21) S
+L (cid:27)
+4
+(cid:30)
+(cid:24)= g R
+g
+i(cid:21) S
+L
+L
+.
+Weusetheagreeprimitivetoobtainoursolution. Below
+is an example for the creation of a completely distributed
+key-treeforagroupof8members(seeFigure4):
+1. Members1and2agreeonmutualkey &. (cid:7)G (
+Members3and4agreeonmutualkey & C @
+Members5and6agreeonmutualkey & D? E
+Members7and8agreeonmutualkey & F? BS
+K18
+K14 K58
+K12 K34 K56 K78
+K1 K2 K3 K4 K5 K6 K7 K8
+m m m m m m m m
+1 2 3 4 5 6 7 8
+Akeygraphforagroupof8members.
+S m m m m m m m m
+1 2 3 4 5 6 7 8
+K12 K34 K56 K78
+K14 K58
+K18
+Thecreationofakeygraphonatime-line. Timeflowsfromtoptobottom. First, &
+(r L (cid:27)
+&’ (cid:7)(cid:26) (> (cid:24)= & C @5 (cid:24)? &< D= E> (cid:24)= &< F? B
+(cid:30)
+iscreated,then &
+@r L (cid:27)
+& (cid:7)G @ (cid:24)= & D? B
+(cid:30)
+,thenthegroup-key.
+2. Members1,2and3,4agreeonmutualkey & (cid:7)G @
+Members5,6and7,8agreeonmutualkey & D= B
+3. Members 1,2,3,4 and 5,6,7,8 agree on mutual key
+& (cid:7)G B
+Eachround’sstepsoccursconcurrently. Inthiscase, the
+algorithm takes i rounds, and each member stores i keys.
+Wenowdescribethealgorithminthegeneralcase,wherea
+key-graphshouldbebuiltforagroupofsize U .Weassume
+forsimplicitythat U
+L
+4
+-
+. If Ut
+L
+s 4
+-
+thesamealgorith-
+m is applicable, but it’s description is more complex and
+hardertounderstand.
+Basecase: Ifthegroupcontains0or1members,then we
+are done. If the group contains 2 members then use
+theagreementprimitivetoagreeonamutualkey.
+Recursivestep( U
+L
+4
+-> u (cid:7)
+): Splitthegroupintotwosub-
+groups, X and Y , containingeach 4
+-
+plythealgorithmrecursivelyto
+members. Ap-
+X and Y . Now,each
+subgroup possess a key, &< \ and &< ] respectively.
+Applytheagreementprocedureto X and Y suchthat
+theyagreeonagroupkey.
+Thisalgorithmtakes OH P! Q ( (cid:5) roundstocomplete.Eachmem-
+berstores OK P! Q ( (cid:5) keys.
+In case of join, new nodes are added. For example, if
+member (cid:6)(cid:10) N joinsthenkey & (cid:7) N isadded(seeFigures4,4).
+Theprotocolthenworksasfollows:
+1. Members (cid:6) (cid:7) (cid:24) *, *(cid:29) * (cid:24)(cid:26) (cid:6) B and (cid:6). N agreeonamutualkey
+& (cid:7) N
+2. & (cid:7) N isthenewgroupkey.
+Incaseoffailure,someofthetreenodesarereplaced. For
+example,ifmember (cid:6)(cid:8) (cid:7) failsthenkeys &’ (cid:7)G @ and &’ (cid:7)(cid:26) B must
+bereplaced;seeFigure4.
+Weuseasimilarstrategytochoosenewkeys:K18
+K14 K58
+K12 K34 K56 K78
+m m m m m m m m
+1 2 3 4 5 6 7 8
+Oursolutionforagroupof8members.
+K19
+K18
+K14 K58
+K12 K34 K56 K78
+m m m m m m m m m
+1 2 3 4 5 6 7 8 9
+Singlememberjoincase.
+1. Members (cid:6)(cid:10) ( and (cid:6) C (cid:24)(cid:26) (cid:6). @ agreeonmutualkey &< (? @ .
+2. Members (cid:6). (5 (cid:24)(cid:26) (cid:6) C (cid:24)(cid:26) (cid:6). @ and (cid:6)(cid:10) D> (cid:24)? (cid:6). E5 (cid:24)(cid:26) (cid:6)(cid:10) F> (cid:24)(cid:26) (cid:6)(cid:10) B agreeon
+mutualkey &) (? B
+Ingeneralthistakes v R OH P! Q ( (cid:5)T S rounds.Withatreeofdegree
+w
+,itrequires v R OK P! Q(cid:21) xy (cid:5)T S
+Thissequenceissafebyinduction: Itissafefortwomem-
+bersbecausetheysimplyuseasecurechanneltocommuni-
+cate. Assumeitissafeforsubtreesuptosize
+rounds.
+4.1 Safety
+Herewegiveaninformalproofshowingwhythebasicpro-
+tocolissafe.
+First,weneedtoshowwhythetreebuildprotocolissafe.
+Duringthebuildweusetheagreesequencemultipletimes.
+(cid:5) . Leader (cid:6) Z
+passes & \^ ] to (cid:6) [ usingasecurechannel. Leaders (cid:6) Z and
+(cid:6)(cid:10) [ thenuse(safebyinduction)subgroupkeys &< \z (cid:24)? &< ] to
+encrypt &< \_ ] priortodissemination.
+The join protocol is safe using a similar argument. The
+leaveprotocolissafesincewediscardallkeysthattheleav-
+ingmemberhasknown,anddonotusethemtodisseminate
+thenewgroupkey.
+Theoptimizedsolutionisessentially,areorderingofthe
+communicationin W .Hence,itissafebyvirtueofthebasic
+protocolbeingsafe.
+K19
+{K19}_K18
+m m m m m m m m m
+1 2 3 4 5 6 7 8 9
+Thejoinalgorithm: members (cid:6) (cid:7) and (cid:6). N agreeonkey & (cid:7) N . Member (cid:6) (cid:7) encrypts & (cid:7) N with & (cid:7)(cid:26) B andsends
+ittomembers (cid:6) (cid:7) (cid:24) *(cid:29) *, * (cid:24)? (cid:6) B .K18
+K14 K58
+K12 K34 K56 K78
+m m m m m m m m
+1 2 3 4 5 6 7 8
+Thesinglememberfailurecase.
+4.2 Optimizedsolution ( { )
+Thebasicprotocolcanbeimprovedtoachievelatencyof2
+rounds. We state the optimized protocol | , and then pro-
+videanexamplerun. Assumeforsimplicitythat U
+L
+4
+-
+.
+Wedescribetheoptimizedalgorithmrecursively:
+Basecase( U
+L~ }
+(cid:24)
+(cid:4)
+(cid:24)= 4 ): Ifthegroupcontains0or1mem-
+bers we are done. If the group contains 2 members
+then member (cid:6)(cid:8) (cid:7) is the leader, it chooses key &’ (cid:7)G (
+andsendsitusingasecurechannelto (cid:6)(cid:10) ( .
+Basecase( U
+L
+j ): Inthiscase,weusethefollowingpro-
+tocol:
+1. (a) Leaderslocallychoosenewkeys:
+(cid:6)(cid:8) (cid:7) chooses
+(cid:6) C
+&’ (cid:7)G @5 (cid:24)= &’ (cid:7)G (
+chooses & C @
+(b) Usingsecurechannels:
+(cid:6)(cid:8) (cid:7)8 (cid:11)(cid:13) (cid:6). ( :
+(cid:6) (cid:7) (cid:11)(cid:13) (cid:6). C
+&’ (cid:7)G @5 (cid:24)? &. (cid:7)G (
+:
+(cid:6)(cid:10) Cr (cid:11)(cid:13) (cid:6) @
+& (cid:7)G @
+: &< C @
+2. Intheclear:
+(cid:6)(cid:10) Cr (cid:11)(cid:13) (cid:6) @ :
+(cid:27)
+& (cid:7)G @
+(cid:30) IH J
+We provide this case to show the two stages of the
+solution: thefirststageisthechoiceofnewkeysand
+theirdisseminationusingsecurechannels,thesecond
+stageistheencryptionanddisseminationofkeysre-
+ceived in the first round, using multicast. See Fig-
+ure4.2foratime-linediagram.
+Induction: Assumethegroupcontains 4 -> u (cid:7) members,and
+we can solve the problem in two rounds for the 4 -
+case. Split the group g intotwo disjointsubgroups,
+X and Y where (cid:127)^ X(cid:128) L (cid:127) (cid:127)^ Y(cid:129) L (cid:127) 4 - . Foreachmember
+d(cid:130) e~ g Create the list of actions to be performed in
+stages1and2, (cid:131) - (cid:132) (cid:7)(cid:15) and (cid:131) - (cid:132) ((cid:15) respectively. Markthe
+leaderof X as (cid:6) Z andtheleaderof Y as (cid:6) [ .
+Thenewstagesarenow:
+(cid:131)
+->
+(cid:132)
+u
+(cid:7)(cid:15)
+(cid:7)
+: Forallmembersdifferentthan (cid:6)’ Z ,theactions
+arethesameasbefore,i.e.,
+(cid:131) -> (cid:132) u (cid:7)(cid:15) (cid:7) = (cid:131) - (cid:132) (cid:7)(cid:15) .Member (cid:6)’ Z initiallysets
+(cid:131)
+-
+(cid:7)Z(cid:133)(cid:15)
+(cid:131) -> u (cid:7)Z(cid:133)(cid:15) (cid:7) L
+. Itaddsanotheractionto (cid:131)
+-> u
+(cid:7)Z(cid:133)(cid:15)
+(cid:7)
+:
+Chooseanewkeyforthewholegroup,
+&< \_ ] ,andsendsitusingasecurechan-
+nelto (cid:6). [ .
+Then, (cid:6)’ Z adds &< \^ ] aspayloadtoall (cid:131) - (cid:7)Z(cid:133)(cid:15) mes-
+sages.
+(cid:131)
+->
+(cid:132)
+u
+((cid:15)
+(cid:7)
+: Initially, (cid:131)
+->
+(cid:132)
+u
+((cid:15)
+(cid:7) L
+(cid:131)
+-
+(cid:132) ((cid:15) . Allmembersthatre-
+ceive & \^ ] during (cid:131)
+->
+(cid:132)
+u
+(cid:7)(cid:15)
+(cid:7)
+add the followingac-
+tionto (cid:131)
+->
+(cid:132)
+u
+((cid:15)
+(cid:7)
+:
+encrypt &< \_ ] withthesubtreekeyand
+multicastitto g Rd(cid:3) ST (cid:134)
+(cid:27)
+d
+(cid:30)
+.
+Ourdescriptionisrecursive,however,weemphasizethat
+ittakesonly2communicationphasestoperformtheaction
+lists byall members of g because the “stages” occur con-
+currently.
+Forexample,belowisanexecutionwith8members.
+1. (a) Member1chooses & (cid:7)(cid:26) ( (cid:24)? & (cid:7)A @ (cid:24)? & (cid:7)(cid:26) B
+Member3chooses & C @
+Member5chooses &< D= E> (cid:24)? &) D? B
+Member7chooses &< F= B
+(b) Usingsecurechannels,theleaderssendthecho-
+senkeysasfollows:
+(cid:6)
+(cid:6)
+(cid:6)
+(cid:6)
+(cid:6)(cid:10)
+(cid:6)(cid:10)
+(cid:6)(cid:10)
+(cid:7)
+(cid:7)
+(cid:7)
+C
+Dr
+Dr
+Fr
+(cid:11)(cid:13)
+(cid:11)(cid:13)
+(cid:11)(cid:13)
+(cid:11)(cid:13)
+(cid:11)(cid:13)
+(cid:11)(cid:13)
+(cid:11)(cid:13)
+(cid:6)
+(cid:6)(cid:10)
+(cid:6)
+(cid:6).
+(cid:6)(cid:10)
+(cid:6)(cid:10)
+(cid:6)(cid:10)
+(
+C(cid:19)
+D
+@M
+E(cid:19)
+F(cid:19)
+B(cid:19)
+(cid:18)5
+(cid:18)5
+(cid:18)5
+(cid:18)5
+(cid:18)5
+(cid:18)5
+(cid:18)5
+&
+&
+&
+&
+&<
+&<
+&<
+(cid:7)(cid:26)
+(cid:7)G
+(cid:7)(cid:26)
+C
+D=
+D=
+F=
+(
+@
+B
+@
+E>
+B
+B
+(cid:24)=
+(cid:24)=
+(cid:24)=
+&
+&
+&<
+(cid:7)A
+(cid:7)G
+D?
+@
+B
+B
+(cid:24)? & (cid:7)(cid:26) B
+2. Usingregularcommunication,leaderssend:
+(cid:6) C (cid:11)(cid:135) (cid:6)’ @ :
+(cid:27)
+&’ (cid:7)G @
+(cid:30)! (cid:136) IH J
+,
+(cid:6) D (cid:11)(cid:135) (cid:6) E F(cid:15) B(cid:15)
+(cid:27)
+&’ (cid:7)(cid:26) B
+(cid:30)(cid:16) # "(cid:133)J
+:
+(cid:6) F (cid:11)(cid:135) (cid:6) B
+(cid:27)
+& (cid:7)(cid:26) B
+(cid:30) % (cid:137)K (cid:138)
+:
+(cid:27)
+& D= B
+(cid:30) # (cid:139)H (cid:138)m m m m
+1 2 3 4
+K14 K34
+K12
+{K14}
+K34
+Atime-linediagramoftheoptimizedkey-graphwith4members.
+All members can now decrypt and get all keys on route
+to the root. For example, (cid:6). B receives &< F? B in stage 1,
+and
+(cid:27)
+&< D? B
+(cid:30)! (cid:139)K (cid:138) (cid:27)
+&’ (cid:7)G B
+(cid:30)! (cid:137)(cid:140) (cid:138)
+in stage 2. It can then decrypt
+and get & (cid:7)G B (cid:24)? & D= B . This is also shown in a time-line di-
+agram in figure 4.2. The figure shows how action lists
+(cid:131) (cid:7) (cid:24)? (cid:131) ( are created. Stage 0 (cid:7) shows all the messages that
+need to be sent for & (cid:7)(cid:26) B to reach all members. 0 ( shows
+the protocol for subgroups X
+L (cid:27)
+(cid:6) (cid:7) (cid:24)? (cid:6) ( (cid:24)(cid:26) (cid:6)(cid:10) C> (cid:24)(cid:26) (cid:6) @
+(cid:30)
+and
+Y
+L (cid:27)
+(cid:6) D (cid:24)? (cid:6) E (cid:24)(cid:26) (cid:6) F (cid:24)? (cid:6) B
+(cid:30)
+. (cid:131) (cid:7) and (cid:131) ( are then the combi-
+nationof 0 (cid:7) and 0 ( forthevariousmembers.
+Thejoincaseisefficientusingtheregularsolution,sowe
+makenoattempttoimproveit.
+Incase a memberleaves, theprotocol is simplified. Ex-
+aminethecasewheremember (cid:6)(cid:141) (cid:7) leftthegroup. Theprob-
+lemistochooseanddistributekeys &< (? @5 (cid:24)= &< (? B in2rounds.
+Thisworksasfollows(Figure4.2):
+1. (a) (cid:6) ( chooses & (? @ (cid:24)? & (? B .
+(b) Usingsecurechannels:
+(cid:6)(cid:10)
+(cid:6)(cid:10)
+(r
+(r
+(cid:11)(cid:13)
+(cid:11)(cid:13)
+(cid:6)
+(cid:6).
+C
+D(cid:143)
+(cid:18)(cid:142)
+(cid:18)(cid:142)
+&<
+&<
+(?
+(=
+@>
+B
+(cid:24)? &< (= B
+2. Intheclear:
+(cid:6). @
+(cid:6)(cid:10)
+(cid:6)
+Cr
+D
+(cid:11)(cid:135)
+(cid:11)(cid:135)
+(cid:6)
+(cid:6)
+@
+E
+(cid:27)
+(cid:18)
+F B(cid:15) (cid:15)
+&
+(cid:18)
+((cid:26) (cid:27) @
+&
+(cid:30)
+(= B
+IK J
+(cid:24) %(cid:30)
+(cid:27)
+(cid:137)(cid:140) & (cid:138) (= B
+(cid:30) $H J
+receives
+(cid:27)
+&< (? @
+(cid:30)! % IK J
+,
+(cid:27)
+&< (? B
+(cid:30)! % $K J
+(cid:6) C ;italreadyhaskey
+&< C @ and itrecovers & ((cid:26) @ and & (= B . Members 6,7,8receive
+(cid:27)
+& (? B
+(cid:30) % (cid:137)(cid:140) (cid:138)
+from (cid:6) D ; they have key & D? B and they recover
+& (= B .
+Theleavealgorithm costs, inthe case ofa groupofsize
+(cid:5) , OH P! Q (5 R (cid:5)T S point-to-point messages v R OH P! Q (5 R (cid:5)T S(cid:26) S multicasts
+andthetotalamountofinformationpassedis v R OH P! Q ( (cid:5)T S
+(
+.
+Examine a tree of depth (cid:5) . W.l.o.g. (cid:6) (cid:7) leaves, and (cid:6) (
+chooses new keys &
+L (cid:27)
+& (? @ (cid:24)? & (? B (cid:24) *, *(cid:29)
+(cid:30)
+* to replace all the
+keysfrom (cid:6)(cid:8) (cid:7) totheroot. Member (cid:6). ( sendsthenewkeys
+tosub-leaders (cid:6) C (cid:24)(cid:26) (cid:6)(cid:10) D5 (cid:24)? (cid:6) N (cid:24)(cid:26) (cid:6)(cid:8) (cid:7), n(cid:25) (cid:24)? (cid:6) (= (cid:144)u (cid:7) (cid:24) *, *(cid:29) * throughsecure
+channels. All new keys are sent to (cid:6) C , all keys excep-
+t &< (? @ aresentto (cid:6). D . Allnewkeysexcept
+(cid:27)
+&< (? @5 (cid:24)? &) (? B
+(cid:30)
+are
+sent to (cid:6) N etc. Typical sub-leader d encrypts the received
+keys with the key of g Rd(cid:2) S and multicasts this information
+to g Rd(cid:2) S . Thecommunicationcostis OH P! Q (> R (cid:5)T S
+messages and
+point-to-point
+OH P! Q5 ( R (cid:5)T S multicasts. The total amount of in-
+formationpassedis v R OH P! Q5 ((cid:29) (cid:5)T S
+(
+.
+4.3 3 round solution ( {(cid:8) (cid:145) )
+The optimized solution, as stated above, has an efficiency
+problemwithrespecttomulticastmessages. Eachsubtree-
+leadersends OH P! Q5 ( R (cid:5)T S multicastmessages,potentiallyonefor
+eachlevelofrecursion. Sincethereare (cid:5)+ 35 4 suchmembers,
+wehave v R (cid:5)8 (cid:146)(cid:2) OK P! Q5 ( R (cid:5)T S(cid:26) S multicastmessagessentinatypical
+runoftheprotocol.
+Hereweimprove | andcreateprotocol |(cid:143) C . Protocol |(cid:143) C
+isequalto | exceptforonedetail,ineachview,amember
+(cid:6)(cid:10) (cid:9) is chosen. All subtree-leaders, in stage 2, send their
+multicasts messages point-to-point to (cid:6)(cid:10) (cid:9) . Member (cid:6)(cid:10) (cid:9)
+concatenatesthesemessagesandsendsthemasone(large)
+multicast. The other members will unpack this multicas-
+t and use the relevant part. This scheme reduces costs to
+(cid:5)+ 35 4 point-to-point messages from subtree leaders to (cid:6). (cid:9) ,
+andonemulticastmessageby (cid:6) (cid:9) . Hence,weaddanother
+roundtotheprotocolbutreducemulticasttraffic.
+4.4 Costs
+Here, we compare the 3-round solution with the regular
+centralizedsolution. Therearethreecomparisons—build-
+ingthekey-tree,thejoinalgorithmandtheleavealgorithm.
+Protocol | C includesaliveness-ensuringstagediscussedin
+the model Section 2. We do not include this sub-protocol
+inprotocolcosts,sincethecentralizedsolutiondoesnotin-
+clude an equivalent stage. We use tables to compare the
+solutionsandweusethefollowingnotations:
+#pt-2-pt: Thenumberofpoint-to-pointmessagessent.
+#multicast: Thenumberofmulticastmessagessent.
+#bytes: Thetotalnumberofbytessent
+#rounds: The number of rounds the algorithm takes to
+completem m m m m m m m
+1 2 3 4 5 6 7 8
+S1
+K18
+K14 K34 K58 K78
+S2
+K12
+{K14} {K58}
+K34 K78
+K18 K18 K18
+A1
+K14 K14
+K12
+K34 K58 K78
+{K18}
+A2 K58
+{K14} {K58}
+K34 K78
+{K18}
+K14
+Atime-linediagramoftheoptimizedkey-graphwith8members. Timeflowsfromtoptobottom.
+K28
+{K28}_K58
+{K28,K24} {K28,K24}_K34
+m m m m m m m m
+1 2 3 4 5 6 7 8
+Optimizingthesinglememberfailurecase.
+First, we compare the case of building a key-tree for a
+group of size 4
+-
+where there are no preexisting subtrees.
+Thefollowingtablesummarizesthecostsforeachalgorith-
+m:
+#pt-2-pt #multicast #bytes #rounds
+(cid:147)
+0 1 R v R (cid:5)(cid:148) OH P! Q5 (, (cid:5)T S 1
+|(cid:143) C v R (cid:5)T S 1 R v R (cid:5)(cid:148) OH P! Q ( (cid:5)T S 3
+Protocol |(cid:143) C takes v R (cid:5)T S more point-to-point messages.
+Thesemessagesaresentconcurrently,andarefairlysmall,
+hence, theirimpact is minor. Bothprotocolsrequirea sin-
+gle (large) multicast. |(cid:19) C takes 2 more rounds of commu-
+nication. Protocol
+(cid:147)
+requiresthekey-servertoknowallthe
+key-tree, a total of (cid:5) keys. The other members need keep
+OH P! Q5 ( R (cid:5)T S keys. | C requires only knowledge of OK P! Q5 (q (cid:5)
+fromallmembers.
+Theleavealgorithmcosts:
+#pt-2-pt #multicast #bytes #rounds
+keys
+(cid:147)
+0 1 v R OH P! Q ( (cid:5)T S 1
+| C OH P! Q5 (q (cid:5) OK P! Q5 (q (cid:5) v R(cid:26) R OK P! Q5 (, (cid:5)T S
+(
+S 2
+Thejoinalgorithmcosts:
+#pt-2-pt #multicast #bytes #rounds
+(cid:147)
+0 1 v R
+(cid:4)
+S 1
+|(cid:143) C 1 2 v R
+(cid:4)
+S 25 Conclusions
+Wehaveshownhowtoconvertacentralizedandnon-fault-
+tolerant protocol into one which is decentralized and tol-
+erant of failures, and yet has nearly the same cost as the
+originalprotocol.
+While | C
+[13] L. E. Moser, P. M. Melliar-Smith, D. A. Agarwal, R.
+K. Budhia, and C. A. Lingley-Papadopoulos. Totem: A
+fault-tolerant multicast group communication system. In
+Communications of the ACM, April 1996. homepage:
+http://beta.ece.ucsb.edu/totem.html.
+[14] M.J.Moyer,J.R.Rao,andP.Rohatgi.Maintainingbalanced
+asstated,requiresagroupcommunicationsys- keytreesforsecuremulticast. Technicalreport,IETF,June
+temitusesarelativelyminorpartoftheprovidedfunction- 1999. draft-irtf-smug-key-tree-balance-00.txt.
+ality. It could be run, with relatively minor adjustments,
+[15] S. Mishra. Constructing applications using the timewheel
+overwide-areaInternetapplications. Weareintheprocess
+group communication service. In Proceedings ofthe 1998
+ofexaminingthisapproachandwillreportourfindingselse-
+International Conference on Parallel and Distributed Pro-
+where. cessingTechniquesandApplications,pages1591–1598,July
+1998.
+References [16] M.K.Reiter,K.P.Birman,andL.Gong. Integratingsecurity
+inagrouporienteddistributedsystem. TR92-1269,Depart-
+mentofConmputerScience,UniversityofCornell,February
+[1] A.Ballardie. Scalablemulticastkeydistribution. Technical
+1992.
+Report1949,IETF,May1996.
+[17] O. Babaoglu, R. Davoli, and A. Montresor. Partitionalbe
+[2] C.MallothandA.Schiper. ViewSynchronousCommunica-
+Group Membership: Specification and Algorithms. TR
+tioninLargeScaleNetworks. InProc2ndOpenWorkshop
+UBLCS97-1, DepartmentofConmputerScience, Universi-
+oftheESPRITprojetBROADCAST(#6360),July1995.
+tyofBologna,January1997.
+[3] C.K.Wong, M.Gouda, andS.S.Lam. Securegroupcom-
+[18] O. Rodeh, K. P. Birman, and D. Dolev. Optimized group
+munication using key graphs. In ACM SIGGCOM. ACM,
+rekeyforgroupcommunicationsystems.TechnicalReport2,
+September1998.
+DepartmentofComputerScience,HebrewUnivesity,1999.
+[4] D. M. Wallner, E. J. Harder, and R. C. Agee. Key man-
+[19] O.Rodeh,K.P.Birman,M.Hayden,Z.Xiao,andD.Dolev.
+agement for multicast: Issues and architectures. Internet
+Ensemblesecurity.TR1703,DepartmentofConmputerSci-
+Draftdraft-wallner-key-arch-01.txt,IETF,NetworkWorking
+ence,UniversityofCornell,1998.
+Group,September1998.
+[5] M.Fischer,N.Lynch,andM.Paterson.Impossibilityofdis- [20] P.D.McDaniel,A.Prakash,andP.Honeyman. ”Antigone:
+tributedconsensuswithonefaultyprocess.J.ACM,32:374– A FlexibleFramework forSecureGroupCommunication”.
+382,April1985. InProceedingsofthe8thUSENIXSecuritySymposium,Au-
+gust1999.
+[6] L.Gong. Enclaves: Enablingsecurecollaborationoverthe
+internet. IEEE Journal on Selected Areas in Communica- [21] R.Canetti,J.Garay,G.Itkis,D.Micciancio,M.Naor,and
+tions,15(3):567–575,April1997. B.Pinkas.Multicastsecurity:Ataxonomyandefficientcon-
+structions,March1999. ToappearinInfocom99.
+[7] H.HarneyandC.Muckenhirn. Groupkeymanagementpro-
+tocolarchitecture. RFC2094,IETF,1997. [22] R.Shirey. Securityglossary. Technicalreport,IETF,1999.
+draft-shirey-security-glossary-00.txt.
+[8] H. Krawczyk, M. Bellare, and R. Canetti. Hmac: Keyed-
+hashing for message authentication. RFC 2104, IETF, [23] M.Reiter. Secureagreementprotocols:Reliableandatomic
+Febuary1997. group multicast in rampart. In ACM Conference on Com-
+puterandCommunicationSecurity,pages68–80,November
+[9] K. Birman and R. V. Renesse. Reliable Distributed Com-
+1994.
+putingwiththeIsisToolkit. IEEEComputerSocietyPress,
+1994. [24] M.Reiter,K.P.,Birman,andR.Renesse.Asecurityarcihtec-
+tureforfault-tolerantsystems. ACMTransactionsonCom-
+[10] K.P.Birman,M.Hayden,O.Ozkasap,Z.Xiao,M.Budiu,
+puterSystems,4(12),November1994.
+and Y. Minsky. Bimodal multicast. ACMTransactions on
+ComputerSystems,May1999. [25] R.V.Renesse,K.P.Birman,andS.Maffeis. Horus,aflexible
+groupcommunicationsystem.CommunicationsoftheACM,
+[11] K.P.BirmanandT.A.Joseph. Exploitingvirtualsynchrony
+April1996.
+indistributedsystems.TR87-811,DepartmentofConmput-
+erScience,UniversityofCornell,1987. [26] S.Mittra. Iolus:Aframeworkforscalablesecuremulticast-
+ing. InACMSIGCOMM,September1997.
+[12] K.P. Kihlstrom, L.E. Moser, and P.M. Melliar-Smith. The
+secureringprotocolsforsecuringgroupcommunication. In [27] Y. Amir, D. Dolev, S. Kramer, and D. Malki. Transis: A
+Hawaii International Conference on System Sciences, vol- CommunicationSub-SystemforHighAvailability. InFTCS
+ume3(31),pages317–326,january1998. conference,July1992.[28] Y. Amir, G. Ateniese, D. Hasse, Y. Kim, C. Nita-Rotaru, s,August1999. Insubmission.
+T.Schlossnagle, J. Schultz, JonathanStanton, andGene T-
+sudik. Secure group communication in asynchronous net- [29] Y.AmirandJ.Stanton.Thespreadwideareagroupcommu-
+works with failures: Integration and experiments. In 1999 nicationsystem. TRCNDS-98-4,DepartmentofComputer
+InternationalConferenceonDistributedComputingSystem- Science,1998.

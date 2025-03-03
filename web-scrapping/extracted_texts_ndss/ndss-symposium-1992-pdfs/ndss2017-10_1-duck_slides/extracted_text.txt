@@ -1,0 +1,159 @@
+Stack Bounds Protection
+with Low Fat Pointers
+Gregory J. Duck, Roland H.C. Yap, and Lorenzo Cavallaro
+NDSS 2017Overview
+Heap Bounds Protection with Low Fat Pointers, CC 2016
+New method for detecting bounds overflow errors without explicit metadata
+Pros: Fast (~13% w.o.), near zero memory overheads, highly compatible
+Cons: Only protects heap allocation (malloc) only!
+Stack
+Heap Bounds Protection with Low Fat Pointers, NDSS 2017
+Extend bounds overflow protection to stack objects
+Requires a whole new bag of tricks
+Pros: Fast (~17% w.o.), near zero memory overheads, highly compatibleMotivation
+Buffer overflows (spatial memory errors) are classic security problem – from
+1970s to present
+Continue to be an active threat:
+• Heartbleed, Ghost,Cloudbleed (Feb 2017), etc.
+Common defenses have weaknesses:
+• ASLR^Cache: Practical Cache Attacks on the MMU (NDSS’17)
+Stronger defenses are rarely used
+• Overheads
+• CompatibilityCountermeasures
+Perennial problem, many countermeasures have been proposed.
+Indirect methods:
+• ASLR and DEP
+• Control Flow Integrity (CFI), Code Pointer Integrity, etc.
+• Data Flow Integrity (DFI)
+• Shadow Stacks, etc.
+Direct methods:
+• Many existing systems: AddressSanitizer, SoftBound, SafeC, CCured, BaggyBounds, PAriCheck,
+low-fat-pointers, etc. etc.
+if (p < base(O) || p >= base(O)+size(O))
+• Most systems track bounds metadata
+error();
+*p = v;Bounds Checking Approaches
+“Fat pointers” combine pointers and meta data
+struct fat_ptr {
+void *ptr;
+size(p) = p.size ptr base size
+void *base; base(p) = p.base
+size_t size; };
+Shadow space stores metadata in separate memory
+base size
+size(p) = SHADOW[p].size
+base(p) = SHADOW[p].base
+ptrLow Fat Pointers
+Low fat pointers are like fat pointers without the fat:
+union low_fat_ptr {
+void *ptr;
+ptr base size
+uintptr_t size:10;
+};
+size(p) = p.un.size
+base(p) = (p / size(p)) * size(p)
+Compact encoding with no space overheads.
+ezisFlexible Low Fat Pointers
+A simple encoding does not work well in practice
+• Only 48bits are used → high bits must be zero!
+• 10bits not big enough ~210=1024 max object size…
+Better approach: Heap Bounds Protection with Low Fat Pointers (CC’16)
+...
+...
+• Virtual address space subdivided into several large regions (eg. 32GB each)
+• Each region is used to allocate objects of a specific size (16B, 32B, 48B, etc.).
+txet
+kcats
+0
+ezisBounds Checking with Low Fat Pointers
+Object size is linked to regions, and used for bounds checking:
+This works fine for heap allocation, but not for stack allocation!
+😃
+... ... ... ☹
+kcats
+if (p < base(p) || p >= base(p)+size(p))
+size(p) = SIZES[p / 32GB]
+error();
+base(p) = (p / size(p)) * size(p)
+*p = v;
+malloc
+allocaStack Challenges
+Problem #1: how to round up object size to allocation size ?
+Problem #2: what should the alignment be?
+Problem #3: where to place the object?
+Problem #4: how to not waste memory?
+Solutions:
+Lookup tables
+Virtual memory tricksAllocation Size Over Approximation
+Given: char object[N]; /* Stack allocation */
+Problem: which region does object belong to???
+Must decide in a few instructions.
+Solution:
+Use a lookup table (SIZES) indexed by lzcnt(N)
+55 56 57 58 59 60 61 62 63 64
+char object[50];
+... 512 256 128 64 32 16 16 16 16 16
+lzcnt(50) = 58 SIZES
+lzcnt %rax, %rax
+sub SIZES(,%rax,8), %rspAllocation Size Alignment
+Problem: We have to align the object.
+base(p) = (p / size(p)) * size(p)
+Solution: just use the attribute(aligned(N)):
+and $-64, %rsp
+char object[64] attribute(aligned(64));
+For variable length objects we also use lookup tables.
+55 56 57 58 59 60 61 62 63 64
+lzcnt %rax, %rax
+... -512 -256 -128 -64 -32 -16 -16 -16 -16 -16
+and MASKS(,%rax,8), %rsp
+MASKSStack Object Mirroring
+Problem: stack objects are allocated from the stack!
+☹
+alloca
+Solution: Split the stack into N stacks, one for each size region:
+😃
+alloca
+Related work: shadow stacksStack Object Mirroring (cont.)
+Stack Object Mirroring also implemented using tables:
+55 56 57 58 59 60 61 62 63 64
+𝚫 = &region #4 - &stack
+58
+... 𝚫 𝚫 𝚫 𝚫 𝚫 𝚫 𝚫 𝚫 𝚫 𝚫
+55 56 57 58 59 60 61 62 63 64
+lzcnt %rax, %rax
+OFFSETS
+add OFFSETS(,%rax,8), %rsp
+Each object allocated in correction region.
+Backwards compatible with deallocation, longjmp, C++ exceptions, asm code, etc.
+CON: Uses more memory
+1 stack replaced with N stacks.
+= unused memory
+= stack object
+Fragmentation.Memory Aliasing
+Problem: Increasing stack memory is unsatisfactory.
+Solution: make all stacks share the same physical memory:
+Program uses a single stack
+(same as before)
+Uses shared memory objects
+shm_open
+Virtual View Physical ViewEvaluation Basic (timings)
+● Baseline: -O2
+● Lowfat: 63% overhead (base unoptimized)
+● Lowfat alias: 58% overhead with memory aliasing
+● Address Sanitizer: 92% overheadEvaluation (memory)
+● 7% overhead
+● 3% overhead with memory aliasingEvaluation Timings Optimized (integrity/writes only [WO])
+● Lowfat: 17% overhead
+● Address Sanitizer (ASAN): 45% overheadSummary and Conclusion
+Low fat stack allocation effectively replaces:
+lzcnt %rax, %rax
+sub %rax, %rsp sub SIZES(,%rax,8), %rsp
+and $-16, %rsp with and MASKS(,%rax,8), %rsp
+mov %rsp, %rbx mov %rsp, %rbx
+add OFFSETS(,%rax,8), %rbx
+Extends protection to stack objects (& heap)
+• Consequently also protects stack metadata
+Desirable properties of low fat pointers preserved:
+• Fast (~17% w.o.)
+• Low space overheads (~3-15%)
+• No metadata - highly compatible!

@@ -1,0 +1,924 @@
+Defeating Vanish with Low-Cost Sybil Attacks Against Large DHTs
+ScottWolchok†1,OwenS.Hofmann†2,NadiaHeninger3,EdwardW.Felten3,
+J.AlexHalderman1,ChristopherJ.Rossbach2,BrentWaters2,andEmmettWitchel2
+1TheUniversityofMichigan
+{swolchok,jhalderm}@eecs.umich.edu
+2TheUniversityofTexasatAustin
+{osh,rossbach,bwaters,witchel}@cs.utexas.edu
+3PrincetonUniversity
+{nadiah,felten}@cs.princeton.edu
+Abstract 1.Introduction
+ResearchersattheUniversityofWashingtonrecentlypro- Asstoragecapacitiesincreaseandapplicationsmoveinto
+posedVanish[20],asystemforcreatingmessagesthatau- thecloud,controllingthelifetimeofsensitivedataisbecom-
+tomatically “self-destruct” after a period of time. Vanish ingincreasinglydifficult. Evenifuserscleansetheirlocal
+worksbyencryptingeachmessagewitharandomkeyand files,copiesmayberetainedlongintothefuturebyemail
+storingsharesofthekeyinalarge,publicdistributedhash providers, backup systems, and other services, and these
+table(DHT).DHTsexpungedataolderthanacertainage; may be targets of theft or subpoena. Geambasu, Kohno,
+afterthishappenstothekeyshares,thekeyispermanently Levy,andLevyproposedtheVanishsystem[20]toaddress
+lost,andtheencrypteddataispermanentlyunreadable. Van- thisproblem. Vanishencapsulatesdataobjectssothatthey
+ishisaninterestingapproachtoanimportantprivacyprob- “self-destruct”afteraspecifiedtime,becomingpermanently
+lem, but, in its current form, it is insecure. In this paper, unreadable. Itencryptsthedatausingarandomlygenerated
+wedefeatthedeployedVanishimplementation,explainhow keyandthenusesShamirsecretsharing[38]tobreakthe
+theoriginalpaper’ssecurityanalysisisflawed,anddraw keyintonsharesofwhichkareneededtoreconstructthe
+lessonsforfuturesystemdesigns. key. Vanishstoresthesesharesinrandomindicesinalarge,
+pre-existingdistributedhashtable(DHT),akindofpeer-to-
+We present two Sybil attacks against the current Van-
+peernetworkthatholdskey-valuepairs. Theencrypteddata
+ishimplementation,whichstoresitsencryptionkeysinthe
+objecttogetherwiththelistofrandomindicescomprisea
+million-nodeVuzeBitTorrentDHT.Theseattacksworkby
+“VanishingDataObject”(VDO).
+continuouslycrawlingtheDHTandsavingeachstoredvalue
+DHTshaveapropertythatseeminglymakesthemideal
+beforeitagesout. Theycanefficientlyrecoverkeysformore
+forthisapplication:theymakeroomfornewdatabydiscard-
+than99%ofVanishmessages. Weshowthatthedominant
+ingolderdataafterasettime. TheDHTpolicytoageout
+costoftheseattacksisnetworkdatatransfer,notmemoryus-
+dataiswhatmakesVanishdatavanish. Auserinpossession
+ageastheVanishauthorsexpected,andthatthetotalcostis
+ofaVDOcanretrievetheplaintextpriortotheexpiration
+twoordersofmagnitudelessthantheyestimated. Whilewe
+timeT bysimplyreadingthesecretsharesfromatleastk
+considerpotentialdefenses,weconcludethatpublicDHTs
+indicesintheDHTandreconstructingthedecryptionkey.
+likeVuzeprobablycannotprovidestrongsecurityforVanish.
+Whentheexpirationtimepasses,theDHTwillexpungethe
+storedshares, and, theVanishauthorsassert, theinforma-
+tionneededtoreconstructthekeywillbepermanentlylost.
+TheVanishteamreleasedanimplementationbasedonthe
+million-nodeVuzeDHT,whichisusedmainlyforBitTorrent
+†Bothauthorscontributedequally. tracking.Vanish is an intriguing approach to an important prob- ofcrawlingtheVuzeDHT,illustratingthatitispossibleto
+lem1;unfortunately,initspresentform,itisinsecure. Inthis defeatVanishwithoutextraordinaryfinancialresources.
+paper,weshowthatdatastoredusingthedeployedVanish
+system can be recovered long after it is supposed to have
+Analysis Oneofthegoalsofsecurityresearchistolearn
+been destroyed, that such attacks can be carried out inex-
+howtobuildsecuresystems. Itisinstructivetostudywhy
+pensively,andthatalternativeapproachestobuildingVanish
+systemsfail,particularlywhenthosesystemssetouttopro-
+areunlikelytobemuchsafer. Wealsoexaminewhatwas
+videwell-definedsecurityproperties. Tothisend, weask
+wrongwiththeVanishpaper’ssecurityanalysis,whichan-
+whyVanishfailedanddrawanumberoflessonsforfuture
+ticipatedattackslikeoursbutconcludedthattheywouldbe
+systems.
+prohibitivelyexpensive,anddrawlessonsforthedesignof
+Webeginbyexaminingthesecurityanalysiscontained
+futuresystems.
+intheVanishpaperandpointingoutseveralshortcomings.
+Theauthorsdramaticallyoverestimatedthecostofrunning
+Sybils, failed to anticipate the efficiency gains from opti-
+Attacks Vanish’ssecuritydependsontheassumptionthat
+mized attack strategies, and did not notice that recovery
+anattackercannotefficientlyextractVDOkeysharesfrom
+scaleswithcoverageinawaythatfavorsattackers. These
+the DHT before they expire. Suppose an adversary could
+errorscausedtheVanishanalysistooverestimatethecostof
+continuouslycrawltheDHTandrecordacopyofeverything
+asuccessfulattackbymorethantwoordersofmagnitude.
+that gets stored. Later, if he wished to decrypt a Vanish
+The Vanish paper also overlooked previous work that
+message, he could simply look up the key shares in his
+might have made Sybil attacks seem like a more credible
+logs. Suchanattackermightevenrunacommercialservice,
+threat. Similar approaches for crawling DHTs have been
+offeringtoprovidethekeysforanyVanishmessagefora
+appliedtootherKademlia-familynetworksinseveralmea-
+fee. Thus,amethodofefficientlycrawlingtheDHTenables
+surement studies [30,40]. The Vanish authors apparently
+amajorattackagainstVanish.
+wereunawareofthesestudies,whichwesurveyinSection7.
+The authors of this paper represent two groups of re-
+There are a number of possible defenses that could be
+searcherswhosimultaneouslyandindependentlydeveloped
+applied to future versions of Vanish and Vuze, including
+suchattacks. (TheMichiganandPrincetonauthorsareone
+reducingreplication,imposingfurtherrestrictionsonnode
+group; theTexasauthorsaretheother.) Afterdiscovering
+IDs,andemployingclientpuzzles. Changeslikethesemight
+thatwehadseparatelyachievedsimilarresults,wedecided
+makeSybilattacksmoreexpensive,butprobablynotbya
+towriteajointpaper. Weshowthatwecanextractthecon-
+large enough factor to provide strong security for Vanish.
+tentsoftheVuzeDHTusinglow-costSybilattacks.2 Vuze
+AnotherapproachwouldbetoswitchfromapublicDHT,
+DHTclientsperiodicallyreplicatethedatatheystoretoother
+whereanyonecanserveasapeer,toaprivatelyrunsystem
+peersthatareclose-byinthesystem’sIDspace. Inourat-
+likeOpenDHT[37]. Thoughthiswouldremovethethreat
+tacks,weparticipateinthenetworkwithalargenumberof
+fromSybils, the privatesystem wouldessentially actas a
+identitiesandrecordthedatathatisreplicatedtothem.
+trustedthirdparty,whichVanishwasdesignedtoavoid.
+ThesizeoftheVuzeDHTmakesSybilattackschalleng-
+ing,astherearetypicallyaroundamillionpeers. Weinvesti-
+Vanish’sweaknessesarenotonlyofacademicconcern.
+gatedastrategyformakingourattacksmoreefficient,which
+SincetheVanishprototypewasreleasedtothepublicamidst
+wecall“hopping”. Hoppingsignificantlyreducedthecost
+widespreadmediacoverage[27],usersmayalreadybetreat-
+oftheattacks—aswellastheloadtheyplacedontheDHT—
+ingitasaproductionsystemandentrustingitwithsensitive
+whileenablingustorecordenoughoftheDHT’scontentsto
+data. Onemightbelievethatthiscannotmakemattersany
+enablenear-completeVDOrecovery. Additionaloptimiza-
+worse—thesystemprovidesanadditionallayerofprotec-
+tionsinourimplementationsbroughtfurthersavingsinCPU,
+tion,which,ifcompromised,isnoworsethanwhattheuser
+memory,storage,andbandwidthconsumption.
+hadinplaceoriginally. Thisargumentassumesthatusers’
+The Vanish authors explicitly considered Sybil attacks
+behaviorwillnotbeaffectedbytheperceivedbenefitsthat
+againsttheDHTandestimatedthecosttobearound$860K
+Vanishdelivers,whichseemstousunlikely. Forexample,
+peryear. Incontrast, ourmostefficientattackwouldcost
+ausermightnotfeelcompelledtodeleteanemailifhebe-
+only$5900peryeartooperateatalevelthatwouldrecover
+lievesthattheVanishsystemhasexpiredthecontents. Ora
+99% of VDOs. (Both figures are based on Amazon EC2
+usermightbelessscrupulousinthecontentssheadds,ifshe
+pricing[2].) Ouroptimizationsdrasticallyreducethecost
+thinksthecontentswillvanishinafewhours. “Whybother
+toprunemyowndata,”theusermayask,“ifVanishisdoing
+1VanishwonOutstandingStudentPaperatUSENIXSecurity2009.
+itforme?”
+2InaSybilattack[16],asingleentityassumesmanyidentitieswithin
+Vanish, as it is deployed today, does not meet its goal
+apeer-to-peernetworkinordertogaincontroloveralargefractionofthe
+system. ofprovidingself-destructingdata. WhileVanish’sgeneralapproachmayyetturnouttobeviable,ourresultssuggest the key K to yield ciphertext C. Next, the algo-
+thatimplementingVanishsecurelyremainsanopenproblem. rithmusesShamirsecretsharing[38]tosplitthe
+keyK intonsharesK ,...,K wherek shares
+1 n
+Organization Theremainderofthispaperisstructuredas arerequiredtoreconstructthekey. Shamirsecret
+follows. Section2providesfurtherbackgroundaboutVan- sharing guarantees that k shares of K 1,...,K n
+ishandtheVuzeDHT.Section3describesourattacksand aresufficienttoreconstructK,butnoinformation
+Section4evaluatestheirperformance. Weanalyzeproblems about the original key K can be recovered with
+withtheVanishdesignandtheVanishpaper’ssecurityanaly- fewerthankshares.
+sisinSection5. WeconsiderpossibledefensesinSection6, Next,thealgorithmchoosesarandom“accesskey”
+surveyrelatedworkinSection7,andconcludeinSection8. L, which is used as a seed to a pseudorandom
+numbergenerator(PRNG).Thealgorithmrunsthe
+2.Background PRNG to derive n indices I ,...,I . For j =
+i n
+1,...,nitstoreskeyshareK atindexI inthe
+j j
+DHT.Finally,theVDOV isoutputtedasthetuple
+ThissectionprovidesatechnicaloverviewoftheVanish
+V =(C,L).
+systemandtheVuzeDHT.WereferthereadertotheVanish
+paper[20]andtheVuzewebsite[45]foradditionaldetails.
+Decapsulate The decapsulation algorithm accepts a
+VDOV = (C,L)asinput. Thealgorithmseeds
+2.1.Vanish
+thePRNGwiththeaccesskeyLtoretrievenin-
+dicesI ,...,I . Itthenretrievesthedatavalues
+1 n
+ThetelevisionshowMission:Impossiblefamouslybegan from the DHT at these indices. If fewer than k
+withJimPhelpsreceivinginstructionsfromarecordingthat values are retrieved, the algorithm outputs fail-
+subsequentlyself-destructs. Messagesthatself-destructat ure. Otherwise,itusesShamirsecretsharingonk
+a predetermined time would be useful in a digital context sharestoreconstructakeyK(cid:48). Finally,itattempts
+too—especiallywhereprivacyisimportant—thoughaself- decryptionofC usingK(cid:48). Thealgorithmoutputs
+destructionfeatureischallengingtoprovide. afailureifthedecryptionisnotsuccessful;other-
+Forexample,thesenderofanemailmightwantthecon- wise,itreturnsD,theresultofthedecryption.
+tentsdiscardedafterthemessageisread. Evenincircum-
+stanceswherethereceiverisagreeabletothesender’swishes,
+Securitymodelandassumptions ThegoalofVanishis
+she may be unmotivated to put extra effort toward seeing
+to provide a type of forward security, where past objects
+thatthosewishesarecarriedout. Wecallthismodelofuser
+aresecureiftheVDOiscompromisedafteritsexpiration
+behaviortrustworthy,butlazy.
+time. This is somewhat similar to forward secure signa-
+Ithaslongbeenknownthatdataretentioncanbeman-
+tures[5,23]andforwardsecureencryption[8]. However,in
+agedbyencryptingdataandthencontrollingthelifetimeof
+thesesystems,auser’smachineisresponsibleforevolving
+thedecryptionkey,suchasbyschedulingtheautomaticdele-
+(updating) a private key. In Vanish, the goal is to achieve
+tionofthekeyafterapredeterminedinterval[6]. Geambasu,
+securitywithoutrequiringactivedeletionoftheVDOfrom
+Kohno,Levy,andLevyextendthisideaintheVanishsys-
+theuser’smachine. Instead,thesystemreliesontheDHT
+tem[20]byemployinganintriguingnewtechniquetoexpire
+dataretentionpolicytoexpirethesharesofthekeyusedto
+keys. Vanishstoreskeysinadistributedhashtable(DHT).
+encrypttheVDO.
+DHTseraseolddataafteraperiodoftimetomakeroomfor
+Consider a user that creates a VDO V with expiration
+newstores. Vanishexploitsthispropertytoensurethatits
+timeT. IfVanishissecurethenanyattackerobtainingthe
+keyswillexpireatapredictabletimewithnointervention
+VDO at time T +t, t > 0 will not be able to reconstruct
+fromtheuser.
+the data. Providing this guarantee of security requires at
+Vanish uses two principal mechanisms. The first is an
+least twoassumptionsabouttheattacker. (Wenotethatif
+encapsulate algorithm that takes a data object D as input
+werequirecorrectnesswealsomustassumeavailabilityof
+andproducesaVanishingDataObject(VDO)asoutput.The
+theDHTbeforethetimeout.) Theseassumptionsare:
+second is a decapsulate algorithm that accepts as input a
+VDOandreproducestheoriginaldata,withthecaveatthat LimitedNetworkView Theattackermustnotbeable
+decapsulationmustbedonewithinacertaintimeT ofthe toviewtheuser’straffictotheDHT.Otherwise,the
+VDO’screation. attackercouldsimplysniffandrecordtheshares
+astheyarestored.
+Encapsulate Theencapsulationalgorithmtakesasin-
+put data D. The algorithm generates a random LimitedViewofDHT Theattackermustnotbeable
+secretkeyK,andthenencryptsthedataDunder toreadmorethanasmallfractionofthedatastoredontheDHT.Otherwise, theattackercouldbuild reachingsuccessivelycloserpeersuntilitfindsthoserespon-
+anarchive ofthe DHTandlater lookupthe key sibleforstoringthedesiredID.Alookupterminateswhen
+shares. the closest known peer that has not yet been contacted is
+fartherfromthedesiredIDthanthefarthestoftheclosest20
+Ourworkfocusesonviolatingthesecondassumption. respondingpeers.
+Toretrieveorstoreavalue,therequestingnodehashes
+Deployed implementation Vanish version 0.1 was re- the key to obtain its ID and performs a lookup for the ID
+leasedinAugust2009.Itconsistsoftwocomponents:acore todeterminethe20closestpeerstothekey. Itthendirectly
+system,whichprovidestheencapsulationanddecapsulation contacts those peers with a request to return or store the
+functions,andaFirefoxwebbrowserextension. TheFirefox associatedvalue.
+extension allows the user to right-click on a selected area AnodejoinstheVuzeDHTbycontactingaknownpeer
+of text to encapsulate it into a Vanishing Data Object. A andinitiatingalookupforitsownID.Itusesthislookupto
+usercanthenright-clickontheVDOtohavetheextension builditslistofpeersandeventuallyfindsthenodesclosest
+retrievetheoriginaltext. toitsID.WhenanodeiscontactedbyanewpeerwithanID
+amongthe20closesttoitsown,itreplicatesallofitsstored
+Bydefault,theFirefoxextensionbreakstheencryption
+keyinton=10shareswitharecoverythresholdofk =7. keystothatnode. Tominimizeunnecessarynetworktraffic,
+anodeonlyreplicatesthosekeystowhichitistheclosest.
+However,theVanishpaperrecommendsaslowerbutmore
+securesettingofn=50andk =45. TheVuzeDHTexpires Todealwithunreliablenodes,peersalsoreplicatethedata
+storeddataafterT =8hours. Userscanextendthistimeby periodicallytothe20closestnodestothekey’sID.
+TheVuzeDHTemploysarudimentaryanti-Sybilmech-
+periodicallyrepostingtheirkeyshares.
+anism: nodeIDsareforcedtoequalthehashofthenode’s
+IPaddressandportnumber. Thisdesignaccommodatesthe
+2.2.VuzeDHT
+commoncaseofmultipleuserscommunicatingviaasingle
+NATdevicebyallowingthesameIPtojointhenetworkat
+The current Vanish implementation stores keys in the
+differentlocationsusingdifferentportnumbers.
+VuzeDHT,whichisusedbytheVuzeBitTorrentclient(also
+knownasAzureus)fordecentralizedtorrenttracking. Vuze
+3.AttackingVanish
+estimatesthattheDHTcontainsoveramillionnodes,though
+thereissignificantdiurnalvariation. TheDHTisbasedon
+a modified Kademlia [29] implementation and functions One way to attack Vanish is with a large Sybil attack
+similarlytomanyotherDHTs. Nodesinthenetworkand againsttheunderlyingVuzeDHT.Vuzenodesreplicatethe
+keysinthehashtableareassigned160-bitidentifiers(IDs). datatheystoretoupto20neighboringnodes,soastraight-
+EachDHTnodestoresthosekeyswhichareclosesttoitin forwardattackwouldbetohavemanySybilsparticipatein
+the ID space, as determined by the XOR distance metric. thenetworkandwaitforreplicationtooccur.
+EachVuzeclientmaintainsaroutingtablethatcategorizes Figure1showstheprobabilityofrecoveringaVDOgiven
+peersintoanumberof“k-buckets”bytheirdistancefrom theprobabilityofrecoveringanyindividualkeyshare. We
+itsownID,wherekisaparameteroftheKademliadesign modeltheprobabilityofrecoveringanindividualkeyshare
+andissetto20inVuze. asabinomialrandomvariablewithprobabilityp. Theprob-
+All operations are performed using simple RPC com- abilityofrecoveringthek/nVDOisthen
+mandsthataresentdirectlytotheremotepeerinasingle
+n (cid:18) (cid:19)
+UDP packet. The primary Vuze RPCs are PING, which Pr[recoverVDO]= (cid:88) n pi(1−p)n−i
+checks node liveness and announces the sending node, i
+i=n−k
+STORE,whichstoresasetofkeyvaluepairsatthereceiving
+node, FIND-NODE, whichrequeststhe20closestcontacts TheVanishauthorsapproximatedthisasalinearfunction,
+toagivenIDthatthereceiverhasinitsroutingtable,and butthatisapoormodeloftheactualbehavior. Theprobabil-
+FIND-VALUE,whichfunctionslikeFIND-NODEexceptthat ityofrecoveryexhibitsathresholdphenomenonthatworks
+thereceiverinsteadreturnsthevaluesstoredattherequested totheattacker’sadvantage.
+key. This figure shows that, to achieve high VDO recovery
+The fundamental Kademlia operation is node lookup, for the parameters suggested by the Vanish authors, the
+which finds the 20 closest nodes to a given ID. To begin attacker needs to have at least an 80% chance of learning
+alookup,anodesendsFIND-NODErequeststothe20closest eachstoredshare. Ourexperimentssuggestthatthiswould
+nodestotheIDthatitcurrentlyhasinitsroutingtable. Each requiremorethan60,000Sybils.AlthoughVuzeallowseach
+peer returns a list of the peers it knows that are closest to IPaddresstheattackerownstoparticipatewithupto65,535
+the desired ID. The requesting node contacts those peers, nodeIDs(oneforeachUDPport),theattackermaynothave1.0
+0.8
+0.6
+0.4
+0.2
+0.0
+0.0 0.2 0.4 0.6 0.8 1.0
+P(recovershare)
+)ODVrevocer(P
+7/10
+9/10
+45/50
+Figure1.VDOrecoveryvs. keysharerecovery. Theattacker’schancesofsuccessfullydecrypting
+aVDOimproverapidlywiththeprobabilityofrecoveringanygivenkeysharefromtheDHT.Herewe
+estimatetheVDOrecoveryprobabilityforthreepairsofsecretsharingparametersk/n.
+sufficientcomputingresourcestomaintainsomanySybils 160nodeIDswithminimallossincoverage. Thehopping
+concurrently, and the necessary bandwidth might also be strategyvastlyincreasestheefficiencyofourattacks.
+prohibitivelyhigh.
+The attacker can do much better by exploiting the fact 3.1.SimpleImplementation(Unvanish)
+thathedoesnotneedcontinuouscontroloversuchalarge
+fractionofthenetwork. Rather,heneedonlyobserveeach Weconstructedtwoimplementationstoexperimentwith
+storedvaluebriefly,atsomepointduringitslifetime. Two the hopping attack strategy. The first, Unvanish, demon-
+propertiesofVuze’sreplicationstrategymakethiseasy.First, stratesthesimplicityofconstructingaSybilattackagainst
+Vuzereplicatesvaluestonewclientsassoonastheyjointhe Vanish. Unvanishisbasedonthepublicly-availableVuze
+network. Second,toensureresiliencyasnodesrapidlyjoin DHTclientcodeandaddsjust268lines3ofJavaforcreating
+andleave,Vuzenodesreplicatethedatatheyknowtotheir andoperatingtheSybils. An82-linePythonscriptinstanti-
+neighborsatfrequentintervals,usuallyevery30minutes. atesanumberofUnvanishprocessesandcontrolsthenodes’
+Becauseofthesebehaviors, aSybilnodeneednotpar- hopping.
+ticipate in the network for very long in order to view the Unvanishrecordskeysandvaluesitreceivesfromneigh-
+majorityofkeysavailableatitsposition. Iftheattackercan boringnodesuponjoiningthenetwork.Toreducethecostof
+run m Sybils at a time, they can move, or “hop,” through storageandtransfertotheeventualpermanentvaluearchive,
+therangeofavailableidentitiesbychangingtheirportorIP Unvanishdiscardsvalueswhoselengthsareoutsidethelikely
+address, thus gaininga chance toobserve datastored at a rangeforsharesofVanishencryptionkeys. Thelengthofa
+differentsetoflocations. Hoppingenablestheattackerto keyshareisdependentonthekeylength,numberofshares
+support mt effectiveSybilsduringagivenperiodoftimet, n, and threshold k. Based on the Vanish implementation,
+T
+whereT isthedurationofeachhop. wecalculatethatsharesof128-bitencryptionkeysforthe
+default setting of k = 7, n = 10 and the recommended
+We found in our experiments that T = 3 minutes was
+“high-security”settingofk =45,n =50willbe16to51
+sufficienttoobservealmostalltheinformationstoredinthe
+vicinityofeachID.Thismeansthat,overthe8hourVDO 3AllmeasuresoflinesofcodearegeneratedusingDavidA.Wheeler’s
+lifetime, each Sybil can participate in the network from ’SLOCCount’.byteslong,inclusive. Unvanishrecordsallvalueswithinthat ClearView experiments), so these latent requests amount
+range. tosubstantialunwantedUDPtraffic. Theproblemiscom-
+We have been running Unvanish on the Amazon EC2 poundedbythedefaultbehavioroftheLinuxkernel,which
+service, which provides a realistic assessment of the cost repliestoeachpacketwithanICMPDestinationUnreach-
+oftheattack. WerunourVuzeDHTclienton10“small” ablemessage. WefoundthattheseICMPmessagesconsti-
+EC2instances,whichprovide1.7GBofphysicalmemory, tutedamajorityofClearView’soutgoingtraffic.
+160GBoflocalstorage,andcomputepowerapproximately Weachievedsubstantialcostsavingsbysimplyconfig-
+equivalenttoa1.0GHzXeonprocessor. Memoryandpro- uringtheLinuxfirewalltoblockoutgoingICMPmessages.
+cessorconstraintsrestrictUnvanishto50concurrentDHT A more advanced implementation might be able to avoid
+nodesoneachinstance. EachDHTnodehopstoanewnode paying for the unwanted inbound traffic as well by using
+IDafterevery150secondsofoperation. EC2’snetworkfirewallAPI[1]toallowtrafficonlytoports
+We created an online demonstration of Unvanish that usedbythecurrentsetofSybils.
+decapsulatesVDOsaftertheyhavesupposedlyexpired. To
+minimizetheharmtoVanishusers,wediscardthedatawe 4.Evaluation
+collectfromtheDHTafteroneweek,thougharealattacker
+couldeasilykeepitindefinitely.
+This section measures the effectiveness of our two at-
+tackimplementationsandquantifiesthecostsofrunningthe
+3.2.AdvancedImplementation(ClearView) attacksonAmazonEC2.
+Inordertoinvestigatehowthecostsoftheattackcouldbe 4.1.SimpleHopping
+reducedwithfurtheroptimizations,wedevelopedasecond
+implementation,whichwecallClearView. We ran Unvanish on 10 “small” EC2 instances for ap-
+ClearViewisafrom-scratchreimplementationoftheVuze proximately24hours. Overa7.5-hourwindowduringthat
+DHTprotocolwrittenin2036linesofC.Itusesanevent- time,weseeded104VDOsintotheDHT,usingthedefault
+drivendesigntominimizeCPUandmemoryfootprints,and securityparametersof7of10sharesrequiredfordecryption.
+it can run many DHT clients in a single process. It can EachEC2instanceran50concurrentSybilswhichhopped
+maintain several thousand concurrent Sybils on a single every150seconds,givingusdatafrom96,000nodeIDsdur-
+EC2 instance. On startup, ClearView bootstraps multiple ingthe8-hourDHTstorelifetime. Outof1040keyshares,
+Vuzenodesinparallel,seedingthebootstrapprocesswith we were able to recover 957, indicating that we achieved
+a list of peers gleaned ahead of time from a scan of the about 92% coverage of key-value pairs. We successfully
+networkinordertoavoidoverloadingtheVuzeDHTroot decrypted100%ofthe104VDOsusingthedataUnvanish
+node. ClearView then logs the content of each incoming collected.
+STORErequestforlaterprocessing. RunninganEC2“small”instancecosts$0.10perhourif
+ClearViewreducestheamountofnetworktrafficusedin theinstanceiscreatedondemand. Amazonalsoprovides
+theattackbyreplyingtoincomingDHTcommandsonlyas reservedinstancepricing,whichentailsanupfrontcharge
+necessarytocollectstoreddata. ClearView’sSybilsreplyto followedbyareducedper-hourusagecharge. Aone-year
+allPINGandSTORErequestsinordertoinformothernodes reservation for 10 instances running full-time would cost
+thattheyarelive. Vuzealsorequiresthattheyrespondtoa $0.56perhour. DuringaonedayrunofUnvanish,our10
+FIND-NODErequestbeforetheywillreceiveanySTOREre- EC2 instances transferred 176 GB of data in and 196 GB
+quests. SincetheprincipalsourceofSTOREsisreplications out,andtheaveragetransfercostwas$2.12perhour. Ex-
+from nearby nodes, ClearView Sybils reply only to FIND- tendingthesefigures,thecostformachinesandtransferto
+NODErequestsfromnodeswhoseIDsshareatleast8prefix runUnvanishforayearwouldbe$23,500. Bycontrast,the
+bitswiththeirIDs. ClearViewomitstheVuzeroutingtable originalVanishpaperestimatesthatsuchanattackwould
+forefficiencyandeaseofimplementation,soitsFIND-NODE haveanannualcostexceeding$860,000.
+replies contain only the contact information of the reply-
+ingSybil. ClearViewunconditionallyignoresFIND-VALUE, 4.2.AdvancedHopping
+KEY-BLOCK,andSTATSrequests,whichareunnecessaryfor
+crawlingtheDHT. ToevaluatetheeffectivenessofClearView,werantrial
+During preliminary experiments, we discovered that attacksagainsttheVuzenetworkforaround8hoursatatime.
+Sybils remain in the Vuze routing tables for a significant Fortwohoursbeforethestartofeachexperiment,weused
+timeaftertheyshutdownandthatotherVuzepeerscontinue thedeployedVanishclienttoinsertkeysharesintotheDHT
+to attempt to contact them. Our hopping strategy causes fromadistantnetworklocation. Theseservedastargetsfor
+eachSybil torun foronly ashort time(3minutes forour ourSybils.AveragepereffectiveSybil
+EffectiveSybils Targetvalues Targetsfound Coverage(s) Bandwidthin(b )/out(b )
+in out
+320,000 1650 99.4% 0.0030% 15.7B/s 0.589B/s
+270,000 1700 99.5% 0.0032% 13.3B/s 0.524B/s
+80,000 1650 91.8% 0.0036% 15.8B/s 0.625B/s
+Table1.ClearViewexperimentalresults. WeconductedthreetrialattackswithourClearViewimple-
+mentation. Over periods of around 8 hours, Sybils “hopped” to new node IDs every three minutes,
+yielding320k,270k,and80keffectiveSybils. Onaverage,eacheffectiveSybilobserveds= 0.0033%
+oftheDHT.Largertrialshadslightlyworseper-Sybilcoverage,possiblyduetonetworkcongestion.
+We ran three trials with different numbers of effec- havecollectedcmobjects. However,oncecmisnolonger
+tive Sybils, as summarized in Table 1. In all three trials, smallwithrespecttothetotalnumberofobjectsN inthe
+ClearViewranonanumberof“small”EC2instancesand network,theSybilswillbeverylikelytocollectrepeatsof
+usedathreeminutehoptime. Thefirsttrialused10EC2in- objectsanditwillbemoredifficulttodiscovernewobjects.
+stances,eachsupporting200concurrentSybilsover8hours, ThisprocessisequivalenttothrowingcmballsintoN bins
+foratotalof320keffectiveSybils;therewere1650target andaskinghowmanybinscontainatleastoneball;thatis,
+keyshares,andwerecovered1640ofthem(99.4%). The howmanyobjectswereseenbyatleastoneSybil.
+secondtrialused9EC2instances,eachsupporting200con- The analysis of this problem is standard; see, e.g. [31,
+currentSybilsover7.5hours,foratotalof270keffective Ch.5.3]. TheexpectedfractionofDHTobjectsobserved
+Sybils;therewere1700targetkeyshares,andwerecovered by m Sybils is 1−e−cm/N. Let s be the fraction of the
+1692ofthem(99.5%). Thethirdtrialused10EC2instances, entireDHTobservedbyeachSybil,thatis,s= c. Wecan
+N
+eachsupporting50concurrentSybilsover8hours,foratotal rewritetheexpectedfractionofDHTobjectsobservedbyan
+of80keffectiveSybils;therewere1650targetkeyshares, m-Sybilattackintermsofthisparameter:
+andwerecovered1561ofthem(91.8%).
+These results allow us to estimate the fraction of DHT
+E[DHTobjectsobserved]=1−e−ms.
+valuesthatcouldbeobservedwithdifferentnumbersofeffec-
+Figure 2 illustrates this model’s close correspondence
+tiveSybils. Wecalculatehowmanyofthetargetvalueswere
+withourexperimentalresults. Themodelslightlyoveresti-
+observed by different size subsets of our effective Sybils.
+matesactualperformanceduetothesimplifyingassumption
+Figure2showstheresults,basedondatafromthe270ktrial.
+thateachSybilobservesanequalnumberoffragments.
+Asweexplainbelow,wecanaccuratelymodeltheDHT
+We can use this model of DHT coverage, and the cal-
+coverageweachieveusingonlyasingleparameter,s,the
+culation of VDO recovery in terms of key share recovery
+fractionoftheDHTobservedbyeacheffectiveSybil. For
+from Figure 1, to estimate the fractions of VDOs that we
+our 320k effective Sybil trial, each Sybil observed 0.050
+wouldrecoverwithdifferentsizeattacks. Figure3shows
+targetvaluesonaverage,yieldingaverageper-Sybilcoverage
+theresultsusingdatafromour270keffectiveSybiltrial. For
+s=0.000030. Forour270keffectiveSybiltrial,eachSybils
+thedefaultVanishsecretsharingparametersofk =7and
+observed0.055targetvaluesonaverage,yieldingaverage
+n=10,wewouldneed26keffectiveSybilstorecover25%
+per-Sybilcoverages=0.000032.Forthe80keffectiveSybil
+ofVDOs,59ktorecover90%,and89ktorecover99%. For
+trial,eachSybilsobserved0.059targetvaluesonaverage,
+secretsharingparametersofk =9andn =10,wewould
+yieldingaverageper-Sybilcoverages=0.000036.
+need 48k effective Sybils to recover 25% of VDOs, 115k
+torecover90%,and186ktorecover99%. FortheVanish
+Ananalyticmodel TheshapeofthecurveplottingDHT paper’s conservative secret sharing parameters of k = 45
+coverage can be explained using a simple combinatorial andn=50,wewouldneed70keffectiveSybilstorecover
+model. IfwemaketheapproximationthateachSybilsees 25%ofVDOs,107ktorecover90%,and136ktorecover
+somefractionofthenetworkuniformlyatrandom,thenwe 99%.
+canusearandomprocesstomodelthenumberofunique
+objectsseenbyacollectionofSybils. Machineandnetworkcosts Basedontheseapproxima-
+Inthiscase,theprocessisequivalenttotheballs-into-bins tionsandthecostsofrunningourfullexperiment,wecan
+problem. IfeachSybilseesonaveragecobjectsfromthe extrapolatethecostsoflongerattackstargetingvariousfrac-
+networkandtherearemSybils,thentheSybilstogetherwill tionsofVDOs. Thedominantcostsarethoseofmachines100%
+80%
+60%
+40%
+20%
+0%
+0 30k 60k 90k 120k 150k 180k 210k 240k 270k
+egarevoC
+THD
+Experiment
+Model
+Effective Sybils
+Figure 2. DHT coverage vs. attack size. This graph shows the fraction of values stored in the DHT
+that we would have collected using different numbers of effective Sybils. We derived these results
+by running ClearView for 8 hours to collect data from 270k node IDs and computing the average
+coverage for different size subsets. The data closely correspond to a simple model based on the
+averagecoveragepereffectiveSybil,s.
+100%
+80%
+yr
+60%
+40%
+20%
+revoceR
+ODV
+7/10
+9/10
+45/50
+20%
+0%
+0 30k 60k 90k 120k 150k 180k 210k 240k 270k
+Effective Sybils
+Figure 3. VDO recovery vs. attack size. This graph shows the fraction of VDOs that we would be
+abletodecryptusingkeysharescollectedwithdifferentnumbersofeffectiveSybils,basedondata
+fromthepreviousfigure. Thecurvescorrespondtothreepairsofsecretsharingparametersk/n.$14,000
+$12,000
+$10,000 tsoC
+$8,000
+$6,000
+$4,000
+C
+kcattA
+launnA
+7/10
+9/10
+$2,000
+45/50
+$0
+0% 20% 40% 60% 80% 100%
+VDO Recovery
+Figure 4. Attack cost vs. VDO recovery. Here we plot the costs of using our ClearView attack
+implementation to recover different fractions of VDOs, based on data from the previous figures.
+These estimates include the cost of EC2 network transfer as well as the coarse-grained cost of
+adding machine instances (which results in the discontinuities). The curves correspond to three
+pairsofsecretsharingparametersk/n.
+andnetworktransfer. EacheffectiveSybilneedsaunique cost about $3150 per year, 90% would cost about $7350,
+IPaddressandportcombination. AnEC2instancecanonly and99%wouldcostabout$11,950. FortheVanishpaper’s
+useasingleIPaddress,sotheattackerneedsoneinstance conservativesecretsharingparametersofk =45andn=50,
+forevery65535effectiveSybils. (ClearVieweasilysupport recovering25%ofVDOswouldcostabout$4850peryear,
+thisnumberonevena“small”instance.) Eachinstancecosts recovering 90% would cost about $6900, and recovering
+about$500/yearwithreservedpricing. 99%wouldcostabout$9000.
+Network transfer is the dominant cost for most attack
+parameterchoices. Wecanestimatethetransfercostsbased
+ontheaveragebandwidthusedbyeachSybil. EC2prices Storagecosts Tocarryoutanongoingattack,theadver-
+inbound and outbound transfers differently, so we report saryneedstostoretheDHTvalueshecollects.Weattempted
+averagesforbothdirections. Duringour8-hourtrialperiod toquantifythecostsofthisstoragebymeasuringthedata
+running320keffectiveSybils,ClearViewtransferred145GB collectedbyourSybils.
+inand5.5GBout,foranaveragebandwidthpereffective Table2showstheaveragenumberofvaluesandbytes
+Sybil of 15.7 B/s in and 0.589 B/s out. Our other trials thatwererecordedbyeachSybilduringan8-hourexperi-
+producedsimilarresults,indicatingthatthenetworktransfer mentalwindow. Weomit STOREsforemptyvalues,since
+cost of running an attack for one year would be $52.80– theyrepresentkeydeletionintheDHT.Mostofthevalues
+$54.80perthousandeffectiveSybils. arerelatedtoVuze’sBitTorrenttrackingfunctions. Bencod-
+Figure4estimatesthecostofEC2instancesandtransfer ing[12]isasimpleserializationformatthatispartofthe
+foryear-longattacksaimingtorecovervariousfractionsof BitTorrentprotocol,andpeerrecordsarethehuman-readable
+VDOs. ForthedefaultVanishsecretsharingparametersof valuesinsertedintotheDHTtorecordthepresenceofpeers
+k = 7 and n = 10, recovering 25% of VDOs would cost forDHT-trackedtorrents.
+about $1950 per year, 90% would cost about $3750, and Toobtain94%coverage,theattackerwouldhavetorun
+99%wouldcostabout$5900. Forsecretsharingparameters 128,000effectiveSybilsovereach8-hourperiod. Recording
+of k = 9 and n = 10, recovering 25% of VDOs would every key-value pair for a one-year period would requireCategory Values(per8Sybil-hours) Bytes(per8Sybil-hours)
+Peerrecord 850 4000
+Bencoded 330 31,000
+Other 220 5000
+Total 1400 40,000
+PotentialVanishkeyshare 95 1700
+Table2.Observedstoredvalues. Thesefiguresrepresenttheaveragenumberofvaluesandbytes
+observed by each Sybil during an 8-hour window, without removing duplicates. Currently, Vanish
+keysharesalwaysoccupy16–51bytes,soanattackerwouldonlyneedtoretainthesevalues.
+about9.5TBofstorageandcostabout$1400(usingAmazon extrapolating—introducesconsiderableuncertaintyandover-
+S3pricing[3]). estimatestheactualdifficulty. Ourexperimentsshowthat
+Asmentionedearlier,theattackercangreatlyreducethe ourattacksrequireroughly70,000effectiveSybilstocom-
+costbystoringonlyvaluesthatarepossiblekeysharesinthe promise25%ofVDOsundertheseparameters.
+currentVanishimplementation—thosewithlengthsbetween Therearetwoproblemswiththe87,000Sybilestimate.
+16 and 51 bytes, inclusive. We estimate that this would ThefirstisthatitassumestheSybilsneedtoruncontinuously.
+amount to less than 510 GB per year and cost under $80. Aswehaveshownwithourhoppingattackstrategy, each
+Furthersavingscouldbeachievedbydiscardingduplicate Sybilcanrunforaslittleas3minutesineach8hourperiod,
+stores,thoughthiswouldrequireadditionalpostprocessing. withlittlelossincoverage. Thus,only544Sybilsneedto
+runconcurrentlytoachievethesameeffectas87,000Sybils
+runningcontinuously.
+5.Discussion
+Thesecondproblemisthatestimatingtheworkneeded
+torecover25%ofVDOsprovidesonlyalowerboundonthe
+Researchersoftendiscovervulnerabilitiesinsystemspro-
+Sybilsneededtorecovergreaterfractions. Readersmight
+posedbyotherresearchers,andtheprocessoflearningfrom
+inferthatrecovering90%wouldtakemanytimesmoreeffort.
+theseproblemshasproducedfruitfuladvances. Examplesin-
+Infact,asweillustrateinFigure1,thefractionoftheDHT
+cludethedevelopmentoftheToranonymouscommunication
+that the attacker needs to observe increases only slightly,
+system[4,15,32–35]andOff-the-RecordMessaging[7,36].
+from86%to93%. Ourexperimentsshowthat,underthese
+In this section, we discuss problems in the Vanish design
+parameters,wecancompromise90%ofVDOswith107,000
+andintheVanishpaper’ssecurityanalysis,andweattempt
+effectiveSybils—only53%morethanareneededtocom-
+todrawlessonsforfuturesystems.
+promise25%ofVDOs.
+Based on their estimate that the attacker would need
+5.1.ProblemswiththeVanishSecurityAnalysis
+87,000Sybils,theVanishauthorscalculatethatayear-long
+attackusingEC2wouldcostatleast$860,000for“process-
+The Vanish paper includes a security analysis that ex- ing and Internet traffic alone.” This figure is not entirely
+plicitlyconsidersthethreatfromSybilattacksagainstthe explained. Onecluecomesfromthedesignoftheirexper-
+VuzeDHT.Wehaveshownthatthepaper’scostestimate— iments,whichwereconductedinpartonEC2. Theyused
+$860,000forayear-longattack—istwoordersofmagnitude theofficialVuzeDHTclient,whichiswritteninJavaand
+higherthanthecostofourattacks. Wenowexaminehowthe hashighCPUandmemoryfootprints. Theyfoundthatthe
+Vanishpaperarrivesatthisfigure, andwheretheanalysis limitingresourcewasmemory—50nodeswouldfitin2GB
+goeswrong. ofRAM.Ifweroundupthememoryavailableinasmall
+TheVanishpaperestimatesthenumberofSybilsrequired EC2 instance to 2 GB (it is actually 1.7 GB) and assume
+tocompromise25%ofVDOs. Ratherthanexperimenting reservedinstancepricing,operating87,000nodeswouldcost
+with the public Vuze network, the authors used their own $854,000ayearformachinetime,whichtheVanishauthors
+private deployment consisting of 8000 Vuze DHT clients. mayhaveroundeduptoarriveattheirfigure.
+Forsecretsharingparametersofk =45andn =50,they Oneproblemwiththisestimateisthatanactualattacker
+foundthatanattackerwouldneed820Sybils. Extrapolating canwriteamuchmoreefficientVuzeclient,asweshowwith
+thisfigure, theydeterminedthatattackinganetworkwith ourClearViewimplementation. Withouroptimizedclient,
+1Mclientswouldrequire87,000Sybils. wecansupportthousandsofconcurrentSybilsinasingle
+Thisapproach—simulatingamuchsmallernetworkand smallEC2instance. Networktransferisthelimitingcost,notmemoryorCPU.Anotherproblemisthattheamountof 5.3.VanishandtheBoundedRetrievalModel
+trafficusedfortheattackisverydifficulttoestimatewithout
+participatingintherealnetwork. Itdependsonempirical IntheBoundedRetrievalModel,firstproposedbyDziem-
+factors like the amount of routing traffic and the rate of bowski[17], anattackerthatcompromisesamachinecan
+stores. ThisaddsfurtheruncertaintytotheVanishpaper’s onlycommunicatealimitedamountofmaterialbacktoitself.
+costestimate. Multiplerecentcryptographicsystemswereproposedinthis
+framework[9,17]. Thesecurityofsystemsbuiltbothinthis
+Recovering25%ofVDOswithourmostefficientattack
+modelandtherelatedBoundedStorageModel[28]depend
+wouldcostlessthan$5000peryear—morethan100times
+ontheabilitytomakeaccurateestimationsoftheattacker’s
+lessthantheVanishestimate. Thisillustratesthevalueof
+capabilities. Ifsuchanestimationisoffbyafactorof10,
+attemptingrealisticattacks,evenwhenmodelsandanalysis
+thiswilllikelybedevastatingtothesecurityoftheoverlying
+seemtoshowthatasystemissecure.
+system. Incontrast,traditionalencryptionsystemsprovide
+asuper-polynomialgapbetweentheeffortrequiredtouse
+thesystemandthatneededtobreakit. Inthesesystemsitis
+5.2.ProblemswiththeVanishDesign
+easytobuildinareasonable“safetymargin”whenchoosing
+asecurityparameter.
+TheVanishauthors,ineffect,showthattheirsystemis
+VanishreliesonasecuritypropertythattheVuzeDHT
+secure under the condition that an attacker is bounded in
+wasnotdesignedtoprovide—resistancetocrawling. Some-
+the amount of information he can retrieve from the DHT
+timesrepurposingexistingsystemsallowscleversolutions
+in a given amount of time. Unfortunately, their estimates
+tosecurityproblems, butwebelieveitmustbedonewith
+of an attacker’s capabilities were off by about two orders
+extreme caution. Computer systems evolve to satisfy the
+ofmagnitude. Toourknowledge,Vanishisoneofthefirst
+demandsoftheirusersandmaintainers,soitisriskytorely
+systemstoactuallybeimplementedthatrelyonthebounded
+onthemforsecuritypropertiesthatarenotimportanttotheir
+retrieval model. Its shortcomings suggest that significant
+primary users and maintainers. Even if the current Vuze
+cautionisduewhenbuildingsuchsystemsinthefuture.
+environmentweremorefavorabletothesecurityofVanish,
+thesystemmightevolveinanunfavorabledirection.
+6.Countermeasures
+TheworldwidescaleofVuzeisessentialtothesecurityof
+Vanish,andthedefenseneededbyVanishtothwartourSybil
+FutureversionsofVanishandVuzecouldadoptvarious
+attackisnotalignedwiththeprioritiesofVuze’smainuser
+countermeasuresagainstcrawlingattacks. Whilewediscuss
+base. AlargeDHTwithnodesrunbyindependentpeopleis
+severalstrategiesformakingtheseattacksmoreexpensive,
+essentialtoVanish’sguaranteethatsecretsharesarewidely
+itseemsdifficulttoraisethecostenoughtoprovidestrong
+dispersed and safe from collusion. Anything less than a
+resistancewithoutsacrificingothersecuritygoals,usability,
+world-wideDHTisunlikelytobesecureforVanishbecause
+orreliability.
+smallercommunitiesarevulnerabletocollusionattacksand
+socialengineering.
+RaisingVanish’skeyrecoverythreshold Thekeyshares
+Ourattacksaremadeeasier,andVanishsuffers,because that Vanish stores in the DHT are produced using a k-of-
+theVuzeDHTreplicatesentriestwentytimesandactively n secret sharing scheme. By default, 7 of 10 shares are
+createsreplicasperiodically(andimmediatelytonewlyar- requiredtoreconstructthekey. Onedefensewouldbefor
+rivedpeers). Thesefeaturesareimportantfortheprimary Vanishtouseastrongervaluesforkandn,suchasrequiring
+purposeofVuze,whichrequiresDHTentriestostayinthe 99of100shares.
+DHTwithhighprobabilitydespitesignificantchurninthe Thisapproachisproblematicfortworeasons. First,since
+nodepopulation. HereVuzeandVanishareworkingatcross a small fraction of key shares are lost from the DHT be-
+purposes. ItseemsunlikelythatVuzewouldacceptchanges fore they expire due to churn in the network, raising the
+thatsignificantlyreduceDHTreliability,justforthebenefit recovery threshold will make more Vanish messages self-
+ofVanish. destructaheadofschedule. Second,anattackercouldreact
+Atafundamentallevel,publicDHTsofthesortusedby byscrapingtheDHTmorecompletely.
+Vuzearenotwellsuitedforkeepingsecrets. Anyitemcan
+bereadbyanyonewhoknowsitsID,andtheDHTreadily Switching Vanish to a privately hosted DHT Future
+acceptsmembershipfromdiverse,untrustedpeers. Thejury implementations of Vanish could switch from the Vuze
+isstilloutonwhetherthekindofdistributedstoragemedium DHT to a privately hosted DHT. One option would be
+neededtomakeVanishsecure,usefulandefficientcanbe OpenDHT [26], a DHT system that, until recently, oper-
+designed. atedonacollectionofPlanetLabnodes. OpenDHTallowsanyonetostoreandretrievevalues,but,sinceitishostedon ofbucketionnodeN,PeruzesendsN aFIND-NODErequest
+aclosedsetofservers,Sybil-basedcrawlingattacksarenot forN’sIDwiththeithbitfromtheleftcomplemented. To
+possiblewithoutinsideraccess. avoidoverloadingthenetwork,itonlysendsoneFIND-NODE
+ThereareseveralproblemsforVanishsecurityusinga atatimetoagivennode. Peruzeterminatesthescanwhenit
+smaller-scaleDHT,evenonewithspecialsecurityfeatures. hassentpacketsataratelessthan10%ofitsmaximumfor
+A DHT with a small user base or a single maintainer is 30seconds. Peruzeconsumesverylittlebandwidthbecause
+vulnerabletosocialcollusion. InthecaseofOpenDHT,con- itavoidsbeingincorporatedintoothernodes’routingtables
+vincingitssinglemaintainertoaddananti-Vanishfeature andignoresallmessagesotherthanrepliestoitsFIND-NODE
+wouldcompromisethesecurityofVanish. Itisalsoeasier requests. Completescansofthenetworktakeunderanhour.
+toconvinceenoughparticipantstosubvertthesecurityofa Wefoundthat,whilethemajorityofIPaddresseswere
+systemwhentheuserbaseissmallanddrawnfromapartic- associatedwithonlyasinglenode,ourSybilmachineswere
+ularcommunity(e.g.,tensofacademicusersinthecaseof eachassociatedwiththousands. Evenafterweterminated
+OpenDHT).Lastly,aprivatelyhostedDHTlikeOpenDHT the attacks, these traces persisted in the routing tables for
+wouldessentiallyfunctionasatrustedthirdparty,andthere severalhours.
+aresimplerwaystoimplementVanish-likebehaviorinap- PeruzealsodetectedotherEC2nodesnotcontrolledby
+plicationswhereinvokingatrustedthirdpartyisacceptable. uswithanunusualnumberofentriesintheroutingtables,as
+wellasasetof10machinesattheUniversityofWashington
+AddingclientpuzzlestoVuze Clientpuzzleshavebeen thattheVanishauthorsconfirmedareusedtosupporttheon-
+proposedasadefensesagainstSybilattacks[25]. Asimple lineVanishdemonstration.Thissuggeststhattechniqueslike
+approachwouldbetorequireclientstoperformanexpensive Peruzecanbeusedtodetectmonitoringandexperimentation
+computationtiedtothecurrentdateandtheirnodeID.For ontheVuzenetwork. Whethereffectivecountermeasures
+example,ifVuzerequiredadailycomputationthattookone canbetakenonceattacksaredetectedisanopenquestion.
+minuteonasmallEC2instance,thiswouldimposeacost
+of$0.34/yearforeachSybil. Toobtain90%VDOrecovery,
+Socialnetworking Recentworkhasattemptedtoaddress
+weneed107,000effectiveSybils(fork =45andn=50),
+Sybil attacks by forming a trust-based network between
+so we would need to devote 74 EC2 instances to solving
+legitimateusers. SystemssuchasSybilGuard[47],Sybil-
+puzzles. Thiswouldraisethecostofourattacksbyabout
+Limit[46],andSybilInfer[14]requirethatusersdesignate
+$37,000 per year. Though this is a significant increase, it
+trustedpeers. Ingeneral,Sybilnodesareexcludedunderthe
+onlyimpactsattackerswhoactuallypayforCPUtime—an
+assumptionthattheywillnotbeabletomakethesametype
+attacker who controlled even a small botnet could easily
+ofconnectionsasmembersofanactualsocialnetwork.
+performthepuzzlecomputations. Inaddition,ifthepuzzles
+Althoughthesedefensesmayprovideameanstodetect
+werepredictable,thenanattackermightuseprecomputation
+Sybilnodes,theireffectontheperformanceandusabilityof
+tosolveseveralpuzzlesforacertaintimeperiod. Whilethe
+alargeDHTsuchasVuzeisnotclear,whichcouldprevent
+attacker might not be able to sustain this attack, all VDO
+adoption. Theseapproachesalsorequirethatusersarenot
+createdduringthistimeperiodwouldbevulnerable.
+willing to create trusted edges with potentially malicious
+nodes. However,participantsinsocialnetworksareoften
+Detectingattackers Anotherpossibledefenseistotryto
+willingtoindicaterelationshipswithuntrustedothers[39].
+detect attackers and selectively block or penalize their in-
+teractions with Vuze. One approach would be to monitor
+peersfordeviationsfromtheVuzeprotocolthatdistinguish RestrictingnodeIDsinVuze TheVuzeDHTimplements
+them from legitimate clients. This is currently easy to do a basic Sybil defense by restricting how node IDs are as-
+forourClearViewsoftware,whichomitscertainfunction- signed. ThenodeIDisafunctionoftheclient’sIPaddress
+alityforeaseofimplementation,butattackersmighttryto
+andport,yielding216−1nodeIDsperIP.Thisallowsusto
+avoiddetectionbyrespondingtorequestsmorefaithfully. A support131,070effectiveSybilswithonly2IPaddresses.
+secondapproachwouldbetomonitorIPaddressesthathost Futureversionsoftheprotocolmayrestrictthenumber
+anunusualnumberofVuzeclients. InstrumentingtheVuze of IDs attainable from a single IP to 1999. (Contrary to
+bootstrapnodeorscanningtheroutingtablesmaintainedby statementsintheVanishpaper,thisdefenseisnotcurrently
+peersinthenetworkwoulddetectsuchIPs. active.) Ifthischangeweredeployed,wewouldneed66IP
+Weexperimentedwiththelatterapproachbybuildinga addressestoobtainthesamenumberofeffectiveSybils.
+toolcalledPeruze,aroutingtablescannerfortheVuzeDHT. Evenstrongerrestrictionsmightbepossible. InourVuze
+Peruzeenumeratesthenodesinthenetworkbybreadth-first routingtablemeasurements,wefoundinstanceswheresingle
+searchthroughthenodeIDspaceanditerativelydumpingthe IPsweresupporting30ormoreclients; theseappearedto
+bucketsineachnode’sroutingtable. Toextractthecontacts belegitimateISPsusingNAT.VuzecouldlimiteachIPto,say,64identities. Wewouldthenrequire2048IPaddresses isusedbythepopulareMuleprogramandisalsobasedon
+(fourclass-Cblocks)todotheworkof2addressestoday. Kademlia. Citingverylongruntimes,theychosetoenumer-
+These defenses might not have a significant effect on atesubnetsbasedonfixingprefixbitsofthenodeIDs. In
+the cost of our attack, since they do not actually increase addition, theirkFetch[43]toolefficientlydownloadsKad
+the required number of machines or the amount of traffic peers’ entire routing tables. Stutzbach and Rejaie’s work
+generated.Whileitiscurrentlydifficulttousemorethanone focusesonaccuracy,notcost-effectiveness. Inasimilarvein,
+IPaddressonanEC2instance,otherISPsmaybewilling Steineretal.createdBlizzard [41],afastKadenumerator.
+torentoutunusedaddressblocksatlowcost. Alternatively, UnlikeCruiser,BlizzardusesonePC,keepsallstateinmem-
+anattackerwhocontrolledasmallbotnetwouldhaveready ory, andcanenumerateallnodesintheKadnetworkin8
+accesstoaddresses. minutes.
+Securely deploying such defenses on Vuze would take Falkneretal.[18]previouslymeasuredtheresponsive-
+time,duetotheneedtomaintainbackwardscompatibility ness,consistency,andperformanceoftheVuzeDHT.Their
+witholderclients. Untilthedefenseisenforced,anattacker workusedtensofinstancesofaversionoftheofficialVuze
+coulduseanolderversionoftheprotocoltocircumventthe (thenAzureus)clientmodifiedtocollectstatistics. Crosby
+defense. ThemostrecentVuzesourcemaintainsbackwards andWallach[13]alsoprofiledtheVuzeDHTaswellasthe
+compatibilitytoversion3.1.1.1,releasedmorethanayear “Mainline” DHT shared by many other BitTorrent clients.
+ago. Breaking such backwards compatibility would be a Theytoousedinstrumentedclientstoobtaintheirmeasure-
+significant,undesirablechangetotheusabilityofVuze. ments, but only ran 11 concurrent clients. Several of the
+parametersoftheVuzeDHThavesincebeenmodified;in
+Regardless of what other countermeasures might be pro- particular,themessagetimeoutandthenumberofconcurrent
+posed,securityclaimsforVanish,likeallsystems,should messageshavebothbeenhalved.
+betreatedwithrespectfulskepticism. Discussionofcoun- Ournodeenumerator,Peruze,omitsmanyoptimizations
+termeasuresisuseful,but,asusual,itisprudenttotreata usedinCruiserandBlizzardforthesakeofexpedientimple-
+systemasinsecureuntilitssecurityisfirmlyestablished. mentation. Inparticular,itsflowcontrolalgorithmisnaive
+and it is at least five times slower than Blizzard. Unlike
+7.RelatedWork previouswork,Peruzeterminateswhentherateofoutgoing
+traffic drops significantly, which indicates diminishing re-
+turnsfromfurtherscanning,ratherthancontinuinginorder
+Sybil attacks are a well-known problem in systems re-
+toobtainmorecompletemeasurements.
+quiringparticipationfrommanydifferentusers[16]. Such
+attackscancompromisethecorrectnessofsystemsprovid-
+ing online voting [24], that vote on correct solution to a Crawling DHTs Mistral [40] is a crawler for Kad. It
+distributed computation [48], or generate reputation from carriesoutaSybilattackonKadbyefficientlyimplementing
+userfeedback[10]. SystemslikeVanishthatattempttopro- manySybilsononemachine. Insteadofusingthestandard
+videprivacyoranonymitythroughadistributedsystemare Kadbootstrap,MistralusesBlizzardtodiscoverpeersand
+similarlyvulnerabletoSybilattacks.Forexample,aSybilat- then contacts them directly. Mistral does not attempt to
+tackagainsttheToroverlaynetworkcansubvertanonymity discovercontentthroughreplication;instead,theSybilnodes
+guarantees[4]. alwaysredirectroutingtraffictootherSybilstomaximize
+Here, we survey works not mentioned in the original the amount of traffic captured. Mistral is only capable of
+VanishpaperthatareindicatorsaboutthethreatofSybilat- spyingonan8-bitprefix(i.e., 1 )ofKadatatime.
+256
+tacksformonitoringDHTs. ApproachesforcrawlingDHTs Montra[30]isacrawlerforKadthatimprovesonMistral
+that are similar to our attacks have been applied to other byminimizingdisruptiontotheDHT.LikeMistral,itusesa
+Kademlia-family networks. Other work has attempted to crawler(Cruiser)todiscovernodesinthenetwork. Unlike
+enumeratethenodesinthenetwork,bothforVuzeandfor Mistral, Montra discovers content through the replication
+otherKademlia-stylesystems. mechanism by targeting peers individually. At the time
+Montrawasdeveloped,Kadpeerswerepermittedtochoose
+DHT enumeration and monitoring Stutzbach and Re- theirIDsarbitrarily,soeachofMontra’sminimallyvisible
+jaie developed Cruiser [42] in order to enumerate nodes monitorscansetitsIDtodifferfromthatofitstargetpeer
+on the Gnutella network. Cruiser uses a master-slave ar- onlyintheleastsignificantbit,ensuringreplicationofstored
+chitecture, employing multiple desktop PCs to enumerate data. Montraminimizesloadanddisruptionbyresponding
+thenetworkinparallel. Italsohasanadaptiveflow-control onlytoeachmonitor’stargetpeer. However,Montraisnot
+algorithmbasedonCPUloadinordertomaximizethenum- compatible with the new Sybil attack protections in Kad
+berofparallelconnections. StutzbachandRejaieextended describedin[11]thatpreventnodesfromchoosingtheirKad
+Cruiser[43,44]toenumeratenodesintheKadDHT,which IDsarbitrarily.Goeletal.[22]pointoutthatchoosingnodeIDsinDHTs roughlytwohundredPlanetLabnodesonwhichitruns,most
+by hashing the IP address and a salt facilitates the Sybil of which are housed at low-security research institutions.
+attack because attackers can choose the salt freely. This ThenewVanishtechnicalreportacknowledgedOpenDHT’s
+observationextendstriviallytoportsintheVuzeDHT. limitations: “ForVanish,OpenDHTseemedapoorfitfora
+Ouradvancedhoppingattacksystem,ClearView,isdis- numberofreasons”[19,Section3.2]. UsingbothVuzeand
+tinctfrombothMistralandMontra,althoughitisbroadly OpenDHTseemsunlikelytobeamuchbetterfit.
+similar in that it is an efficient implementation allowing AlteringthebehavioroftheVuzeDHTmightmakeour
+many Sybils to run on a single machine. Like Montra, it attacksmoreexpensive,butitisdifficulttogaugehowmuch
+learnsaboutstoredvaluesthroughreplication,butitsSybils more expensive until these changes are deployed. Under-
+jointhenetworkthroughthestandardbootstrapprocedure. standingtheireffectsonVanish(andonoverallDHTperfor-
+ClearViewattemptstorestrictitsvisibilitybyfailingtoreply mance)willrequirefurtherinvestigation,anditispossible
+tocertainmessages,butdoesnotgotothesameextentas thatentirelynewattackswillemerge. WhileVuze’swilling-
+Montra. Alsounlikethesepreviousworks,ourattackstarget nesstoadoptchangesforthebenefitofVanishislaudable,
+theVuzenetworkandareoptimizedforattackingVanish. itisalsoareminderthattheVuzeDHTiseffectivelyunder
+thecontrolofasingleparty,andthatfuturechangescould
+unintentionallyormaliciouslydegradeVanish’ssecurity.
+8.Conclusion
+The first iteration of Vanish was broken in a relatively
+shorttime. Theproposednewdefensesareinterestingand
+ThesecurityguaranteesthatVanishsetsouttoprovide meritfurtherinvestigation,but,fornow,Vanish’ssecurity
+wouldbeextremelyuseful,but,unfortunately,thesystemin shouldbeviewedwithskepticism. WhetherDHTsarethe
+itscurrentformdoesnotprovidetheminpractice. Aswe bestchoiceforkey-sharestorageremainsanopenquestion.
+haveshown,efficientSybilattackscanrecoverthekeysto
+almostallVanishdataobjectsatlowcost. Changestothe
+Acknowledgments
+VanishimplementationandtheunderlyingVuzeDHTmight
+makeSybilattackssomewhatmoreexpensive,butitseems
+WethanktheVanishauthorsforvaluableandconstruc-
+doubtful that such defenses would make the system suffi-
+tive discussions. We are also grateful to Dan Wallach for
+cientlysecure. WhilewewouldliketoseeVanishsucceed,
+providingmachinesforourearlyexperiments,andtoGeorge
+weareskepticalthatitcanbeimplementedsecurely.
+Danezisforhisassistanceaswepreparedthepaperforpub-
+lication. WethankAdamKlivansforemotionalenergyand
+Postscript gravitas. BrentWatersissupportedbyNSFCNS-0716199
+andCNS-0915361,AirForceOfficeofScientificResearch
+WesharedthesefindingswiththeVanishteam,and,sub- (AFOSR)undertheMURIawardfor“Collaborativepoli-
+sequenttothesubmissionofthispaper,theyreleasedanew ciesandassuredinformationsharing”(ProjectPRESIDIO).
+versionofVanish[21]andareport[19]detailingpotential EmmettWitchelissupportedbyNSFCNS-0905602,NSF
+newdefenses. CAREERCNS-0644205,andNSFCNS-0615104.
+Theyproposetwomaincountermeasures. Thefirstisto
+storeVanishkeysonboththeVuzeDHTandOpenDHTso References
+thatdatafrombothDHTswouldbeneededtorecoverthekey.
+TheyimplementedthisdefenseinthenewVanishsoftware [1] AmazonEC2userguide:Usingnetworksecurity.
+release, version 0.2. The second defense is to modify the http://docs.amazonwebservices.com/AWSEC2/latest/
+VuzeDHTtodisablethereplicate-on-joinbehavioranduse UserGuide/using-network-security.html.
+[2] AmazonEC2pricing,Sept.2009. http://aws.amazon.com/
+lessaggressivedatareplication. (Tominimizetheimpacton
+ec2/#pricing.
+Vuze,theysuggestthatthesechangescouldbeselectively
+[3] AmazonS3pricing,Sept.2009. http://aws.amazon.com/s3/
+enabledforVanishdata.) TheVanishauthorsareworking
+#pricing.
+withthemakersofVuzetoimplementthisdefense. [4] K.S.Bauer,D.McCoy,D.Grunwald,T.Kohno,andD.C.
+Fully evaluating these proposals is a subject for future Sicker. Low-resourceroutingattacksagainstTor. InWPES,
+work,butweofferaninitialperspectivehere. Usingboth pages11–20,2007.
+OpenDHTandVuzemightraisethebarforanattacker,but [5] M.BellareandS.K.Miner. Aforward-securedigitalsigna-
+turescheme. InCRYPTO,pages431–448,1999.
+atbestitcanprovidethemaximumsecurityderivedfrom
+[6] D.BonehandR.J.Lipton. Arevocablebackupsystem. In
+eithersystem—ifbothDHTsareinsecure,thenthehybrid
+USENIXSecurity,pages91–96,1996.
+willalsobeinsecure. OpenDHT is controlledbyasingle [7] N.Borisov,I.Goldberg,andE.A.Brewer. Off-the-record
+maintainer,whoessentiallyfunctionsasatrustedthirdparty communication,or,whynottousePGP. InWPES,pages
+inthisarrangement. Itisalsosusceptibletoattacksonthe 77–84,2004.[8] R.Canetti,S.Halevi,andJ.Katz. Aforward-securepublic- [28] U.M.Maurer. Conditionally-perfectsecrecyandaprovably-
+keyencryptionscheme. InEUROCRYPT,pages255–271, securerandomizedcipher. J.Cryptology,5(1):53–66,1992.
+2003. [29] P. Maymounkov and D. Mazires. Kademlia: A peer-to-
+[9] D. Cash, Y.Z. Ding, Y. Dodis, W. Lee, R.J. Lipton, and peer information system based on the XOR metric. In
+S.Walfish. Intrusion-resilientkeyexchangeinthebounded IPTPS:Proc.InternationalWorkshoponPeer-to-PeerSys-
+retrievalmodel. InTCC,pages479–498,2007. tems,pages52–56,2002.
+[10] A.ChengandE.Friedman. Sybilproofreputationmecha- [30] G. Memon, R. Rejaie, Y. Guo, and D. Stutzbach. Large-
+nisms. InP2PECON:ACMSIGCOMMWorkshoponEco- scalemonitoringofDHTtraffic. InIPTPS:International
+nomicsofPeer-to-PeerSystems,pages128–132,2005. WorkshoponPeer-to-PeerSystems,2009.
+[11] T.Cholez,I.Chrisment,andO.Festor. EvaluationofSybil [31] M.MitzenmacherandE.Upfal. ProbabilityandComputing:
+attackprotectionschemesinKAD. InAIMS:International RandomizedAlgorithmsandProbabilisticAnalysis. Cam-
+ConferenceonAutonomousInfrastructure,Managementand bridgeUniversityPress,January2005.
+[32] S.J.Murdoch.Hotornot:Revealinghiddenservicesbytheir
+Security,pages70–82,2009.
+clockskew. InCCS,pages27–36,2006.
+[12] B.Cohenetal. BitTorrentprotocolspecificationv1.0.
+[33] S.J.MurdochandG.Danezis. Low-costtrafficanalysisof
+[13] S.A.CrosbyandD.S.Wallach. AnanalysisofBitTorrent’s
+Tor. InIEEESymp.onSecurityandPrivacy,pages183–195,
+two Kademlia-based DHTs. Technical Report TR-07-04,
+2005.
+RiceUniversityDepartmentofComputerScience,June2007.
+[34] S.J.MurdochandP.Zielinski. Sampledtrafficanalysisby
+[14] G.DanezisandP.Mittal. SybilInfer:DetectingSybilnodes
+Internet-exchange-leveladversaries. InPET,pages167–183,
+usingsocialnetworks. InNDSS,2009.
+2007.
+[15] R.Dingledine,N.Mathewson,andP.F.Syverson. Tor:The
+[35] L.Øverlier andP. F.Syverson. Improvingefficiencyand
+second-generationonionrouter. InUSENIXSecurity,pages
+simplicityofTorcircuitestablishmentandhiddenservices.
+303–320,2004.
+InPET,pages134–152,2007.
+[16] J.R.Douceur. TheSybilattack. InIPTPS:International
+[36] M.D.Raimondo, R.Gennaro, andH.Krawczyk. Secure
+WorkshoponPeer-to-PeerSystems,pages251–260,2002.
+off-the-recordmessaging. InWPES,pages81–89,2005.
+[17] S. Dziembowski. Intrusion-resilience via the bounded- [37] S.Rhea,B.Godfrey,B.Karp,J.Kubiatowicz,S.Ratnasamy,
+storagemodel. InTCC,pages207–224,2006. S.Shenker,I.Stoica,andH.Yu. OpenDHT:ApublicDHT
+[18] J. Falkner, M. Piatek, J. P. John, A. Krishnamurthy, and serviceanditsuses. InSIGCOMM,pages73–84,August
+T.Anderson. ProfilingamillionuserDHT. InIMC:ACM 2005.
+SIGCOMMConferenceonInternetMeasurement,pages129– [38] A. Shamir. How to share a secret. Commun. ACM,
+134,2007. 22(11):612–613,1979.
+[19] R.Geambasu, J.Falkner, P.Gardner, T.Kohno, A.Krish- [39] Sophos. Sophos Facebook ID probe shows 41%
+namurthy,andH.M.Levy. Experiencesbuildingsecurity of users happy to reveal all to potential identity
+applicationsonDHTs. Technicalreport,UniversityofWash- thieves. http://www.sophos.com/pressoffice/news/articles/
+ingtonComputerScienceandEngineering,September2009. 2007/08/facebook.html.
+[20] R.Geambasu,T.Kohno,A.Levy,andH.M.Levy. Vanish: [40] M.Steiner,W.Effelsberg,T.En-Najjary,andE.Biersack.
+Increasingdataprivacywithself-destructingdata.InUSENIX LoadreductionintheKADpeer-to-peersystem.InDBISP2P:
+Security,pages299–314,2009. InternationalWorkshoponDatabases,InformationSystems
+[21] R.Geambasu,A.Levy,P.Gardner,T.Kohno,A.Krishna- andPeer-to-PeerComputing,2007.
+murthy,andH.M.Levy. Vanishwebsite. http://vanish.cs. [41] M.Steiner,T.En-Najjary,andE.W.Biersack. Aglobalview
+washington.edu/. ofKad. InIMC:ACMSIGCOMMConferenceonInternet
+[22] S.Goel,M.Robson,M.Polte,andE.G.Sirer. Herbivore: Measurement,pages117–122,2007.
+Ascalableandefficientprotocolforanonymouscommuni- [42] D.StutzbachandR.Rejaie. Capturingaccuratesnapshotsof
+cation. TechnicalReportTR2003-1890,CornellUniversity theGnutellanetwork. InIEEEGlobalInternetSymposium,
+ComputingandInformationScience,February2003. pages127–132,2005.
+[43] D.StutzbachandR.Rejaie. Improvinglookupperformance
+[23] G.ItkisandL.Reyzin. Forward-securesignatureswithop-
+timalsigningandverifying. InCRYPTO,pages332–354, overawidely-deployedDHT. InINFOCOM,2006.
+[44] D.StutzbachandR.Rejaie. Understandingchurninpeer-
+2001.
+to-peernetworks. InIMC:ACMSIGCOMMConferenceon
+[24] P.Judge. .NetvoteriggingillustratesimportanceofWeb
+InternetMeasurement,pages189–202,2006.
+services. http://news.zdnet.co.uk/software/0,1000000121,
+[45] Vuzewebsite. http://www.vuze.com.
+2102244,00.htm.
+[46] H.Yu,P.B.Gibbons,M.Kaminsky,andF.Xiao. SybilLimit:
+[25] A.JuelsandJ.G.Brainard. Clientpuzzles:Acryptographic
+Anear-optimalsocialnetworkdefenseagainstSybilattacks.
+countermeasure against connection depletion attacks. In
+InIEEESymp.onSecurityandPrivacy,pages3–17,2008.
+NDSS,pages151–165,1999.
+[47] H. Yu, M. Kaminsky, P. B. Gibbons, and A. D. Flaxman.
+[26] B.Karp,S.Ratnasamy,S.Rhea,andS.Shenker. Spurring
+SybilGuard:DefendingagainstSybilattacksviasocialnet-
+adoptionofDHTswithOpenHash, apublicDHTservice.
+works. IEEE/ACMTrans.Netw.,16(3):576–589,2008.
+In IPTPS: Proc. International Workshop on Peer-to-Peer [48] M. Yurkewych, B. N. Levine, and A. L. Rosenberg. On
+Systems,pages195–205,2004. thecost-ineffectivenessofredundancyincommercialP2P
+[27] J.Markoff.Newtechnologytomakedigitaldataself-destruct. computing. InCCS,pages280–288,2005.
+TheNewYorkTimes,July20,2009.

@@ -1,0 +1,533 @@
+Marx – Uncovering Class Hierarchies in C++ Programs
+NDSS 2017, San Diego
+(cid:3) (cid:3) y y (cid:3)
+AndrePawlowski ,MoritzContag ,VictorvanderVeen ,ChrisOuwehand ,ThorstenHolz ,
+y z y
+HerbertBos ,EliasAnthonasopoulos ,CristianoGiuffrida
+(cid:3)Ruhr-UniversitätBochum yVrijeUniversiteitAmsterdam zUniversityofCyprusIntroductionIntroduction
+• WepresentMarx,atooltoextractclasshierarchiesfromlegacybinaries.
+• ThiseasesstaticanalysisofC++applications.
+• Weusetheresultsforsecurity-relatedusecases:
+1. Control-FlowIntegrity
+2. Type-safeObjectReuse
+Marx–UncoveringClassHierarchiesinC++Programs 1• Solvingtheseproblemsaidsinthereverseengineeringprocess.
+• Exploitmitigationswouldprofitfromsolutionstotheseproblems.
+• CounterfeitObject-orientedProgramming.
+• Fine-grainedcontroloverforwardedge.
+Motivation
+• C++applicationsarehardtoanalyzestatically.
+• Classinheritance.
+• Objectsallocatedontheheap.
+• Indirectfunctioncalls(polymorphism).
+Marx–UncoveringClassHierarchiesinC++Programs 2Motivation
+• C++applicationsarehardtoanalyzestatically.
+• Classinheritance.
+• Objectsallocatedontheheap.
+• Indirectfunctioncalls(polymorphism).
+• Solvingtheseproblemsaidsinthereverseengineeringprocess.
+• Exploitmitigationswouldprofitfromsolutionstotheseproblems.
+• CounterfeitObject-orientedProgramming.
+• Fine-grainedcontroloverforwardedge.
+Marx–UncoveringClassHierarchiesinC++Programs 2Control-Flow IntegrityControl-Flow Integrity
+Code
+Function X
+[...]
+new object A
+[...]
+mov rdi, object
+call [[rdi] + offset]
+[...]
+Marx–UncoveringClassHierarchiesinC++Programs 3Control-Flow Integrity
+Code High Level
+Function X Object A Class A Class B
+[...] vtblptr function_a1
+new object A var_0 function_a2 [...]
+[...] [...] [...]
+mov rdi, object
+call [[rdi] + offset]
+[...]
+Marx–UncoveringClassHierarchiesinC++Programs 3Control-Flow Integrity
+Code High Level
+Function X Object A Class A Class B
+[...] vtblptr function_a1
+new object A var_0 function_a2 [...]
+[...] [...] [...]
+mov rdi, object
+call [[rdi] + offset] Class Malicious
+[...] shellcode_0
+shellcode_1
+[...]
+Marx–UncoveringClassHierarchiesinC++Programs 3Control-Flow Integrity
+Code High Level
+Function X Object A Class A Class B
+[...] vtblptr function_a1
+new object A var_0 function_a2 [...]
+[...] [...] [...]
+mov rdi, object
+call [[rdi] + offset] Class Malicious
+[...] shellcode_0
+shellcode_1
+[...]
+Marx–UncoveringClassHierarchiesinC++Programs 3Control-Flow Integrity
+Code High Level
+Function X Object A Class A Class B
+[...] vtblptr function_a1
+new object A var_0 function_a2 [...]
+[...] [...] [...]
+mov rdi, object
+call [[rdi] + offset] Class Malicious
+[...] shellcode_0
+shellcode_1
+[...]
+Marx–UncoveringClassHierarchiesinC++Programs 3Control-Flow Integrity
+Code High Level
+Function X Object A Class A Class B
+[...] vtblptr function_a1
+new object A var_0 function_a2 [...]
+[...] [...] [...]
+mov rdi, object
+object in hierarchy?
+call [[rdi] + offset]
+[...]
+Marx–UncoveringClassHierarchiesinC++Programs 4Control-Flow Integrity
+Code High Level
+Function X Object A Class A Class B
+[...] vtblptr function_a1
+new object A var_0 function_a2 [...]
+[...] [...] [...]
+mov rdi, object
+object in hierarchy? Class Malicious
+call [[rdi] + offset] shellcode_0
+[...] shellcode_1
+[...]
+Marx–UncoveringClassHierarchiesinC++Programs 4Control-Flow Integrity
+Code High Level
+Function X Object A Class A Class B
+[...] vtblptr function_a1
+new object A var_0 function_a2 [...]
+[...] [...] [...]
+mov rdi, object
+object in hierarchy? Class Malicious
+call [[rdi] + offset] shellcode_0
+[...] shellcode_1
+[...]
+Marx–UncoveringClassHierarchiesinC++Programs 4Control-Flow Integrity
+Code High Level
+Function X Object A Class A Class B
+[...] vtblptr function_a1
+new object A var_0 function_a2 [...]
+[...] [...] [...]
+mov rdi, object
+object in hierarchy? Class Malicious
+call [[rdi] + offset] shellcode_0
+[...] shellcode_1
+[...]
+Marx–UncoveringClassHierarchiesinC++Programs 4ApproachApproach
+Code High Level
+Function X Class A Class B Class C
+[...] function_a1 function_b1 function_c1
+mov rdi, object function_a2 function_b2 function_c2
+call [[rdi] + offset] [...] [...] [...]
+[...]
+Source Code
+objectᾆfunction_a1()
+IndirectfunctioncallsareprominentC++artifactsonbinarylevel.
+Marx–UncoveringClassHierarchiesinC++Programs 5Approach
+Code High Level
+Function X Class A Class B Class C
+[...] function_a1 function_b1 function_c1
+mov rdi, object function_a2 function_b2 function_c2
+call [[rdi] + offset] [...] [...] [...]
+[...]
+Athighlevel,aclassmayinheritfromanother.
+Marx–UncoveringClassHierarchiesinC++Programs 5Approach
+Code Memory
+Function X Class A Class B Class C
+[...] function_a1 function_b1 function_c1
+mov rdi, object function_a2 function_b2 function_c2
+call [[rdi] + offset] [...] [...] [...]
+[...] X
+Inheritancerelationshipsarenotreadilyavailableinthebinary.
+Marx–UncoveringClassHierarchiesinC++Programs 5Approach
+Code Memory
+Function X vtable A vtable B vtable C
+[...] function_a1 function_b1 function_c1
+mov rdi, object function_a2 function_b2 function_c2
+call [[rdi] + offset] [...] [...] [...]
+[...] X
+Classesare(loosely)representedbyvtablesinstead.
+Marx–UncoveringClassHierarchiesinC++Programs 5• Analysissteps:
+1. Identifyvtables, 3. refineresultsusingheuristics,
+2. inspecttheirusages, 4. mergeresultsacrossmodules.
+Approach
+• Marxstaticallyrecoverstheclasshierarchyfromanx86-64binary(ItaniumABI).
+• Representsclasshierarchyassetofvtables.
+• Tiessetofvtablestoindirectfunctioncall.
+Marx–UncoveringClassHierarchiesinC++Programs 6Approach
+• Marxstaticallyrecoverstheclasshierarchyfromanx86-64binary(ItaniumABI).
+• Representsclasshierarchyassetofvtables.
+• Tiessetofvtablestoindirectfunctioncall.
+• Analysissteps:
+1. Identifyvtables, 3. refineresultsusingheuristics,
+2. inspecttheirusages, 4. mergeresultsacrossmodules.
+Marx–UncoveringClassHierarchiesinC++Programs 6Approach
+1. Vtable CandidatesApproach – Vtable Identification
+Heap or Stack Data Memory
+Object A Vtable A
+vtblptr A ­0x10 metadata_0
+­0x08 metadata_1
+0x00 A::func_a1
+0x08 A::func_a2
+...
+Marx–UncoveringClassHierarchiesinC++Programs 7Approach – Vtable Identification
+Heap or Stack Data Memory
+Object A Vtable A
+vtblptr A ­0x10 metadata_0
+­0x08 metadata_1
+0x00 A::func_a1
+0x08 A::func_a2
+...
+Marx–UncoveringClassHierarchiesinC++Programs 7Approach – Vtable Identification
+Heap or Stack Data Memory
+resides in read­
+only memory
+Object A Vtable A
+(e.g., .rodata)
+vtblptr A ­0x10 metadata_0
+­0x08 metadata_1
+0x00 A::func_a1
+0x08 A::func_a2
+...
+Marx–UncoveringClassHierarchiesinC++Programs 7Approach – Vtable Identification
+Heap or Stack Data Memory
+Object A Vtable A
+vtblptr A ­0x10 metadata_0 only first
+function entry
+­0x08 metadata_1
+is referenced
+0x00 A::func_a1
+0x08 A::func_a2
+...
+Marx–UncoveringClassHierarchiesinC++Programs 7Approach – Vtable Identification
+Heap or Stack Data Memory
+Object A Vtable A metadata fields
+vtblptr A ­0x10 metadata_0 are within
+defined range
+­0x08 metadata_1
+or 0
+0x00 A::func_a1
+0x08 A::func_a2
+...
+Marx–UncoveringClassHierarchiesinC++Programs 7Approach – Vtable Identification
+Heap or Stack Data Memory
+Object A Vtable A
+vtblptr A ­0x10 metadata_0
+point into code
+­0x08 metadata_1
+section or are
+0x00 A::func_a1
+relocation
+0x08 A::func_a2
+entries
+...
+Marx–UncoveringClassHierarchiesinC++Programs 7Approach
+2. Vtable UsagesApproach – Overwrite Analysis
+Hierarchy Object Code
+Function X ↴
+A
+[...]
+new object B
+call constructor B
+B Constructor B ↴
+call constructor A
+write vtblptr B
+init. variable_1
+return
+Constructor A ↴
+write vtblptr A
+return
+Marx–UncoveringClassHierarchiesinC++Programs 8Approach – Overwrite Analysis
+Hierarchy Object Code
+Object B Function X ↴
+A
+vtblptr [...]
+variable_1 new object B
+call constructor B
+B Constructor B ↴
+call constructor A
+write vtblptr B
+init. variable_1
+return
+Constructor A ↴
+write vtblptr A
+return
+Marx–UncoveringClassHierarchiesinC++Programs 8Approach – Overwrite Analysis
+Hierarchy Object Code
+Object B Function X ↴
+A
+vtblptr [...]
+variable_1 new object B
+call constructor B
+B Constructor B ↴
+call constructor A
+write vtblptr B
+init. variable_1
+return
+Constructor A ↴
+write vtblptr A
+return
+Marx–UncoveringClassHierarchiesinC++Programs 8Approach – Overwrite Analysis
+Hierarchy Object Code
+Object B Function X ↴
+A
+vtblptr A [...]
+variable_1 new object B
+call constructor B
+B Constructor B ↴
+call constructor A
+write vtblptr B
+init. variable_1
+return
+Constructor A ↴
+write vtblptr A
+return
+Marx–UncoveringClassHierarchiesinC++Programs 8Approach – Overwrite Analysis
+Hierarchy Object Code
+Object B Function X ↴
+A
+vtblptr A [...]
+variable_1 new object B
+call constructor B
+B Constructor B ↴
+call constructor A
+write vtblptr B
+init. variable_1
+return
+Constructor A ↴
+write vtblptr A
+return
+Marx–UncoveringClassHierarchiesinC++Programs 8Approach – Overwrite Analysis
+Hierarchy Object Code
+Object B Function X ↴
+A
+vtblptr A ⟶ B [...]
+variable_1 new object B
+call constructor B
+B Constructor B ↴
+call constructor A
+write vtblptr B
+init. variable_1
+return
+Constructor A ↴
+write vtblptr A
+return
+Marx–UncoveringClassHierarchiesinC++Programs 8Approach – Overwrite Analysis
+Hierarchy Object Code
+Object B Function X ↴
+A
+vtblptr B [...]
+variable_1 new object B
+call constructor B
+B Constructor B ↴
+call constructor A
+write vtblptr B
+init. variable_1
+return
+Constructor A ↴
+write vtblptr A
+return
+Marx–UncoveringClassHierarchiesinC++Programs 8Approach – Path Generation
+• Inafunction,buildpathsvisiting
+1. indirectcalls,
+2. directcallstonew,and
+3. instructionsoperatingonvtables.
+• Resolveindirectfunctioncallsforknownvtablesincurrentcontext.
+• Followscallswithacalldepthof2.
+Marx–UncoveringClassHierarchiesinC++Programs 9Approach
+3. Vtable HeuristicsApproach – Function Heuristics
+Hierarchy Data Memory
+Class A Vtable A
+virt. func_a1() ­0x10 0
+virt. func_a2() ­0x08 0
+0x00 A::func_a1
+0x08 A::func_a2
+Class B
+Vtable B
+virt. func_a1()
+­0x10 0
+virt. func_b1()
+­0x08 0
+0x00 B::func_a1
+0x08 A::func_a2
+0x10 B::func_b1
+Marx–UncoveringClassHierarchiesinC++Programs 10Approach – Function Heuristics
+Hierarchy Data Memory
+Class A Vtable A
+virt. func_a1() ­0x10 0
+virt. func_a2() ­0x08 0
+0x00 A::func_a1
+0x08 A::func_a2
+Class B
+Vtable B
+virt. func_a1()
+­0x10 0
+virt. func_b1()
+­0x08 0
+0x00 B::func_a1
+0x08 A::func_a2
+0x10 B::func_b1
+Marx–UncoveringClassHierarchiesinC++Programs 10Approach – Function Heuristics
+Hierarchy Data Memory
+Class A Vtable A
+virt. func_a1() ­0x10 0
+virt. func_a2() ­0x08 0
+0x00 A::func_a1
+0x08 A::func_a2
+Different
+Class B pointer, yields
+Vtable B
+virt. func_a1() no information
+­0x10 0
+virt. func_b1()
+­0x08 0
+0x00 B::func_a1
+0x08 A::func_a2
+0x10 B::func_b1
+Marx–UncoveringClassHierarchiesinC++Programs 10Approach – Function Heuristics
+Hierarchy Data Memory
+Class A Vtable A
+virt. func_a1() ­0x10 0
+virt. func_a2() ­0x08 0
+0x00 A::func_a1
+0x08 A::func_a2
+Class B Same function
+Vtable B
+virt. func_a1() entry, probably
+­0x10 0 same
+virt. func_b1()
+­0x08 0 hierarchy
+0x00 B::func_a1
+0x08 A::func_a2
+0x10 B::func_b1
+Marx–UncoveringClassHierarchiesinC++Programs 10Approach
+4. Inter-Modular DependenciesApproach – Inter-Modular Dependencies
+Applicationsmayconsistofseveralmodules.
+Shared Library
+Application
+Marx–UncoveringClassHierarchiesinC++Programs 11Approach – Inter-Modular Dependencies
+Independentanalysisyields,e.g.,threedistincthierarchies.
+Shared Library
+D
+E F
+Application
+G J
+H I K L
+Marx–UncoveringClassHierarchiesinC++Programs 11Approach – Inter-Modular Dependencies
+Unlesswemergeresultsacrossmodules,weunderestimatethehierarchy.
+Shared Library
+D
+E F
+Application
+G J
+H I K L
+Marx–UncoveringClassHierarchiesinC++Programs 11EvaluationApplication Overestimated Underestimated NotFound
+MySQLServer 1 (1%) 7 (9%) 1 (1%)
+MongoDB 0 8 (5%) 13 (8%)
+Node.js 2 (3%) 2 (3%) 0
+48minanalysistimeonaveragefor5real-worldapplications.
+Evaluation – Class Hierarchy Reconstruction
+Application No. ofHierarchies ExactlyReconstructed Time(h)
+MySQLServer 78 69 (88%) 11:36
+MongoDB 158 137 (87%) 1:08
+Node.js 59 55 (93%) 0:33
+Marx–UncoveringClassHierarchiesinC++Programs 12Application Overestimated Underestimated NotFound
+MySQLServer 1 (1%) 7 (9%) 1 (1%)
+MongoDB 0 8 (5%) 13 (8%)
+Node.js 2 (3%) 2 (3%) 0
+48minanalysistimeonaveragefor5real-worldapplications.
+Evaluation – Class Hierarchy Reconstruction
+Application No. ofHierarchies ExactlyReconstructed Time(h)
+MySQLServer 78 69 (88%) 11:36
+MongoDB 158 137 (87%) 1:08
+Node.js 59 55 (93%) 0:33
+Marx–UncoveringClassHierarchiesinC++Programs 12Application Overestimated Underestimated NotFound
+MySQLServer 1 (1%) 7 (9%) 1 (1%)
+MongoDB 0 8 (5%) 13 (8%)
+Node.js 2 (3%) 2 (3%) 0
+Evaluation – Class Hierarchy Reconstruction
+Application No. ofHierarchies ExactlyReconstructed Time(h)
+MySQLServer 78 69 (88%) 11:36
+MongoDB 158 137 (87%) 1:08
+Node.js 59 55 (93%) 0:33
+48minanalysistimeonaveragefor5real-worldapplications.
+Marx–UncoveringClassHierarchiesinC++Programs 12Evaluation – Class Hierarchy Reconstruction
+Application No. ofHierarchies ExactlyReconstructed Time(h)
+MySQLServer 78 69 (88%) 11:36
+MongoDB 158 137 (87%) 1:08
+Node.js 59 55 (93%) 0:33
+Application Overestimated Underestimated NotFound
+MySQLServer 1 (1%) 7 (9%) 1 (1%)
+MongoDB 0 8 (5%) 13 (8%)
+Node.js 2 (3%) 2 (3%) 0
+48minanalysistimeonaveragefor5real-worldapplications.
+Marx–UncoveringClassHierarchiesinC++Programs 12• Implementedandtestedtwoapplications:
+1. Control-FlowIntegrity .......................“binary-levelVtableVerification(VTV)”
+2. Type-safeObjectReuse .................“binary-levelCling”,bucketingbyhierarchy
+• Lackof precisionofanalysis?
+Evaluation – Binary Hardening
+• UseMARX’resultstohardenlegacybinaries.
+Marx–UncoveringClassHierarchiesinC++Programs 13Evaluation – Binary Hardening
+• UseMARX’resultstohardenlegacybinaries.
+• Implementedandtestedtwoapplications:
+1. Control-FlowIntegrity .......................“binary-levelVtableVerification(VTV)”
+2. Type-safeObjectReuse .................“binary-levelCling”,bucketingbyhierarchy
+• Lackof precisionofanalysis?
+Marx–UncoveringClassHierarchiesinC++Programs 13• Enrichstaticresultswithdynamicanalysis(unittests).
+• Fall-backtocomputationallyintensiveslowpath(PathArmor).
+• Pleaserefertothepaperforfurtherdetails.
+Evaluation – Precision
+• Type-safeObjectReuseallowsimprecision,loweredsecurity.
+• Control-FlowIntegritymaybreakapplications.
+Marx–UncoveringClassHierarchiesinC++Programs 14• Pleaserefertothepaperforfurtherdetails.
+Evaluation – Precision
+• Type-safeObjectReuseallowsimprecision,loweredsecurity.
+• Control-FlowIntegritymaybreakapplications.
+• Enrichstaticresultswithdynamicanalysis(unittests).
+• Fall-backtocomputationallyintensiveslowpath(PathArmor).
+Marx–UncoveringClassHierarchiesinC++Programs 14Evaluation – Precision
+• Type-safeObjectReuseallowsimprecision,loweredsecurity.
+• Control-FlowIntegritymaybreakapplications.
+• Enrichstaticresultswithdynamicanalysis(unittests).
+• Fall-backtocomputationallyintensiveslowpath(PathArmor).
+• Pleaserefertothepaperforfurtherdetails.
+Marx–UncoveringClassHierarchiesinC++Programs 14Conclusion• Analysisispronetopathexplosion(inter/intra-proceduralpathgeneration).
+• Applicationsbuildinguponresultshavetotolerateimprecision.
+Limitations
+• Approachiscompiler-dependent,optimizationsmaybreakassumptions.
+• Abstractbaseclassesmaynotyieldavtableforustodiscover.
+Marx–UncoveringClassHierarchiesinC++Programs 15• Applicationsbuildinguponresultshavetotolerateimprecision.
+Limitations
+• Approachiscompiler-dependent,optimizationsmaybreakassumptions.
+• Abstractbaseclassesmaynotyieldavtableforustodiscover.
+• Analysisispronetopathexplosion(inter/intra-proceduralpathgeneration).
+Marx–UncoveringClassHierarchiesinC++Programs 15Limitations
+• Approachiscompiler-dependent,optimizationsmaybreakassumptions.
+• Abstractbaseclassesmaynotyieldavtableforustodiscover.
+• Analysisispronetopathexplosion(inter/intra-proceduralpathgeneration).
+• Applicationsbuildinguponresultshavetotolerateimprecision.
+Marx–UncoveringClassHierarchiesinC++Programs 15Conclusion
+• Marxsucceedsinrecoveringthemajorityofclasshierarchies.
+• Large,real-worldapplications.
+• Promisingresults.
+• Resultsareapplicabletosecurity-relatedusecasesonthebinarylevel.
+• OurC++open-sourceimplementationbasedonlibVEXisavailableat
+https://github.com/RUB-SysSec/Marx.
+Marx–UncoveringClassHierarchiesinC++Programs 16Thank you for your attention.
+Marx–UncoveringClassHierarchiesinC++Programs 16Conclusion
+• Marxsucceedsinrecoveringthemajorityofclasshierarchies.
+• Large,real-worldapplications.
+• Promisingresults.
+• Resultsareapplicabletosecurity-relatedusecasesonthebinarylevel.
+• OurC++open-sourceimplementationbasedonlibVEXisavailableat
+https://github.com/RUB-SysSec/Marx.
+Marx–UncoveringClassHierarchiesinC++Programs 17

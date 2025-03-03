@@ -1,0 +1,1217 @@
+An Efiective Architecture and Algorithm for Detecting Worms with
+Various Scan Techniques
+Jiang Wu, Sarma Vangala, Lixin Gao
+Department of Electrical and Computer Engineering,
+University of Massachusetts,
+Amherst, MA 01002.
+Email: (jiawu,svangala,lgao)@ecs.umass.edu
+Kevin Kwiat
+Air Force Research Lab,
+Information Directorate,
+525 Brooks Road,
+Rome, NY 13441.
+Email: kwiatk@rl.af.mil
+Abstract thermore, thepropagation ofactive wormsenablesone
+tocontrolmillionsofhostsbylaunchingdistributedde-
+nial of service (DDOS) attacks, accessing confldential
+Since the days of the Morris worm, the spread of information, and destroying/corrupting valuable data.
+malicious code has been the most imminent menace to Accurateandpromptdetectionofactivewormsiscrit-
+the Internet. Worms use various scanning methods to ical for mitigating the impact of worm activities.
+spread rapidly. Worms that select scan destinations In this paper, flrst, we present an analysis on po-
+carefullycancausemoredamagethanwormsemploying tential scan techniques that worms can employ to scan
+random scan. This paper analyzes various scan tech- vulnerablemachines. Inparticular,weflndthatworms
+niques. We then propose a generic worm detection ar- can choose targets more carefully than the random
+chitecture that monitors malicious activities. We pro- scan. A worm that scans only IP addresses announced
+pose and evaluate an algorithm to detect the spread of in the global routing table can spread faster than a
+worms using real time traces and simulations. We flnd worm that employs random scan. In fact, scan meth-
+that our solution can detect worm activities when only ods of this type have already been used by the Slapper
+4%ofthevulnerablemachinesareinfected. Ourresults worm[9]. These methods reduce the time wasted on
+bring insight on the future battle against worm attacks. unassigned IP addresses. They are easy to implement
+and pose the most imminent menace to the Internet.
+Weanalyzeafamilyofscanmethodsandcomparethem
+to the random scan. We flnd that these scan meth-
+1 Introduction ods can dramatically increase the spreading speed of
+worms.
+A worm is a program that propagates across a net- Second, we propose a worm detection architecture
+workbyexploitingsecurity(cid:176)awsofmachinesinthenet- andalgorithmsforpromptdetectionofwormactivities.
+work. Thekeydifierencebetweenawormandavirusis Ourwormdetectionarchitecturetakesadvantageofthe
+that a worm is autonomous. That is, the spread of ac- factthatawormtypicallyscanssomeunassignedIPad-
+tive worms does not need any human interaction. As a dressesoraninactiveportofassignedIPaddresses. By
+result,activewormscanspreadinasfastasafewmin- monitoring unassigned IP addresses or inactive ports,
+utes[7][12]. Recentworms,likeCodeRedandSlammer one can collect statistics on scan tra–c. These statis-
+cost public and private sectors millions of dollars. Fur- ticsincludethenumberofsource/destinationaddresses
+0ThisworkissupportedinpartbyNSFGrantANI-0208116, and volume of the scan tra–c. We propose a detec-
+the Alfred Sloan Fellowship and the Air Force Research Lab. tion algorithm called victim number based algorithm,
+Anyopinions,flndings,andconclusionsorrecommendationsex- which relies solely on the increase of source addresses
+pressedinthismaterialarethoseoftheauthorsanddonotnec- of scan tra–c and evaluates its efiectiveness. We flnd
+essarilyre(cid:176)ecttheviewsoftheNationalScienceFoundation,the
+that it can detect the Code Red like worm when only
+AlfredSloanFoundationortheAirForceResearchLab.4% of the vulnerable machines are infected. rest’s defense solution[10] uses a system call sequence
+This paper is organized as follows. Section 2 intro- database and compares new sequences with them. If
+duces and analyzes various scan methods. By com- a mismatch is found, then the sequence is delayed.
+paring the spreading speed of various scan methods, Williamson’s\VirusThrottle"[19]checksifacomputer
+we show that routable worms spread the fastest and sends SYN packets to new addresses. If so, the packet
+pose the greatest menace to the Internet. In Section will be delayed for a short period of time. By delay-
+3, a generic worm detection architecture is introduced. ing instead of dropping, these two solutions reduce the
+Then, the victim number based algorithm is designed impact of false alarms. This paper proposes detection
+and evaluated. Section 4 concludes the paper. methods that can detect large scale worm attacks on
+the Internet or enterprise networks.
+1.1 RelatedWork
+A lot of work has been done in analyzing worms, 2 Scan Methods
+modeling worm propagation and designing possible
+worms. In[18],Weaverdesignedfastspreadingworms, Probing istheflrstthing that worms performto flnd
+called the Warhol worms, by using various scan meth- vulnerable hosts. Depending on how worms choose
+ods. In[12],Stanifordet. al. systematicallyintroduced theirscandestinationsfromagivenaddressspace,scan
+the threats of worms and analyzed well-known worms. methods can be classifled as random scan, routable
+Inaddition,smarterscanmethodssuchaslocalsubnet, scan, hitlist scan and divide-conquer scan. In this sec-
+hitlistandpermutationscansweredesigned. Insteadof tion, we present a set of scan methods and compare
+using the idea of selecting as many assigned addresses their spreading speeds.
+as possible, these methods focus on increasing the e–-
+ciency of the worm scan process itself. 2.1 SelectiveRandomScan
+Many models were designed to analyze the spread-
+Instead of scanning the whole IP address space at
+ing of worms. Kephart and White designed an epi-
+random, a set of addresses that more likely belong to
+demiological model to measure the virus population
+existing machines can be selected as the target ad-
+dynamics[3]. Zou et. al.[23] designed a two-factor
+dress space. The selected address list can be either
+worm model, which takes into consideration the fac-
+obtained from the global or the local routing tables.
+tors that slow the worm propagation. In [20], Chen
+We call this kind of scanning selective random scan.
+et. al. designed a concise discrete time model which
+Care needs to be taken so that unallocated or reserved
+can adapt parameters such as the worm scan rate, the
+address blocks in the IP address space are not selected
+vulnerability patching rate and the victim death rate.
+for scanning. Worms can avoid using addresses within
+By analyzing the factors that in(cid:176)uence the spread of
+these address blocks. Information about such address
+worms, these models and methods give an insight into
+blockscanbefoundinthefollowingways. Anexample
+containing worm propagation efiectively.
+is the Bogon list[8], which contains around 32 address
+More important problems are detection and defense.
+blocks. The addresses in these blocks should never ap-
+As in the flght against computer viruses, accurate de-
+pear in the public network. IANA’s IPv4 address allo-
+tection and quick defense are always di–cult problems
+cationmap[4]isasimilarlistthatshowsthe/8address
+for unprecedented attacks. There are a number of de-
+blocks which have been allocated. The \Slapper"[9](or
+tection methods using Internet tra–c measurements
+Apache, OpenSSL) worm made use of these lists in or-
+to detect worms on networks. Zou et.al.[23], explored
+der to spread rapidly. Worms using the selective ran-
+thepossibility ofmonitoring Internettra–cwith small
+dom scan need to carry information about the selected
+sizedaddressspacesandpredictingthewormpropaga-
+target addresses. Carrying more information enlarges
+tion. Cheung’s activity graph based detection[13] uses
+the worm’s code size and slows down its infection pro-
+the scan activity graph (the sender and receiver of a
+cess. For selective random scan, the database carrying
+packet are the vertices and the relation between them
+the information can be hundreds of bytes. Therefore,
+are the edges) inferred from the tra–c. This method
+the additional database will not greatly afiect the al-
+uses the fact that the activity graph can be large only
+ready slow spreading of worms.
+foraveryshortperiodoftime. Spitzner[11]introduced
+the idea of Honeypots. Honeypots are hosts that pre-
+tend to own a number of IP addresses and passively
+2.1.1 Propagation Speed of Selective Random
+monitor packets sent to them. Honeypots can also be
+Scan
+used to flght back a worm’s attack. An example is the
+LaBrea tool[14] designed by Liston, which reduces the Two current models used are the Weaver’s model in
+worm spreading speed by holding TCP sessions with [17] and the AAWP model in [20]. Due to their similar
+worm victims for a long time. modeling performance as shown in Figure 1, we adopt
+Methods to detect worms that cause anomalies on a theAAWPwormpropagationmodel[20]. IntheAAWP
+singlecomputerwerealsodesigned. SomayajiandFor- model the spread of worm is characterized as follows:x 105
+5
+4.5
+4
+3.5
+3
+2.5
+2
+1.5
+1
+0.5
+0
+0 200 400 600 800 1000 1200
+Time
+senihcam
+detcefni
+fo
+.oN
+AAWP
+Weavers model
+Figure1.ComparisonofAAWPModelandWeaver’sSimulatorforscanrate=100/sec,no. ofvulnerable
+machines=500,000andhitlistsize=10,000. Notethatthecurvesofthetwomodelsoverlap.
+the worm propagation.
+1
+n =n +[N ¡n ][1¡(1¡ )sni] (1)
+i+1 i i
+T 2.2 RoutableScan
+whereN isthetotalnumberofvulnerablemachines; T
+In addition to the reduced scanning address space, if
+is the number of addresses used by the worm as scan
+a worm also knows which of the addresses are routable
+targets; s is the scan rate (the number of scan packets
+or are in use, then it can spread faster and more ef-
+sent out by a worm infected host per time tick) and n
+i fectively and can avoid detection. This type of scan-
+is the number of machines infected up to time tick i.
+ning technique, where unassigned IP addresses which
+The length of the time tick is determined by the time
+are not routable on the Internet are removed from the
+needed to completely infect a machine (denoted by t).
+worm’s database, is called routable scan. One problem
+These notations are used consistently throughout this
+with this type of scan method is that the code size of
+paper.
+the worm has to be increased as it needs to carry a
+InEquation(1),theflrsttermontherighthandside
+routable IP address database. The database cannot be
+denotes the number of infected machines alive at the
+too large as it leads to a long infection time resulting
+endoftimeticki. Theterm, N¡n , denotesthenum-
+i in a slow down of the worm propagation. In the next
+ber of vulnerable machines not infected by time tick i.
+subsection we design and analyze a possible routable
+The remaining term, 1¡(1¡ 1)sni, is the probability
+T scanning technique.
+that an uninfected machine will be infected at the end
+of time tick i+1. This model is difierent from [20] in
+2.2.1 Design and Analysis of Routable Scan
+that the death rate (rate by which infected machines
+reset or crash) and the patch rate (rate by which vul- BGP is the global routing protocol that glues the in-
+nerable machines are flxed and become invulnerable) dependent networks together. From the global BGP
+are assumed to be zero. This is because our goal is to routing tables, globally routable preflxes can be ob-
+flnd the efiect of address space selection on the worm tained. Some BGP routing tables are also available on
+spread. the Internet. This data provides worm designers with
+Figure 2(a), obtained from Equation (1), shows the methods that can enhance the performance of worms.
+spreadingspeedofwormsthatuserandomscanandse- To flnd out the applicability of using a BGP table as
+lective random scan techniques. The selective random the database, we analyze a typical global BGP routing
+scan was used by the Slapper worm. Once it infects a tablewithtwoobjectives. Theflrstistoflndhowmany
+machine, the Slapper worm scans only a predeflned set preflxesaregloballyroutable. Thesecondistoflndthe
+of Class A machines[22]. The total number of vulner- minimumsizeofthedatabaseawormmustcarry. This
+able machines (N), the scan rate (s) and t are set to analysis is done in 3 steps:
+500,000, 2 scans/second and 1 second respectively for 1. The BGP table we used is from one of the Route
+both the random scan and the selective random scan. Views servers[21]. The routing table contains about
+The Slapper worm which uses selective random scan 112K preflxes. By removing the redundant preflxes,
+has2:7£109 addressesasscantargets(T). Figure2(a) 49K independent preflxes were obtained. In addi-
+demonstrates that using a target address pool that is tion, those preflxes that are known to be unallocated
+smaller than the whole IP address space can speed up were removed by checking the BGP table with IANA’sx 105 5
+4
+3
+2
+1
+0 0 5 10 15 20 25
+Time(hour)
+sedon
+detcefni
+fo
+rebmuN
+5x 105 Random Scan
+Selective Random 4.5
+4
+3.5
+3
+2.5
+2
+1.5
+1
+0.5
+0 0 5 10 15 20 25
+Time(hour)
+(a) Random scan and Selective Ran-
+domscan(usedbySlapperworm).
+sedon
+detcefni
+fo
+rebmuN
+x 105 Random Scan 5
+Routable Scan 4.5
+4
+3.5
+3
+2.5
+2
+1.5
+1
+0.5
+0 0 1 2 3 4 5 6
+Time(hour)
+(b)Routableandrandomscan.
+sedon
+detcefni
+fo
+rebmuN
+Routable Scan Divide−Conquer Scan
+(c) Divide-Conquer and routable
+scan.
+Figure2.Spreadingspeedofselectiverandom,routableandDivide›Conquerscan.
+IPv4 address allocation map[4] (for example, preflx tion (1). While the Code-Red like worm that uses ran-
+39.0.0.0/8). domscanspendsabout24hourstoinfectmostvulner-
+2. The continuous preflxes from above are merged able machines, the Code-Red like worm using routable
+into address segments. For example, the address seg- scan only spends about 7 hours. Clearly, routable scan
+mentsofpreflxes3.0.0.0/8and4.0.0.0/8canbemerged greatly increases the worm spreading speed.
+intoanewIPaddresssegment: [3.0.0.0,4.255.255.255].
+3. Usingadistancethreshold,addresssegmentsclose 2.3 Divide›ConquerScan
+to each other are combined.
+Afterstep2describedabove,17,918independentad- Instead of scanning the complete database, an in-
+dress segments are obtained. The total number of IP fected host divides its address database among its vic-
+addresses contained in those segments is 1:17 £ 109. tims. We call this Divide-Conquer scan. For example,
+Comparing this with the total number of IPv4 ad- after machine A infects machine B, machine A will di-
+dresses, 27.3% of the IPv4 addresses are found to be videitsroutableaddressesintohalvesandtransmitone
+globallyroutable. Thisnumberisabout10timeslarger half to machine B. Machine B can then scan the other
+thanthenumberofIPaddressescontainedintheDNS half. Using Divide-Conquer scan, the code size of the
+tables(147M).Theformeristheupperboundofreach- worm can be further reduced, because each victim will
+able IP addresses while the latter could be a lower scan a difierent and also a smaller address space. In
+bound. addition, the scan tra–c generated by the victims is
+In step 3, using a threshold of 65,536 (one /16 preflx also reduced and more di–cult to detect.
+away), the number of address segments is reduced to One weak point of Divide-Conquer scan is \single
+1926. Thetotalnumberofaddressescontainedinthem point of failure". During worm propagation, if one
+is now 1:31£109 (12.6% higher). infected machine is turned ofi or gets crashed, the
+To store the address segments, a database of about databasepassedtoitwillbelost. Theearlierthishap-
+15.4Kbytes(eachentryneeds8bytes)isrequired. Fur- pens,thelargertheimpact. Severalsolutionsexistthat
+thermore, by analyzing the size distribution of the ad- can be used to overcome this problem.
+dress segments, it is found that the largest 20% seg- One possible solution is the generation of a hitlist,
+ments contribute to over 90% of all the IP addresses. where a worm infects a large number of hosts before
+Therefore, with a 3K bytes database, a worm can still passingonthedatabase. Anothersolutionistheuseof
+infect about 90% of the routable IP addresses. a generation counter. Each time the worm program is
+transferred to a new victim a counter is incremented.
+Theworm programdecidestosplit thedatabase based
+2.2.2 Spreading Speed of the Routable Scan
+onthevalueofthecounter. Athirdpossiblesolutionis
+From the analysis above, we know that the worm that torandomlydecideonwhethertopassonthedatabase
+employs routable scan needs to scan only 109 IP ad- or not.
+dresses instead of 232 addresses. Hence, T …109. The
+other parameters are set to the same values as used in
+2.3.1 Spreading Speed of Divide-Conquer scan
+Figure 2(a).
+Figure 2(b), which shows the spreading speed of Consider a simple case of Divide-Conquer scan where
+routablescanandrandomscan,isobtainedusingEqua- the worm does not visit the addresses it has alreadyvisited. This reduces the probing range. We now have of addresses that have DNS records. Second, the num-
+the following spread pattern for the Divide-Conquer ber of addresses is limited to those machines having a
+scan: public domain name. From the observations of David
+Moore[6], we know that about half of the victims of
+Code Red I did not have DNS records. Third, because
+1
+n =(N¡n )[1¡(1¡ )sni]+n (2) the worm programs need to carry a very large address
+i+1 i
+109¡
+i¡1n
+s
+i
+Pj=0 j database, the worms will spread very slowly.
+UsingtheAAWPmodel,DNSscan’sspreadingspeed
+where i‚0.
+can be analyzed. Here, T …108. We assume the infec-
+Using the same set of parameters used for the
+tion time t is roughly proportional to the worm’s code
+routable scan, Figure 2(c) shows that the Divide-
+size due to the transmission time. We use Code-Red I
+Conquer scan is much faster than the routable scan,
+v2 as the standard, which has a code size of 5K bytes.
+although the spreading process is more complicated.
+OtherparametersinEquation(1)arethesameasused
+Furthermore, for the Divide-Conquer scan, even when
+before. Figure 3(a) shows that DNS worm spread can
+there are few uninfected vulnerable machines, the
+barely start because of the huge address database the
+spreading speed increases, rather than slowing down
+worm must carry.
+unlike the earlier cases.
+2.5.2 Complete Scan
+2.4 HybridScan
+This is the most extreme method a worm designer
+Limiting the scan targets by a speciflc address
+might use to prevent the worm scan from being de-
+database might miss many vulnerable hosts that are
+tected. The worm designer can use some method to
+not globally reachable. To solve this problem, the at-
+get the complete list of assigned IP addresses and use
+tacker can combine routable scan with random scan at
+thelistasthetargetaddressdatabase. Then,itishard
+a later stage of the propagation (when most addresses
+for a monitor to distinguish the malicious scans from
+havebeenscanned)toinfectmoremachines. Thistype
+the legitimate ones. The Flash Worm introduced by
+of scanning technique is called Hybrid scan. The ad-
+Staniford[12] is similar to this type of worm.
+vantageofthistechniqueisthateventhoughtheprop-
+Usingthismethod,thesizeoftheattacker’scodewill
+agationhasbeendetected,thehybridscancanbeused
+alsobeverylargebecausealargeaddresslisthastobe
+to infect more number of machines as it is already too
+carried with the code. From our former analysis, the
+late for efiective defense.
+number of distinct host addresses should be more than
+Consideringthefactthatalargenumberofmachines
+100 million. Without compression, the list size will be
+use private IP addresses and are hidden and protected
+at least 400M bytes, which will greatly slow down the
+by gateway machines from the Internet, better per-
+infectiontime. However,foraspeciflcvulnerability,the
+formance can be achieved if those addresses can be
+list could be reduced to a reasonable size. For exam-
+scanned with more power. In addition, each network
+ple, if the objective of the attack is a security hole on
+interface card of a victim could be used for the worm
+routers, the attacker could collect a list of routers. As
+scan to reach more subnets.
+the number of routers on the Internet is much smaller,
+a complete scan will be applicable.
+2.5 ExtremeScanMethods
+Using the same method and parameters used for the
+In this section, we introduce and analyze several ex- DNS scan, we can analyze the performance of com-
+treme scan methods. We call them \extreme" because plete scan. Figure 3(b) shows that when the address
+the worms need to use some brute-force techniques to database is larger than 6M bytes and if no database
+create a scan target address database. Because the splitting is used, the Code Red like worm using com-
+worm scans only the hosts contained in the database, pletescanwillspreadslowerthantheoneusingrandom
+it can avoid from being detected. On the other hand, scan. We introduce a small death rate of 0.002% and
+each method entails some critical limitations. That is, a patch rate of 0.0002% in this case to clearly difier-
+worms using extreme scan methods might spread very entiate the various cases of complete scan. Besides the
+slowlyorhaveweaknessesthatcanbeexploitedforde- code size and the death rate, the remaining parame-
+tection. tersaretheonesusedtosimulate theCodeRedworm.
+Theinfectionrategraph,therefore,doesnotrisetothe
+2.5.1 DNS Scan maximum possible value of 500,000.
+ThewormdesignercouldusetheIPaddressesobtained
+2.6 ComparisonoftheWormScanMethods
+fromDNSserverstobuildthetargetaddressdatabase.
+Its advantage is that the gathered IP addresses are al- The basic difierence between the various scan meth-
+mostalwaysdeflnitelyinuse. However,italsohassome ods lies in the selection of the address database. If the
+problems. First, it is not easy to get the complete list code size is large and the average bandwidth possessedx 105 5
+4
+3
+2
+1
+0 0 50 100 150 200
+Time(hour)
+sedon
+detcefni
+fo
+rebmuN
+x 105 5
+Random Scan
+DNS Scan
+4
+3
+2
+1
+0 0 5 10 15 20 25 30
+Time(hour)
+(a)DNSscanandrandomscan.
+sedon
+detcefni
+fo
+rebmuN
+x 105 5
+Random
+Complete(1M list) 4.5
+Complete(2M list)
+Complete(6M list) 4
+3.5
+3
+2.5
+2
+1.5
+1
+0.5
+0 0 5 10 15 20 25 30
+Time(hour)
+(b) Complete scan and random
+scan.
+sedon
+detcefni
+fo
+rebmuN Random
+Selective Random
+Routable
+Complete(1M list)
+Complete(2M list)
+Complete(6M list)
+(c)Comparisonofscanmethods.
+Figure3.Extremescanmethodsandcomparisonofmajorscanmethods
+by the infected host is given, then the time taken by 3 Worm Detection
+a worm to infect a host is roughly determined by the
+The main focus of this section is to detect worms us-
+speed of transmission of a copy of the worm program.
+ing various scan techniques. Worm scan detection is
+Hence,wecanseethatthebetterthegranularityofthe
+raising an alarm upon sensing anomalies that are most
+database, the stealthier the scan technique. However,
+likely caused by large scale worm spreads. Our goal
+the size of the worm program will inevitably increase.
+is to quickly detect unknown worms on large enter-
+There exists a tradeofi between the size of the address
+prise networks or the Internet while making the false
+database and the speed of the worm spread. Figure
+alarm probability as low as possible. In the following
+3(c) shows this tradeofi. Besides the list size and the
+sections, we flrst present our generic worm detection
+death rate as in the case of the complete scan, other
+architecture. We then present the design and analysis
+parameters in this flgure are still the ones used to sim-
+of asimple detection algorithm, called, victimnumber
+ulate the Code Red worm.
+based algorithm.
+We can see that when the worm scan uses a better
+address database, similar to routable scan, the proba-
+3.1 GenericWormDetectionArchitecture
+bility that a vulnerable machine gets infected is larger.
+Forselectiverandomscanandroutablescan,thespread Todetectworms, weneedtoanalyzeInternettra–c.
+isfasterthanintherandomscan. However,foraworm Monitoringtra–ctowardsasinglenetworkisoftennot
+using complete scan, when the database size is larger enoughtoflndawormattack. Thetra–cpatterncould
+than 1M bytes, the worm will spread slower than a appearnormalduringawormattackbecausetheworm
+worm using routable scan. A 1M bytes database can has not yet infected the network or will not infect it at
+betranslatedtoalistcontainingaround250Kvulnera- all. Therefore, we have to monitor the network behav-
+ble hosts, which is not very large considering the num- ioratasmanyplacesaspossibleinordertoreducethe
+ber of Code Red victims. When the size of the list is chance of false alarms.
+larger than 6M bytes, the worm using complete scan Toachievethis,weneedadistributeddetectionarchi-
+will spread even slower than the worm using random tecture. Thearchitecturemonitorsthenetworkbehav-
+scan. Although a worm using complete scan can ef- ior at difierent places. By gathering information from
+fectively avoid being detected, the size of the address difierent networks, the detection center can determine
+database cannot be too large. We can also see that the presence of a large scale worm attack. Problems
+slower spread will reduce the total number of victims such as where the monitors should be deployed, which
+the worm can infect. addresses need to be monitored and how the detection
+WedonotincludeDivide-Conquerscanherebecause system works need to be considered in designing the
+we are trying flnd scan methods that are easy to im- detection architecture.
+plement. Considering the average power of the ma- We propose a generic tra–c monitoring and worm
+chines that can be used by the worm, we flnd that, a detectionarchitecture,asshowninFigure4. Thearchi-
+worm could use routable scan flrst and random scan tectureiscomposedofacontrolcenterandanumberof
+later when most of the routable addresses have been detection components. To reduce noise, tra–c towards
+infected. This combination does not cost much and inactive addresses is preferred to be used for worm de-
+leverages beneflts from difierent scan methods. tection. Thedetectioncomponentswillpre-analyzethe
+tra–c and send preliminary results or alarms to thecontrolcenter. Thecontrolcentercollectsreportsfrom worm. It is abnormal to flnd a large amount of scan
+the detection components and makes the flnal decision tra–c sent towards inactive addresses. This is, how-
+on whether there is anything serious happening. ever, prone to false alarms because the scan tra–c can
+be caused by other reasons (such as DDOS and soft-
+3.1.1 Implementation of Detection Compo- ware errors). Therefore, it is necessary to flnd some
+nents unique and common characteristics of worms.
+Serious worm incidents usually involve a large num-
+The detection components can be deployed in one of
+ber of hosts that scan speciflc ports on a set of ad-
+the following two places.
+dresses. Many of these addresses are inactive. If we
+detect a large number of distinct addresses scanning
+1. Monitors In Local Networks: The detection com-
+the inactive ports, within a short period of time, then
+ponents can be implemented on virtual machines
+itishighlypossiblethatawormattackisgoingon. We
+or on the gateways of local networks.
+deflne the addresses from which a packet is sent to an
+2. Tra–c Analyzers Beside Routers: Detection com- inactiveaddressasvictims. Ifthedetectionsystemcan
+ponents can also be tra–c analyzers beside the trackthenumberofvictims,thenthedetectionsystem
+routers, observing the tra–c of a set of addresses. has a better performance. Hence, a good decision rule
+Because of the processing costs associated with to determine if a host is a victim is necessary.
+this form of detection, the analyzers cannot use
+complicatedfllteringrules. Forexample,theymay
+onlywatchtra–csenttowardsunallocated/8net-
+3.2.1 Victim Decision Rules
+works instead of particular addresses or they may
+just count the tra–c volume.
+To decide if a host is a victim, the simplest decision
+rule is that at least one scan packet is received by an
+3.1.2 Address Space Selection
+inactive host. We call this the \One Scan Decision
+The detection network consists of addresses monitored Rule" (OSDR). Using this rule, the number of victims
+by detection components. Although a large detection detected by the detection system over a period of time
+networkishighlydesirable,thenumberofaddressesthe can be modelled as:
+system can manage is limited. New worms might not
+scan the whole IP address space. In addition, difier-
+k
+ent worms might use difierent target spaces. To make V
+k
+= X[n i¡n i¡1][1¡(1¡D=T)(k¡i)s] (3)
+packet collection e–cient and efiective, we need to de-
+i=0
+ploy the detection components so that the detection
+network overlaps as much as possible with the worm
+where V is the number of victims detected by the sys-
+scan target space. k
+tem up to time tick k (here the death rate and patch
+For the random scan, detection components can be
+deployed anywhere. For the routable scan or the
+rate are both assumed to be zero and n¡1 = 0) and
+D is the detection network size. In [20], Chen et. al.
+Divide-Conquer scan, deploying detection components
+proved that for an address space containing more than
+for allocated IP address spaces is better. Therefore, to
+220 addresses,thenumberofvictimsdeterminedbythe
+detect worms that may be using any of the three scan
+detection system closely matches the dynamics of the
+methods, it would be better to use the latter strategy.
+random scan’s propagation.
+To collect inactive addresses, IP address blocks that
+Though simple, OSDR is susceptible to daily scan
+are not assigned or known to be inactive for appli-
+noise. Anyhostthathasascanpacketcollectedbythe
+cations (for example most dial-up users do not have
+detection network is considered to be a victim. David
+HTTPservers)areused. Fortheattackersusingaran-
+Moore’s work[6] showed that \two scans captured by
+dom set of such address blocks, it will be di–cult to
+the host leads to a victim". This \Two Scan Decision
+know the detection network. Some virtual machines
+Rule" (TSDR) works well with noise and re(cid:176)ects the
+couldalsobesetuptorespondtothescanpacketsthey
+incessantfeatureofwormscans. WefocusonTSDRin
+receive. Hence, the attacker will not be able to tell
+this paper.
+thedifierencebetweeninactiveaddressesandactivead-
+TSDR reduces most of the sporadic scans caused
+dresses.
+by port scans or software errors. Apparently, higher
+the number of scan packets used to make the decision,
+3.2 VictimNumberBasedAlgorithm
+higher is the decision accuracy. Yet this allows more
+Using the detection architecture, we need to design victims to slip away from the detection system. The
+algorithmstodetectanomaliescausedbyworms. Since number of victims detected by a detection system us-
+a new worm’s signature is not known beforehand, a ing TSDR up to time tick k can be calculated by the
+small number of packets is not enough to detect the equation:Monitoring and detection center
+Data Transfer
+Detecting Component
+Detecting Component
+Local Network
+Routers
+Detecting Component
+Local Network
+Local Network
+Internet or Large Enterprise Network
+Figure4.Agenerictraf(cid:2)cmonitoringandwormdetectionarchitecture.
+addresses are gathered. This task is accomplished by
+the detection architecture. Second, the victims are re-
+k
+V
+k
+= X[n i¡n i¡1][1¡‰(k¡i)s¡‰(k¡i)s¡1(1¡‰)(k¡i)s] t dr ii se cv ue sd sedfro inm thth ee pg rea vth ioe ur sed sua bd sd ecre tis os nes .. TT hih ri ds
+,
+h aa ns ab de ae pn
+-
+i=0
+tive threshold is needed to determine when a surge is
+(4)
+large enough. During the monitoring of blocks of inac-
+where the number of infected hosts up to time tick i is
+n and‰=(1¡D). Here,weassumethedeathrateand tive addresses, if there is a quick surge in the number
+i T of distinct victims, then there is an evidence of a seri-
+patch rate to be zero and n¡1 =0. On the right hand
+side of the equation, n i¡n i¡1, is the number of newly ous worm attack. The victim number based detection
+algorithm is based on the above principle.
+infectedmachinesduringtimeticki. Thetotalnumber
+Using only inactive addresses, the noise caused by
+of machines detected at the end of time tick k is the
+normal scan tra–c and other attacks can be reduced.
+sumofmachinesdetectedateverytimetickibeforek.
+‰(k¡i)s
+denotes the fraction of victims infected during
+This method requires simple flltering rules to gather
+suspicious packets and count them. Hence, it is very
+time tick i but were never detected up to time tick k.
+The term
+‰(k¡i)s¡1(1¡‰)(k¡i)
+denotes the fraction
+fast. The following facts can also be used in order
+to demonstrate the efiectiveness of our solution. Port
+of victims infected during time tick i but only one of
+scansareusuallydonebyalimitednumberofhostsand
+their scan packets has been detected by time tick k.
+normalDOSorDDOStra–cwillnotfocusoninactive
+Equations (3) and (4) above are based on the as-
+addresses. Hence, these will not cause much impact on
+sumption that each new victim will use the same ad-
+our solution.
+dress space as the destination address space used by
+Tocombatnoisethatmightbereceivedbythearchi-
+the worm. This is a common feature of the two scan
+tecture, the scan volume is kept stable. This allows us
+methods presented earlier. We also assume that the
+to use an adaptive threshold that can help in detect-
+address space used for detection is always a subset of
+ing abnormality. If there is deviation in the number of
+the address space used by the worm. The death rate
+victims obtained within a certain period of time, then
+and the patch rate are ignored.
+the victim number based algorithm’s threshold should
+For the Divide-Conquer scan, each victim will scan
+be able to re(cid:176)ect it. The threshold could be expressed
+the addresses only within its piece of the target space.
+by:
+Therefore, the fraction of victims captured by the de-
+tection system is the fraction of address space that the
+detection system covers. If we assume that the victims i¡1
+v1
+arerandomlydistributedaroundtheaddressspaceused T
+i
+=(cid:176)⁄u
+uk X
+(V
+j
+¡E[V i])2 =(cid:176)⁄(cid:190) (6)
+by the attacker, and s‚1, then the number of victims t j=i¡k
+detected by time tick k can be expressed by a much i¡1
+1
+simpler equation: E[V ]= V (7)
+i k X j
+j=i¡k
+D
+V k = T n k¡1 (5) where T i is the threshold to be used by the system at
+time tick i; (cid:176) is aconstant value called threshold ratio;
+V is the number of new victims detected during each
+3.2.2 Detection Threshold j
+k time ticks starting from i ¡ k time ticks; k is the
+The victim number based algorithm consists of three learning time of the system, which is the time taken
+parts: First, all scan packets with inactive destination by the system to calculate E[V ]; E[V ] is the rate of
+i iincrease in the number of new victims at every time 12000
+tick i averaged over the k time ticks. If the rate of
+increase of victims detected during the ith time tick is 10000
+greater than the threshold value set during that time,
+8000 then there is abnormality present in the system. In
+practice, we also need to flnd continuous number of
+6000
+such abnormalities to determine worm activity. The
+number of continuous abnormalities needed to detect
+4000
+worm activity is denoted as r. A tradeofi is necessary
+in selecting the value of r. A large value of r give 2000
+a better detection performance but take longer time
+whereas a smaller value might result in false positives 0
+8 9 10 11 12 13 14 15 16
+but take lesser time. Detection network size (/#)
+Initially, the number of new victims detected is large
+as there are only a small number of addresses in the
+database. Thisleadstoalargerateofincreaseshowing
+peaksinthedetectioncurve. However,asthedatabase
+getslargerandlargertherateofincreaseofnewvictims
+observed decreases. In order to smooth these peaks of
+the initial learning process, we need to have some way
+for entries to expire in the database. A simple method
+is to use new databases everyday. For a speciflc day,
+the learning process will start from what the database
+learned from the previous day.
+Another method is to assign a decreasing life time
+L to each new victim detected. If L decreases to zero
+then the victim is considered dead and removed from
+the victim list. If a scan packet is received from the
+victim before L expires, its life time is then reset to L.
+Usingthismethod,thesizeofthedatabasecanbekept
+stable. However, tracking the time for each address is
+expensive. We use the flrst method for our solution.
+Another static threshold that re(cid:176)ects a maximum
+possible victim number observed by the system over
+a period can also be used. Whenever this threshold
+is reached, an alarm is raised regardless of the former
+self-learning threshold.
+It needs to be pointed out that when the worm scan
+leveliscomparabletothenormalnoiselevel, theworm
+willnotbedetected. Therefore,thesystemwillusually
+raise an alarm only when it detects large scale worm
+attacks. We set the parameters (cid:176), r and k using the
+technique shown in Appendix B.
+3.3 Traf(cid:2)cTraceUsedToValidateTheAlgorithm
+Oncetheparameters(cid:176),r andk areappropriatelyse-
+lected (Appendix B), we need to test the solution with
+realtra–ctracesobtainedfromwormincidentsinorder
+to validate the detection method. However, it is very
+di–cult to flnd such Internet tra–c traces which are
+publicly available. Asbackground tra–c, we useInter-
+net tra–c traces from the WAND research group[16].
+The tra–c traces are gathered from the gateways on
+the campus network at University of Auckland, New
+Zealand, who own a /16 preflx. Using worm infec-
+tion dynamics obtained from the AAWP model and
+Equation (4), wesimulate thenumberofwormvictims
+)sdnoces(
+emit
+noitceteD
+N=500K, s=10
+N=500K, s=25
+N=500K, s=50
+N=500K, s=100
+N=1.25M, s=10
+N=2.5M, s=10
+N=5M, s=10
+Figure 5. Performance of victim number
+basedalgorithmforvarioussizesofdetection
+network
+detected by a /16 network over time. We flnd that for
+thecaseofrandomscanandroutablescantheinfection
+dynamics can be easily captured using a /16 network
+(Appendix A). Combining the victim number dynam-
+ics from the real incoming tra–c with the simulated
+worm tra–c, we get the simulated victim number dy-
+namics on the network under difierent worm attacks.
+From these we verify our detection solution.
+We use incoming tra–c trace recorded on June 12,
+2001. Because the date is close to the day when Code
+Red I V2 broke out (July 19, 2001), it is good to sim-
+ulate the Code Red worm tra–c. Hence, the packets
+we are interested in are the SYN packets sent towards
+TCP port 80 (HTTP). In the simulation, we assume
+that the worm starts at 3 o’clock in the morning.
+3.4 Validation of Victim Number Based Algo›
+rithm
+Before we present the actual validation, the algo-
+rithm is tested for difierent number of vulnerable ma-
+chinesanddifierentpossiblescanrates. Figure5shows
+the change in detection time with the detection net-
+work size as a function of total number of vulnerable
+machines (N) and scan rate (s). We assume the noise
+levelis1000(from[15]. Thisisbecause,thetotalnum-
+ber of distinct scan sources is 5000 every day, so we
+assume that for an important port, the average num-
+ber of the scan sources is 1000. The (cid:176) value we use
+is 3. The uppermost curve in the 5 is for the detec-
+tion of a Code-Red like worm with 500,000 vulnerable
+machines. Note that as the detection network size in-
+creases, the number of machines decreases (/8 network
+has more machines than /16). The other curves show
+the change in detection time for various values of N
+and s. From the plot, we can flnd that when the worm
+attackismoreserious(moremachinesarevulnerableor
+scanning becomes faster - the most important factors103
+102
+101
+100
+0 5 10 15 20 25
+secruos
+tcnitsid
+fo
+etar
+esaercnI
+104
+Normal traffic
+Plus random scan traffic
+Detected at 13:48
+103
+< 2% infected
+102
+101
+Worm starts spread at 3:00
+100
+0 5 10 15 20 25
+Time (hour)
+(a) Variation of victim number in case of random
+scan
+secruos
+tcnitsid
+fo
+etar
+esaercnI
+Normal traffic
+Plus routable scan traffic
+Detected at 6:05
+<1.1% infected
+Worm starts spread at 3:00
+Time (hour)
+(b) Variation of victim number in case of routable
+scan
+Figure6.ValidationofalgorithmwithInternettraf(cid:2)ctracesfromtheWANDresearchgroup.
+inthewormspread),thedetectiontimewillbeshorter. 102
+Therefore, for worms more serious than the Code-Red,
+and a detection network size smaller than /12, our so-
+lution could detect the worm within 2 hours when less
+than 1% of vulnerable machines are infected.
+Figure 6(a) is plotted from the simulated Code Red 101
+wormdynamics(thatstartat3o’clockinthemorning).
+Itshowsthatwiththe/16network(AppendixA),there
+is a rapid increase in the victim number during the
+Code Red worm attack. Figure 6(b) shows the same
+worm attack using routable scan. Using a threshold
+100
+with (cid:176) = 3, k = 200 minutes and r = 10 (obtained 6.7 6.8 6.9 7 7.1 7.2 7.3 7.4
+from Appendix B) in Equation (7), the worm attack
+can be detected within 11 hours after the Code-Red
+worm begins to spread. At this time, less than 2% of
+the 500,000 vulnerable machines are infected.
+We already know that the faster the worm spreads,
+the faster it can be detected. Now, if the Code Red
+worm uses routable scan, the worm can be detected
+within 3 hours. At this time, less than 1.1% of the
+total number of vulnerable machines are infected.
+FromtheFigure7,weseethatiftheCodeRedworm
+uses Divide-Conquer scan, the detection network will
+not be able to detect it (Appendix A). Notice that the
+scale of the X axis have been changed to clearly depict
+the inability to detect the divide conquer scan. This is
+becausethe/16networkistoosmallandonaveragecan
+onlydetect 1 ofthevictims. IntheCodeRedworm’s
+216
+case, this is less than 10 victims. However, we expect
+thatbyusinglargerdetectionnetworkscontainingonly
+inactive addresses, the Divide-Conquer worm scan can
+also be detected.
+Besides the Code Red and routable worm, we also
+want to answer a more important question - to what
+extent does the victim number based detection algo-
+secruos
+tcnitsid
+fo
+etar
+esaercnI
+Normal traffic
+Plus divide−conquer scan traffic
+Worm starts spread at 3:00
+Time (hour)
+Figure7.Variationofvictimnumberfordivide›
+conquerscantraf(cid:2)c
+rithm work for other worms with difierent scanning
+rates,destinationaddressspacesizesandtotalnumber
+of vulnerable machines. Figure 8(a) shows the detec-
+tion performance (fraction of vulnerable machines got
+infected upon detection) of the victim number based
+detection for worms with varying scan rates and des-
+tination address space sizes with total vulnerable ma-
+chine number as 500,000. Here, k =200, r =10, (cid:176) =3
+(fromAppendixB).Fromtheplot, wecanseethatthe
+detection performance improves when the destination
+addressspacesizedecreasesandthescanrateishigher.
+For scan rates ranging from 2 scans per second to 100
+scanspersecondandthedestinationaddressspacesize
+rangingfrom1:3£109 to232,thewormcanbedetected
+before 1.5% of the vulnerable machines are infected.
+Figure 8(b) shows the detection performance of the
+victim number based detection for worms with vary-8
+7
+6
+5
+4
+3
+2
+1
+0
+1 1.5 2 2.5 3 3.5 4 4.5
+x 109
+ecnamrofreP
+noitceteD
+16
+s=2
+s=5 14
+s=10
+s=15
+s=20 12
+10
+8
+6
+4
+2
+0
+0 0.5 1 1.5 2
+Address Space Size x 106
+(a) Detection performance Vs. Destination address
+spacesizeasafunctionofscanrate.
+ecnamrofreP
+noitceteD
+s=2
+s=5
+s=10
+s=15
+s=20
+Vulnerable Machine Number
+(b)DetectionperformanceVs. numberofvulnerable
+machinesasafunctionofscanrate.
+Figure8.Detectionperformance.
+ing scan rates and vulnerable machine number with future,ane–cienttra–cmonitoringinfrastructurewill
+destination address space size as 232. Here, k = 200, be an important part of the global intrusion detection
+r = 10, (cid:176) = 3. From the plot, we can see that the systems. Aconsequenceofthewormdetectionmethod
+detection performance improves when the vulnerable is that the attackers will have to use a limited number
+machine number increases and the scan rate is higher. of IP addresses to scan the Internet. Therefore, the
+For the scan rates ranging from 2 scans per second to impactofwormscanningontheInternettra–cwill be
+20 scans per second and the vulnerable machine num- reduced.
+ber ranging from 100,000 to 2,000,000, the worm can In this paper, we discussed difierent types of scan
+be detected before 4% of the vulnerable machines are methods andtheir efiectson futureworm propagation.
+infected. We can see from the plot that for scan rates We flnd that as the backbone link speeds and hosts of
+higherthan20scanspersecondandforvulnerablema- greater capacity are afiordable to the attackers, it will
+chine numbers lower than 400,000, the detection per- be more di–cult for us to detect worm scanning from
+formancedecreasesbecausethewormspreadingisslow the Internet tra–c. However, the detection methods
+and can be detected by a network as small as /16. can still be useful in that it forces the attacker to use
+We found that when the vulnerable machine number lesser tra–c and scan more slowly and cautiously.
+reaches around 2,000,000, the detection performance We designed two new scan techniques, routable scan
+degrades. This is because the worms spread so fast and Divide-Conquer scan. Basically, they both use the
+that when we detect it in only 1 minute or a few min- ideaofaroutableIPaddresslistasthedestinationbase
+utes after the worm starts to spread, the fraction of where the scan object is selected. A routable worm is
+vulnerable machines that are infected is already high. easytoimplement;itposesabigmenacetothenetwork
+Therefore, in the plot, when vulnerable machine num- security. We must keep in mind that anytime in future
+ber is higher than 2,000,000 and when the scan rate the next worm incident may be worse.
+is higher than 20 we can still detect the worm in a For this strain of scan methods we designed a de-
+short time although the beneflt of the detection could tection architecture. Speciflc detection methods were
+be much less. also designed. We flnd that using the victim number
+based algorithm, with a /16 network, worms more se-
+rious than the Code Red and the Slammer can be de-
+4 Conclusions and Future Work
+tected when less than 4% of vulnerable machines are
+infected.
+When the attackers are more sophisticated, probing
+We observed that the number of false alarms in-
+is fundamentally not a costly process. From the dis-
+crease in the case of a DDoS attack or in the case of a
+cussionsabove, itseemsthatthegamewouldfavorthe
+hot website visit. Future work lies in this direction of
+attackers when the Internet links are fast enough and
+developing an integrated approach to further improve
+the size of the code is not critical to the propagation
+the above proposed technique and develop an e–cient
+speed.
+mechanism to flght worm attacks.
+This does not imply that monitoring is of no use. InReferences [15] V. Yegneswaran, P. Barford and J. Ullrich Inter-
+net Intrusions: Global Characteristics and Preva-
+[1] D. Moore, The Spread of the Code-Red Worm
+lence, SIGMETRICS 2003.
+(CRV2), http://www.caida.org/analysis/ secu-
+rity/ code-red/coderedv2/analysis.xml [16] Waikato Internet Tra–c Storage, http://wand.cs
+.waikato.ac.nz/wand/wits/index.html
+[2] Fyodor, The Art of Port Scanning, http://www.
+insecure.org, Sept. 1997 [17] Warhol Worms: The potential
+for Very Fast Internet Plagues,
+[3] J. O. Kephart and S. R. White. Measuring and http://www.cs.berkeley.edu/nweaver/warhol.html
+Modeling Computer Virus P revalence, Proc. of
+[18] N. Weaver, Potential Strategies for High
+the 1993 IEEE Computer Society Symposium on
+Speed Active Worms: A Worst Case Analysis,
+ResearchinSecurityandPrivacy,2-15,May.1993,
+http://www.cs.berkeley.edu/»nweaver/worms.pdf
+[4] Internet Protocol V4 Address Space,
+[19] M. M. Williamson, Throttling Viruses: Restrict-
+http://www.iana.org/assignments/ipv4-address-
+ing Propagation to Defeat Malicious Mobile Code,
+space/
+http://www.hpl.hp.com/techreports/2002/HPL-
+[5] T. Liston. LaBrea, http://www.hackbusters.net/ 2002-172.pdf
+LaBrea/
+[20] Z. Chen, L. Gao and K. Kwiat, Modeling the
+Spread of Active Worms, IEEE INFOCOM 2003
+[6] D. Moore. Code-Red: A Case Study on the
+Spread and Victims of an Internet Worm,
+[21] University of Oregon Route Views Project,
+http://www.icir.org /vern/imw-2002/imw2002-
+http://www.routeviews.org
+papers/209.ps.gz
+[22] Global Slapper Worm Information Center,
+[7] D. Moore, V. Paxson, S. Savage, C. Shannon, http://www.f-secure.com/v-descs/slapper.shtml
+S. Staniford and N. Weaver The Spread of the
+Sapphire/Slammer Worm http://www.caida.org [23] C. Zou, L. Gao, W. Gong and D. Towsley, Mon-
+/outreach/papers/2003/ sapphire/sapphire.html itoring and Early Warning for Internet Worms,
+Umass ECE Technical Report TR-CSE-03-01,
+[8] R. Thomas, Bogon List v1.5 07 Aug 2002 2003.
+http://www.cymru.com/Documents/bogon-
+list.html 5 Appendices
+[9] Internet Storm Center, OpenSSL Vulnerabilities, A Impact of Network Size on Observed
+http://isc.incidents.org/analysis.html?id=167, Number of Victims
+Sept. 2002,
+As our solution uses only the inactive addresses, it
+[10] A. Somayaji, S. Forrest, Automated Response Us- applies to worms that blindly probe an address space.
+ingSystem-CallDelays,Proceedingsof9thUsenix This is because they do not know which hosts are vul-
+Security Symposium, Denver, Colorado 2000. nerable beforehand. This is a reasonable assumption,
+otherwise a worm that knows the list of vulnerable
+[11] L. Spitzner, Strategies and Issues: hosts, could just infect them one by one. In this case,
+Honeypots - Sticking It to Hackers
+the weak worm scan tra–c can go completely unde-
+http://www.networkmagazine.com/article/NMG2
+tected. An ideal detection system should with a rea-
+0030403S0005 sonable sized detection network be able to detect large
+scale worm propagation soon after the victim number
+[12] S. Staniford, V. Paxson and N. Weaver. How
+becomes much larger than the normal scan noise level.
+to 0wn the Internet in Your Spare Time,
+Using the formulas derived earlier, we can analyze
+http://www.icir.org/vern/papers/cdc-usenix-
+the performance of our solution for worms using dif-
+sec02/
+ferent scan methods. We deflne performance as the
+[13] S. Cheung. Graph-based Intrusion Detec- least size of detection network needed to ensure that a
+tion System (GrIDS) http://seclab.cs.ucdavis wormisdetectedwithinacertaintime. Intuitively,the
+.edu/arpa/grids/PI meeting (Savannah).pdf, largerthedetectionnetwork,thefasterwillthenumber
+Jan. 1999 of victims detected approaches the real victim number
+and thus exceeds the threshold. Below are the evalu-
+[14] T. Liston, Welcome To My Tarpit - The Tacti- ations for worms using several scan methods. We use
+cal and Strategic Use of LaBrea,http://www.hack TSDR in order to detect scanning for each of the scan
+busters.net/ methods.x 105 5
+4
+3
+2
+1
+0 0 5 10 15 20 25 Time(hour)
+smitciv
+fo
+rebmuN
+5x 105
+Routable Scan victims
+Detected by /8 network 4.5
+Detected by /12 network 4 Detected by /16 network
+3.5
+3
+2.5 2
+1.5
+1
+0.5
+0 0 1 2 Time(3hour) 4 5 6
+(a)RandomScan.
+smitciv
+fo
+rebmuN
+x 105 5
+Routable Scan victims
+Detected victims by /8 network
+Detected victims by /12 network 4 Detected victims by /16 network
+3
+2
+1
+0 0 1 2 3 4 5 Time(hour)
+(b)Routablescan.
+smitciv
+fo
+rebmuN
+Divide Conquer Scan victims Detected with /8 network
+Detected with /6 network
+Detected with /4 network
+(c)Divide-Conquerscan.
+Figure9.Impactofdetectionnetworksizeonobservednumberofvictims
+1. Random Scan: Figure 9(a) shows the detection toolongasitcanleadtoalowerdetectionperformance
+curve of for random scan. We see that the detec- by making the detection time longer. This can in turn
+tioncurveapproachestheinfectioncurvewhenthe lead to increased number of infections. We choose a
+detection network sizeisover220 (a/12network). valueof200minutesfork. Wealsoflndthatavalueof
+r ‚ 6 leads to a decreased number of false alarms. A
+2. Routable Scan: For routable scan, Equation (4) value of (cid:176) ‚ 3:4 makes worm detection di–cult. Fig-
+canbeusedtosimulatethedetectioncurve. From ures 10(a), 10(b), 11(a) and 11(b) justify the above as-
+Figure 9(b), we see that the detection curve also sumptions. We assume that the June 12th tra–c trace
+catches up closely with the infection curve when does not contain major worm attack tra–c in obtain-
+the detection network size is over 220. ing the previous plots. Figure 10(a) shows that when
+(cid:176) = 3, by selecting r ‚ 6 and using a learning time
+3. Divide-Conquer Scan: From Figure 9(c), we can
+k ‚200 minutes, we can eliminate false positives.
+see that even when a /4 detection network is used
+In Figure 10(b), we can see that even when using
+for Divide-Conquer scan, the detection curve still
+r as large as 10, we still need (cid:176) to be larger than 3
+lags far behind the infection curve (in the /4 case,
+to eliminate false positives completely. From Figure
+the fraction of victims that could be detected is
+11(a),wecanseethatwhen(cid:176) is3,k isaround200and
+less than 1/16). This means that Divide-Conquer
+r ‚10, the detection time is the lowest. One thing we
+scan is di–cult to detect.
+can observe from 11(b) is that when (cid:176) is larger than
+3.4, the worm cannot be detected.
+From above, we can observe that infection dynamics
+The veriflcation of the above parameters for the
+oftheflrsttwoscanmethodscanbecapturedwithsame
+routable scan method is shown in Figures 12(a) and
+performance. TheDivide-Conquerscanisveryhardto
+12(b). For the veriflcation of the parameters, before
+detect as only a flxed fraction of victims can be de-
+the worm is detected, because the time is very short,
+tected. Thisisbecauserandomscanandroutablescan
+there are no false alarms at all. For the detection per-
+victims share the same target address space while the
+formance, Figure 12(a) and Figure 12(b) show similar
+Divide-Conquer victims use only a piece of the whole
+results as in the Code Red worm’s case.
+address space. When the detection network size or the
+vulnerable machine number is too small, our detection
+solution might fail. Fortunately, Divide-Conquer scan
+has its limitations and can be combined with random
+scan to enhance its performance making our solution
+to work in that particular case also.
+B Selection of Parameters
+In selecting parameters for the detection system the
+most important factor we consider is false alarms. By
+applying our detection system for various parameter
+settings we were able to choose the parameters with
+reasonable e–ciency. The learning time, k, cannot be6
+5
+4
+3
+2
+1
+0 0 200 400 600 800 1000 1200
+smralA
+eslaF
+14 r = 1
+r r = = 2 3 12 r = 4
+r = 5 10 r = 6
+8
+6
+4
+2
+0 1.5 2 2.5 3 3.5
+Learning Time (Min)
+(a) With a flxed threshold ratio
+((cid:176)=3)
+smralA
+eslaF
+r = 5
+r = 6 r = 7 r = 8
+r = 9 r = 10
+Threshold Ratio
+(b)Withaflxedlearningtime(k=
+200)
+Figure10.Selectionofparameterswithnormaltraf(cid:2)c. ’r’isthenumberofcontinuousabnormalities
+observedinordertotakeadecision.
+900
+850
+800
+750
+700
+650 200 300 400 500 600 700 800 900 1000
+emiT
+noitceteD
+800
+r = 10
+r = 11 700
+r = 12
+r = 13 600
+500
+400
+300
+200
+100
+0 2.6 2.8 3 3.2 3.4 3.6
+Learning time(Min)
+(a) With a flxed threshold ratio
+((cid:176)=3)
+emiT
+noitceteD
+r = 10
+r = 11
+r = 12
+r = 13
+Threshold Ratio
+(b)Withaflxedlearningtime(k=
+200)
+Figure11.Veri(cid:2)cationofparameterswithCodeRedwormliketraf(cid:2)c. ’r’isthenumberofcontinuous
+abnormalitiesobservedinordertotakeadecision.
+300
+250
+200
+150
+100
+50
+0 100 200 300 400 500 600
+emiT
+noitceteD
+300 r = 10
+r = 11
+r = 12 250 r = 13
+200
+150
+100
+50
+0 2.6 2.8 3 3.2 3.4 3.6
+Learning time(Min)
+(a) With a flxed threshold ratio
+((cid:176)=3)
+emiT
+noitceteD
+r = 10
+r = 11
+r = 12 r = 13
+Threshold Ratio
+(b)Withaflxedlearningtime(k=
+200)
+Figure 12. Veri(cid:2)cation of parameters with routable worm traf(cid:2)c. ’r’ is the number of continuous
+abnormalitiesobservedinordertotakeadecision.

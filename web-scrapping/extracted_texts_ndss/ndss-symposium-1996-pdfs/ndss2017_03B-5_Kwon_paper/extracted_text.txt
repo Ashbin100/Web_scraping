@@ -1,0 +1,1288 @@
+Catching Worms, Trojan Horses and PUPs:
+Unsupervised Detection of Silent Delivery
+Campaigns
+Bum Jun Kwon Virinchi Srinivas Amol Deshpande Tudor Dumitras
+,
+University of Maryland University of Maryland University of Maryland University of Maryland
+bkwon@umd.edu virinchi@cs.umd.edu amol@cs.umd.edu tdumitra@umiacs.umd.edu
+Abstract—The growing commoditization of the underground malware delivery campaign, and the malware payloads dis-
+economy has given rise to malware delivery networks, which seminated, we could infer the business relationships from
+chargefeesforquicklydeliveringmalwareorunwantedsoftware the underground economy. Furthermore, establishing precise
+toalargenumberofhosts.Akeymethodtoprovidethisservice time bounds for the campaigns would also enable correlation
+is through the orchestration of silent delivery campaigns. These
+with other concurrent events, such as additional activities and
+campaigns involve a group of downloaders that receive remote
+downloadsperformedbythemalwaresamplesdeliveredwithin
+commands and then deliver their payloads without any user
+each campaign. This new understanding has the potential to
+interaction. These campaigns can evade detection by relying on
+expose fragile dependencies in the underground economy,
+inconspicuous downloaders on the client side and on disposable
+domain names on the server side. leading to effective intervention strategies for disrupting the
+malware delivery process [39].
+We describe Beewolf, a system for detecting silent delivery
+campaigns from Internet-wide records of download events. The Prior work has generally focused on identifying the mali-
+key observation behind our system is that the downloaders cious domains [1], [3], [5], [28], [29], [33], [36], [42], the
+involved in these campaigns frequently retrieve payloads in malware families disseminated [13], [19], [23], [26], [40]
+lockstep. Beewolf identifies such locksteps in an unsupervised
+and, to a lesser extent, the downloaders utilized on the client
+and deterministic manner, and can operate on streaming data.
+side [26]. Comparatively less attention has been given to the
+WeutilizeBeewolftostudysilentdeliverycampaignsatscale,ona
+task of precisely characterizing the relationships among these
+datasetof33.3milliondownloadevents.Thisinvestigationyields
+entities;forexample,acomprehensivegroundtruthaboutpast
+novel findings, e.g. malware distributed through compromised
+software update channels, a substantial overlap between the malware delivery campaigns is currently unavailable. As a
+delivery ecosystems for malware and unwanted software, and steptowardunderstandingcampaigns,wefocusonaparticular
+several types of business relationships within these ecosystems. subsetcalledsilentdeliverycampaigns,whichinvolveagroup
+Beewolfachievesover92%truepositivesandfewerthan5%false ofdownloadersthatreceiveremotecommandsandthendown-
+positives. Moreover, Beewolf can detect suspicious downloaders load their payloads with no user interaction. These campaigns
+a median of 165 days ahead of existing anti-virus products and are particularly attractive to the organizations that disseminate
+payload-hosting domains a median of 196 days ahead of existing
+malware or potentially unwanted programs (PUPs), as they
+blacklists.
+canevadedetectionbyutilizinginconspicuousdownloaders,to
+retrieve the payloads, and disposable domain names, to host
+I. INTRODUCTION and serve it temporarily. We propose unsupervised and de-
+terministic techniques for detecting silent delivery campaigns.
+Thegrowingcommoditizationoftheundergroundeconomy
+We also describe the design of a system, called Beewolf,1
+has given rise to malware delivery networks [8], [28]. These
+which implements these techniques and can operate either on
+networks orchestrate campaigns to quickly deliver malware
+the entire data set of download events (offline mode) or on a
+to a large number of hosts. Understanding these campaigns
+stream of data (streaming mode). Using Beewolf, we conduct
+can provide new insights into the malware landscape. For
+the first systematic study of silent delivery campaigns.
+example,theabilitytomeasurethedurationofsuchcampaigns
+wouldrevealwhichmalwarefamiliesremainactiveandwhich When downloaders across the Internet are instructed to
+are likely to stop propagating. Additionally, by tracking the conduct a campaign, they will access a common set of DNS
+downloaders and the domain names associated with each domainstoretrievethepayloads.Thisaccesstypicallyhappens
+in a short time window, and forms the key observation behind
+Beewolf. After a period of inactivity, the same downloaders
+Permission to freely reproduce all or part of this paper for noncommercial
+will request additional payloads from a set of fresh domains.
+purposes is granted provided that copies bear this notice and the full citation
+on the first page. Reproduction for commercial purposes is strictly prohibited This lockstep behavior exposes the fact that the downloaders
+without the prior written consent of the Internet Society, the first-named author are controlled remotely and reveals the domains involved in
+(for reproduction of an entire paper only), and the author’s employer if the subsequent campaigns. We expect that we can parametrize
+paper was prepared within the scope of employment.
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+Copyright 2017 Internet Society, ISBN 1-891562-46-0 1Beewolves are a species of wasp that hunts bees, which are known to
+http://dx.doi.org/10.14722/ndss.2017.23220 exhibitgroupbehaviors.lockstep detection to distinguish benign software updates that the malware and PUP delivery ecosystems than reported in
+are initiated remotely and malicious campaigns. In particular, recent studies [22], [38]. We also show that Beewolf achieves
+software updaters repeatedly access the same server-side in- over 92% true positives and fewer than 5% false positives,
+frastructure,whilemaliciouscampaignsexhibitahighdomain and that it can detect suspicious downloaders a median of 165
+churn as they try to evade blacklists. Additionally, we can daysaheadofexistinganti-virusproductsandpayload-hosting
+whitelist the known benign updaters to further reduce the domains a median of 196 days ahead of existing blacklists.
+false positive rate. Our approach is complementary to the
+In summary, we make the following contributions:
+machine learning techniques proposed for detecting malicious
+domains [13], [19], [40], [42]. However, in contrast to these
+1) We conduct a systematic study of malware delivery
+techniques, recognizing a lockstep pattern in a stream of
+campaigns and we report several new findings about
+Internet-wide download events yields an intuitive explanation
+the malware and PUP delivery ecosystems.
+of the underlying activity, without interpreting clusters of
+2) Weproposetechniquesfordiscoveringsilentdelivery
+events defined by multiple features.
+campaigns by detecting lockstep behavior in large
+We first formulate lockstep detection as a graph mining collections of download events. These techniques are
+problem. We construct a bipartite graph, where a node corre- unsupervisedanddeterministic,astheydonotrequire
+sponds to either a downloader or a payload hosting domain, seed nodes and are not based on machine learning.
+and an edge indicates that a downloader contacted a domain 3) We present a system, Beewolf, which implements
+to retrieve a payload. A lockstep is a near biclique2 in this these techniques, along with evidence-based opti-
+graph—a graph component that is almost fully connected, mizations that allow it to detect silent delivery cam-
+except for a few missing edges—with the added constraint paigns in a streaming fashion.
+that the edges are created within a short time window ∆t.
+We release the inter-publisher relationships detected with
+Existing algorithms for lockstep detection [4], [9], [20] are
+Beewolf at http://www.beewolf.org/.
+not well suited for finding silent delivery campaigns be-
+cause they require seed nodes to bootstrap the algorithm This paper is organized as follows: In section II, we
+and because they are not designed to operate on streaming characterize the threat of silent delivery campaigns and we
+data. In contrast, downloaders typically remain undetected for state our goals. We describe our data set and the methods we
+several months [26], making it difficult to identify seeds in a use for distinguishing between malware and PUPs in Section
+timelymanner,andmaliciousdomainscanbediscardedwithin III. We discuss the key components of Beewolf in Section IV.
+days [25], [38], at which point the information from lockstep InSectionV,wecharacterizesilentdeliverycampaigns.Inthe
+detection is no longer actionable. following sections, we evaluate the performance of Beewolf.
+Section VI presents the detection performance and in Section
+Based on this formulation, we propose a novel lockstep
+VIIweevaluatetheperformanceofBeewolf’sstreamingmode.
+detectiontechnique,whichcanoperateonstreamsofdownload
+We review related work in section VIII.
+events. We perform the computationally intensive operations
+(e.g., updating the bipartite graph and the adjacency lists)
+incrementally, as new events are received, and then we detect II. THREATMODEL
+locksteps with an efficient linear algorithm. We use this tech-
+Downloader trojans (also known as droppers) are at the
+niqueinbothofBeewolf’smodesofoperation.Inofflinemode,
+heart of malware distribution techniques [26]. A downloader
+Beewolf analyzes all the download events, to characterize
+is an executable program that connects to an Internet domain
+lockstep behaviors empirically. In streaming mode, Beewolf
+and downloads other executables (called payloads), usually
+receives data incrementally and prunes the locksteps detected
+in response to remote commands. We focus on the domains
+to focus on suspicious downloaders and domains.
+hosting the payloads, which are often distinct from other
+Ultimately,weutilizeBeewolftoconductalargeempirical components of the malware delivery networks, e.g. exploit
+study of silent delivery campaigns conducted over one year. servers,command&controlservers,paymentservers[41],and
+We analyze a data set of 33.3 million download events, we take only the second level domain (SLD) under a public
+observed on 1.9 million hosts, and we detect over 130,000 suffix3 (e.g., site1.com, site2.co.uk).
+locksteps. These locksteps comprise 1.4 million campaigns.
+Silent delivery campaigns. Malware delivery networks use a
+Building on the observation that many downloaders involved
+variety of methods to install their downloaders, e.g. drive-by-
+in lockstep behavior have valid digital signatures, we identify
+download exploits, social engineering, affiliate programs [8].
+representative publishers for each lockstep and we analyze
+When they receive new payloads from their clients, the
+the relationships among publishers. This investigation yields
+malware delivery networks command their downloaders to
+insightsintotwotypesofrelationships.Weidentifybothdirect
+retrieve these payloads on the victim hosts. This results in
+download relationships between publisher pairs, which may
+coordinated waves of payload delivery, which often do not
+also be observed by milking downloaders from pay-per-install
+require any user intervention to avoid attracting attention.
+(PPI) providers [22], [38], and indirect relationships, among
+We term these waves silent delivery campaigns, by analogy
+publishers caught in lockstep together. The second relation-
+with the silent updating mechanisms increasingly adopted
+ship type can overcome evasive strategies such as certificate
+by benign software publishers [14], [32]. A key difference
+polymorphismorutilizingunsigneddownloadersformalicious
+between the silent delivery campaigns conducted on behalf
+payloads. In consequence, we find a larger overlap between
+of malicious and benign payloads is that benign campaigns
+2Weallowafewedgestobemissingtoaccountfordownloadeventsthat
+areoccasionallynotrecordedbyourdatacollectioninfrastructure. 3WeuseMozilla’spublicsuffixlistfromhttps://publicsuffix.org/.
+2repeatedly access the same server-side infrastructure, while followingtemporalconstraints,forapredefined∆tandδtand
+maliciouscampaignsexhibitahighdomainchurnastheytryto for 2 distinct stars defined on j,j(cid:48) ∈V :
+i(cid:48)
+evade blacklists. Depending on the payloads, these campaigns
+(maxt −mint )≤∆t∀i∈U(cid:48) (6)
+may be malware delivery campaigns, which drop executables i,j i,j
+i i
+with unambiguously malicious functionality such as trojan
+horses, bots, keystroke loggers, or PUP delivery campaigns, (maxt −mint )≤∆t∀i∈U(cid:48) (7)
+whichdropPUPssuchasadware,spywareandevenadditional i i,j(cid:48) i i,j(cid:48)
+droppers.
+|maxt −maxt |≥δt (8)
+The detection of domains involved in malware and PUP i,j(cid:48) i,j
+i i
+distribution has been widely explored using machine learning
+techniques [13], [19], [40], [42]. These techniques typically The above temporal constraints ensure that a lockstep
+output clusters of events, defined by multiple features, which contains at least 2 stars that are at least δt apart in time.
+can be difficult to interpret. We investigate a complementary Further, if the same star occurs in multiple timestamps, we
+approach: deterministic techniques, based on the intuition that consider it only once inside a lockstep. We illustrate the
+temporal patterns in the downloader-domain interactions can lockstep behavior in Figure 1. For the problem of detecting
+expose remotely controlled downloaders. silent delivery campaigns, the nodes of the bipartite graph
+correspond to downloaders and domains. There is an edge
+Lockstep behavior. The coordinated downloads from silent between a domain and a downloader in the bipartite graph
+delivery campaigns result in lockstep behavior. Intuitively, if the downloader accessed the domain to drop a payload.
+lockstep behavior corresponds to repeated observations of The payload information is captured as an attribute on the
+synchronized activity among a group of downloaders (or do- edge. A star can have (i) multiple downloaders accessing the
+mains),whichaccess(areaccessedby)thesamesetofdomains same domain; or (ii) multiple domains being accessed by a
+(downloaders) to retrieve payloads, within a bounded time singledownloader.Theformaldefinitionofastar(equation2)
+period. In other words, locksteps capture coordinated down- considersaj whichcouldbeeitheradownloaderoradomain.
+loads that do not experience random delays, e.g. from manual Note that a single edge does not count as a star because of
+user intervention. This points to silent delivery campaigns. As condition (1). Having these two different star topologies help
+lockstep detection requires several repeated observations of usdetectbehaviorssuchas(i)campaignchangingtoadifferent
+coordinated downloads, a lockstep may correspond to one or domain after a C&C server takedown, (ii) domains within a
+several delivery campaigns that use the same infrastructure.
+same campaign establishing connection with a new version of
+downloader.
+Formally, consider a bipartite graph G = (U,V,E) where
+U and V are disjoint set of nodes corresponding to left hand In Figure 1, at time t = 0, we observe a star with 3
+nodes and right hand nodes, respectively, and an edge e∈E downloaders accessing a domain. At t = 3δt, although we
+may link two nodes belonging to different sets but not nodes observe new stars, they do not correspond to a lockstep as a
+fromthesameset.Lett i,j representthetimeatwhichanedge lockstepmustcontainmorethan2domainsand2downloaders
+is formed between node i ∈ U and node j ∈ V. Further, let according to our lockstep definition. Then, at t = 6δt, we
+U(cid:48) ⊆ U and V(cid:48) ⊆ V. We define a star [U(cid:48),j,∆t,δt] on U(cid:48) observe a near-biclique, with α ≥ 0.8, that we detect as a
+and some central node j ∈V(cid:48) as follows: lockstep. We can observe that a lockstep corresponds to a
+|U(cid:48) |≥2 (1) seriesofcampaigns.Thelockstepconsistsofsetofstarsacross
+differenttimewindows.Weexploitthegapbetweenthesetime
+windows, and define a campaign as follows. The activities
+(maxt i,j −mint i,j)≤∆t∀i∈U(cid:48) (2) appearing in the time windows with a gap less than nδt will
+i i
+be considered as a single campaign. If the gap is larger than
+The above equations state that a star contains at least 2 left nδt, we treat it as a different campaign.
+hand nodes and the time difference between the addition of
+the first and the last edge to the star is at most ∆t. Streaming. We adopt the terminology from [31] and define a
+stream processing task as a query that is submitted once by
+A lockstep [U(cid:48),V(cid:48),∆t,δt] in G(U,V,E) satisfies the fol-
+the user and is executed continuously or periodically by the
+lowing constraints:
+system, as updates arrive. The temporal scope of the task may
+|U(cid:48) |>2 (3) be either a sliding window or the entire current state of the
+graph; lockstep detection falls in both these categories, as star
+detection considers new download events that are at most ∆t
+∃V(cid:48) ⊆V(cid:48) ∀i s.t. |V(cid:48) |>2 and |V(cid:48) |≥α|V(cid:48) | (4)
+i i i apart and a lockstep requires two or more stars that at least δt
+apart. The lockstep detection task is a quasi-continuous query
+(i,j)∈E ∀i∈U(cid:48), j ∈V(cid:48) (5) that must produce or update a result when the user requests it
+i
+(once per ∆t), rather than keeping the query result up-to-date
+Theaboveequationsspecifythatalockstepcontainsmorethan whenever the inputs change.
+2 nodes each from U and V and that the subgraph induced
+by these nodes is nearly complete. If α = 1.0, this subgraph Adversary model. A silent delivery campaign will evade
+is a complete biclique, while for any value α ≤ α < 1, detection if its nodes from U do not remain active for at
+min
+the lockstep corresponds to a near-biclique. Such a near or least ∆t + δt or if none of these nodes contacts at least 2
+complete biclique represents a lockstep if it also satisfies the nodes from V. For example, payloads make poor choices for
+3bigspeedpro.com payloads
+MINIBAR- 2013-01-06 MINIBAR- bigspeedpro.com MINIBAR-
+MASTER,EXE bigspeedpro.com MASTER,EXE MASTER,EXE Trojan.generic (mal)
+Smote Ltd. (ppi)
+BI_RUN BI_RUN BI_RUN bispd.com YellowSoft Inc (pup)
+ONCE.EXE ONCE.EXE ONCE.EXE DealPly
+BISEHUP BISEHUP 2013-01-13 BISEHUP L Do ec tek cs tt ee dp T be ec twhn iko xl o (pg uie ps ) Ltd. (pup)
+35464.EXE 35464.EXE bispd.com 35464.EXE …16 PUP / 1 Malware
+2013-01-24
+cloudfront.net
+At t = [0, ∆t] At t = [3δt, ∆t + 3δt] At t = [6δt,∆t + 6δt]
+Fig. 1: Lockstep Illustration (Red color corresponds to existing nodes and edges. Green color corresponds to new nodes and
+edges which we receive in the data stream in an online fashion).
+nodes in our bipartite graph, as they are frequently repacked LockstepBehaviors 127,495
+and some malware families seek to deliver unique samples
+typedlr:dom 67,094
+typedom:dlr 60,401
+to each host [8]. We consider adversaries that have access TotalDownloaders 83,088
+to some varied, but limited, resources—e.g. downloaders that Domainsaccessed 60,002
+Downloadevents 33.3million
+get updated periodically but not daily (which could raise
+TotalPayloads 0.7million
+suspicions), a limited stockpile of domains—so that we can Hosts 1.9million
+find some values for ∆t and δt that allow us to detect their
+lockstep behavior. TABLE I: Summary of our data sets of the year 2013.
+Goals.Lockstepdetectionischallengingwhenanalyzinglarge
+volumes of data. For example, finding a biclique with the the droppers, malware and PUPs distributed through software
+maximumnumberofedgesisanNPcompleteproblem[35].It bundles, vulnerability exploits, or other mechanisms that do
+isalsonotclearapriorihowtoparametrizelockstepdetection not involve remotely controlling a group of downloaders. Our
+in order to distinguish benign software dissemination from campaigns do not aim to capture the end-to-end attack kill
+malware delivery. chain and do not include activities performed by the payloads
+onthehostswheretheyweredownloaded.Finally,oursystem
+Our first goal is to build an efficient and scalable system should detect silent delivery campaigns in a deterministic
+fordetectinglockstepbehavior.Oursystemshouldbeunsuper- manner, without using machine learning.
+vised, i.e., it should not require any prior information or seed
+nodes. The system should be able to operate in real time and
+to build the locksteps incrementally, as the stream of stars are III. DATASETS
+collectedandfedtooursystem.Whileweevaluateoursystem
+In this section, we describe our data sets, our ground truth
+using telemetry collected worldwide, similar to data available
+and our method for distinguishing malware from PUPs.
+to security companies, OS vendors, or ISPs, we also aim to
+lower the deployment bar for small enterprises. Specifically,
+our system should detect locksteps if at least three victims are
+A. Data Sources
+infected by the same campaign.
+We utilize a large data set of download events, collected
+Our second goal is to conduct a large scale empirical
+by Kwon et al. [26]. These events were reconstructed from
+study of silent delivery campaigns. These campaigns may
+observationsonendhosts.FromthisdataweutilizetheSHA2
+deliver benign software, PUPs, malware or a combination of
+hash of the downloader and the downloaded file (payload),
+these payload types. We aim to illuminate the characteristics
+the source domain of the download, and the timestamp of the
+and differences among the campaigns conducted by various
+event.Wefocusoneventsfrom2013,asthedatasethasgood
+organizations, and to expose the business relationships among
+coverage for that year.
+these organizations. Finally, our third goal is to incorporate
+this domain knowledge into our lockstep detection system We exclude the downloads performed by Web browsers,
+and to assess how well it can identify suspicious activity, which typically involve user actions. We identify the top 5
+such as malware or PUP dissemination campaigns. Using browsersinourdatasetbysearchingthedigitalsignaturesfor
+external information about the maliciousness of downloaders the following <publisher, product> pairs: <Microsoft Corpo-
+and domains caught in locksteps, we aim to assess the true ration,InternetExplorer>,<GoogleInc,Chrome>,<Mozilla
+positive and false positive rates4 of this detection system. We Corporation, Firefox>, <Apple Inc, Safari>, <Opera Soft-
+also aim to measure the lead detection time, compared to the ware, Opera>. Table I summarizes our data after this filtering
+existing sources. step.
+Non-goals. We do not aim to detect all possible malware
+delivery vectors, e.g. download instructions hardcoded into B. Ground Truth Data
+Whilegroundtruthformalwaredeliverycampaignsiscur-
+4We cannot estimate the false negative rate because we lack ground truth
+rently unavailable, we collect ground truth about executables
+aboutmalwaredeliverycampaigns.Anundetectedmaliciousdownloadermay
+beeitherafalsenegativeoradroppernotcontrolledremotely. from multiple sources.
+4VirusTotal. VirusTotal5 provides file scan reports for up to events are recorded. In the rest of the paper, we refer to
+54 anti-virus (AV) products. We query VirusTotal for the hash the bipartite graph as “galaxy graph”. The stars detected are
+of each downloader and payload in our data set to obtain its updatedincrementallyinthegalaxygraph.Further,wetraverse
+first-seen timestamp, the number of AV products that flagged the galaxy graph to build the FP tree which is an in-memory
+it as malicious, the AV detection names assigned to it, the data structure to detect locksteps. The algorithm pseudocode
+total number of AV products utilized for scanning, and the of Beewolf is presented in the full version of the paper11.
+corresponding file signatures. We were able to retrieve reports
+for about 17% of the binaries from 2013. In line with prior A. Whitelisting
+work [23], [26], we set a threshold r ≥30% and we flag
+mal
+As discussed in section III-B, we identify benign binaries
+the files that meet the condition.
+using the NSRL data. We maintain a whitelist, which consists
+Thisprocessselectsbothmalwareandpotentiallyunwanted of these benign binaries. Prior to the main data analysis
+programs (PUPs). To further separate them, we search the pipeline, we filter out the download events generated by the
+AV labels given to these samples for the following key- benign downloaders, which are listed in the whitelist. We do
+words:“adware”,“not-a-virus”,“notmalicious”,“potentially”, not expect this whitelist to be exhaustive—NSRL may not in-
+“unwanted”, “pup”, “pua”, “riskware”, “toolbar”, “grayware”, clude all the legitimate downloaders—but this simple filtering
+“unwnt”,and“adload”[23].Wedefiner pup tobethepercent- step helps us focus on the most suspicious campaigns and
+age of AV labels that include one of these keywords. We con- improves Beewolf’s performance. Moreover, while it is likely
+sider that a binary is malware if r mal ≥30% and r pup ≤10%. unfeasibletowhitelistallbenignsoftware,onlyafewprograms
+ItistreatedasPUPifr pup >10%andr mal ≥30%.Weidentify have a downloader functionality. Our whitelist contains 6,996
+1,228malwaresamplesand15,350PUPsthroughthisprocess. downloaders.
+National Software Reference Library. NSRL6 provides a
+B. Star Detection
+reference data set (RDS) of benign software. We collect the
+MD5signaturesoftheapplicationsandtheirlistofpublishers. Each row of the download_events table consists of
+The version of the RDS we use is at 2.52, which was released a downloader (dlr), corresponding domain accessed (dom),
+in April 2015. We consider benign all the executables where the downloaded file (payload), and the timestamp when the
+either (1) the hash matches or (2) the publisher matches and downloadeventoccurred.Weassignauniqueidentifiertoeach
+has a valid signature. download event in the table, and sort them in ascending time
+order. Conceptually, each download event corresponds to an
+Informationaboutpublishers.Toidentifypublishersengaged edge in the galaxy graph, linking a node represented by dlr
+inthePay-Per-Install(PPI)business[8],weutilizetwolistsof with a node represented by dom.
+PPI providers from underground forums.78 For other types of
+publishers, we query the Reason Labs knowledge base.9 This Given a moving time window of size ∆t, we query the
+events that occurred within this time range. We utilize these
+service provides details about the publisher, e.g. whether it is
+series of download events to identify star patterns. We can
+considered safe or if it uses its certificates to sign PUPs.
+create stars in two ways, by starting from a downloader and
+aggregatingtheadjacentdomains,orbystartingfromadomain
+IV. DETECTINGLOCKSTEPBEHAVIORSINREAL-TIME
+and aggregating the adjacent downloaders. We assign unique
+identifiers to each new star, and record the associated events
+In this section, we describe the design and implementation
+in the stars table. After generating all the stars within ∆t,
+of Beewolf, which detects lockstep behavior in real-time.
+Beewolfcanoperateintwomodes.Inofflinemode,oursystem we slide the time window by δt and repeat the star detection
+process, until the end of the time window reaches the last
+analyzes our entire download events, with the aim of charac-
+event.
+terizinglockstepbehaviorsempirically.Weutilizethismodein
+our experiments from Sections V and VI. In streaming mode,
+Beewolf receives data incrementally and prunes the locksteps C. Galaxy Graph
+detectedtofocusonsuspiciousdownloadersanddomains.We
+Beewolf maintains the galaxy graph, which has two kinds
+evaluate this mode in Section VII. We implement Beewolf in
+of nodes: nodes that correspond to downloader programs
+Python,usingtheNetworkX10 packagetomanipulategraphs.
+and nodes that correspond to domains hosting payloads. We
+As illustrated in Figure 2, Beewolf consists of a data represent a node in the galaxy graph as node gg. We explicitly
+analysis pipeline with four components: star detection, galaxy maintain only 1 edge between a downloader and a domain.
+graphconstruction,frequentpattern(FP)treeconstruction,and However, there can arise situations where a downloader ac-
+lockstep detection. We also maintain a database with three cesses a domain at different times; we discuss how we deal
+tables: download_events, stars, and locksteps. The with this situation later in this section.
+first step is to detect new star patterns as new download
+We update the galaxy graph incrementally, using the star
+patterns detected in the previous step. As explained earlier,
+5https://www.virustotal.com/
+there are 2 types of stars. We consider only one type of star
+6http://www.nsrl.nist.gov/
+and ignore the other while detecting and updating the stars
+7http://ppitalk.com/showthread.php/38-List-of-Pay-Per-Install-Companies
+8http://www.blackhatworld.com/seo/list-of-pay-per-install-ppi-networks. to the galaxy graph; galaxy graph at any point contains only
+646987/ one type of stars. For simpler explanation, we discuss only
+9https://www.reasoncoresecurity.com/knowledgebase.aspx
+10https://networkx.github.io/ 11https://arxiv.org/abs/1611.02787
+54 Core Components of Beewolf Database & Analysis
+Lockstep
+Sensors Data Collection Galaxy Graph FP tree Detection
+Star Detection
+Batch Data download_events
+Download White- stars
+Events lis2ng locksteps
+Fig. 2: System architecture.
+the star type corresponding to multiple downloaders accessing Lockstep: [dlrC,dlrB] [(2)domB,(3)domA,(1)domA] root
+dlrA
+the same domain; the same explanation can be extended when (1)domA
+(2)domB,(3)domA,(1)domA,(4)domC
+dealing with the other star type. Further, we present results dlrB (2)domB dlrC dlrB dlrA dlrD dlrC
+corresponding to both star types, when dealt separately in
+(2)domB
+(3)domA dlrC dlrB dlrE (2)domB,(3)domA,(1)domA (4)domC
+Section V. dlrC dlrB dlrD
+(3)domA (1)domA dlrC dlrB dlrA
+(2)domB,(1)domA (3)domA (4)domC
+When we detect a star, we add the central node (domain) dlrD (4)domC dlrC dlrD dlrE dlrA dlrE dlrE
+(4)domC
+and its adjacent nodes (downloaders accessing it) to the bipar- dlrE (2)domB
+tite graph, and we create the corresponding edges. For each Lockstep: [dlrC,dlrB,dlrA] [(2)domB,(1)domA] dlrD
+newlydetectedstar,whileaddingthecentralnode(domain)we
+Fig. 3: Example of FP tree construction: (a) Galaxy graph, (b)
+also specify the star id (e.g. (2) dom ), in order to separate
+B Sorted adjacency list, (c) FP tree.
+it from the nodes corresponding to dom from different stars.
+B
+When the new star is a superset of some existing star in the
+galaxy graph, we replace the existing star with it. If it is a and a smaller biclique. This results in the overlapped region
+subset of some existing star, Beewolf discards it from further beingmissedagainstthesmallerbiclique.Weaddresshowwe
+processing. handle these limitations in the next section.
+D. FP tree
+E. Lockstep Detection
+We traverse the galaxy graph, constructed in the previous
+After constructing the FP tree, we move to the lockstep
+step, to build a data structure called a Frequent Pattern (FP)
+detection phase. Each path downwards from the root to a
+tree. The FP tree was used successfully in other domains, node A in the FP tree indicates a lockstep. The set of
+fp
+for example to design scalable algorithms for frequent pattern
+nodes along the path corresponds to the downloaders, and the
+mining [18]. We employ the FP tree algorithm from [30]. visited list of A corresponds to the domains in the lockstep.
+Let us represent a node in the FP tree as node fp. Given the For example, in Figure 3, dlr →dlr →dlr , the resulting
+C B A
+galaxy graph G = (U,V,E), the algorithm starts by sorting lockstep will be [(dom , dom ), (dlr , dlr , dlr )]. When
+B A C B A
+the adjacency list of V. The adjacency list is a representation
+identifying a lockstep, we remove the star id from the domain
+of the galaxy graph and consists of the collection of neighbor
+nodes; however, we store the star ids along with the lockstep,
+lists for each node ∈V. The sorting is done in two rounds.
+gg so that we do not lose the download events that resulted from
+In the first round, we sort each node v ∈ V by their degree
+gg the lockstep behavior. We can observe in Figure 3 that some
+(the number of v’s neighbors in U), in descending order. In bicliquesarenotinteresting;forexample,whenAisachildof
+the second round we sort each list of neighbors. Specifically, theroot(e.g.dlr ),wegetastarcenteredonA,andwhenAis
+C
+we sort the neighbors u of v by their degree (the number of a leaf (e.g. dlr ), we get a star centered on the single domain
+E
+u’s neighbors in V), also in descending order. from the visited list of A (e.g. dom ). To avoid generating
+A
+locksteps that are too small or that are a subset of a larger
+Once the sorting is done, we start building the FP tree by
+lockstep, we filter out the locksteps that satisfy the following
+creating a root node in the tree. For each neighbor u of v,
+fp
+conditions: (1) the number of downloaders or the domains are
+wetraversetheFPtreestartingfromtherootandcheckifuis
+either below 3; or (2) A has a child with same visited list.
+the child of the current node . If this is the case, we set the
+fp
+currentnode asuandappendv toitsvisitedlist.Otherwise,
+fp Partially missing locksteps. The FP tree captures most of
+wefirstadduasthechildofthecurrentnode andrepeatthe
+fp
+the locksteps, however it misses the small locksteps that
+sameprocess.Wecontinuethisprocessuntilwehavechecked
+all node v(cid:48)s and their corresponding neighbors. Figure 3 share part of the left hand elements with the larger lockstep.
+gg In Figure 3, we see that path dlr → dlr should have
+illustrates the FP tree construction procedure given the galaxy C D
+produced the lockstep of [(dom , dom ), (dlr , dlr )].
+graph as input. B C C D
+However, because dlr and dlr are the part of the longer
+C D
+OncetheFPtreeisconstructed,wecantraverseittodetect pathdlr →dlr →dlr →dlr ,(2)dom failstovisitthe
+C B A D B
+all the complete bicliques of the galaxy graph. However, FP corresponding path. We observe that this phenomenon occurs
+tree has some limitations : (a) FP tree does not return near- at the nodes that appear in multiple paths, such as dlr and
+D
+bicliques. (b) FP tree misses part of complete bicliques when dlr in our example. We can recover the missing locksteps
+E
+overlap exists at the left hand nodes between a larger biclique by maintaining different node versions, for each path where
+6the node appears, and by constructing a separate FP tree only downloaders accessing a domain (type ) and multiple
+dlr:dom
+on the stars that contain the node with multiple versions. To domains accessing a downloader (type ). These two
+dom:dlr
+coverallthelocksteps,wecoulddothisrecursivelyuntilthere star types result in different bicliques, and capture different
+is no node with multiple versions in the FP tree. However, download activities. The difference derives from the fact that
+consideringtheoverheadduetotherecursivecomputationand the central nodes in the stars may be duplicated in the galaxy
+thechancethatthenear-bicliquealgorithmwouldhelprecover graph, when we add new stars that emerge in later time
+someofthepartiallymissinglockstepsasexplainedinthenext windows. The resulting locksteps reflect different distribution
+paragraph,weonlyapplytheFPtreeconstructiononceoneach strategies. type account for downloaders that are more
+dlr:dom
+nodes with multiple versions without recursion. stable than the domains. Conversely, type identify dis-
+dom:dlr
+tribution networks where domains are more stable.
+Near-bicliques. We aim to detect locksteps even in cases
+where some edges are missing from the galaxy graph, e.g. the For our empirical analysis, we set a narrow time window,
+corresponding download events may have not been recorded to detect download events that are remotely triggered and do
+for some reason. These missing edges could prevent some not experience delays. More generally, we should choose a
+potentialnodestobeaddedtothelockstep.Thereforewerelax shorter time window than the typical reaction time of domain
+the lockstep definition, and search for subgraphs that include blacklists during the observation period. In consequence, we
+a fraction α≥α of the edges that would form a biclique. setthetimewindow∆tto3days,andweuseaslidingwindow
+min
+We set α to 0.8 to accommodate for at most 1 missing δt of 3 days.12
+min
+edge in the smallest lockstep.
+We identify 67,094 locksteps of type type and
+dlr:dom
+There could be many possible missing edges. We reduce 60,401 locksteps of type type dom:dlr in our data. Figure 4
+the search space by exploiting the fact that the adjacent nodes illustrates the distributions for three properties of these lock-
+in the FP tree have higher connectivity than the other nodes, steps: size, life span, and first detection time. The size of a
+whichimpliesthatbyintroducingitintothelockstepwillhave lockstepcorrespondstothenumberofnodes,consideringboth
+fewer missing edges. downloaders and domains in the lockstep. We deduplicate the
+central star nodes by removing the star IDs. Therefore, the
+We point to the end node A of the path, which we want to
+number is counted on unique set of nodes in the lockstep.
+extractthelockstep.WestartbytraversingtheFPtreeupwards,
+For both types of locksteps, we observe that the number of
+toward the root, until we reach a node B that has a larger
+nodes within each lockstep follows a long tail distribution
+visited list. We also count the number of hops (missing )
+v i.e., there are many small locksteps and fewer large locksteps.
+required to reach B. We define the relative complement list
+In Figure 4(b), we report the life span for each lockstep.
+as the difference between the visited list of B and that of A.
+There are long lived locksteps, enduring close to a year. As
+Therelativecomplementlistwillbeaddedtothecandidatelist
+our observation period spans only one year, there could be
+with missing as an attribute. Next, we look at the children
+v lockstepsthatlivelonger.Toevaluatetheopportunityforearly
+A. Each child will be added to the candidate list with the size
+discovery of malware delivery campaigns, for each lockstep
+of difference between its visited list and A(cid:48)s visited list as the
+we compute the delay until its first subset lockstep is formed,
+attribute missing .
+u whichisthetimedifferencebetweentheadditionofthesecond
+Oncewegetthecandidatelist,wesortitbytheattributein and the first star to the lockstep (Figure 4(c)). We observe
+ascendingorder.Startingfromthefirstnodeinthelist,weadd that, while the second star does not usually appear in the next
+the node into the lockstep and calculate α which corresponds time window, the locksteps nevertheless emerge quickly: both
+to the edge density within a lockstep. We stop when α drops type dlr:dom and type dom:dlr take a median of 3 windows to
+below α . We observed that, in practice, this heuristic is formalockstep.However,wealsoobservesomelockstepsthat
+min
+good enough, as the adjacent nodes in the FP tree are more emerge after a long delay.
+likely to be connected to the lockstep than the other nodes.
+Lockstep attribution. In general, it is challenging to identify
+precisely which organizations were controlling the download
+F. Streaming Set-up
+activities reflected in the locksteps we detect, as the domains
+When using Beewolf in a streaming setting, we ingest the may no longer be registered and the downloaders may no
+download event data in real time. Instead of triggering our longer be active. However, we aim to make a coarse grained
+system for each single data stream, we run the system by distinction among the distribution campaigns for malware,
+processing incoming data as a batch within a fixed period PUP and benign software, to compare their properties and to
+∆t. Except for the difference in how the data comes in the assess their overlaps. To do so, we observe that 38.2% (3479
+system, the rest of the process is identical to that of the non- out of 9103) of the downloaders involved in locksteps are
+streaming setup. The star detection will search for new stars digitallysigned,withvalidX.509certificates.Wefirstanalyze
+from the batch data; the new stars will be added to the galaxy these signatures to determine the most frequent publisher in
+graph;theFPtreewillbebuiltfromthegalaxygraph;andthe a lockstep. We consider that a publisher is the representative
+lockstep detecion will find new locksteps. publisher (rep-pub) of the lockstep, if it accounts for more
+than 50% of the signed downloaders in the lockstep. If we
+V. SILENTDISTRIBUTIONCAMPAIGNS cannotidentifyarepresentativepublisher,wesetthelockstep’s
+rep-pub to mixed. In this manner, we identify 335 rep-pubs.
+We present a large scale empirical study of silent delivery
+campaigns. As discussed in Sections IV-B and IV-C, we 12Duringourobservationperiod,domainsdeliveringmalwarewereblack-
+can track two types of stars in the galaxy graph: multiple listedwithin17daysonaverage[25].
+7)elacS
+goL(
+spetskcoL
+fo
+#
+Histogram bucket size = 50 Locksteps (dlr:dom)
+Locksteps (dom:dlr) 104
+103
+102
+0 50 100 150 200 250 300 350
+# of Nodes in the Lockstep
+spetskcoL
+fo
+#
+Locksteps (dlr:dom) Histogram bucket size = 10
+104 Locksteps (dom:dlr)
+103
+0 20 40 60 80 100 120
+Life Cylce (i.e. age) of the Lockstep (# of windows)
+spetskcoL
+fo
+#
+30,000 Histogram bucket size = 5 Locksteps (dlr:dom)
+Locksteps (dom:dlr)
+20,000
+10,000
+0
+0 20 40 60 80 100 120
+Lockstep Emergence (# of windows)
+Fig. 4: Distribution of lockstep properties: (a) Number of nodes, (b) Life span, (c) Lockstep emergence.
+TABLE II: Lockstep group statistics. TABLE III: Lockstep label statistics
+typedlr:dom typedom:dlr typedlr:dom typedom:dlr
+(MDL/PDL/BDL/UDL) (MDL/PDL/BDL/UDL) MDL 54,497(81.22%) 51,831(85.81%)
+27,522 13,117 PDL 7,800(11.63%) 6,901(11.43%)
+PUP
+(26,764/501/109/148) (11,902/1,202/6/7) BDL 3,231(4.82%) 1,500(2.48%)
+2,639 1,496 UDL 1,566(2.33%) 169(0.28%)
+PPI
+(2,137/498/4/0) (1,164/332/0/0)
+3,939 2,021
+BN (1,749/888/597/705) (1,152/840/7/22) correspond to benign download activities. Therefore, we try
+9,203 5,092 to identify the benign downloader locksteps (BDL) among the
+Other
+(8,041/1,053/58/51) (3,479/1,580/8/25) UDLs. Similar to the definition of MDLs and PDLs, the BDL
+20,766 36,594
+Mixed (14,085/4,069/2,255/357) (32,576/2,479/1,449/90) should contain at least one BD.
+86 835
+UK (86/0/0/0) (808/27/0/0) We present the result of the labeling in Table III. For
+both lockstep types, MDL occupy more than 80% of the total
+We investigate the top 50 rep-pubs from each lockstep type number of locksteps while benign are 4.82% and 2.48% for
+and we manually categorize them into 6 different groups: type and type , respectively. Our higher success
+dlr:dom dom:dlr
+potentially unwanted programs (PUP) [23], pay-per-install rate in labeling with payloads, compared to labeling only with
+(PPI)[8],benign(BN),other,mixed,andunknown(UK).The downloaders, reflects our community’s focus on detecting and
+first 4 groups inherit the label of the rep-pub, determined as labeling malware, rather than on understanding the client-side
+discussed in Section III-B. We place the mixed rep-pubs in distribution infrastructure.
+a separate group. In some cases we cannot identify the real
+publisher behind the lockstep, as the downloader is an archive Identifying campaigns. As discussed in Section II, we sep-
+extractor (Winzip). These correspond to the unknown group. arate the campaigns within the lockstep by nδt. By setting
+Table II describes the distribution of these lockstep groups. n=3, we identify 1,292,141/71,424/27,145/6,233 campaigns
+While we are able to label some locksteps in this manner, corresponding to MDL/PDL/BDL/UDL. On average there are
+we observe that most locksteps involve downloaders that are 12.2/4.9/5.7/3.6 campaigns per lockstep for MDL/PDL/BDL.
+difficulttoplaceinaspecificcategory,asmanylockstepshave
+mixed rep-pubs.
+A. Relationships among representative publishers
+We therefore perform a second labeling step, based on the
+The locksteps allow us to determine the business rela-
+payloads that the locksteps distribute. We distinguish between
+tionships between rep-pubs and payloads and among groups
+malware and PUP payloads with the method described in
+of rep-pubs. We focus on PPI and PUP providers, which
+SectionIII-B.Thelabelingisconductedintwosteps.First,the
+distribute other executables intentionally. We collect PUP
+downloadersarelabeledbythepayloadstheydistributewithin
+and PPIs from the top 10 rep-pubs with a high percent-
+the lockstep. We say a downloader is malware downloader
+age of MDLs within their locksteps. Each of these rep-
+(MD), if it distributes at least one malware.13 In a similar
+pubs conducted at least 40 campaigns. We also include the
+fashion, we label a downloader as PUP downloader (PD) if
+known PPI providers Amonetize Ltd., Conduit Ltd.
+it downloads PUP payloads but no malware. A downloader is
+and OutBrowse LTD to this list.
+labeled as Benign downloader (BD) if it downloads a benign
+payloadbutnosuspicious(malware,PUP)download.Therest We investigate which publishers appear frequently to-
+areplacedasunknowndownloader(UD).Asthenextstep,we gether in lockstep with these 13 rep-pubs. As the down-
+labelthelocksteps.ThelockstepsthatincludeatleastoneMD loaders signed by these publishers simultaneously utilize the
+arelabeledasmalwaredownloaderlockstep(MDL).Similarly, same server side infrastructure, this likely reflects a rela-
+we label a lockstep as PUP downloader lockstep (PDL) if tionship among the corresponding distribution networks. We
+it contains PDs but no MDs. We label the locksteps with also determine whether one of these downloaders was itself
+no suspicious (MD, PD) downloader as unknown downloader downloaded by one of the the downloaders in the lockstep,
+lockstep (UDL). We note that, as malware families sometimes which suggests a closer business connection. We therefore
+evade detection for extended periods of time, not every UDLs term such relationship between the publishers as partner. For
+example, we observe such partnership relations among some
+13This is an aggressive labeling policy, as even benign downloaders may PPI providers, e.g. Outbrowse Ltd. that frequently de-
+be tricked into downloading malware occasionally. However, this labeling
+livers downloaders from Somoto Ltd.. Additional frequent
+produces a conservative estimate of our false positive rate (as discussed in
+SectionII,wedonotaimtomeasurefalsenegatives). partners of Somoto Ltd. include Mindad media Ltd.,
+8IronInstall, betwlkx, and Multiply ROI, which the publishers, such as delivery networks that rent the server-
+suggests a stable business relationship with these organiza- sideinfrastructurefromathirdpartyorpublishersthatengage
+tions.14 Thecaseswherewecannotestablishadownloaded-by in aggressive distribution campaigns using multiple providers.
+relationship among the downloaders in the lockstep may point The graph also includes instant messengers and file sharing
+to an organization that uses multiple code signing certificates software,whicharelikelyinvolvedinlockstepsresultingfrom
+to evade attribution or to relationships with a common third spam campaigns.
+party. We term such relationship as neighbor. We illustrate
+some of these business relationships in Figure 5. The nodes B. Malware and PUP delivery ecosystems
+are the publishers and the edge between publishers indicate a
+businessrelationship,eitherpartnerorneighbor.Thethickness Downloaders that appear in locksteps with different labels
+of the edge indicates the frequency of that relationship. provide the opportunity to analyze the overlap of different
+software distribution ecosystems. 36.7% of the downloaders
+To further illuminate this ecosystem, we employ a com-
+(3,345 out of 9,103) are present in both MDLs and PDLs.
+munity detection algorithm [7] to the graph illustrated in
+These downloaders are associated with 7,635 and 6,886 of
+Figure 5(a). This algorithm identifies 7 communities. Within type and type PDLs, which account for 97.8%
+dlr:dom dom:dlr
+each community, we determine the rep-pub with the highest
+and99.8%ofallthePDLs.100ofthesedownloadersdropped
+betweenness centrality [15], which is the number of shortest
+payloads known to be malicious, while the other ones down-
+paths between any two nodes that pass through the rep-pub.
+loaded other files in lockstep with the malware droppers. The
+This graph centrality measure singles out a node that likely
+PUP publishers from Figure 5 distributed 13 trojan fami-
+acts a bridge between other nodes from each community. lies, including vundo, pasta, symmi, crone, pahador,
+• Community #1: OutBrowse. This community represents the
+pecompact, scar, dapato, renum, jorik, fareit,
+llac, and kazy. We also observed generic trojans, induc
+advertisers or the affiliates of the Outbrowse PPI. The
+PUPs Multiply ROI and Mindad media Ltd. are
+(virus),zeroaccess(botnet),onescan(fakeAV),pincav
+(keystroke logger), dnschanger, startpage, and several
+frequently in lockstep with the rep-pub. The other publish-
+worms delivered through these publishers.
+ers in this community represent variants of the rep-pub’s
+certificate: OutBrowse LTD and OutBrowse.
+To further illuminate the connection of the malware and
+• Community #2: Somoto. This community belongs to So- PUPdeliveryecosystems,wecomparethepublishersfromour
+moto, which is also a PPI provider. Beside Somoto’s locksteps to the ones from the Malsign blacklist of certificates
+certificates (Somoto Ltd. and Somoto Israel), this used to sign PUP and malware payloads [23]. In this way,
+communityincludes12otherpublishers.International we identify 1,926 downloaders signed by 212 publishers from
+News Network Limited, a known PUP distributor, is malsign, which were involved in 70,984 and 5,468 of MDLs
+tightly connected with the publishers in this community, and PDLs respectively. This suggests that many publishers
+suggesting a close relationship. thought to belong to the PUP category are also involved in
+• Community #3: raonmedia. 22 publishers belong to this malware delivery. Considering that many of the unknown files
+community. Three PUP publishers including raonmedia, inourdatasetmaybemalwaresamples(83%ofourpayloads
+Pacifics Co., and CIDA showed high centrality in this were never submitted to VirusTotal), the number of MDLs is
+community. All three publishers were located in Busan, likely higher.
+Korea and the certificates were issued by Thawte, Inc.,
+These results contradict two recent studies [22], [38],
+which suggests these publishers could belong to the same
+which did not find a substantial overlap between the mal-
+group.
+ware and PUP delivery ecosystems. The key distinction is
+• Community #4: Sendori. Although we see PPI
+that these studies analyzed direct download relationships
+Conduit Ltd. within the community, PUP Sendori
+between publisher pairs, while lockstep detection allows us
+has a higher centrality. At 77 publishers, this is the largest
+to identify indirect relationships, through the neighbor links
+community. Sendori was is tightly connected to most
+discussed in Section V-A. These indirect links can over-
+of the publishers within the group, which reflects an
+come evasive strategies such as certificate polymorphism
+aggressive distribution strategy of this PUP.
+or utilizing unsigned downloaders for malicious payloads.
+• Community #5: Amonetize. This group represents In particular, in Somoto’s locksteps, 90.6% of the down-
+Amonetize Ltd. and several PUPs. In particular, loaders, on average, are either unsigned or have invalid
+Shetef Solutions & Consulting (1998) Ltd. certificates. We also observe several PUPs with over 50%
+is known to be the advertiser15 of Amonetize. ratio, including Strongvault Online Storage LLC,
+• Communities #6 & #7. These communities are small and Save Valet,andLLC Mail.Ru.Variationsinexperimen-
+include the InstallX PPI and the Wajam PUP. tal methods may further explain the different results. Thomas
+et al. [38] milk PPI downloaders on hosts located in the
+Theseresultssuggestthatthepartnerandneighborrelation-
+US, while our data set includes hosts from 72 countries.
+shipscanexposeorganizationsthatutilizedistinctcodesigning
+Geographical targeting has been reported previously for PPI
+certificatesfordifferentactivities,e.g.PPIandPUP.Addition-
+providers [8]. Additionally, their data set covers a different
+ally, the graph communities capture close relationships among
+observation period. In contrast, Kotzias et al. [22] analyze
+data from WINE from a time span that largely overlaps with
+14Several of these publishers attended the 2014 Affiliate Summit in Las
+our observation period. However, they focus on 70 malware
+Vegas(http://affiliatesummit.com/).
+15https://www.reasoncoresecurity.com/signer-shetef-solutions-consulting- families, excluding for instance trojans that received generic
+1998-ltd-40812da0f7cb2ecd4955fd76e0a6c493.aspx labels from anti-virus vendors.
+9OutBrowse LTD Mindad media Ltd.
+Somoto Ltd.
+OutBrowse LTD
+OutBrowse
+International News Network Limited
+Multiply ROI
+Wajam
+Wajam Somoto Ltd.
+Somoto Israel
+Conduit Ltd. CIDA
+raonmedia Pacifics Co.
+Amonetize ltd.
+Shetef Solutions & Consulting (1998) L Atd e. dge Performance BCN Amonetize ltd. Conduit Ltd. Somoto Israel
+Creative Island Media Sendori Multiply ROI
+raonmedia
+Vitblan telecom sl OutBrowse LTD
+IronInstall
+Sendori
+InstallX
+Amonetize ltd. betwikx
+Mindad media Ltd.
+InstallX Softonic International Somoto Ltd. Sendori
+OutBrowse
+Creative Island Media
+InstallX AB Team d.o.o.
+Bandisoft Aedge Performance BCN
+Wajam
+WhiteSmoke Inc
+GOLDBAR VENTURES LTD
+Fig. 5: Business relationship: (a) Both partner and neighbor, (b) partner relationship for PPIs. (node color red/orange/blue/gray
+corresponds to PPI/PUP/benign/other).
+)%(
+spetskcoL
+fo
+#
+80 Histogram bucket size = 5 MDLs (dlr:dom) We observe several features that distinguish MDLs from
+MDLs (dom:dlr)
+other locksteps. Figure 6 illustrates the approximate FP tree
+60
+level where the MDLs reside. As each node in the FP tree
+40 corresponds to a lockstep, the typical level of MDLs indicates
+the region of the FP tree where we are most likely to find
+20
+evidenceofmalwaredistribution.Thisisanapproximation,as
+0 wemayaddorsubtractalevelwhencomputingnear-bicliques,
+5 10 15 20 25 30 35
+as described in Section IV-E. The median FP tree level where
+Approximate level in FP tree of MDLs
+Fig. 6: Approximate FP Tree Level of the MDLs. locksteps reside is 5, for both type dlr:dom and type dom:dlr. In
+other words, the median number of downloaders in a MDL
+is 5. This is relatively close to the root of the FP tree, as
+C. Properties of MDLs malware delivery networks rely on only a few downloaders
+within a time window. This observation helps us improve the
+We identify a total of 54,497 and 51,831 locksteps of
+performance of Beewolf in streaming mode, as discussed in
+type and type , respectively, that download at
+dlr:dom dom:dlr Section VII.
+least one malware. These MDLs come from 246 and 169
+rep-pub each. In addition to the PPI and PUP delivery vec- WealsoobservethatMDLstendtohavealargenumberof
+tors discussed above, we observed that malware is some- nodes, as illustrated in Figure 7(a). In contrast, although we
+times distributed through compromised software updates. We see a few large PDLs, around 90% PDLs have fewer than
+identified a malware distribution campaign involving the 25 nodes and over 90% BDLs have fewer than 75 nodes.
+KMP Media Co., which is a legitimate media player. The Figure7(b)illustratesthenumberofdomainsperdayforeach
+campaigndistributedtrojandofoil.Theversionofthemedia locksteps. We observed MDLs showing aggressive domain
+player involved in the MDL is 3.6.0.87, which is known churn (more than 7 domains per day). Figure 7(c) illustrates
+to have a stack overflow vulnerability16 that was exploited the number of downloaders per day for each lockstep. On
+in the wild.17 Additionally, while experimenting with larger average, a new downloader appears for every 5.8/16.7/11.8
+valuesfor∆t,weobservedaHewlett-Packardsoftwareupdater days for MDLs/PDLs/BDLs respectively. We also observed
+deliver the hexzone ransomware.18 MDLs showing aggressive downloader repacking (more than
+5 downloaders per day).
+16https://www.krcert.or.kr/data/secNoticeView.
+do?bulletin writing sequence=2147&queryString=
+cGFnZT0xJnNvcnRfY29kZT0mc2VhcmNoX3NvcnQ9a2V5d29y VI. DETECTIONPERFORMANCE
+ZCZzZWFyY2hfd29yZD1pb3M=
+17https://www.virustotal.com/en/file/ff49e145515bdecbca61b7d9 Whiletheprevioussectionprovidesempiricalinsightsinto
+7439959be5b04b1c29d77a0e8c42a1c1bed42aa8 silent distribution campaigns, we now evaluate the effective-
+18WedidnotfindevidencethatHP’scodesigningcertificatewascompro- ness of Beewolf as a detection system. We aim to detect
+mised; it is more likely that the malware was able to infect the server-side
+suspicious activity, such as malware and PUP dissemination
+infrastructureinvolvedinsoftwareupdates.Thisisconsistentwithpriorreports
+campaigns. This information can be used in several ways.
+ofatrojanthatwassignedbyHPafteritinfectedthecompany’ssystems,but
+withouthavingcompromisedanycertificates[24]. The downloaders and domains caught in locksteps can help
+10)elacS
+goL
+,%(
+spetskcoL
+fo
+#
+100 Histogram bucket size = 50 MDLs
+PDLs
+10 BDLs
+1
+0.1
+0.01
+0 50 100 150 200 250 300
+# of Nodes in the Lockstep (dlr:dom)
+)elacS
+goL
+,%(
+spetskcoL
+fo
+#
+100 Histogram bucket size = 1 MDLs
+PDLs
+10 BDLs
+1
+0.1
+0.01
+0 1 2 3 4 5 6 7
+# of Domains per Day (dlr:dom)
+)%(
+spetskcoL
+fo
+#
+100 Histogram bucket size = 1 MDLs
+PDLs
+10 BDLs
+1
+0.1
+0.01
+0 1 2 3 4 5 6
+# of Downloaders per Day (dom:dlr)
+Fig. 7: MDL properties: (a) Distribution of the number of nodes in lockstep, (b) Distribution of the number of domains per day
+(type ), (c) Distribution of the number of downloaders per day (type ).
+dlr:dom dom:dlr
+Time difference (before VT)
+Time difference (after VT)
+sredaolnwoD
+fo
+rebmuN
+servedbytheURLscontacted),weevaluatehowearlywecan
+40 detect suspicious downloaders or domains that are previously
+Potential early detection
+unknown.WeconsiderthedownloaderssubmittedtoVirusTo-
+20 talin2013thathaveatleastonedetectionrecord.Wecompare
+the time when Beewolf is able to detect these downloaders
+0 to the time of their first submission to VirusTotal. Because
+−300 −200 −100 0 100
+a downloader detected by Beewolf is active in the wild,
+Detection Leadtime (days)
+and because VirusTotal invokes up to 54 AV products with
+Fig. 8: Detection lead time for MD/PDs.
+updated virus definitions, we consider that a detection lead
+timeillustratestheopportunitytoidentifypreviouslyunknown
+droppers.AsexplainedinSectionV,alockstepemergesatthe
+prioritize further analysis, e.g. to attribute the campaigns to timewhenthesecondstarisformed;weestimatethedetection
+publishers as we demonstrate in Section V. It could be com- time of a downloader as the earliest detection timestamp
+bined with other techniques (e.g. DNS reputation systems [2], among the locksteps that contain it. Figure 8 illustrates this
+[6])todetectaspecificformofabuse(e.g.botnetactivity).An comparison. The negative range represents a detection lead
+enterprise may also block all downloads initiated remotely by time, and the positive range corresponds to detection lag. We
+unknown organizations; in this case, a few trusted publishers observe1182downloadersdetectedearlyand213downloaders
+could be added to our initial whitelist. detected late. The median detection lead time is 165 days.
+Amongthelatedetections,69ofthedownloadersaredetected
+We use the locksteps labeled in Section V to validate our
+<3 days late, which suggests that they may detected early
+system: an MDL or PDL detection represents a true positive,
+with a shorter ∆t. In contrast, the detection lead time seems
+whileaBDLdetectionisafalsepositive.Forthetruepositives,
+uniformly distributed,suggesting that Beewolf candetect both
+we compute the detection lead time, compared with the anti-
+recent distribution campaigns as well as campaigns that have
+virus products invoked by VirusTotal (for downloaders) and
+been operating for a while.
+with three malware blacklists (for domains). We also analyze
+thecausesoffalsepositivedetections.Aswelackgroundtruth
+We also collect URLs blacklisted in 2013 from three
+about malware distribution campaigns, we cannot estimate the publicly available sources 192021. These URLs correspond
+false negative rate.
+to 394 unique domains, of which 29 were present in our
+dataset. Among these 29 domains, 14 domains were caught in
+Experimental settings. We evaluate Beewolf in offline mode,
+locksteps;theother15domainsmayrepresentfalsenegatives,
+andwebuildonourempiricalinsightstoselecttheappropriate
+or they may correspond to malware dissemination techniques
+configurationparameters.Weset∆t=δt=3days,tocapture
+other than silent delivery campaigns. As for downloaders, we
+locksteps with a high domain churn.
+estimate the detection lead time for these 14 domains by
+comparing the lockstep detection dates with the blacklisting
+A. Malware and PUP detection dates. Except for one domain that is detected 36 days later,
+13 out of 14 domains are detected early, with an median lead
+Detection performance. Table III lists the numbers of lock- detection time of 196 days.
+stepsfromeachcategory.Overall,thebenignlocksteps(BDLs)
+represent 4.82% and 2.48% of type dlr:dom and type dom:dlr False positive analysis. We identified 80 publishers that are
+locksteps, respectively. We observe the highest fraction of involved in forming the BDLs. The top 50 publishers account
+BDLs among the mixed locksteps of type dlr:dom, perhaps for 50% of the downloaders in BDLs. 22 of these publishers
+becausemalwareandPUPcreatorsutilizededicatedmalicious are benign, but they are absent from NSRL so they were
+infrastructures as well as generic downloaders, which may not included in our whitelist. These were mainly non-US
+also distribute benign software. In contrast, PPI rep-pubs do publishers (ESTsoft Corp., AhnLab, and NHN corp.),
+not generate any BDL of type dom:dlr and only 4 BDLs of which are not covered by NSRL, and benign publishers with
+type dlr:dom. Overall, the suspicious locksteps (MDL or PDL) multiplecode-signingcertificates (Skype Limited islisted
+accountfor92.85%and97.24%ofalllockstepsoftype
+dlr:dom
+inNSRLbutSkype Software Sarlisnot).TheseBDLs
+and type , respectively.
+dom:dlr
+19https://www.malwaredomainlist.com
+Detection lead time. As Beewolf is content-agnostic (i.e. it 20http://www.malwaredomains.com
+does not analyze the downloader binaries or the Web content 21https://www.phishtank.com
+11solves an optimization problem to detect locksteps, which
+TABLE IV: Community detection and locksteps.
+makes it highly sensitive to the choice of seed domains and
+FastGreedy[7] Multilevel[12] the times provided. Furthermore, this serial implementation of
+NumberofCommunities 6919 6439 CopyCatchisnotscalableforlargelockstepsizes;weconsider
+Average#nodes/community 21 22
+only small locksteps for comparison.
+Median#nodes/community 2 2
+Average#locksteps/community 2042 2387
+To make a fair comparison, we generate 470 locksteps
+Median#locksteps/community 7 31
+AverageLockstepCoverage 89.7 85.9 using our algorithm over the one month data. Of these only
+MedianLockstepCoverage 91.67 87.5 139 locksteps have a size less than 10 which we consider
+Average#Uniquerep-pubs/community 9 11
+for comparison. For each lockstep our algorithm detected,
+we provide CopyCatch the domains as seed nodes and the
+couldhavebeenavoidedwithamorecomprehensivewhitelist.
+timestamp at which each domain was active in the lockstep
+Additionally, 17 publishers are labeled as Other, 12 as PUP,
+as the seed times. Our algorithm generates 470 locksteps in
+and 1 as PPI. We suspect that many of their locksteps deliver
+7.56 s, taking an average of 0.016 seconds per lockstep. In
+undetected malware or PUPs, as VirusTotal reports existed for
+contrast,CopyCatchtakes600.9stogenerate139locksteps—
+only ≈17% of payloads.
+an average of 4.32 s per lockstep detection. These results
+suggest that Beewolf shows promise for processing streaming
+B. Comparison with alternative techniques data.
+We compare our lockstep detection algorithm with two
+alternativetechniquesfordetectingmaliciouscampaigns:com- C. Robustness to evasion attempts
+munity detection algorithms [7], [12], which have been ex-
+An adversary could pursue three strategies for evading
+plored extensively in the context of graph mining, and prior
+Beewolf; we start by explaining these attacks in the context
+algorithm for detecting lockstep behavior [4].
+of type lockstep detection. First, the adversary could
+dlr:dom
+frequently update or repack the downloaders it controls, so
+Community Detection. To compare lockstep detection and
+that no downloader is active in different time windows. This
+community detection algorithms, we construct a type
+dlr:dom attack would prevent lockstep detection, and many malware
+bipartite graph with all the download events. We employ 2
+families already employ aggressive repacking rates to evade
+popular community detection algorithms [7], [12] based on
+detection [8]. However, this strategy might impose a trade-
+optimizing modularity i.e., maximizing the edges within each
+off for organizations that conduct silent delivery campaigns,
+community and minimizing the edges between communities,
+as they try to render their downloaders inconspicuous, e.g.
+andwecomparethemwiththelockstepsdetectedbyBeewolf.
+by utilizing code signing and by avoiding behaviors that are
+WeusethePythonpackageigraph22 torunthesealgorithms.
+not commonly seen in benign downloaders such as software
+Table IV shows the comparison of these algorithms with updaters [26]. The frequent updates and the lower prevalence
+Beewolf.Mostofthecommunitiesareverysmall(<3nodes). of individual hashes that would result from higher repacking
+Weobservethatalargeportionofthelockstepsgetmappedto rates would make these downloaders look suspicious to an
+the larger communities. The number of locksteps/community AV product. Instead of increasingthe number of downloaders,
+and the number of nodes/community reflect long tail distribu- in the second strategy the adversary could utilize a large
+tions. We define the lockstep coverage as the fraction of lock- number of domains, e.g. from DynDNS or a similar provider,
+stepsthatresidewithinasinglecommunity.Wepredominantly so that each downloader accesses a single domain within a
+observe locksteps having large (> 80%) coverage. Further, time window. This would be expensive for the adversary, as
+thenumberofuniquerep-pubspercommunityisconsiderably generating and registering new DNS domains is more costly
+large (10). This suggests that most of the communities are than repacking downloaders and payloads. For example, to
+mixed up with locksteps coming from different publishers. protect 500 droppers from lockstep detection, an adversary
+This makes it difficult to logically assign each community to would need 5,000 DynDNS zones each month (Beewolf
+a particular group. Community detection algorithms do not considers second-level domains rather than FQDNs), at a
+account for the timing of downloads, which makes it hard to current cost of $4,000/month.23 Additionally, this approach
+pinpoint coordinated behavior between nodes. would make the domains more likely to be detected by DNS
+reputationsystems,whichusedomainpopularityasfeature[6].
+Prior Lockstep Detection Algorithm. We compare the lock- In practice, Beewolf detects MDLs that churn through more
+steps detected by our algorithm to locksteps detected by than 7 domains per day, as discussed in Section V-C. The
+the serial implementation of the CopyCatch [4] algorithm adversarycouldreducethecostbyinstructingeachdownloader
+over one month (January 2013) of data. We reimplement torandomlyselectadomain,fromapoolofavailabledomains,
+CopyCatch, as the code is not available. There are qualitative and to contact only that domain for ∆t; then, the downloader
+differencesbetweenouralgorithmandCopyCatch.Firstly,our would select another domain, and the reuse rate of domains
+algorithm is unsupervised. In contrast, CopyCatch requires in the pool would increase. To detect this, we could increase
+seed domains corresponding to malicious domains and also ∆t,tocoverthepointwhenthedownloaderswitchesdomains,
+times for all the domains at which some suspicious activity and this would in turn force the adversary to further increase
+has occurred. Secondly, given a batch of data, we detect all the time interval when each downloader accesses a single
+the locksteps within that batch; CopyCatch can detect one domain. Ultimately, the adversary cannot increase this time
+singlelockstep,whichdependstotheseed.Thirdly,CopyCatch interval indefinitely, as domains that serve malware eventually
+22http://igraph.org/ 23http://dyn.com/managed-dns/
+12get blacklisted. Additionally, we observe that the first two sub-processes are independent of each other. To evaluate this
+attack strategies involve increasing the downloader churn and potentialoptimization,weestimatethelockstepdetectiontime
+reducing the domain churn, for evading the detection of withoptimalparallelism.Assumingthatenoughcomputingre-
+type locksteps; to evade the detection of type , sourcesare availablefor runningallmissing lockstepsearches
+dlr:dom dom:dlr
+these actions should be reversed. This suggests that it is diffi- in parallel, the cost of this part of the computation will be
+cult for an adversary to avoid both types of lockstep detection determinedbythelongestrunningsupplementation.Weobtain
+simultaneously.Finally,inthethirdstrategy,theattackercould the total cost of lockstep detection with optimal parallelism
+exploit the filtering step in our lockstep detection algorithm, by adding this to the runtime of lockstep detection on the
+for example by ensuring that MDLs appear deeper in our FP main FP tree. As shown in Figure 9(c), this cost is at most 19
+tree. In this case, Beewolf is still able to capture a subset of seconds,andshowsasinglepatternofslowlineargrowth.The
+these locksteps at lower FP tree levels. supplementation phase is important for detecting malicious
+locksteps: at the last batch, this phase contributes to 95% of
+VII. STREAMINGPERFORMANCE the MDL detections and 91% of the PDL detections. These
+locksteps include 48.7% of the MDs and 80.6% of the PDs.
+Experimental settings. We evaluate Beewolf in streaming
+modebyfeedingthedownloaddatainbatches.Inthelockstep Overall,theseresultssuggestthatthecostofBeewolf’sfirst
+detectionphase,wefilterouttheFPtreelevelover7,basedon two analysis steps is amortized over time, as we perform star
+the observation that MDLs reside close to the root of the FP detection only on the new batch of data and we maintain the
+tree. And, we measure the latency of lockstep detection. Each galaxygraphincrementally.TheFPtreeconstructionalgorithm
+batch corresponds to a time window of ∆t = 3 days. As we is not incremental and requires traversing the entire graph, but
+employ one year of data, we have 121 data points excluding we optimize this step by pruning the FP tree at level 7, as we
+the first batch in our experiment. For all 121 data points, we donottypicallyobserveMDLsbelowthislevel.Similarly,the
+measure the elapsed time for each of the four phases in our lockstep detection requires traversing the whole FP tree and
+data analysis (illustrated in Figure 3). We run our experiments constructing version lists for its nodes, but we could optimize
+on Amazon’s Elastic Compute Cloud (Amazon EC2).24 We this step by performing the supplementation in parallel. The
+use one M4.4xlarge instance, which has a 16-core 2.4 GHz resulting runtime of Beewolf increases linearly with the size
+Intel Xeon E5-2676 v3 (Haswell) with 64 GB of memory. For of the graph. Our results suggest that maintaining one year of
+this evaluation, we focus on type graphs. downloadeventsimposesreasonableresourceandperformance
+dlr:dom
+requirements,evenifweexecutelockstepdetectioneveryday.
+Streaming performance. Figure 9(a) illustrates the growth
+of the data structures that Beewolf maintains. The plots has
+a logarithmic Y-axis, to compare both the number of new VIII. RELATEDWORK
+stars per batch and the cumulative number of nodes in the
+Graph-based attack detection. Zhao et al. [43] introduces
+galaxy and the FP tree. On average, a batch contains 225,939
+BotGraph that detects email accounts involved in spamming.
+download events. Both the number of nodes in the galaxy
+They exploit the fact that botnet accounts share similar IP
+graph and the FP tree grow linearly. At the end, the graph
+address and build a user-user graph. The aggressive sign-up
+has 123,335 nodes and 637,814 edges. As the data grows, the
+behavior forces the botnet accounts to form a large cluster
+cost for detecting lockstep also grows incrementally.
+within the graph. Several works developed a reputation score
+Figure 9(b) suggests that Beewolf’s runtime is dominated system by adopting belief propagation, based on the intuition
+by the lockstep detection phase, which accounts for 97.2% of of locality. Chau et al. [11] exploit the tendency of hosts with
+the total runtime on average. The total runtime shows three poorcyber-hygienehavingmoremalware.Theyconstructabi-
+growth patterns: a steep increase for the first 20 batches, a partitegraphthatrepresentsthehostsandthefilesthatpresent
+slower increase for most of the period, and another steep on those hosts. Observing that several malware are distributed
+increase starting around batch 94–96. Each of these growth together, Tamersoy et al. [37] design a graph with files as
+patterns is linear and follows a regression line with the nodes where edge is placed between the nodes that share a
+coefficients shown in the figure. To further understand the common host. Oprea et al. [34] builds a host vs domain graph
+latency of the lockstep detection step, recall that this phase incrementally (day-by-day), and detects malicious domains
+consists of two parts: (1) lockstep detection on the main FP within a same campaign. In Beewolf, we maintain a graph
+tree,(2)supplementationforfindingpartiallymissinglocksteps based on the accessed by relationship between downloader
+(see Section IV-E). The near-biclique detection is done during and domain. The lockstep behavior detection returns clusters
+lockstep detection, and it results in an overhead of at most 10 ofdownloadersanddomainsconsideringthetemporalbounds.
+seconds. As shown in Figure 9(c), the first part is fast, and
+requires at most 12 s. Most of the cost of lockstep detection Malware distribution. Cova et al. [13] analyzed the rogue
+comes from the supplementation effort, which induces the anti-virus campaigns by investigating the malicious domains
+three phases of linear growth. In particular, the number of involved in the distribution, introduced an attack attribution
+nodes that have multiple versions in the FP tree increases method employing feature-based clustering. Vadrevu et al.
+significantly around batch 94–96, which triggers the third [40] introduced AMICO, which is a system for detecting
+growth pattern in the total runtime. malware delivery in the live network traffic. They employed a
+supervised technique to classify malware download activities.
+While Beewolf searches for these nodes sequentially, we
+Invernizzi et al. [19] conducted the study on how the malware
+notethatthiscouldbedoneinparallel,asthesupplementation
+getsdeliveredthroughnetworks,proposedNazca,asystemthat
+24https://aws.amazon.com/ec2/ for detecting malicious download events from the web traffic.
+13#Batch
+)elacS
+goL( tnuoC
+106 Total runtime Galaxy graph build time
+Lockstep detection time Star detection time FP tree build time 105
+14.037*x + (-0.75131)
+FP tree size 104 Galaxy graph size
+New stars
+103
+20 40 60 80 100 120
+# Batch
+)elacs
+goL
+/ dnoces(
+tsoC
+104 Lockstep detection time with optimal parallelism
+103 L Lo on ckg se ts et p s du ep tp el ce tm ioe nn ft ra ot mio n m t aim ine F Ptree
+102 7.669*x +71.673 140.79*x + (-12770)
+101
+1
+10−1
+10−2
+10 20 30 40 50 60 70 80 90 100 110 120
+# Batch
+)dnoces(
+tsoC
+15
+10 0.10496*x + 1.5032
+5
+0 10 20 30 40 50 60 70 80 90 100 110 120
+Fig. 9: Streaming performance: (a) Data growth, (b) Running time of the streaming system, (c) Estimated lockstep detection
+runtime with optimal parallelism.
+Zhangetal.[42]employedunsupervisedtechniquetoidentify frequentdomainchanges,whichallowustoimplementseveral
+the group of related severs that are likely to be involved in optimizations for detecting malware delivery campaigns in
+the same malware campaign. Contrary to these works, we a streaming fashion. We also evaluate the performance of
+conductthestudysolelyfocusingontheclientsideofmalware Beewolf in streaming mode, and we show that it scales to
+distribution networks, and employ unsupervised technique not large volumes of data.
+based on features but on graph patterns. Another difference is
+inthewayweattributecampaigns.Whilepriorworkgenerally Acknowledgments
+relied on the properties of the malicious domains, we take
+advantage of the code signing behavior of the downloaders. We thank Jonathan Katz, the anonymous reviewers, and
+our shepherd, Alina Oprea, for their feedback. We also thank
+Spam campaigns. Campaigns have been observed in other VirusTotalforaccesstotheirserviceandSymantecformaking
+attack domains, for example in the context of spam. Several data available through the WINE platform. This research was
+studies focused on email spam [21], [27] for example to partiallysupportedbytheNationalScienceFoundation(award
+measure the conversion rates and to analyze the resources CNS-1564143), the Department of Defense, and a grant from
+involved in spam monetization. Spam campaigns have also Amazon Web Services.
+been observed on social media sites [16], [17]. Prior work
+utilized machine learning techniques to characterize social REFERENCES
+media spam campaigns. Some of the the prior techniques
+[1] M. Antonakakis, R. Perdisci, D. Dagon, W. Lee, and N. Feamster.
+discussed use domain specific features that cannot be applied
+Building a dynamic reputation system for dns. In USENIX security
+on the problem we are focusing on. However, the lockstep
+symposium,2010.
+detection algorithm has broad applicability.
+[2] M. Antonakakis, R. Perdisci, D. Dagon, W. Lee, and N. Feamster.
+Building a dynamic reputation system for dns. In Proceedings of the
+Lockstep detection. CopyCatch [4] deals with identifying
+19thUSENIXConferenceonSecurity,2010.
+locksteps by analyzing the connectivity between users and
+[3] M.Antonakakis,R.Perdisci,W.Lee,N.V.II,andD.Dagon.Detecting
+pagesthroughthelikesrelationship.Wediscussthelimitations malwaredomainsattheupperDNShierarchy.In20thUSENIXSecurity
+of this algorithm and provide a comparison with Beewolf in Symposium,2011.
+SectionVI-B.Mostoftheworkinthisspacelooksatdetecting [4] A. Beutel, W. Xu, V. Guruswami, C. Palow, and C. Faloutsos. Copy-
+suspicious nodes [20] or suspicious edges [10] through the catch: stopping group attacks by spotting lockstep behavior in social
+networks. InWWW,2013.
+lensofoutlierdetection.SynchroTrap[9]proposesamalicious
+account detection system in the context of social networks to [5] L. Bilge, E. Kirda, C. Kruegel, and M. Balduzzi. Exposure: Finding
+maliciousdomainsusingpassivednsanalysis. InNDSS,2011.
+uncovermaliciousaccountsandcampaigns.Theyclusterusers
+[6] L. Bilge, S. Sen, D. Balzarotti, E. Kirda, and C. Kruegel. Exposure:
+based on the Jaccard similarity of their actions. Our work
+Apassivednsanalysisservicetodetectandreportmaliciousdomains.
+is orthogonal to these techniques. Firstly, Beewolf focusses ACMTrans.Inf.Syst.Secur.,2014.
+on detecting malicious campaigns which correspond to near
+[7] V. D. Blondel, J.-L. Guillaume, R. Lambiotte, and E. Lefebvre. Fast
+bipartite cores. Secondly, our system captures malicious cam- unfolding of communities in large networks. Journal of statistical
+paignsoveralargetimeinterval;thenotionoffrequentpatterns mechanics:theoryandexperiment,2008.
+directly allows us to capture suspicious behavior. Finally, our [8] J. Caballero, C. Grier, C. Kreibich, and V. Paxson. Measuring pay-
+algorithm is unsupervised. per-install: The commoditization of malware distribution. In USENIX
+SecuritySymposium,2011.
+[9] Q. Cao, X. Yang, J. Yu, and C. Palow. Uncovering large groups of
+IX. CONCLUSIONS
+activemaliciousaccountsinonlinesocialnetworks. InCCS,2014.
+We introduce Beewolf, a system for systematically detect- [10] D.Chakrabarti. Autopart:Parameter-freegraphpartitioningandoutlier
+ingsilentdeliverycampaigns.Beewolfdetectslockstepbehav- detection. InKnowledgeDiscoveryinDatabases:PKDD.2004.
+ior, which captures a set of downloaders that are controlled [11] D.H.Chau,C.Nachenberg,J.Wilhelm,A.Wright,andC.Faloutsos.
+Polonium:Tera-scalegraphminingformalwaredetection.InSIGKDD,
+remotely and the domains that they access. Using Beewolf,
+2010.
+we identify and analyze 1.4 million campaigns conducted in
+[12] A.Clauset,M.E.Newman,andC.Moore.Findingcommunitystructure
+2013. We describe novel findings about malware distribution
+inverylargenetworks. PhysicalreviewE,70(6):066111,2004.
+campaigns, such as an overlap between the malware and PUP
+[13] M.Cova,C.Leita,O.Thonnard,A.D.Keromytis,andM.Dacier. An
+deliveryecosystemsandthetightbusinessrelationshipsamong analysisofrogueAVcampaigns. InRAID,2010.
+several PPI providers. We identify several properties of mal-
+[14] T.Du¨bendorferandS.Frei.Webbrowsersecurityupdateeffectiveness.
+waredistributionlocksteps,includingtheirsize,lifecycle,and InCRITISWorkshop,September2009.
+14[15] L.C.Freeman. Asetofmeasuresofcentralitybasedonbetweenness. [39] K. Thomas, D. Huang, D. Wang, E. Bursztein, C. Grier, T. J. Holt,
+Sociometry,1977. C.Kruegel,D.McCoy,S.Savage,andG.Vigna.Framingdependencies
+introducedbyundergroundcommoditization. InWEIS,2015.
+[16] H.Gao,J.Hu,C.Wilson,Z.Li,Y.Chen,andB.Y.Zhao. Detecting
+andcharacterizingsocialspamcampaigns. InSIGCOMM,2010. [40] P. Vadrevu, B. Rahbarinia, R. Perdisci, K. Li, and M. Antonakakis.
+Measuringanddetectingmalwaredownloadsinlivenetworktraffic. In
+[17] C. Grier, K. Thomas, V. Paxson, and C. M. Zhang. @spam: the
+ESORICS,2013.
+undergroundon140charactersorless. InCCS,2010.
+[41] Z. Xu, A. Nappa, R. Baykov, G. Yang, J. Caballero, and G. Gu.
+[18] J.Han,J.Pei,andY.Yin. Miningfrequentpatternswithoutcandidate
+AUTOPROBE:towardsautomaticactivemaliciousserverprobingusing
+generation. In ACM Sigmod Record, volume 29, pages 1–12. ACM,
+dynamicbinaryanalysis. InCCS,2014.
+2000.
+[42] J. Zhang, S. Saha, G. Gu, S. Lee, and M. Mellia. Systematic mining
+[19] L.Invernizzi,S.-J.Lee,S.Miskovic,M.Mellia,R.Torres,C.Kruegel, ofassociatedserverherdsformalwarecampaigndiscovery. InICDCS,
+S.Saha,andG.Vigna. Nazca:Detectingmalwaredistributioninlarge-
+2015.
+scalenetworks. InNDSS,2014.
+[43] Y.Zhao,Y.Xie,F.Yu,Q.Ke,Y.Yu,Y.Chen,andE.Gillum.Botgraph:
+[20] M. Jiang, P. Cui, A. Beutel, C. Faloutsos, and S. Yang. Catching Largescalespammingbotnetdetection. InNSDI,2009.
+synchronized behaviors in large networks: A graph mining approach.
+TKDD,2015.
+[21] C. Kanich, C. Kreibich, K. Levchenko, B. Enright, G. M. Voelker,
+V.Paxson,andS.Savage. Spamalytics:anempiricalanalysisofspam
+marketingconversion. InCCS,2008.
+[22] P.Kotzias,L.Bilge,andJ.Caballero. MeasuringPUPprevalenceand
+PUPdistributionthroughPay-Per-Installservices. InUSENIXSecurity
+Symposium,2016.
+[23] P.Kotzias,S.Matic,R.Rivera,andJ.Caballero. CertifiedPUP:Abuse
+inAuthenticodecodesigning. InCCS,2015.
+[24] B. Krebs. Signed malware = expensive “oops”
+for hp. http://krebsonsecurity.com/2014/10/
+signed-malware-is-expensive-oops-for-hp/,Oct2014.
+[25] M. Ku¨hrer, C. Rossow, and T. Holz. Paint it black: Evaluating the
+effectivenessofmalwareblacklists. InRAID,2014.
+[26] B. J. Kwon, J. Mondal, J. Jang, L. Bilge, and T. Dumitras,. The
+dropper effect: Insights into malware distribution with downloader
+graphanalytics. InCCS,2015.
+[27] K. Levchenko, A. Pitsillidis, N. Chachra, B. Enright, M. Fe´legyha´zi,
+C. Grier, T. Halvorson, C. Kanich, C. Kreibich, H. Liu, D. McCoy,
+N.Weaver,V.Paxson,G.M.Voelker,andS.Savage.Clicktrajectories:
+End-to-endanalysisofthespamvaluechain. InS&P,2011.
+[28] Z.Li,S.A.Alrwais,Y.Xie,F.Yu,andX.Wang.Findingthelinchpins
+ofthedarkweb:astudyontopologicallydedicatedhostsonmalicious
+webinfrastructures. InS&P,2013.
+[29] P.K.Manadhata,S.Yadav,P.Rao,andW.Horne. Detectingmalicious
+domainsviagraphinference. InESORICS,2014.
+[30] J.MondalandA.Deshpande. Eagr:Supportingcontinuousego-centric
+aggregatequeriesoverlargedynamicgraphs. InSIGMOD,2014.
+[31] J.MondalandA.Deshpande.Streamqueryingandreasoningonsocial
+data. InEncyclopediaofSocialNetworkAnalysisandMining.2014.
+[32] A.Nappa,R.Johnson,L.Bilge,J.Caballero,andT.Dumitras,. Theat-
+tackoftheclones:Astudyoftheimpactofsharedcodeonvulnerability
+patching. InS&P,2015.
+[33] T.Nelms,R.Perdisci,M.Antonakakis,andM.Ahamad. Webwitness:
+Investigating,categorizing,andmitigatingmalwaredownloadpaths. In
+USENIXSecuritySymposium,2015.
+[34] A. Oprea, Z. Li, T.-F. Yen, S. H. Chin, and S. Alrwais. Detection of
+early-stageenterpriseinfectionbymininglarge-scalelogdata. InDSN,
+2015.
+[35] R. Peeters. The maximum edge biclique problem is np-complete.
+DiscreteAppliedMathematics,131(3):651–654,2003.
+[36] B. Rahbarinia, R. Perdisci, and M. Antonakakis. Segugio: Efficient
+behavior-based tracking of malware-control domains in large ISP net-
+works. InDSN,2015.
+[37] A.Tamersoy,K.Roundy,andD.H.Chau. Guiltbyassociation:large
+scale malware detection by mining file-relation graphs. In SIGKDD,
+2014.
+[38] K.Thomas,J.A.E.Crespo,R.Rasti,J.-M.Picod,C.Phillips,M.-A.
+Decoste, C. Sharp, F. Tirelo, A. Tofigh, M.-A. Courteau, L. Ballard,
+R. Shield, N. Jagpal, M. A. Rajab, P. Mavrommatis, N. Provos,
+E.Bursztein,andD.McCoy. Investigatingcommercialpay-per-install
+and the distribution of unwanted software. In USENIX Security
+Symposium,2016.
+15

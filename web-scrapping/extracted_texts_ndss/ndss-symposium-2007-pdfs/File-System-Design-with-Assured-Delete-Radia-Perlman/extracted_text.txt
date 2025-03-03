@@ -1,0 +1,948 @@
+File System Design with Assured Delete
+Radia Perlman
+Sun Microsystems
+radia.perlman@sun.com
+Abstract This is done by storing data encrypted, and then
+deleting keys to make data unrecoverable. We call keys
+This paper describes a system that supports high that must at some point be deleted ephemeral keys.
+availability of data, until the data should be expunged, Ephemeral keys are much more difficult to manage
+at which time it is impossible to recover the data. This than permanent keys (keys that do not need to inten-
+design supports three types of assured delete; expira- tionally become irrevocably lost). The reason is that to
+tion time known at file creation, on-demand deletion of ensure ephemeral keys are not prematurely lost, copies
+individual files, and custom keys for classes of data. must be made and stored in many locations, which
+The obvious approach, of course, is to encrypt the data makes it difficult to ensure that all copies are deleted
+on nonvolatile storage, and then destroy keys at the after their lifetime.
+appropriate times. However, managing ephemeral To make the file system easy to manage we design it
+keys; robustly keeping them for some amount of time, so that ephemeral key management can be outsourced
+and then reliably destroying every copy, is difficult. We to a minimally trusted third party which we refer to as
+partition the problem so that the burden of ephemeral an ephemerizer.
+key management can be outsourced to a minimally
+As we will show, a single ephemerizer, and a single
+trusted third party we refer to as an “ephemerizer”,
+set of time-based keys can serve many mutually dis-
+with negligible performance overhead, resulting in a
+trustful domains, freeing the customers it serves from
+file system that is easy and inexpensive to manage.
+the burden of managing ephemeral keys. And since our
+design does not require high reliability of individual
+ephemerizers (since we use a quorum scheme),
+1. Introduction
+ephemerizers become easy enough to manage that
+With traditional systems, making data highly recov- many companies, especially those that have many geo-
+erable after a disaster makes it hard to reliably delete it. graphic locations to store ephemerizers, can manage
+Making it recoverable requires making a lot of backup some or all of the ephemerizers they use.
+copies, and keeping them in diverse locations. The Many file systems assume client-side encryption/
+more copies are made, the harder it is to find all copies decryption and, for instance, store files encrypted with
+to delete them. the public keys of the authorized readers. Although
+This paper simultaneously solves two problems: ephemerizers could be used by the clients (rather than
+the file system), that would require interacting with
+1. Making all state in a file system (other than files
+ephemerizers on every file open. Instead, the design in
+which have been expunged) recoverable by autho-
+this paper handles ephemerization at the file system,
+rized parties from backup media, and
+which as we will see, gives dramatically better perfor-
+2. making data that has been expunged unrecover-
+mance while not hindering end-to-end security mecha-
+able by anyone.
+nisms.
+We will present designs for three different methods
+The goal of the design is to make the file system
+of assured delete:
+inexpensive and easy to manage, and to provide
+assured delete without imposing anything more than •time-based: files, when created, are declared to have
+negligible performance overhead over a simple (with- an expiration time. An example application for this
+out assured delete) encrypted file system. form of assured delete might be a medical test whichpromises that results can be obtained for a period of ephemerizer only needs to keep two public keys per
+time, and then afterwards, all information about the file system.
+test will be expunged.
+Ephemerizers create, advertise, and maintain ephem-
+(cid:127) individual file deletion on-demand: files can be eral public keys. Ephemerizers should not make back-
+deleted individually at any point. As we will show in ups of keys. Instead of relying on ephemerizers to be
+section 3.3.1, this form is dangerous, and we do not reliable, the file system uses multiple ephemerizers,
+know of compelling applications for it, although we with independent sets of keys. Rather than making an
+do show how to implement it in a scalable way. ephemerizer robust by having it make n copies of its
+(cid:127) custom classes that can be deleted on-demand: keys, robustness is achieved instead by the file system,
+by having the file system use n independent ephemer-
+sets of files can be encrypted with a custom
+izers, any (quorum (see [25])) of whom can unlock the
+ephemerizer key, and policy can be applied at any
+encrypted data.
+time for that key, such as deleting it, or suspending
+its use until some action is taken. One example Putting the onus of reliability on the file system, by
+application is protecting a spy ship that could be cap- assuming it will be using multiple independent
+tured. If all data is locked with a remote key, then the ephemerizers, makes management of an ephemerizer
+remote custom key need not be destroyed in order to easier, since it is not a disaster for its clients if it loses
+make the data unrecoverable by the enemy. Instead, its keys. It is easier for the ephemerizer to avoid mak-
+the ephemerizer can be notified to revoke use of the ing any copies of keys than it would be to attempt con-
+key to anyone captured with the ship. Another appli- trolled key copying.
+cation of custom keys is a law firm that might need
+Our design, as we will see, places minimal trust in
+to expunge all records associated with a particular
+the ephemerizers. The protocol for requesting decryp-
+client once the client severs ties with the firm.
+tion uses blinding [6], so the ephemerizer cannot see
+what it is decrypting. Decryption requests (for time-
+based ephemeral keys) can even be done anonymously
+These different types of deletion can be used in com-
+[10]. The only threats an untrustworthy ephemerizer
+bination in the same file system. For example, some
+presents are to not forget the keys when it promises to,
+files might be created with time-based assured delete,
+or to forget the keys prematurely. These threats are mit-
+others might be created to never need to be assuredly
+igated by having the file system use a quorum of
+deleted. These types of assured delete can also be com-
+ephemerizers, and to be somewhat careful to choose
+bined for the same file. For example, there might be a
+reputable ephemerizers.
+custom key for a whole directory, plus files within the
+directory can have time-based assured delete. If the Our system does not, by itself, prevent users, or the
+custom key for the directory is deleted, all files in the file system, from copying and storing the decrypted
+directory, regardless of expiration date, become unre- data, which would violate the assured deletion guaran-
+coverable. As long as the custom key remains, files in tee. Our system could be coupled with a tamper-proof
+that directory remain readable until their expiration reader that prevented the client from using the data in a
+date. way other than the way our system intends. But it is not
+part of our system.
+To support time-based ephemerization, assuming
+expiration granularity of a day, and lifetimes of up to
+2. Previous Work
+30 years, this requires the ephemerizer to have 10,000
+ephemeral public keys. This is a scalable solution There are various “disk-scrubbing” systems that con-
+because the same 10,000 ephemerizer public keys can centrate on deleting data on disk [14], [20], by tech-
+be uitlized by all organizations. In other words, there is niques such as overwriting data many times. It might
+no loss in security for mutually distrustful organiza- be possible to make data on a disk unrecoverable, but it
+tions to use the same ephemerizer, and the same would be extremely difficult to guarantee that all cop-
+ephemerizer public keys, to provide time-based ies of backup media are destroyed.
+ephemerization for their file systems.
+There are many designs for encrypting file systems
+For custom keys, the ephemerizer needs to keep a without assured delete, such as CFS [3], SiRius [13],
+key for each class of file, so presumably an organiza- EFS [24], and Plutus [16]. Most of these assume client
+tion would pay the ephemerizer to maintain the custom side encryption/decryption. The assured delete design
+keys for that organization. To support on-demand in this paper is complementary to these schemes.
+secure deletion of individual files, as we will see, the Although individual users could use the ephemerizer,
+as assumed in [21], this is inefficient, since it requiresinteraction with (a quorum of) ephemerizers on each Another difference between the on-demand scheme
+file open. The design in this paper instead relies on in [4] and the on-demand variant of assured delete we
+ephemerization being done by the shared file system, will present is that in [4], encryption is only done at
+which allows dramatic performance gains and does not backup time, so the data on the local disk is unen-
+interfere with end-to-end security. crypted. Therefore, to really delete data, this scheme
+would need to also employ disk-scrubbing. The
+Assured deletion was implemented by a company
+scheme would also need an extra level of key, for hav-
+named Disappearing, Inc. [11]. Their system involved
+ing the file system authenticate to the key manager. We
+a key manager that created and maintained a secret key
+add this detail in this paper, but we also argue (see sec-
+for every file. A file creator asked the key manager for
+tion 3.3.1) that an on-demand scheme is risky, even
+a key, and it returned a (key ID, key). The file reader
+with the enhancements we provide in this paper, and
+requested the key by sending the key ID. This system
+therefore we would advise relying instead on the other
+requires the key manager to create and store a key for
+two types of assured delete that we present in this
+every message, and the key manager had to be com-
+paper.
+pletely trusted, since it could read all messages.
+In [7], a scheme is presented in which a large trusted
+There are several products being introduced for man-
+store for secrets, from which individual secrets can be
+aging keys for backups [19]. These involve buying one
+expunged and made unrecoverable, can be achieved
+or more boxes that maintain keys, usually a key for
+using a small tamper-resistant module with that prop-
+each tape. Assuming the database of keys is not backed
+erty, connected to a larger general purpose memory.
+up (because if it is, then there is no longer assured
+This scheme could be used to make our ephemerizers
+delete), and assuming the customer has bought suffi-
+out of cheaper components, but is otherwise orthogonal
+ciently many copies of the key manager boxes so that
+to what we are presenting in this paper.
+the database is never lost, assured deletion can be done
+by deleting the key from the database. The boxes syn-
+3. Our Design
+chronize with each other so that commanding one of
+the boxes to delete a key will cause it to tell the others We will present three different types of assured
+to delete the key from their database as well. As we delete (time-based, custom keys, and on-demand).
+will explain, the design in our paper is less expensive
+3.1 Concepts Used by all Variants
+(because the customer can do replication using tapes
+rather than expensive boxes), and more robust, as we
+will explain in section 3.3.1. First we present concepts used by all the variants,
+and then we discuss, for each type of assured delete,
+In [4], a scheme is presented in which a file system
+how to structure the file system to use it.
+keeps a table of keys for all files in the system. We will
+call this table the F-table (where each file is encrypted Classes
+with its own key F). The F-table is backed up,
+Two of our designs (time-based expiration, and cus-
+encrypted with a key of a key manager. The key man-
+tom classes) group data into classes. A class is a set of
+ager maintains several keys (where “several” is a
+files that will be deleted simultaneously. For instance,
+parameter, say “s”, and creates new keys with some
+with time-based expiration, files with the same expira-
+frequency (also a parameter, but let’s say one per day),
+tion date will be in the same class.
+so that at all times the key manager maintains s key
+Overall File System Secret G
+pairs. When the key database needs to be recovered
+from backup, the key manager is asked to decrypt it. We assume there is a secret G associated with the file
+system. G is accessible to the system administrators,
+This is similar to the on-demand scheme we present
+and is necessary to unlock the entire file system.
+in section 3.3, with two problems that we will fix:
+G might be in the form of a passphrase, kept in the
+(cid:127) backups of the key database are readable by the key
+head of multiple system administrators. Or for a more
+manager if the key manager has ever been asked to
+secure approach, G could be a high quality secret. It
+decrypt that version of the database
+could be broken into n shares for a quorum scheme
+(cid:127) if a file system using this system were down for sev- [25] where any k shares can recover G. Each system
+eral days (say, after a natural disaster that lasts more administrator is given a smart card, each with its own
+than s days), then all the data would be lost, since the independent high quality secret. Each of the n shares of
+key manager is forgetting keys on a predetermined G is encrypted with one of the system administrator’s
+schedule. secrets, and the encrypted shares can be stored onbackup media and replicated for robustness. Any quo- functions (B, U) that commute with the ephemer-
+rum of k system administrators can insert their acti- izer’s E (encrypt) and D (decrypt) functions.
+vated smart cards to recover G, where “activating” the (cid:127) The file system performs the blind function B on the
+smart card might involve inputting a passphrase or a
+encrypted M to obtain B(E(M)).
+i
+biometric.
+(cid:127) The file system sends BE(M)) to the ephemerizer,
+i
+Knowledge of G, together with backups of the state
+together with i, to tell the ephemerizer which decryp-
+of the file system, enable restoration of the state of the
+tion key to use.
+file system (other than files which have been
+(cid:127) The key manager then operates on B(E(M)) with its
+expunged). i
+private key i, getting D(B(E(M))), but since D and
+i i
+Ephemerizers
+E are inverses, and B and E commute, the result is
+An ephemerizer is a service that creates, certifies, B(M), which the key manager returns.
+and publishes ephemeral keys, decrypts using a speci- (cid:127) The file system applies U to read M, and then dis-
+fied key when requested, and discards keys at the
+cards B and U.
+appropriate time. An ephemerizer might be managed
+Any blind signature function will work, with
+by the same organization that manages the file system,
+straightforward modification, as a blind decryption
+or it could be a public service.
+scheme. However one could use more types of func-
+An ephemerizer has a permanent public key, which
+tions for blindable decryption, since there is no neces-
+the file system is either securely configured with, or
+sity to have a public key with which signatures could
+which the file system can find through a PKI. An
+be verified. The ephemerizer’s keys could even be
+ephemerizer uses its permanent public key to certify its
+blindable secret keys, in which case the file system
+ephemeral public keys, or to authenticate, in the case of
+would have to perform a blinded encryption request in
+certain operations that require authentication, such as
+order to encrypt M.
+management of custom keys.
+We present three examples of blind decryption proto-
+An ephemerizer does not need to be highly trusted,
+cols in section 7.
+because the keys it knows will not allow it to decrypt
+Our blind decryption protocol is extremely efficient.
+data. It might, however, fail in one of two ways:
+Performing a decryption request requires the ephemer-
+1. forget keys prematurely, or be unavailable when
+izer to perform only a single private key operation, and
+decryption is needed, or
+is just a single message request/response. The key
+2. fail to forget keys when it should.
+manager does not need to keep any state; just return a
+Both these failure modes can be handled with a quo-
+single response to a single request. The message only
+rum scheme. However, even in a 1 out of n scheme, to
+needs to contain a set of bits as big as a public key
+gain access to data, a malicious ephemerizer would not
+block (say, 4000 bits for RSA), and a key ID (perhaps 4
+only need the retained ephemeral key, but also would
+bytes). This easily fits into a single IP packet, and
+need access to the encrypted backup media, and G.
+therefore there is no need to even create a TCP connec-
+Blind Decryption Protocol tion. Perhaps in practice, however, to get through fire-
+walls, the protocol would have to be layered over
+The protocol that we will use, for having the file sys-
+HTTP.
+tem request a decryption from the key manager, we call
+“blind decryption”. Blind decryption was introduced, Because the interaction is blinded, there is no need
+and is described more fully in [21]. Blind decryption is for authentication in either direction, so there is no
+conceptually very similar to Chaum’s blinded signa- need to establish a security association. (Certain opera-
+tures [6]. The idea for blind decryption is to come up tions, like request to create or delete a custom key,
+with blinding functions (B,U) for “blind” and would require authentication, but the security of
+“unblind” which commute with the (encrypt, decrypt) decryption, even with custom keys, does not require
+functions of the ephemerizer’s key. If the file system authentication of the party requesting the decryption.)
+has E(M), (a quantity M that is encrypted with the
+i In contrast, the more traditional approach to having
+ephemerizer’s public key ID i), the file system does the something like an external key manager decrypt E(M)
+following: would be to establish an SSL connection to the key
+To request that the ephemerizer decrypt the manager, ask it to decrypt E(M), and have it return M.
+encrypted quantity E(M): To contrast that with our protocol:
+i
+(cid:127) The file system creates an ephemeral blinding pair of (cid:127) this would involve at least two private key opera-tions for the key manager (one to establish the SSL The file system generates a secret key S, for each
+i
+channel, and one to do the decryption), expiration time i, and all files with the same expiration
+(cid:127) would not be as secure (since the key manager, with- time will be encrypted with the same S i. (See figure 1).
+out blind decryption, would directly see M which
+There is no loss of security in using the same S for
+i
+would enable it to directly decrypt some files on the
+all files with the expiration time, because at this layer
+backups),
+the file system is trusted to read all files (except those
+(cid:127) and would involve many packets, for establishing the that have expired), and to enforce access control. If the
+TCP connection and the SSL handshake. file system is not trusted by a user, the user can employ
+an additional level of encryption layered over the file
+system, and use the file system encryption only for the
+3.2 Our Time-Based Scheme assured delete property.
+The basic idea is that files, when created, will have
+Ephemerizer P advertises public keys P, P , ... P
+i i+1 i+10000
+an expiration date. One or more ephemerizers will be
+Ephemerizer Q advertises public keys Q, Q , ... Q
+i i+1 i+10000
+used, which advertise public keys with expiration
+dates. Data with a particular expiration date will be
+encrypted with the ephemerizer public key with that
+File system’s nonvolatile storage
+expiration date.
+Approach 1: Interaction per file
+Encrypted File
+The straightforward approach would be to have each {Si}Pi, {Si}Qi, exp date i
+file encrypted with its own key K, and to store K, {Si+1}Pi+1, {Si+1}Qi+1, exp date i+1 exp date = i+3
+encrypted with the corresponding ephemerizer’s key,
+{Si+2}Pi+2, {Si+2}Qi+2, exp date i+2
+{Si+3}Pi+3, {Si+3}Qi+3, exp date i+3
+in the metadata of the file. However, this would require {Si+4}Pi+4, {Si+4}Qi+4, exp date i+4 encrypted with
+the file system to interact with the key manager when- Si+3
+ever each file was opened. It would also require a lot of
+storage in each file’s metadata, since although K would
+be a secret key, of perhaps 128 bits, once K is
+The encrypted S-Table, further
+encrypted with a public key, it will be much larger (say encrypted with G
+4000 bits if it is an RSA key). And to be decryptable by
+k out of n ephemerizers, would require n times as much
+storage. Figure 1.The encrypted S-Table, using 1 out of 2
+scheme, with ephemerizers P and Q
+This is the approach that would be taken if this sys-
+tem were used for ephemerizing messages end-to-end, There is a one-to-one correspondence between file
+say if Alice creates a file that will expire at some point, system secret master keys and ephemeral public keys
+that Bob is authorized to read. However, for a file sys- kept by the ephemerizers. In other words, if there is an
+tem, we can do much better than this, with the follow- expiration time of November 8, 2010, then each
+ing optimizations. ephemerizer used by the file system will have a public
+key that expires on November 8, 2010, and the file sys-
+Optimization 1: Single interaction per expiration
+tem will have a secret key S that expires on November
+date upon boot
+8, 2010.
+With this optimization, as we will see, instead of
+The metadata for a file will contain an indication of
+having the file system interact with the ephemerizer(s)
+which S the file has been encrypted with. For instance,
+every time a file is opened, the file system will need to
+the metadata might contain the expiration time of the
+interact with the ephemerizers, upon reboot, to build a
+file.
+table of (symmetric) master keys, one for each possible
+expiration date, which the file system will keep in vola- The file system contains, in volatile storage, a table
+tile storage. Once the reboot process completes, the file we will call the “S-table”, which contains the
+system can act autonomously from the ephemerizers, encrypted S’s. If the S’s are time-based, with granular-
+and there is no further overhead from the ephemeriza- ity of a day, and 30 years’ worth, there will be 10,000
+tion. S’s.
+The file system might lose the S-table after a crash,
+or certainly after a disaster such as the building burningdown. So the S-table must be backed up, but in a way The file system still keeps 10,000 S’s (assuming
+that will not interfere with assured delete. there are files that will not expire for 30 years, and a
+granularity of one per day). The S-table looks the same
+This is accomplished by doing the backup of the S-
+as it did for Optimization 1, i.e., that each S is
+table as follows. The file system encrypts each S in the i
+S-table with the corresponding public key of the encrypted with the corresponding public keys of the
+ephemerizer(s), encrypts once more with G, and writes ephemerizers.
+the result onto nonvolatile storage. With optimization 1, each of the 10,000 S’s will need
+In a 1 out of 3 scheme, for example, with ephemeriz- to be independently decrypted, with the help of the
+ers P, Q, and R, with public keys for that date repre- ephemerizer(s) each time the system reboots. With
+sented as P, Q, and R, respectively, the file system’s optimization 2, only the S that will expire first need be
+i i i
+decrypted.
+nonvolatile (and backed up storage) will contain
+10,000 entries, one for each expiration date, that each Note that if the file system does not crash for some
+look like: time, it must discard S’s from volatile storage when the
+(cid:127) {S}P, {S}Q, {S}R expiration date occurs.
+i i i i i i
+The encrypted S’s will be further encrypted with G, 3.2.1 Changing a file’s expiration date
+the overall file system secret.
+What if the file system wishes to change a file’s
+When the file system is rebooted, a system adminis- expiration time? It is relatively easy to extend it. The
+trator obtains G. Then G is given to the file system. The simplest way would be to re-encrypt the file with an S
+file system retrieves the doubly encrypted S-table from with a later expiration time.
+stable storage, and decrypts it with G.
+If the file is very long, however, and if expiration
+Now the file system has (in volatile storage) the time extension is a common operation, then this can be
+encrypted S-table, which is now encrypted with accomplished more efficiently by having each file be
+decryption keys known to the ephemerizers. encrypted with its own secret key K, and have K
+encrypted with the appropriate S be associated with
+The file system could, at this point, decrypt all the i
+S’s, and keep the entire unencrypted S-table in volatile the file, for instance, by including it in the metadata for
+storage. Or it could decrypt each S the first time a file the file.
+with that expiration time is accessed. This would To extend the life of a file, K need only be re-
+require, eventually, 10,000 interactions with the encrypted using a later S, so the encrypted file data
+ephemerizer in order to decrypt all the S’s after a crash. need not be modified.
+Preferably, the S-table would be kept in a tamper-
+resistant cryptographic accelerator coprocessor. Such Encrypted File
+devices are available that operate at disk speeds, so that exp date = i+3 decrypt K, re-encrypt with
+later S, and modify exp
+the extra level of encryption will not impact perfor-
+date. Encrypted data is
+mance, and the tamper-resistance will keep the S-table {K}Si+3
+not modified.
+safe. The coprocessor might retain the S-table across
+file system crashes, but should erase its state if it is encrypted with
+K
+tampered with, or moved. If the coprocessor dies, or
+has destroyed its state, it is easy to recover the S-table
+from nonvolatile storage, and with the help of the
+ephemerizers.
+Optimization 2: Single interaction upon boot
+We can further optimize the performance by making
+Figure 2.Delaying a file’s expiration: encrypting
+each S be a one-way cryptographic hash of S . An
+i i-1 data with file key K, encrypting K with S
+i
+alternative to one-way hashes that would enable the
+file system to recover all subsequent S’s from the first-
+to-expire S is to encrypt S with S. It is not possible, with our time-based scheme, to
+j+1 j
+preserve the assured deletion guarantees if the file’s
+With this optimization, when the file system is
+expiration time is made earlier than its original expira-
+rebooted after a crash, it only needs to interact with the
+tion time, because the ephemerizer cannot delete a key
+ephemerizer(s) once, to decrypt the earliest-to-expire
+prematurely, since others might be depending on that
+S, and then locally derive all the remaining S’s.key. So even if the file, and its metadata, is deleted One very convenient aspect of the time-based
+from the file system, it would still be recoverable from scheme is that no action need be taken by the file sys-
+backup store, as long as the associated S was still tem when a file expires. If the rule is that, say, results
+recoverable, which it will be, as long as the associated of some medical test be maintained for a month, and
+ephemerizer public keys are still available, and a copy then destroyed after that, the file will have its expira-
+of the file encrypted with the later S is still available on tion time chosen at creation time, and then when it
+some copy of the backup. expires, the file will become unreadable, with no fur-
+ther effort by the file system.
+3.2.2 Reclaiming space
+What happens if the file system has an incorrect
+Garbage collection to reclaim space is easy. In the
+time? If the file system thinks the time is far in the past,
+background, a garbage collector can look for files that
+say a year old, the file system may, during the time its
+have expired, as indicated by the expiration date in the
+clock is set incorrectly, create encrypted files that will
+metadata, and free the space.
+prematurely expire, possibly even become immediately
+unrecoverable once the file system loses volatile stor-
+3.2.3 Adding an ephemerizer
+age. However, this error is likely to be caught as soon
+Suppose one or more of the ephemerizers a file sys-
+as the file system boots, since the ephemerizers will not
+tem was using was known to permanently fail, for
+be advertising ephemeral keys with past expiration
+instance, by losing all its ephemeral keys. As long as n-
+times, and the file system will not be able to decrypt
+k+1 of the ephemerizers don’t fail simultaneously, or as
+any of the S’s that are encrypted with keys that the
+long as the file system has retrieved the S’s (the master
+ephemerizers have discarded. This would make it
+class secrets), it is always possible for the file system to
+immediately apparent to the rebooting file system that
+add ephemerizers.
+its clock is very different from the ephemerizer’s clock.
+It accomplishes this by re-encrypting the table of
+Setting the time to be too old at the file system will
+master class keys, breaking each S into the desired
+i not cause files that have expired to become readable.
+number of shares, and encrypting each share with a
+If the file system thinks the time is far in the future,
+corresponding ephemerizer key for that class, encrypt-
+then if the user interface specifies expiration times as
+ing the result with G, and storing on backup media.
+offsets from “current” (as in “two weeks from
+3.2.4 Security and performance properties of the present”) it will create files that will expire later than
+time-based scheme wanted, and it will think that files that should be acces-
+sible, because they have not expired, are not recover-
+Upon reboot of the file system, there is a tiny amount
+able. The file system will not attempt to decrypt S’s
+of overhead to interact with ephemerizers and decrypt
+from times in the past.
+the S-table. Once the S-table is decrypted, it is accessi-
+ble locally to the file system, and there is no further It would be easy to have the file system specify its
+performance overhead due to the ephemerization, notion of the date in the message to the ephemerizer,
+above what would be needed for any encrypted file and/or have the ephemerizer specify the date in the
+system. reply. This would be a hint that someone has the time
+wrong so an alert could be raised.
+The interaction with a ephemerizer divulges no
+information to the ephemerizer, so there is no need for In practice, setting correct time (approximately) is
+the file system to authenticate the ephemerizer. Even if not that difficult.
+the ephemerizer colludes with the storage service, and
+What happens if the ephemerizers have the time
+therefore obtains all information that the file system
+wrong? Again, time need only be approximate (say
+stores in non-volatile storage, together with the
+within a day). If an ephemerizer thinks the time is in
+ephemerizer keys, it will be impossible to recover the
+the future, it may prematurely discard keys that should
+data without also knowing G, which requires stealing a
+not have expired. If an ephemerizer thinks the current
+quorum of system administrator secrets.
+time is in the past, then it may not discard keys on time.
+There is also no reason for the ephemerizer to With a quorum scheme of k out of n, it would require
+authenticate the file system. In fact, the interaction more than k of the ephemerizers to have clocks set
+could be done anonymously [10]. There could be a set backwards in order for an expired file to be recover-
+of ephemerizers available on the Internet, and any file able, and n-k+1 of them to have clocks set forwards in
+system could choose to use any of them, encrypt with order for an unexpired file to be unreadable.
+their public keys, and then request decryption blindly
+and anonymously when needed.Note that booting a ephemerizer with an old time In this scheme, each file is encrypted with its own
+will not cause it to remember keys that were discarded secret key F. The file system maintains a file, which we
+while it was operating before with a correct clock. will call the F-table, of keys for every file in the file
+system. So, for instance, if the file system has a million
+What happens if various keys are compromised or
+files, there will be a million entries in the F-table.
+lost? If G is stolen, along with the encrypted data, then
+the thief can read all the data in the file system, just like In this scheme, the ephemerizers maintain (at least)
+any system administrator armed with backup data and two keys for this file system. If the ephemerizer is act-
+G. However, like the system administrator, the thief ing for multiple file systems, it will have a different
+will not be able to read data that has been assuredly pair of keys for each file system. In this way it is up to
+deleted. the file system to command the ephemerizer to gener-
+ate new keys, and when to discard old keys. For sim-
+If an ephemerizer’s long term key is lost (but not sto-
+plicity, let’s assume just two keys. We will call the pair
+len), then it can not certify any new keys, but the cur-
+of keys the “current” key and the “previous” key.
+rent ephemeral keys (if they are not lost) will still be
+operational. However, the ephemerizer can get a new The file system keeps the F-table in volatile storage.
+long-term key certified through the PKI and continue However, every time the F-table is modified (due to
+operating. creating a new file or securely deleting an existing
+file), the file system chooses a random secret K,
+If an ephemerizer’s long term key is stolen, then the
+encrypts the F-table with K, and stores K encrypted
+thief might be able to trick a file system into encrypting
+with the ephemerizer’s current key. If there are, for
+with bogus keys (which is a denial of service attack but
+instance, three ephemerizers, and we wish to use a 1
+will not disclose data), or with keys that the thief
+out of 3 scheme, then K would be stored 3 times, each
+knows the private keys for, and which the thief will not
+time encrypted with a different ephemerizer’s “cur-
+discard. This is exactly the case of a dishonest
+rent” key. The encrypted K is further encrypted with G,
+ephemerizer. It might cause data that should be deleted
+the overall file system secret.
+to be recoverable, but it requires a quorum of colluding
+dishonest ephemerizers. It is possible to avoid modifying the F-table when
+files are created by having the file system precompute
+If an ephemerizer loses its ephemeral keys, then as
+a batch of F’s in advance. In this way, many files can
+long as a quorum of ephemerizers still remain opera-
+be created without changing the F-table. It is only
+tional, the data that has not expired is still readable.
+when there are no unused F’s, or when an F is deleted,
+Robustness can be raised at any time by adding new
+when the F-table must be modified. Outside of the
+ephemerizers.
+encrypted F-table, the file system will need to keep
+If an ephemerizer’s ephemeral keys are stolen, then
+track of which F’s are available for new files.
+this again is the same as the case of a dishonest
+When the encrypted F-table (together with the
+ephemerizer. The thief will only be able to read data if
+encrypted K) is migrated to replicated non-volatile
+it colludes with a quorum of other dishonest ephemer-
+storage, then the ephemerizers can be informed that
+izers (assuming a quorum is more than 1), obtains G,
+they can delete the previous public key, and they will
+and obtains the encrypted data.
+generate a new public key and give it to the file system.
+We do require that the public key cryptography used
+The reason it is important to have key rollover and
+for the blind decryption be robust against a chosen
+key deletion under the control of the file system, rather
+ciphertext attack. It is believed that RSA and elliptic
+than having it done on a predetermined schedule, with
+curves (for both of which we present blind decryption
+keys shared by many organizations, is that one organi-
+schemes in Appendix A) are secure against chosen
+zation’s file system might be down for an extended
+ciphertext.
+period of time, perhaps due to a natural disaster. If the
+3.3 Our Individual File On-Demand Delete ephemerizers delete keys on a schedule, in particular,
+Scheme quickly enough to ensure that a deleted file will
+become unreadable after a relatively short window,
+then if a file system were down for longer than that
+In this scheme, like in the time-based scheme, there
+window, all of its data would become forever unrecov-
+will only need to be a single interaction with the
+erable.
+ephemerizer(s) after the file system boots. Once the
+ephemerizer(s), upon reboot, decrypts a single quantity On the other hand, if the ephemerizers rolled over
+for the file system, the file system operates autono- keys on their own schedule (say once per week), then
+mously, until it crashes. the ephemerizer would not need to use custom keys for2 keys to support a file system that might have thou-
+Ephemerizer P, per file system; public keys P , P
+current previous sands of users and millions of files. It can support both
+Ephemerizer Q, per file system; public keys Q , Q
+current previous pre-determined expiration times (with the file system
+needing to find and delete expired F’s from the F-
+File system’s volatile storage
+table), and on-demand delete of individual files.
+F1, F2, F3, F4, ...F100000 T thh ae
+t
+iF s- sta ub bl je e:
+c
+a
+t
+tk oe oy
+n
+f -o dr
+e
+e ma ac nh
+d
+f i dle
+elete
+K: key with which the current backup of the F-table will be encrypted However, compared with the time-based expiration
+scheme we present in section 3.2, there is a potential
+File system’s local nonvolatile storage serious reliability issue. With the on-demand scheme,
+there is a window from the time a file is securely
+Backup of F-Table deleted, until the key with which the most recent F-
+Encrypted File
+table containing that file’s key is discarded by the
+enc. with G
+ephemerizer. Let’s say that window is 3 days. So the
+index into F-table {K}P current, {K}Q current file is not really securely deleted until that window has
+passed. Which means we might want that window to be
+enc. with K
+encrypted with
+small.
+F3
+F1, F2, F3, F4, ...F100000
+However, suppose the file system were silently com-
+promised, and it took weeks to notice it. Somehow the
+corrupted file system was corrupting the F-table, and
+keys for important files that were not recently
+Figure 3.The on-demand scheme
+accessed, were corrupted. Once the ephemeral key
+with which the last good copy of the F-table is dis-
+each file system; instead, as with time-based keys, all
+carded, there is no way to recover those files.
+file systems could use the same “current” and “previ-
+ous” keys, and again, could communicate with the In contrast, the time-based scheme is much safer. As
+ephemerizer anonymously. If the scalability of key- long as the file system is working properly when a file
+sharing across customers were considered an important is created, and the file (and its encrypted key) are
+enough advantage of the on-demand scheme, then the safely backed up, a subsequent corruption of the file
+disadvantage above (the danger of losing all data if a system will not harm that file. It is always possible to
+file system were down for longer than the ephemeriz- restore the state of the world as of some time past, and
+ers’ key rollover window) could be lessened by allow- all files that existed then, and have not yet expired, will
+ing some sort of emergency procedure in very rare be recoverable. (If the files have expired, regardless of
+cases, for retaining keys longer than the normal roll- what time the file system thinks it is, they cannot be
+over period. Customers wanting on-demand with recovered because the ephemerizers would have
+shared keys would need to understand that key rollover deleted their expired keys).
+might be extended sometimes due to emergencies of Some products that do key management for storage,
+other customers. which employ a key manager station (KMS) that keeps
+Note that although it is not strictly necessary, it is a a database of keys, are similar to our on-demand
+performance advantage to store K (the secret key with scheme, and have the same disadvantage. In such prod-
+which the F-table on nonvolatile storage is encrypted) ucts, there are often multiple KMS’s which synchro-
+in volatile storage. That way it is not necessary to nize with each other. If the database of keys is backed
+decrypt the entire F-table and store it in volatile mem- up outside the KMS’s on backup media so that the
+ory. Instead, when needed, individual F’s can be KMS database can be recovered if all KMS’s fail, then
+decrypted using K. A new F can be created by encrypt- there is no assured delete. If the only copies of the key
+ing the newly created F with K, and storing it on non- database are in the KMS’s, then a single KMS that tells
+volatile storage. the others to delete keys can cause unintended key
+deletion, which can result in data becoming unrecover-
+However, if an F is deleted from the F-table, a new
+able, with the problem possibly not being detected for a
+secret K’ must be generated, and the entire F-table
+long time.
+must be stored, encrypted with K’, on local nonvolatile
+storage, and then the previous K must be forgotten. 3.4 Custom class of file
+3.3.1 A Downside of the On-Demand scheme
+It might be desirable to have some individual secrets
+On the surface, the on-demand scheme is attractive.
+maintained at the ephemerizer. This might be useful,
+It is very scalable. The ephemerizer only needs to storefor instance, to protect a set of data that might be cap- ping with an ephemerizer public key).
+tured by an enemy. Rather than destroying the data, by (cid:127) Files that are capable of being on-demand deleted
+having the ephemerizer destroy the key, if the
+are encrypted with keys F, stored in an F-table, and
+ephemerizer keeps a custom public key for that set of
+the F-table is backed up by encrypting it with a ran-
+data, the volatile storage at the file system can be
+domly chosen key K, then encrypting K with the
+destroyed, and the ephemerizer can be informed that it
+“current” public key of the ephemerizer(s), and
+should lock the key, so that only some extraordinary
+encrypting the encrypted K with G.
+mechanism could be used to unlock the key; for
+It is also possible to have a file fit into more than one
+instance, by having a high-ranking person personally
+category by encrypting the file key multiple times,
+visit the ephemerizer site.
+once for each of the categories. For instance, if a file
+Such a key must not be shared across clients,
+has an expiration time, but also should be on-demand
+because it must be lockable, or deletable, on demand.
+deletable, the file should be encrypted with K, and then
+As with the time-based scheme, the file system invents
+K should be encrypted with both an F from the F-table
+a secret S when the class is first created. Then it
+and the appropriate class key S. The metadata would
+requests each ephemerizer it wishes to use to create a
+indicate which F and which S would need to be used to
+corresponding public key for that class.
+decrypt K. If any of the keys upon which the file
+Why does this scheme not suffer from the problem depends become unavailable (i.e., if it expires, or if it is
+described in section 3.3.1? The reason is that in this assuredly deleted before the expiration date), the file
+scheme, if the file system is not compromised when the becomes unrecoverable.
+class key for a class of files is created, and that class
+Similarly straightforward to implement is the OR of
+key is copied, encrypted with the ephemerizers’ keys,
+one of more categories. For instance, if a file should be
+onto stable replicated storage, then as long as a quorum
+recoverable if either of two classes is still recoverable,
+of ephemerizers still retain their key associated with
+then the file’s key K is stored twice in the metadata;
+that file class, the secret file class key, and all data
+once encrypted with the first class’s S key, and once
+encrypted with that key, can be recovered from back-
+encrypted with the second class’s S key.
+ups, regardless of any subsequent compromise of the
+file system. Deletion of a class key at each ephemerizer 4. Layering with an end-to-end encryption
+requires a very conscious and auditable action. As long scheme
+as reasonable human mechanisms are in place to
+ensure that class keys are only deleted when, for Our scheme is transparent to storage (which is
+instance, a quorum of system administrators agree, unaware of the encryption). Our scheme does protect
+classes will not accidentally become unreadable. data on backup media, since all the file system data
+will be encrypted. It is also transparent to clients, other
+With the on-demand scheme, the file system is
+than the ability for clients to specify, when creating a
+trusted to maintain and modify the F-table, and if it
+file, that the file should be assuredly deletable. One
+writes out a corrupted F-table, this may be undetectable
+reasonable interface is to allow a directory (and
+until it is too late (once the ephemerizers delete the key
+descendents) to be associated with an ephemeral cus-
+with which old backups of the F-table have been
+tom key, and/or to allow a particular file to be created
+encrypted, there is no going back).
+with an expiration date, and/or to specify that a particu-
+3.5 Combined File Types lar file should be on-demand deletable.
+Our scheme alone does not provide end-to-end
+It is straightforward for the file system to maintain encryption. In other words, if Alice creates a file that
+files with the different forms of assured delete, together she wants only Bob and Carol to read, unless there is a
+with files that cannot be assuredly deleted. layer of encryption above what our system provides,
+the file system will be able to read the file, and Alice
+(cid:127) Files of assured delete classes (time-based or cus-
+will have to trust the file system to enforce the ACL
+tom) each are encrypted with a class master key, and
+(that specifies only Bob and Carol should be able to
+the class master key is encrypted on backup media
+read the file).
+with a corresponding ephemerizer public key, and
+then with G. If instead Alice would like to do end-to-end encryp-
+tion, she would do it exactly as she would in a normal
+(cid:127) Files without assured delete are also encrypted with
+file system, by encrypting the file with her own chosen
+a class master key S, but this S is only stored
+key J, and storing J encrypted with each authorized
+encrypted on backup with G (not with an extra wrap-
+recipient’s public key along with the encrypted file, ina way transparent to our layer of the file system. Our The KM could be a cryptographic accelerator card
+layer would see everything Alice stores (including the attached to the file system, or it could be a free-stand-
+encrypted J) as data. If Alice wants to store a file for ing machine in a data center, and it could act on behalf
+Bob and Carol that will expire, Alice stores the file as of multiple file systems. It could also contain a hard-
+she would ordinarily, for Bob and Carol, and specifies ware random number generator, with which it might be
+to our level the file system, the expiration date. Our able to generate better file encryption keys than the file
+level of the file system chooses its own file key K, system built on a general purpose machine.
+encrypts everything Alice would store with K, and
+7. Blind Decryption Functions
+stores K encrypted with the corresponding class key, as
+what our level of the file system interprets as metadata
+In this section we present three blind decryption
+for the file.
+functions. The first two use public keys for encryption,
+When Bob asks to retrieve the file, the file system so only decryption needs to be blinded. The third one
+enforces the ACL, notes Bob is authorized, decrypts K uses secret functions for both encryption and decryp-
+with the class key, decrypts the “data”, and sends it all tion, so encryption (as well as decryption) requires
+to Bob. Bob interprets what he receives as metadata (J blinded interaction with the ephemerizer.
+encrypted with his public key), followed by the file
+7.1 RSA Keys
+encrypted with J.
+The data will be doubly encrypted, but secret key
+This form is almost identical to blind signatures with
+encryption can be done without loss of performance
+an RSA key [6]. The ephemerizer’s public RSA key is
+today, especially with hardware accelerators.
+(e,n). We assume all arithmetic is done mod n, so for
+5. Building an Ephemerizer readability, we leave out “mod n”.
+The file system encrypts M using the ephemerizer’s
+Ideally an ephemerizer would contain a tamper-resis-
+tant component that generates the ephemeral keys and public key by computing Me.
+does decryptions, and never divulges the private keys. The file system, FS, gets the ephemerizer, KM, to
+The remainder of the ephemerizer functions, e.g., blindly decrypt Me, (i.e., retrieve M) by doing the fol-
+responding to decryption commands, or commands for
+lowing:
+creating custom keys, can be implemented on a general
+1. FS chooses random R
+purpose machine. For time-based keys, once a day the
+ephemerizer can overwrite (in the tamper-resistant por- 2. FS computes Re.
+tion) yesterday’s key with a new key. 3. FS computes Me * Re and sends that to KM
+4. KM raises Me * R to d to obtain Med * Red = M *
+6. Protecting the master class keys
+R.
+If the file system is built on a general purpose com- 5. FS divides by R to obtain M.
+puter, there is the danger that it could become compro- The file system never writes R onto nonvolatile stor-
+mised, and divulge the master class secrets. Therefore, age.
+it might be desirable to structure the file system so that
+the keys are kept in a tamper-resistant coprocessor. To 7.2 Blind encryption/decryption with a Diffie-
+recover from a disaster, G and the backup of the keys is Hellman public key
+input into the secure coprocessor, which recovers the
+class keys (with the help of ephemerizers). Let’s call This form of blind decryption does not have a similar
+this trusted portion the KM (key manager). blind signature scheme, and it works with any Diffie-
+Hellman group, including ECC. Assume that the
+The KM needs no permanent state, so if the KM
+fails, a new one can be substituted, and its database of ephemerizer has a public Diffie-Hellman key, gx,
+keys can be recovered from G, backup tapes, and inter- where the group G, including g and the order of G, is
+action with ephemerizers. known. The private key is x.
+The file system communicates securely with the To encrypt message M with the ephemerizer’s public
+KM, either because of physical proximity, or through key, the file system performs the following:
+an established security association, and requests
+1. FS chooses random y, and computes gy and gxy.
+decryption, either of the file key when the file is
+This is done by raising the publicly known base g
+opened, or even the data (assuming a high bandwidth
+path between the KM and the file system.)to y, and the ephemerizer’s public Diffie-Hellman To get the ephemerizer to blindly encrypt M:
+key gx to y. 1. Alice chooses random z, and its exponentiative
+2. FS uses gxy as a secret key to encrypt M, obtaining inverse z-1.
+{M}gxy. FS saves {M}gxy and gy, and discards y 2. She computes Mz, sends it to the ephemerizer,
+and gxy. with the request to “encrypt”.
+3. The ephemerizer applies x and returns Mxz
+To retrieve M, the FS asks the ephemerizer to blindly 4. Alice applies z-1 to obtain Mx.
+decrypt {M}gxy by doing the following:
+1. FS knows {M}gxy and gy. To get the ephemerizer to blindly decrypt Mx:
+2. FS chooses random z, and compute’s z’s exponen- 1. Alice chooses random y, and its exponentiative
+tiative inverse z-1. (What we refer to as exponenti- inverse y-1.
+ative inverse is more conventionally known as z’s 2. She computes Mxy, sends it to the ephemerizer,
+multiplicative inverse modulo the order of G.)
+with the request to “decrypt”.
+3. FS computes (gy)z , sends gyz to ephemerizer. 3. The ephemerizer applies x-1 and returns My
+4. Ephemerizer applies its private key (x) and sends
+4. Alice applies y-1 to obtain M.
+to FS: gxyz
+5. FS raises gxyz to z-1 to obtain gxy, with which it
+8. Conclusions
+can decrypt {M}gxy.
+We presented three schemes for supporting assured
+7.3 Blind encryption/decryption with a secret
+delete; time-based, custom classes, and individual file
+encryption function
+on-demand. These schemes can be combined. In the
+same file system, some files can be stored with expira-
+tion times, others in a class with a custom keys, others
+This form of blind decryption does not have a similar that can be deleted individually, on-demand, in an
+blind signature scheme (and couldn’t, because there is assured manner, and still others that have no assured
+no public key with which to validate a signature). We deletion properties, so that even if deleted, they would
+use exponentiation mod p, a blinded version of Hell- be recoverable as long as they still exist on backup
+man-Pohlig [15]. Instead of a public key, the ephemer- media.
+izer has two secret numbers, x and x-1, which are The schemes can also be nested, e.g., by having a
+exponentiative inverses mod p. “Encrypt” will be done directory encrypted with a custom key, and individual
+by exponentiating with x, “decrypt” with x-1. Blind files in that directory also having expiration dates.
+encryption in this scheme, as with blind decryption, For data with the securely deletable property, the file
+requires the involvement of the ephemerizer. system employs the services of remote ephemerizers,
+Blind encryption requires authentication of the whose sole purpose is to create, certify, advertise, and
+ephemerizer. Unlike the other schemes, where the pub- manage ephemeral keys, and to perform decryptions
+lic encryption key is certified by the ephemerizer’s with ephemeral keys upon request. A file is recover-
+long-term key (so there is implicit authentication of the able if and only if someone has the encrypted file, the
+ephemerizer), in this scheme there is no certified public overall file system secret G, and a quorum of ephemer-
+key, so authentication must be done explicitly during izers still retain the key associated with that class of
+the encryption request. The risks of asking for encryp- file.
+tion from the wrong party are: We achieve robustness without any copying of
+(cid:127) denial of service; there is no way of knowing ephemeral keys by using multiple independent
+whether the encryption worked ephemerizers with independent keys. This makes an
+ephemerizer sufficiently inexpensive, and easy to man-
+(cid:127) using something that does not throw away keys
+age, that organizations might choose to run all or some
+Authentication of the ephemerizer can be done of the ephemerizers they depend on themselves.
+through any number of conventional ways, for
+The communication with the ephemerizer is done
+instance, using SSL.
+through “blind decryption”, and the ephemerizer gains
+no information from this exchange. Therefore theephemerizer can be a relatively untrusted third party, as LNCS 1563. Springer-Verlag, 1999. pp. 500--509.
+can the organization that manages the non-volatile stor- 8. Damiano, E., De Capitani di Vimercati, S., Foresti, S.,
+age. Even if the ephemerizers and the storage organiza- Jajodia, S., Paraboschi S., Samarati, P., “Key Manage-
+tion collude, they will not be able to read the data. The ment for Multi-user Encrypted Databases”, Stora-
+cryptographic algorithm used for the public keys of the geSS’05, 2005.
+ephemerizer needs to be resilient to chosen ciphertext 9. Diffie, W., and Hellman, M., “New directions in cryp-
+tography”, IEEE Transcations on Information Theory”,
+attack.
+1976.
+In all our variants, the only time it is necessary for a
+10. Dingledine, R., Mathewson, N., Syverson, P. “Tor: The
+file system to communicate with an ephemerizer is Second-Generation Onion Router”. Usenix Security
+after the file system reboots. The ephemerizers will Symposium, 2004.
+need to do one decryption to unlock all the time-based- 11. Disappearing, Inc., web site: http://www.specimen-
+expiration files on the file system, one decryption to box.com/di/ab/hwdi.html
+unlock all the on-demand-deletable files on the file 12. Fu, K., “Group sharing and random access in crypto-
+system, and one decryption for each file class with a graphic storage file systems.” Master’s thesis, MIT,
+custom key. 1999.
+13. Goh, E., Shacham, H., Modadugu, N., and Boneh, D.,
+Thus there is minimal performance overhead of our
+“SiRiUS: Security Remote Untrusted Storage”, NDSS,
+scheme beyond simple encrypted storage. There are
+2003.
+cryptographic accelerators that can be used in the file
+14. Gutman, P, “Secure Deletion of Data from Magnetic and
+system that will work at disk speeds. And other than an
+Solid-State Memory”, Usenix Security Symposium,
+initial network-based interaction with a ephemerizer to 1996.
+recover the set of file system master keys for file sys- 15. Hellman, M, and Pohlig, S., U.S. Patent 4,424,414,
+tem classes, there is no further interaction with the 1984.
+ephemerizers after the file system boots. 16. Kallahala, M., Swaminathan, R., Fu, K., “Plutus: Scal-
+able Secure File Sharing on Untrusted Storage”,
+This system assumes the file system is trusted to read
+FAST03, Usenix Conference on File and Storage Tech-
+the data. If this is not a desired property, then an addi-
+nologies, 2003.
+tional level of encryption can be done at the user level,
+17. Kher, V., Kim, Y., “Securing Distributed Storage: Chal-
+while the assured delete is still done at the file system
+lenges, Techniques, and Systems”, StorageSS’05, 2005.
+level.
+18. Naor, M., and Yung, M., “Public-Key Cryptosystems
+Even if end-to-end encryption is layered over the file Provably Secure Against Chosen Ciphertext Attacks”,
+system, doing ephemerization at the file system level, 22nd Annual ACM Symposium on Theory of Comput-
+as we do in this paper, achieves great performance ing, 1990.
+advantages. 19. Network Computing Reports, “Tape Encryption
+Devices: Host-based vs. Appliance”, Nov 24, 2005.
+20. Peterson, Z., Burns, R., Herring, J., Stubblefield, A.,
+9. Bibliography Rubin, A., “Secure Deletion for a Versioning File Sys-
+tem”, FAST ‘05: 4th Usenix Conference on File and
+1. Anderson, R., “Two remarks on public-key cryptology”, Storage Technology, 2005.
+Invited lecture, Fourth ACM Conference on Computer 21. Perlman, R., “The Ephemerizer: Making Data Disap-
+and Communications Security, April, 1997. pear”, Journal of Information System Security, 2005.
+2. Ateniese, M., Fu, K., “Improved Proxy re-encryption 22. Perlman, R., “Secure Deletion of Data”, 3rd Interna-
+schemes with applications to secure distributed stor- tional IEEE Security in Storage Workshop, 1995.
+age”, NDSS 2005.
+23. Rivest, R., Shamir, A., and Adleman, L., “A method for
+3. Blaze, M., “A cryptographic file system for Unix”, obtaining digital signatures and public-key cryptosys-
+CCS, 1993. tems”, Communications of the ACM, 1978.
+4. Boneh, D., and Lipton, R., “A Revocable Backup Sys- 24. Russinovich, M., Solomon, D., “Microsoft Windows
+tem”, Usenix Security Symposium, 1996. Internals 4th Edition”, 2005.
+5. Camp, L. J. (1997, February). Web security & privacy: 25. A. Shamir, ``How to share a secret'', CACM, Vol. 22,
+An American perspective. ACM SIGCAS CEPC ’97 Nov. 1979.
+(Computer Ethics: Philosophical Inquiry).
+6. Chaum, D., “Blind signatures for Untraceable pay-
+ments”, Advances in Cryptology - proceedings of
+Crypto 82, 1983.
+7. G. Di Crescenzo, N. Ferguson, R. Impagliazzo, and M.
+Jakobsson, "How To Forget a Secret.", STACS '99.

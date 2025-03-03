@@ -1,0 +1,1209 @@
+Joe-E: A Security-Oriented Subset of Java
+AdrianMettler DavidWagner TylerClose
+UniversityofCalifornia,Berkeley waterken.org
+{amettler,daw}@cs.berkeley.edu tyler.close@gmail.com
+Abstract teristics help to make code more amenable to code review
+and security audits, an important property when we place
+We present Joe-E, a language designed to support the trustincomputersystems’correctoperationandattackre-
+development of secure software systems. Joe-E is a subset silience. In particular, Joe-E supports construction of sys-
+ofJavathatmakesiteasiertoarchitectandimplementpro- tems following a “secure by design” approach, where se-
+grams with strong security properties that can be checked curity is designed in from the start, as well as “design for
+during a security review. It enables programmers to ap- review”, where the code is architected and written specif-
+plytheprincipleofleastprivilegetotheirprograms;imple- ically to make it as easy as possible for code reviewers to
+mentapplication-specificreferencemonitorsthatcannotbe verifythattheapplicationmeetsitssecuritygoals.
+bypassed; introduce and use domain-specific security ab- Joe-E is based upon the Java programming language.
+stractions;safelyexecuteandinteractwithuntrustedcode; We show that a relatively small number of simple restric-
+and build secure, extensible systems. Joe-E demonstrates tionssufficetodefineasubsetofJavathatprovidesthese-
+how it is possible to achieve the strong security properties curity properties of an object-capability language. (In an
+of an object-capability language while retaining the fea- object-capabilitylanguage,allprogramstateiscontainedin
+tures and feel of a mainstream object-oriented language. objects that cannot be read or written without a reference,
+Additionally, we present ways in which Java’s static type whichservesasanunforgeablecapability. Allexternalre-
+safety complements object-capability analysis and permits sourcesarealsorepresentedasobjects.Objectsencapsulate
+additionalsecuritypropertiestobeverifiedstatically,com- theirinternalstate,providingreferenceholdersaccessonly
+paredwithpreviousobject-capabilitylanguageswhichrely throughprescribedinterfaces.)
+on runtime checks. In this paper, we describe the design A major contribution of our work is that we bring the
+and implementation of Joe-E and its advantages for secu- security benefits of object-capability systems to a popular
+rity and auditability over standard Java. We demonstrate language.Additionally,weshowhowJava’sstatictypesys-
+howJoe-Ecanbeusedtodevelopsystemswithnovelsecu- temcanbeusedtosimplifytheassuranceofsecurityprop-
+rity properties that would be difficult or impossible to en- erties statically, as opposed to via runtime checks used by
+sure otherwise, including a web application platform that thedynamically-typedobject-capabilitylanguagesfoundin
+provides transparent, transactional object persistence and priorwork.
+cansafelyhostmultiplemutually-distrustfulapplicationsin Memory-safe languages like Java make it much easier
+asingleJVM. to design robust systems and reason about their security
+properties than non-memory-safe languages, but in Java it
+isstilldifficulttoreasonabouthigher-levelsecurityproper-
+1 Introduction ties,particularlywhencomposingcodewithvaryinglevels
+of trust or when auditing the security of a program. With
+Joe-Eweareabletosupportricherwaysofcombiningcode
+This paper describes the design and implementation of
+entrusted to varying degrees while reviewably maintaining
+aprogramminglanguage,calledJoe-E,whichsupportsde-
+securityproperties.
+velopmentofsecuresystems. Joe-Eimprovesupontoday’s
+languagesintwoimportantdimensions. First,Joe-Emakes
+software more robust by reducing the number and impact Providingsecureencapsulation. ConsiderFig.1,which
+of inadvertent bugs and security vulnerabilities in benign illustrateshowonemightbuildanappend-onlylogfacility.
+software. Second, Joe-E provides flexible mechanisms to Provided that the rest of the program is written in Joe-E,
+reduce a program’s vulnerability to software components a code reviewer can be confident that log entries can only
+and allow the safe usage of untrusted code. Both charac- beadded,andcannotbemodifiedorremoved. Thisreviewpublic final class Log { programreceivethepowertoappendtothelogbycontrol-
+private final StringBuilder content;
+lingwhoreceivesareferencetothelogobject.Therulesfor
+public Log() { propagation of these capabilities are exactly the rules for
+content = new StringBuilder(); propagation of references in a type-safe language, which
+}
+should already be familiar to the programmer; we expect
+thiswillmakeiteasierforprogrammerstoreasonaboutca-
+public void write(String s) {
+content.append(s); pabilitypropagation.
+} For instance, we might have an application where it is
+}
+criticalthateveryincomingnetworkrequestbelogged. We
+could provide the component that dispatches incoming re-
+Figure1.Anappend-onlyloggingfacility. questsacapabilitytothelog, soitcanlogeveryincoming
+request. By examining the dispatcher component, we can
+verifythateveryincomingrequestisloggedusingonlylo-
+is practical because it requires only inspection of the Log calreasoning.Ifrequired,wecouldalsoverifythatnoother
+class,anddoesnotrequirereviewofanyothercode. Con- logentriesareadded,bycheckingthatnoothercomponent
+sequently, verifying this property requires only local rea- canreceiveareferencetothelog.
+soningabouttheloggingcode. Capabilitiesalsosupportleastprivilege. Codecanonly
+Perhaps surprisingly, Java does not support this kind of writetothelogifithasacapabilitytothelogobject. Code
+local reasoning. Because Java allows the definition of na- thatisnotexplicitlypassedthiscapabilityhasnoaccessto
+tivemethodswhichcanhavearbitrarybehaviorandviolate it,whichmeansthatbydefaulttheoverwhelmingmajority
+Java’s safety properties, all bets are off unless one is sure of code is verifiably incapable of writing to the log. Our
+that the program does not use any such methods. Even if experience is that this encourages a style of programming
+theprogramusesnonativemethods,theappend-onlyprop- where only the code that legitimately needs the power to
+erty of the above code is not guaranteed. Java’s reflection appendtothelogreceivesacapabilitytodoso.
+frameworkincludestheabilitytoignorethevisibilityspec- Analysisofwhohasaccesstoanobjectandtheprinciple
+ifier on a field, which would allow a reference-holder of of least privilege are both subverted when capabilities are
+the Log object to retrieve the StringBuilder contained storedinglobal variablesandthusare potentially readable
+withinasifitsfieldweredeclaredtobepublic. Thiswould byanypartoftheprogram.Onceanobjectisgloballyavail-
+violatetheappend-onlyproperty,asitwouldthenbepossi- able, itisnolongerpossibletolimitthescopeofanalysis:
+bletoperformarbitraryoperationsontheStringBuilder. access to the object is a privilege that cannot be withheld
+While we might intuitively expect that the rest of the pro- fromanycodeintheprogram. Joe-Eavoidstheseproblems
+gram would be unlikely to exploit these weaknesses, we by verifying that the global scope contains no capabilities,
+wouldhavetoreadallofthecodeoftheentireapplication onlyimmutabledata.
+tobesure. The Java standard library also provides a large number
+Joe-E removes these and other encapsulation-breaking of capabilities to all Java code, for example, the ability to
+featuresfromJavainordertosupportbuildingandreason- writetoanyfilethattheJVMhasaccessto. Inthecontext
+ingaboutsecuresystems. Thismakesbuildingsound,self- ofourexample,thiswouldincludethefilewherethelogis
+containedapplicationreferencemonitorspossible. Because ultimately output. For this reason, Joe-E allows access to
+these reference monitors are written as part of the appli- onlyasafesubsetofthestandardJavalibraries.
+cation software itself, this provides a powerful mechanism
+forenforcingsecuritypolicies: theprogrammerhasthefull
+Untrustedcodeandextensibility. Joe-Ealsoallowsap-
+power of the Joe-E programming language for expressing
+plicationstosafelyexecuteandinteractwithuntrustedcode.
+thesesecurityproperties, anddoesnotneedtolearnanew
+This safety is a result of the fact that Joe-E objects spring
+security specification language to specify them. We antic-
+to life with no capabilities other than the ones passed to
+ipate that this will aid developers in implementing custom
+them when they were constructed. They can only acquire
+securityabstractions.
+additionalcapabilitiesthattheyareexplicitlypassed. Asa
+result, Joe-E is well suited to execution of untrusted code,
+Capabilities and least privilege. In the example above, sinceuntrustedcodewritteninJoe-Ecannotharmanyoneif
+onlythepartsoftheprogramthathaveaccesstoaninstance itisnotpassedanydangerouscapabilities. Partiallytrusted
+ofthelogobjectwillbeabletoaddlogentries; therestof codecanbegrantedonlycapabilitiesappropriatetoitsfunc-
+the program will be unable to affect that log instance. In tionandtheleveloftrustplacedinit.
+particular,areferencetoaLogobjectisacapabilitytoap- This aspect of Joe-E provides support for secure exten-
+pendentriestothatlog. Wecancontrolwhichpartsofthe sibility. For instance, consider a graphics viewer programpublic interface Decoder extends Immutable { public final class Currency { }
+/** Returns a bitmap; retval[x][y][c] is the value
+at position (x,y) of color channel c. */ public final class Purse {
+byte[][][] decode(byte[] imagedata); private final Currency currency;
+} private long balance;
+/** Create a new purse with newly minted money,
+Figure 2. An untrusted image decoder might given the Currency capability. */
+public Purse(Currency currency, long balance) {
+implementthisinterface.
+this.currency = currency;
+this.balance = balance;
+}
+that can be extended with plugins for various file formats. /** Create an empty purse with the same currency
+We’dliketobeabletodownloadapluginthatinterpretsnew as an existing purse. */
+public Purse(Purse p) {
+imagefiles,withoutexposingourselvestoattackfromma-
+currency = p.currency; balance = 0;
+liciouscode. Wewanttoensurethattheworstamalicious }
+plugincoulddoisincorrectlydecodeanimage, butforin-
+/** Transfer money into this purse from another. */
+stanceitmustnotbeabletosendnetworkpackets,writeto
+public void takeFrom(Purse src, long amount) {
+thefilesystem,orinterferewithdecodingofotherimages.
+if (currency != src.currency
+In Joe-E, we could enforce this by requiring plugins to || amount < 0 || amount > src.balance
+bewritteninJoe-EandtoimplementtheinterfaceinFig.2. || amount + balance < 0) {
+throw new IllegalArgumentException();
+For instance, a JPEG decoder could implement this inter-
+}
+face,interpretingthedatapassedtoitasaJPEGimageand src.balance -= amount;
+convertingtheresulttoabitmaptobedisplayed. Iftheplu- balance += amount;
+ginisonlyinvokedthroughthisinterface,Joe-Eguarantees }
+thefollowingremarkablesecurityproperty: multipleinvo-
+public long getBalance() {
+cationsofthismethodwillbeindependent,andnostatecan return balance;
+be retained or leaked from invocation to invocation. This }
+ensures both confidentiality (because information about a }
+confidential image cannot leak into other images, even if
+thepluginisbuggy)aswellasintegrity(eveniftheplugin
+contains bugs that can be exploited, say, by a maliciously Figure 3. A secure abstraction that supports
+constructed image, these exploits cannot interfere with the flexibleuseofcurrencies.
+decodingofotherimagesorotherwiseharmtherestofthe
+system, except by decoding the malicious image to an un-
+expectedbitmap).
+usedtoholdandtransfermoneyinaparticularcurrency,but
+The Immutable interface, defined by the Joe-E library,
+doesnotgrantthepowertomintnewmoney.
+is treated specially by the language: the Joe-E verifier
+Note that this API is general enough to support multi-
+checks that every object implementing this interface will
+ple currencies, and can easily be audited for correctness,
+be (deeply) immutable, and raises a compile-time error if
+even in the presence of multiple mutually-distrusting and
+this cannot be automatically verified. Since the Decoder
+potentially malicious clients. In particular, to verify that
+interfaceextendsImmutable,decodingpluginswillneces-
+the currency API cannot be abused, one only need exam-
+sarilybestateless. Also,becauseonlybytearrayscanflow
+inethecodeoftheCurrencyandPurseclasses—nothing
+acrossthisinterface,itiseasytoverify(thankstothestatic
+more. From this code we can deduce, for instance, that it
+typesystem)thatpluginswillneverreceiveacapabilitythat
+isonlypossibletocreatemoneyinacurrencyifonehasa
+allowsthemtointeractwithanyothersystemcomponent.
+referencetothecorrespondingCurrencyobject. Thiskind
+oflocalreasoningismadepossiblebecauseJoe-Eenforces
+Reviewable, rich behavioral properties. Joe-E can be encapsulation boundaries that follow the program’s lexical
+used to enforce rich, application-specific behavioral secu- scopingstructure.
+rity properties. Fig. 3 defines a currency system. If used, Joe-E enables us to concentrate trust in a small, com-
+for instance, in an online game, it would be easy to ver- prehensively reviewable portion of the code, which serves
+ifythattradesbetweenplayerscannotgeneratemoneyfrom as the trusted computing base (TCB) for a specific secu-
+nothing. A Currency object provides the power to mint rity property. Here the Purse only needs to be trusted to
+newmoneyinthecorrespondingcurrency; itisimpossible correctlyenforcethesecuritypropertiesassociatedwiththe
+todosowithoutareferencetothisobject. APursecanbe currency, and not for other purposes. This pattern encour-ages architecting a program so that for each desired secu- While existing Java code may not transform easily to
+rityproperty,wecanidentifyasmallTCBforthatproperty. Joe-E,Javacodecaneasilymakeuseofmoduleswrittenin
+Such a software architecture can, in turn, significantly re- Joe-E. For example, an existing Java application may add
+ducethecostofverifyingsecuritypropertiesoftheapplica- supportforpluginsimplementedinJoe-E,therebylimiting
+tion. thedamagethatpluginauthorscancausetothemainappli-
+cation.Similarly,alargeJavaapplicationmaybeincremen-
+Thispaper. Intherestofthispaper,wedescribethegoals tallymigratedtoJoe-Ebyrewritingitscomponentmodules.
+wehadfortheJoe-Elanguage(§2), thedesignofthelan- Because any Java component of a combined application is
+guagetomeetthesegoals(§3–4),patternsthatcanbeused unrestricted in privilege, it must be considered part of the
+inreasoningaboutsecurityofJoe-Eapplications(§5),and trusted computing base. This Java component has the po-
+ourimplementationoftheJoe-Elanguageandruntime(§6). tentialto, viatheabstraction-breakingfeaturesofJava, vi-
+Finally,weevaluatethedegreetowhichJoe-Ehasmetour olatethesecuritypropertiesofJoe-Ecode,andsorequires
+goalsbydiscussingourexperiencewiththeWaterkenserver thesamelevelofcarefulreviewrequiredforanall-Javaap-
+andhowitmakesuseofJoe-Etohostmutually-distrustful plication. Use of Joe-E components neither facilitates nor
+webapplications(§7). complicatesreviewofJavacode; thebenefitisareduction
+oftheamountofJavacodetobereviewed.
+Additionally, we desire Joe-E to have the expressivity
+2 GoalsandOverview
+andscalabilitytosupportlarge,real-worldsystems. Wedo
+notwantourabstractionsorimplementationtoplacerestric-
+We have three primary design goals for the Joe-E lan-
+tionsonthescaleorcomplexityofapplicationsthatcanbe
+guage. First,wewantJoe-Etobeusablebyprogrammers.
+writteninthelanguage.
+Second, we want Joe-E to support construction of secure
+systems. Third,wewanttomakeiteasiertoverifythatthe
+2.2 Supportingsecuresoftware
+resultingsystemsmeettheirsecurityrequirements,andease
+the task of security code reviews. We elaborate on these
+goals below, and sketch Joe-E’s approach to each of those To facilitate construction of secure systems, Joe-E
+goals. should:
+1. Encourage least privilege. Joe-E is intended to help
+2.1 Easeofuse
+programmers achieve the principle of least privilege,
+at a fine level of granularity in their program, so that
+TominimizebarrierstoadoptionofJoe-Eandreducethe
+eachsubsystem, module, andobjectreceivesonlythe
+learning curve for new Joe-E programmers, the language
+minimumprivilegeitneedstoaccomplishitstask.Joe-
+should be as familiar as possible for programmers. Joe-
+Eshouldminimizebarrierstoleast-privilegedesignof
+Eshouldminimizeasmuchaspossibletherequirementto
+software.
+learnnewconceptsoridiosyncraticsyntax. Toaddressthis
+goal, the Joe-E programming language is based upon Java Joe-Esupportsthisgoalthroughsafedefaults: byde-
+(§3.1). fault, each block of code has no privileges to access
+Also,asmuchaspossible,Joe-Eprogrammersshouldbe systemresources,andcanacquiresuchprivilegeonly
+abletouseexistingdevelopmenttools,buildonexistingli- ifsomeotherentitypassesitanappropriatecapability
+braries,andintegratewithlegacysystems.Wepartiallysup- (§3).Incomparison,thedefaultinmostothersoftware
+portthisgoalbydesigningJoe-EasasubsetofJava(§3.1) platforms is that code runs with all of the privileges
+andexposingacapability-securesubsetoftheJavaclassli- of the user who invoked it, and must explicitly drop
+braries(§4.2). privileges if that is desired; Joe-E reverses this pre-
+Joe-Eshouldsupportconstructionofnewmodules,writ- sumption(§4.2). Joe-E’slibrariesprovideacapability
+tenfromscratchwithsecurityandJoe-Einmind.Toreceive interface to system resources (e.g., the filesystem and
+the full benefits of Joe-E, software must be structured in a network). Also, applications written in Joe-E can de-
+way that is compatible with good capability design princi- visetheirownsecurityabstractionsthatdivideuppriv-
+ples. We do not aim to add security to existing Java code. ilegesintosmallerpiecesappropriatetotheapplication
+Legacy Java code will most likely not be valid Joe-E, and domain(§5.5),furthersupportingleast-privilegepro-
+evenifitwere,legacycodeoftenfailstobestructuredina gramming. We expect that systems built in this way
+way that respects capability principles. It is explicitly not willbemorerobustlysecure,becausetheeffectofbugs
+a goal of this work to make it easy to transform arbitrary and vulnerabilities is limited: the fewer privileges a
+existing Java code into Joe-E; Joe-E is intended for newly componenthas,thelessharmitcandoifitmisbehaves
+writtencode. orrunsamok.2. Isolate untrusted code. We want programs to be able ternsofreasoningabouttheflowofcapabilitiesinthe
+torununtrustedormobilecodesafely. Moreover, we program(§5).
+wantprogramstobeabletointeractusefullyandeffi-
+2. Supportmodularreasoning. Joe-Eshouldmakeiteas-
+cientlywiththeuntrustedcode—andinparticular,we
+iertoreasonaboutsecurityproperties. Iftheprogram
+wanttobeabletorununtrustedcodeinthesameJVM
+is written appropriately, it should be feasible to ver-
+as trusted code. This implies that simple isolation is
+ify a security property by examining a small fraction
+not enough; programs must be able to “poke holes in
+of the code. If the object O implements some secu-
+the sandbox” to enable controlled sharing. We would
+rity abstraction, it should be possible to reason about
+like the trusted program and untrusted program to be
+thesecuritypropertiesofthisabstraction(e.g.,thein-
+abletoshareaccesstocommondatastructures,andwe
+variantsmaintainedbyO)justbylookingatthesource
+wantcross-domaincallstobeasefficientasamethod
+codeforOandtheobjectsOreliesupon.Inparticular,
+call.
+ifclientobjectsC ,...,C makeuseofO,weshould
+1 n
+Because Joe-E code receives, by default, no capabili- be able to verify the correctness of O without exam-
+ties,itissafetoexecuteuntrustedcodethatiswritten ining thecode of anyclient C . We callthis modular
+i
+in Joe-E (§ 3). We can limit what the untrusted code analysis. Modular analysis is critical if security code
+cando,bylimitingwhatcapabilitiesweprovidetoit; reviewistoscaletolargeprograms.
+and conversely, we can grant the untrusted code lim-
+Joe-E’s strategy for supporting modular reasoning
+itedpowersbypassingitappropriatecapabilities. For
+aboutsecurityreliesheavilyonflexiblesupportforiso-
+instance,wecanenabletheuntrustedcodetowriteto
+lation of untrusted code (§ 5.3). Also, many of our
+asinglefileonthefilesystem,bypassingitacapabil-
+restrictionsonJoe-Ecodesupportmodularreasoning:
+ityforthatfile. InJoe-E,datastructurescanbeshared
+themorewerestrictwhatJoe-Ecodecando,themore
+betweencomponentssimplybypassingareferenceto
+wecanrestrictthepossiblebehaviorsofeachclientC ,
+i
+thedatastructure,andcross-domaincallsareamethod
+whichmakesiteasiertoensurethattheydonotviolate
+call.
+O’sinvariants.
+3. Enable safe cooperation. As a generalization of the 3. Support reasoning about mutability. Shared mutable
+previous point, we also want to enable mutually dis- state is a headache for reasoning about security, be-
+trusting subsystems to interact safely. Each party cause it introduces the potential for race conditions,
+shouldbeabletolimititsexposure,shouldthecounter- time-of-check-to-time-of-use vulnerabilities, and sur-
+partybemalicious. Joe-Ehelpswiththisgoalbysup- prising consequences of aliasing. Joe-E should help
+portingstrongencapsulation,downtotheobjectgran- programmersavoidtheserisksbyprovidingfirst-class
+ularity. Each object can be written to enforce its in- supportforreasoningaboutmutabilityandimmutabil-
+variants while protecting itself from code that makes ity. In particular, Joe-E should make it easy for pro-
+useofit(§5.3). grammers to build data structures that are transitively
+immutable, should provide support for static verifica-
+2.3 Supportingsecuritycodereview tionofthisfact,andshouldreflecttheseimmutability
+properties in the static type system. Joe-E addresses
+thisbyextendingtheJavatypesystemwithimmutabil-
+Joe-Eshouldhelpprogrammersfollowa“designforre-
+ityannotations(§5.4),byprovidinglibrarysupportfor
+view”philosophy, wherethesoftwarearchitectureandim-
+programmingwithimmutabledata,andbyforbidding
+plementationarecarefullychosentofacilitatesecuritycode
+mutableglobalvariables(§4.2,§5.2).
+review. Joe-Eshould:
+1. Enablereasoningaboutprivileges.Itisnotenoughfor 3 Approach
+Joe-Etoenableleastprivilegeandisolation; itshould
+also be feasible for reviewers to verify that these se- Ourapproachtoimprovinglanguagesecurityisthrough
+curity goals are achieved. Accordingly, Joe-E should the use of an object-capability language. Such languages
+help reviewers upper-bound the set of capabilities a permit a default-deny, least-privilege approach to the au-
+particular block of code might ever gain access to, or thoritygrantedtopartsofaprogramasitexecutes.
+upper-bound the portions of the program that might Thecentralfeatureofobject-capabilitylanguagesisthat
+evergainaccesstoaparticularcapability.Joe-Eshould theyuseobjectreferences(pointerstoobjects)torepresent
+alsomakeitpossibletowritecodesothattheseupper all of the privileges that can be used by a program. In the
+boundsarepreciseandeasilyverifiable. Tohelpwith simplestcase,thesesimplypointtoencapsulatedmemory-
+this,Joe-Eisdesignedtoenableseveralpowerfulpat- residentobjects. Havingapointertosuchanobjectgrantsthe ability to interact with it via its public interface. Since 3.1 Subsetting
+access to the object is limited to the interface, the object
+canbedesignedtomaintaintheprivacyandintegrityofits
+Manynewlanguageshavebeenproposedovertheyears,
+internalstateevenwhenpassedtountrustedcode.
+butrelativelyfewhaveseenwidespreadadoption.Program-
+For many purposes, a system that can only operate on mershavelargeamountsofexperiencewithandcodeinex-
+in-memory objects is not enough. Most programs need to istinglanguages,andthusarereluctanttoinvestinswitch-
+interfacewithotherresourcesonthesystemornetwork. In ingtoanewlanguage.
+object-capabilitylanguages,theseresourcesarerepresented Anumberofnewlanguageshavebeendefinedasexten-
+as objects defined by special library classes. Reference to sionstoexistinglanguages.Thishastheadvantageoflever-
+suchanobjectallowsinteractionwiththeexternalresource agingdeveloperexperienceandpreservingagreaterdegree
+via a library-defined public interface. In this way, files on of familiarity than defining a new language from scratch.
+disk and network connections are naturally represented as Unfortunately, programs written in the extended language
+objects. become incompatible with tools (debuggers, interpreters,
+profilers, IDEs) designed for the original language. De-
+Accesstoallreferencesinanobject-capabilitylanguage
+velopers are wary of becoming locked into such extended
+isgovernedbyprogramscope.Atanypointintime,thepro-
+languages,astheyarenotguaranteedtomaintainthesame
+gram can only make use of the capabilities that are reach-
+levelofsupportasthebaselanguagegoingforward.
+ablefromitsin-scopereferences. Forsuchanapproachto
+We take a different approach: we define the Joe-E lan-
+be sound, the language must be memory-safe: it must be
+guageasasubsetofJava. EveryJoe-Eprogramissimplya
+impossibleto“forge”apointertoanobject,suchasbyper-
+Java program that satisfies additional language restrictions
+formingatypecastoperationonamemoryaddress.
+thatareverifiedbytheJoe-Everifier. Weavoidaddingnew
+Togetthemostbenefitfromthisapproach,wewantthe featurestoJavaormakingchangestoJava’ssemantics;in-
+minimal set of privileges we can bestow on part of a pro- stead, we impose restrictions on the source code that ev-
+gramtobeassmallaspossible.We’dlikethe“defaultstate” ery valid Joe-E program must satisfy (see Fig. 4 and § 4).
+for running code to be one in which no harm can be done TheJoe-Everifierchecksthattheserestrictionsaremet,but
+unlessweexplicitlytrustitwithareference. Forthistobe not does not transform the program in any way. This ap-
+thecase,theglobalscope(whichisavailableeverywherein proachallowsuseofthestandardJavatools,compiler,and
+the program) should not allow access to any authority we runtime,aswellasallowingJoe-Eprogramstocoexistwith
+wouldwanttodenytocompletely-untrustedcode. Javacodeandlibraries.1 Moreimportantly,thisallowsusto
+leverageprogrammers’experiencewiththeJavalanguage,
+Ideally,wewantcodetobeunabletodoanythingunless
+while introducing security-oriented programming patterns.
+wehavegranteditacapabilitytodoso. Inrealsystems,we
+Joe-Ecanbethoughtofassimplyanidiomaticwaytowrite
+mayneedtorelaxthisslightlyforpracticalreasons;itmay
+Java code, using conventions that facilitate a style of rea-
+be easy to limit access to in-memory objects and external
+soning. The Joe-E verifier ensures that all checked code
+resources,buttoodifficulttopreventcodefromconsuming
+conformstotheseconventions.
+CPUcyclesormemory,orfailingtoreturninatimelyman-
+ner. Ourapproachistoplacenolimitsonthepurelycom-
+putationalpowerofuntrustedcode,limitingonlyitsaccess 4 DesignofJoe-E
+todataandexternalresources. Iftheglobalscopegrantsno
+accesstoprivilegesofconcern, onecanenforceleastpriv-
+ilegeonafine-grainedbasisbyensuringthateachscopein The Joe-E language restrictions are chosen so it will
+theprogram’sexecutiononlyhasaccesstothecapabilities be intuitive and predictable to the programmer which pro-
+it needs. More importantly, it is possible to reason about grams will pass the Joe-E verifier. We avoid sophisticated
+theauthoritywithwhichdifferentpartsoftheprogramare programanalysis, insteadfavoringprogrammingrulesthat
+trusted. Every component of the program has only the ca- are simple to state. For similar reasons, we avoid whole-
+pabilitiesthathavebeenpassedtoit. programanalysis. Instead,theJoe-Everifieranalyzeseach
+source file individually. This file-at-a-time approach also
+Incontrastwithmostotherobject-capabilitylanguages, helpsscalabilityandletsussupportopen-worldextensibil-
+which use dynamic typing, in Joe-E we can leverage the ity:newcodecanbeaddedtothesystem,withoutinvalidat-
+Java type system to place static restrictions on how capa- ingtheanalysispreviouslyperformedonfilesthathavenot
+bilitiescanpropagateasaprogramexecutes. Withthisap- changed.
+proachweareabletorestricttheflowofcapabilitieswhile
+reducing the need for reference monitors and explicit dy- 1ThereisalsononeedtopresentformalsemanticsfortheJoe-Elan-
+namicchecksinordertoguaranteesecurityproperties. guage,astheyareidenticaltothoseofJava.Enforcereferenceunforgeability public class OddInt {
+• prohibitdefiningnativemethods final int content;
+Preventunexpectedreferencepropagation public OddInt(int content) {
+if ((content % 2) == 0)
+• requireallthrowablestobeimmutable
+throw new IllegalArgumentException();
+Removeambientauthority this.content = content;
+}
+• tame Java APIs that provide access to the
+}
+outsideworldwithoutanexplicitcapability
+• requireallstaticfieldstobefinalandof class EvilOuterClass {
+animmutabletype OddInt stash;
+class NotReallyOddInt extends OddInt {
+Enforcesecureencapsulation NotReallyOddInt() {
+super(0);
+• prohibitoverridingfinalize()
+}
+• tameJavareflectionAPI void finalize() {
+• preventcatchingErrors stash = this;
+• prohibitfinallykeyword }
+}
+}
+Figure 4. Overview of restrictions that Joe-E
+imposestoenforcecapabilitysecurity. Figure5.finalize()canviolateobjectinvari-
+ants, subverting encapsulation. In this ex-
+ample, stash can contain an object whose
+contentfieldisuninitializedandthushasthe
+4.1 MemorySafetyandEncapsulation
+valueofzero.
+Memory-safelanguageslikeJavaprovidethefoundation
+forsoundobject-capabilitylanguages,astheyensureobject
+references cannot be forged. In Java, references cannot be
+OddInt constructor. Joe-E prevents these encapsulation-
+created by pointer arithmetic or casting integers to point-
+breaking attacks by prohibiting Joe-E code from defining
+ers,butrathercanonlybeobtainedbycopyingexistingref-
+customfinalizers.
+erences. The site at which an object is created using the
+newoperatorisinitiallythesoleholderofareferencetothe
+new object and has control over how the object is shared.
+4.2 RemovingAmbientAuthority
+Thismemorysafetypropertycanbebrokenthroughtheuse
+ofnativemethods,soJoe-Epreventsthedefinitionofsuch
+methods.
+The privileges provided by Joe-E’s global scope are
+Theaccessmodifierprivateallowsanobjecttoencap-
+strictly limited. We prevent Joe-E code from reading or
+sulateareferencetoanotherobjectinsuchawaythatitcan
+modifying any mutable state or external resource without
+only be accessed via the enclosing object’s methods. The
+anexplicitcapabilitytodoso.
+publicinterfaceoftheenclosingclassthendictatesthepol-
+icy for use of the wrapped object. Capability-secure pro- Thisisperhapsourmostsignificantandvisibledeparture
+gramming relies crucially on the security of this encapsu- from Java’s architecture. In Java, even code that starts out
+lation property. Java’s reflection API provides a facility without any references has essentially all the privileges of
+fordisablingaccesschecksonmethodsandfields,allowing the program; its lack of references does little to contain it.
+maliciousclientstobypassobjectencapsulation. Toensure The authority that it needs to perform these tasks is avail-
+thatencapsulationcannotbebroken,wedonotexposethis ableasan“ambient”propertyoftheprocess: itisavailable
+facilitytoJoe-Ecode. toallcode,ineveryscope. InJoe-E,noauthorityisambi-
+AnotherJavafeaturewithsurprisingconsequencesisthe entlyavailable,sotheresourcesneededbyJoe-Ecodemust
+ability to define custom finalization behavior, by overrid- be explicitly provided, typically as constructor arguments.
+ing the finalize() method. The garbage collector in- Thisdesignrefactoringisthesameasthatdonefor“depen-
+vokes user-defined finalize() code when an otherwise dencyinjection”,wherecodethatdependsonaresourceis
+dead object is collected. This can violate object invari- provided with a reference to the resource, instead of con-
+ants that could be crucial to security, breaking encapsu- structingoraccessingtheresourcedirectly. Independency
+lation. See Fig. 5, which illustrates how malicious code injection,thisrefactoringisdonetobettersupportthecon-
+(EvilOuterClass) could construct an OddInt instance figurationandtestingofsoftware. InJoe-E,thisrefactoring
+that holds an even integer, subverting the checks in the additionallysupportssecurityreviewofsoftware.4.2.1 TamingtheJavaclasslibrary notbeexposedtoJoe-Ecode.Joe-Eprogrammersstillneed
+some way to traverse the directory hierarchy, and unfortu-
+TheJavalibrarydefinesmanystaticmethodsthathaveside
+nately there is no other constructor in the Java library that
+effects on the outside world, as well as many constructors
+provides this important functionality. While we can’t al-
+thatcreateobjectspermittingsimilareffects. Thisisama-
+low Joe-E code to call the unsafe constructor directly, we
+jorsourceofambientauthorityinJava. Forexample,File
+provideawrappermethodintheJoe-Elibrarywiththede-
+hasaconstructorthatwilltakeastringandreturnanobject
+siredfunctionality. Thewrapperchecksatruntimethatthe
+representing the file with that name. The resulting object
+dirargumentisnon-nullbeforeinvokingtheoriginalcon-
+can be used to read, write, or delete the named file. Ab-
+structor2. Ingeneral,ourstrategyistotameawayallunsafe
+sentexplicitaccesscontrolbytheJavasecuritymanageror
+methods from the Java libraries, then add wrappers to the
+the operating system, this allows any Java code full con-
+Joe-Elibraryifimportantfunctionalityhasbeenlost.
+trol over the filesystem. In Joe-E, we wish to ensure that
+Tamingalibraryisunfortunatelyatime-consumingand
+codecanonlyhaveaccesstoafileifacapabilityforthefile
+difficult task, and a place where a mistake could violate
+(or a superdirectory) is within that code’s dynamic scope.
+soundness of our security goals. The security review of
+Consequently,wemustnotallowtheaforementionedFile
+the DarpaBrowser, which included a review of the taming
+constructorinJoe-E’sglobalscope.
+database provided by the E language, found that a num-
+WedefineasubsetoftheJavalibrariesthatincludesonly
+berofmethodsviolatingcapabilitydisciplinehadbeenin-
+thoseconstructors,methods,andfieldsthatarecompatible
+advertently allowed [22]. While we have attempted to be
+with the principle that all privileges must be granted via a
+moreconservativewhentamingJoe-Ecode,checkingeach
+capability. Wecallthisactivitytaming,becauseitturnsan
+methodforsafetybeforeenablingitanderringontheside
+unrulyclasslibraryintoacapability-securesubset.TheJoe-
+ofcautionwhenunsure, itispossiblethatwealsoenabled
+E verifier allows Joe-E programs to mention only classes,
+somemethodthatweshouldnothave. Weconsiderthedif-
+constructors, methods, and fields in this tamed subset. If
+ficult and critical nature of this process to be a substantial
+the source code mentions anything outside of this subset,
+weakness in our approach, and an area in which there is
+theJoe-Everifierflagsthisasanerror.
+substantialroomforimprovementinfuturework. Inpartic-
+Taminghelpseliminateambientauthority,becauseiten-
+ular, tools to validate or safely automate taming decisions
+sureslibrarymethodsthatprovideambientauthorityarenot
+wouldbeveryhelpful.(Weanticipatethatarelativelysmall
+accessibletoJoe-Eprograms.Wealsousetamingtoexpose
+fraction of classes in a typical Java classpath implementa-
+only that subset of the Java library that provides capabil-
+tionarevalidJoe-Eintheircurrentform,butthosethatare
+itydiscipline. Intuitively, we’dexpectthatareferencetoa
+wouldbesafetopermit.)
+Fileobjectwouldprovideaccesstothefilethattheobject
+represents(or,incaseitrepresentsadirectory,accesstothe
+directory and all files/subdirectories within that subtree of 4.2.2 Mutablestate
+thefilesystemhierarchy),andnothingmore. Unfortunately,
+Inadditiontobeingabletoobserveoraffectexternalstate
+the getParentFile() method on File violates this ex-
+outsidetheJVM,ambientauthoritytomodifyprogramstate
+pectation: itcanbeusedtowalkupthedirectoryhierarchy
+canalsobeproblematic.Untrustedextensionscouldcorrupt
+toobtainacapabilityfortherootdirectory,soaccesstoany
+criticalinternaldatastructuresiftheglobalscopeprovides
+oneFilewouldgrantaccesstotheentirefilesystem. This
+theabilitytodoso.Forthepurposesofsecurityaudits,such
+preventsfine-grainedcontroloverdelegationoffilecapabil-
+exposuremeansthateverylineofcodeintheprogrammust
+ities, so we exclude methods, such as getParentFile(),
+be examined to ensure that security properties on globally
+thatviolatecapabilitydiscipline.
+accessiblestatearemaintained.
+In some cases, due to the design of the Java libraries,
+In Java, this risk arises with fields declared static,
+therearemethodswithimportantfunctionalitythatarenot
+sincethesefieldsarenotassociatedwithanobjectinstance
+safetoexpose.Forinstance,considertheFile(File dir,
+and thus access is not governed by a capability. For this
+String child)constructor. Thisconstructorgivesaway
+reason,Joe-Erequiresallstaticstatetobetransitivelyim-
+toaccessafilewithaspecifiednamewithinaspecifieddi-
+mutable. In particular, all static fields declared in Joe-E
+rectory. This pattern of obtaining a specified subfile is a
+code must be of a type that is statically known not to pro-
+capability-compatible method for attenuating existing au-
+videaccesstoanymutableobjects: theobjectitselfandall
+thority,butJavahappenstospecifythisconstructortohave
+objectsittransitivelypointstomustbeimmutable.
+additionalbehaviorthatisnotcompatiblewithoursecurity
+To facilitate this goal, we provide a marker interface,
+model: if the dir argument is null, the constructor treats
+thechildargumentasanabsoluteratherthanrelativepath.
+2PortionsoftheJoe-ElibraryarewritteninunrestrictedJavaratherthan
+This means that new File(null, path) can be used to
+Joe-EandthuscancallarbitraryJavamethods.Thisgivesustheabilityto
+access any file on the filesystem, so this constructor must writesuchwrappers.org.joe e.Immutable, to identify classes claimed to be class E extends RuntimeException {
+public Object o;
+transitively immutable. The Joe-E verifier checks that any
+public E(Object o) { this.o = o; }
+classthatisasubtypeofImmutablesatisfiesthefollowing }
+rule: all instance fields must be final and their declared class Bob {
+// cap was intended to be closely held
+typemustbeeitheraprimitivetypeorareferencetypethat
+private Capability cap;
+alsoimplementsImmutable. Allotherclassesareassumed
+void m() {
+tobepotentiallymutable. new Chuck().f(cap);
+Wemakenoattempttoinferimmutabilitytypes. Joe-E’s }
+}
+philosophy is to require programmers to explicitly declare
+class Chuck {
+the properties of their code. The Joe-E verifier is respon- void f(Capability cap) {
+siblesolelyforverifyingtheseproperties,andperformsno ... do some work ...
+inference. Thisdesigndecisionisintendedtomakethebe- throw new E(cap);
+}
+havior of the Joe-E verifier more intuitive and predictable
+}
+forprogrammers.
+Some classes from the Java library, like String, are class Alice {
+immutable but we cannot rewrite them to implement the void attack() {
+Bob bob = ...;
+Immutable interface, because we do not modify the Java
+try {
+libraries. The verifier treats these classes as if they imple- bob.m();
+menttheinterface. } catch (E e) {
+Capability stolen = (Capability) e.o;
+doSomethingEvil(stolen);
+4.3 ExceptionsandErrors }
+}
+}
+Exceptions introduce a number of complications for an
+object-capability language. They provide a potentially un- Figure6.Thereisasecurityrisk,ifexceptions
+expected means of transferring control and references be- cancontaincapabilities.
+tweenobjects. Inparticular,objectsreachablefromtheex-
+ceptionitselfareimplicitlypassedupthestackfromwhere
+theexceptionisthrowntowheretheexceptioniscaught. If
+theexceptioncontainsacapability,thiscanleadtopropaga- necessary for two reasons. First, the behavior of the JVM
+tionofprivilegesthatadevelopermightnotexpect, which afteraVirtualMachineErroristechnicallyundefined[9,
+mightintroduceunexpectedsecurityvulnerabilities. §6.3]. Second,continuingtoexecuteafteranerrorhasbeen
+Toseehowthiscancauseunpleasantsurprises,suppose thrown can have hard-to-predict consequences. For exam-
+Alice calls Bob. Bob has some special capability that she ple, an object’s invariants can be violated if an error (such
+lacks,andBobwantstoavoidleakingthistoher. Atsome asrunningoutofmemory)isencounteredduringexecution
+point,BobmightneedtoinvokeChucktoperformsomeop- rightwhentheobjectisinatemporarilyinconsistentstate.
+eration, passing this capability to Chuck. If (unbeknownst In many cases, these errors can be intentionally triggered
+to Bob) Chuck can throw an exception that Bob doesn’t by the invoking software component, for example by allo-
+catch, this exception might propagate to Alice. If this ex- catingalotofmemoryorrecursingdeeplytouseupstack
+ceptioncontainsBob’spreciouscapability,thismightcause space before invoking the object under attack. If a mali-
+thecapabilitytoleaktoAlice,againstBob’swishesandde- cious caller could catch such an error, the caller would be
+spiteChuck’sgoodintentions. SeeFig.6foranexample. well-positionedtoexploittheviolatedinvariant. Preventing
+The problem is that it is hard to tell, just by looking at Joe-Ecodefromexecutingafteranyerroristhrownprevents
+the code of Bob, that Bob’s private capability can leak to suchattacks. Withoutsuchaguarantee,itwouldbeunrea-
+thecallerofm(). Thisisabarriertolocalreasoningabout sonably difficult to build secure abstractions and maintain
+theflowofcapabilities. Toavoidthesekindsofproblems, objectinvariantsinthefaceofattack.
+Joe-E requires all exception types to be immutable.3 This We prohibit Joe-E code from including any catch
+prevents storing capabilities in exceptions, precluding at- block that could catch an error: for the syntactic construct
+tacksliketheonedescribedabove. catch (T e) { ... }, we check that the type T is not
+An important guarantee provided by Joe-E is that no Throwable,Error,oranysubtypeofError.
+code is able to execute once an error is thrown. This is In addition, we prohibit finally clauses, as code in a
+finally clause can execute after an error is thrown. The
+3TheThrowableclassprovidesalittle-usedfacilitytorewritethestack
+finallyclausecouldexploittheinconsistentstatedirectly,
+traceinanexception,preventingexceptionsfrombeingtrulyimmutable.
+ThisfacilityisdisabledinJoe-Eviathetamingmechanism. oritcouldthrowitsownexceptionthatmasksthependingInputStream in = ... InputStream in = ...
+Exception e = null; try {
+InputStream in = ...
+try { // use the stream
+try {
+// use the stream } catch (Exception e) {
+// use the stream
+} catch (Exception e2) { try { in.close(); }
+} finally {
+e = e2; catch (Exception e2) {}
+in.close();
+} throw e;
+}
+in.close(); }
+if (e != null) { throw e; } in.close();
+Figure 7. Transformation to avoid the use of the finally keyword. On the left is Java code that
+uses finally. The middle shows a transformed version with the same semantics that can be used
+in Joe-E. The right shows an alternative, with different semantics, that we have found useful in our
+experience.
+error,effectivelycatchingandsuppressingtheerror. Tech- from them. A substantial advantage of object-capability
+nically,thelackoffinallyclausesdoesnotlimitexpres- languages over basic capability systems is the ability to
+sivity,asonecanexplicitlycatchExceptiontoensurethat attenuate authorities via encapsulated reference monitors,
+anactiontakesplacewheneveranynon-errorthrowabledis- which allow only partial access to the ultimate capability.
+rupts normal control flow. See the middle of Fig. 7 for an Inpractice,programmerscanincrementallyrefinethecrude
+example4. InourexperiencewritingJoe-EcodefortheWa- boundsobtainedthroughnaivereachabilityanalysisbytak-
+terken server, the prohibition on finally clauses was not ingintoaccountthebehaviorofclassesalongthispath. We
+a serious problem, and in retrospect the replacement code havefoundthat,inwell-designedsystems,thisstyleofrea-
+used in Waterken (shown on the right side of Fig. 7) is soningiseffectiveatenablingcodereviewerstofocustheir
+arguably better anyway, as it avoids masking the original attentiononasmallfractionofthecodeatatime. Wemade
+exception in case the finally clause throws its own ex- useofitduringasecurityreviewofWaterkenwhencheck-
+ception. TheJoe-Especification[10,§4.8]containsfurther ingthecapabilitiestheinfrastructuremakesavailabletoap-
+discussionandanalysisoftheseworkarounds. plicationcode.
+5 ProgrammingPatterns 5.2 LeveragingStaticTyping
+Tofacilitateourgoalof“designforreview”, Joe-Ewas Type safety, as provided by Java and other statically
+designedspecificallytoenableseveralpowerfulpatternsof type-safe languages, can also be of use in reasoning about
+reasoningaboutsecurity. programsandthedistributionofauthoritiestopartsofapro-
+gram.
+5.1 ReachabilityandObjectGraphanalysis Because the capabilities granted to a method are speci-
+fiedbyitsarguments(includinganyassociatedinstanceor
+Thebasicruleforreasoningincapabilitysystemsisthat enclosingobject),thesignatureofamethodservesasase-
+a capability can only be accessed from dynamic scopes to curity policy. Since the method can be invoked only with
+which it was passed. In order to bound the possible risk capabilities that satisfy its method signature, it can subse-
+posed by bugs or malicious behavior in any given part of quently obtain access only to capabilities reachable from
+theprogram,wecanconsiderthegraphofobjectsreachable thesearguments,ornewobjectsitcancreatethroughpublic
+from the scope at that program point. This can be deter- constructorsandstaticmethods. Hence,thesetofmethods
+minedbyconstructingagraphwithanodeforeachobject exposedbyaninterfaceorclasscanserveasacompletese-
+intheprogram,andanedgeforeachfieldpointer. Theau- curitypolicyfortheobjectsthatimplementit,providedthat
+thority of a point of execution is bounded by the subset of othercomponentsofthesystemareverifiedtointeractwith
+thegraphreachablefromthevariablesinscopeatthetime. theobjectsolelythroughthisinterface.Theimagedecoding
+The graph generated by this technique is very conser- exampleinFig.2isanexampleofthistypeofreasoning.
+vative, as it ignores the behavior of classes on the path Whenanalyzingcodeofaclasstoverifyitmeetsitsse-
+from the variables in scope to the capabilities reachable curitygoals,itisnecessarynotonlytoexaminethetextual
+codeoftheclassitself,butalsotounderstandthebehavior
+4Elaborationsonthisidiomcanhandlemorecomplexusecases,e.g.,
+ofanyexternalmethodsthatitinvokes. Thisoftenrequires
+wheretheoriginalcodealsocontainsoneormorecatchblocks,andwhen
+identifyingwhatclassesthosemethodinvocationsmightre-
+theoriginalexceptionsignaturemustbemaintained. Thisidiomdoesnot
+requireduplicatingcode. solveto. Staticmethodcallsareeasy: staticmethodscan-notbeoverridden,soiteachstaticmethodmapsdirectlyto ing about the privileges granted by an object based upon
+aspecificimplementation. Thestaticmethod’sdocumenta- that object’s declared type. Capability discipline proposes
+tioncanbeconsultedanditssourcecodecanbeexamined. thatthedocumentationforeachtypeshouldspecifytheau-
+Incomparison,instancemethodsaremoredifficult,asthey thority that may be granted by instances of that type. For
+can be overridden. There are two basic approaches to jus- instance,Joe-E’sFileobjectconveysauthoritytoasingle
+tifytrustplacedininstancemethods: basedontheobject’s file on the filesystem (or, in the case of directories, a sub-
+provenance,orbasedonitstype. tree of the directory hierarchy); passing a File to another
+party will enable them to access the specified file, but not
+1. Provenance. In the first approach, we justify relying
+(say) send network packets or erase the entire hard drive.
+upon the behavior of methods of an external object
+WhenatypeT isnon-final,thedocumentationforthetype
+based on the external object’s provenance or origin.
+T should specify an upper bound on the authority granted
+For example, an object that the code constructs itself
+byinstancesofT oranyofitssubtypes. Ifcodereviewers
+is known to have behavior consistent with its known
+checkthatsubclassesofT neveryieldmoreauthoritythan
+concrete type. Provenance-based reasoning can also
+this,thenwecanusethetypesystemtoupper-boundtheau-
+arise from transitive trust relationships. For example,
+thoritypassedacrossaninterface: ifamethodm()accepts
+consider an object O that calls a method on object P
+a parameter of declared type T, we can conclude that this
+thatittruststoreturnanobjectQwithspecifiedbehav-
+parameter will not yield more authority than that specified
+ior. The provenance of Q then makesit safe for O to
+inT’sdocumentation.Similarly,ifamethodhasreturntype
+invokeitsmethodsregardlessofitstype.
+T,wecanconcludethatthismethod’sreturnvaluewillnot
+yieldmoreauthoritythanthatspecifiedinT’sdocumenta-
+2. Type. Ifweknowthedeclaredtypeoftheexternalob-
+tion.WefollowthispatternintheWaterkenserverandhave
+ject,theninsomecasesthistypinginformationmakes
+foundthatitishelpfulforreasoningabouttheauthoritythat
+itpossibletorelyuponthebehaviorofthatobject.
+atypecanconvey.
+Thesimplestexampleofusingtrustedtypestoensure
+desired behavior is calling an instance method on an
+5.3 DefensiveConsistency
+objectbelongingtoafinalclass. Likestaticmethods,
+it is in this case possible to map the method called to
+asingleimplementationthatcanbereviewed. Regard- Reasoningaboutthesecurityofaprogramisdifficultif
+lessoftheoriginoftheobject,thecodebeingexecuted understandingitssecuritypropertiesrequirescomprehend-
+isknowntocomefromthedeclaredclass. Forexam- ingtheentireprogramallatonce. Thetaskisgreatlysim-
+ple, because the String class is final, code that uses plifiedifitispossibletoanalyzetheprograminamodular
+stringscanrelyonStringobjectstofulfilltheirspec- fashion,onepieceatatime. Theeasiestwaytodothisisto
+ifiedcontracts;itdoesnotneedtodefendagainstsome decomposetheprogramintoanumberoftrustdomains,and
+maliciously-definedobjectthatimpersonatesaString foreachdomaindeterminewhatinvariantsitaimstomain-
+butmisbehavesinadeviouswaytoviolatesecurityor tain, and which invariants it relies on from other classes.
+privacy. In Joe-E, a trust domain would normally correspond to a
+singleobject,orperhapsasmallcollectionofobjects. Nor-
+Instance methods from non-final classes are trickier.
+mally,domainsinteractfollowingaclient-servermetaphor:
+In general, it is not possible to guarantee behavioral
+domainDmightprovideservicetoclientsC ,...,C .The
+propertiesofmethodsbelongingtosuchaclassC,as 1 n
+standardapproachtomodularanalysisintheprogramver-
+onecouldbedealingwithanarbitrarysubclasswhich
+ification literature suggests we verify that (1) D provides
+mayfailtomeetthedocumentedsemanticsoftheorig-
+correct service to its clients, assuming that all its clients
+inaldeclarerofthemethod. Inordertoavoidthisrisk,
+meetD’sdocumentedpreconditions;(2)eachclientC es-
+it is necessary to prevent arbitrary subclassing of C. i
+tablishes D’s documented preconditions. This allows us
+OnewaytoachievethisinJavaistodefineC andits
+to analyze the code of D on its own, then separately an-
+subtypestohaveonlypackage-scopeconstructors,but
+alyze the code of each client C on its own, without hav-
+nopublicconstructors. Toallowinstantiationbycode i
+ing to mentally consider all possible interactions between
+outside the package, these classes can provide public
+them. However,thisapproachrequiresustoverifythatev-
+factorymethods. ThisensuresthatC canonlybesub-
+ery client C meets D’s preconditions, which may not be
+classedbytheboundedsetofclassesinitsownpack- i
+possible in an open world or where some clients may be
+age,permittingreasoningaboutthebehaviorofobjects
+malicious.
+withdeclaredtypeC,eveniftheiroriginisnottrusted.
+Defensiveconsistencyisarelaxationofthisconcept[11,
+Iftheprogrammeradoptsaparticularstyleofprogram- §5.6]. To show that D is defensively consistent, we must
+ming, called capability discipline, Joe-E supports reason- show that D provides correct service to every client thatmeets D’s documented preconditions. Note that if one of class C {
+private Object signers[];
+D’s clients, say C , fails to meet D’s preconditions, then
+1 public Object[] getSigners() {
+D is under no obligation to provide correct or useful ser- return signers;
+vice to C , but D must still provide correct and consistent }
+1
+}
+service to its other clients C ,...,C (assuming they do
+2 n
+meet D’s preconditions). Thus, D must maintain its own
+class C {
+invariants,evenifoneofitsclientsbehavesmaliciously. A private ImmutableArray<Object> signers;
+defensively consistent domain can be safely used in con- public ImmutableArray<Object> getSigners() {
+return signers;
+texts where some of its clients may be malicious: its non-
+}
+maliciousclientswillbeprotectedfromthemisbehaviorof
+}
+maliciousclients.
+Figure 8. Above, an example of a clas-
+Defensiveconsistencyconfinesthemaligninfluencethat
+sic Java vulnerability: a malicious caller to
+a single malicious or compromised component can have.
+getSigners() could mutate the internal state
+Without defensive consistency, verifying security becomes
+of the class, due to the failure to make a de-
+harder: if domain C acts as a client of a non-defensively
+consistent abstraction A, then verifying the correctness of fensive copy of its signers array. Below, a
+natural way to write this code in Joe-E is se-
+C requires us to verify that no other client of A is mali-
+cure without defensive copies, thanks to the
+cious, whichmaybedifficultandmayrequirereviewinga
+useofimmutabletypes.
+greatdealofadditionalcode. Thus, defensivelyconsistent
+componentssupportleastprivilegeandreasoningaboutse-
+curity.
+performed on the encapsulated object. While this is sup-
+5.4 Immutability ported in a general-purpose and flexible way by defining
+classesthatactasreferencemonitors,wesuggestthatclass
+Joe-E’s support for immutable types (§ 4.2) facilitates librariesandtypehierarchiesbedesignedtofacilitateeasier
+defensivelyconsistentprogramming. Whenimmutableob- useofcommonattenuationpatterns.
+jects are passed between trust domains, immutability pro- Forexample,inJoe-Eafileobjectrepresentstheability
+videsguaranteesbothtothesenderandrecipientdomains. toaccessaparticularfile,orifitisadirectory,anyofitssub-
+The sender is assured that the recipient cannot modify the directoriesandtheirfiles. Joe-Edirectoryobjectsprovidea
+passed object, and thus the sender can continue to use the methodtoobtainacapabilitytoanyofthefilesordirecto-
+same object internally without having to make a defensive riescontainedwithinthem. Thisallowsonetocreateanat-
+copytoguardagainstcorruptionofitsinternalstate. Also, tenuatedcapabilitythatallowsaccesstoasmallerpartofthe
+passing an immutable object conveys no capabilities aside filesystem;aprogramcanbegivenacapabilitytoalargedi-
+from the data contained in the passed object, which helps rectory,buthavetheabilitytodelegateonlyaportionofthis
+thesenderavoidinadvertentcapabilityleakage. Therecipi- authority to other, less trusted parts of the program. This
+entisalsoprotectedfromunexpectedmutation: itcanstore makesiteasytofollowtheprincipleofleastprivilege. An
+the immutable object as part of its internal state without importantrequirementtocorrectlyimplementingattenuable
+fear of interference from modifications performed by any authority in tree structures like the file system is to avoid
+othercodethathasaccesstothesameobject. Thus,Joe-E’s methodsthatretrievetheparentofanode,assuchmethods
+immutable types eliminate the need for defensive copying wouldmakeanynodeactuallygivetheauthoritytoaccess
+at the sender or the receiver. For instance, Fig. 8 shows a theentiretree.
+classicJavavulnerabilityandhowJoe-E’simmutabletypes
+eliminatethevulnerabilitypattern. 5.6 Facets
+5.5 AttenuationofAuthority Aclientcanalwayscreateanattenuatedversionofaca-
+pabilitybydefiningawrapperobject; however, thisplaces
+Inordertoachieveleastprivilege,itishelpfultobeable an implementation burden on the author of the client code
+to easily attenuate the authority provided by a capability. thatdiscouragesthepracticeoftheprincipleofleastprivi-
+This refers to being able to take a capability to a resource lege. Wheretheauthorofaninterfacecananticipateause-
+andderivefromitaless-powerfulcapabilitytotheresource fulattenuationofauthority,providingitaspartoftheinter-
+thathasonlyasubsetoftheprivilegesoftheinitialcapabil- faceencouragesbettercapabilityhygienebyallclients.
+ity. Oneexampleofthiswouldbeanewobjectthatwraps Forinstance,Fig.9showsatypicalJavaqueueinterface,
+theoldobjectandactsasareferencemonitoronoperations followedbyaJoe-Equeueinterfacethatpredefinestheat-class Queue {
+public Object dequeue() {
+...
+}
+public void enqueue(Object o) {
+...
+}
+}
+class Queue {
+public Object dequeue() {
+...
+}
+public void enqueue(Object o) {
+...
+}
+public Receiver enqueuer() {
+return new Receiver() {
+public void receive(Object x) {
+enqueue(x);
+}
+};
+Figure10.TheJoe-EVerifierforEclipse
+}
+}
+Figure9.Above,anexampleofatypicalJava 6 Implementation
+queue interface. Below, a Joe-E queue inter-
+facethatdefinesanattenuatedfacetthatonly We implemented a source-code verifier for Joe-E as a
+supportsaddingelementstothequeue. Easy plugin for Eclipse 3.x. The plug-in supports the develop-
+access to this facet encourages clients to ment of Joe-E code alongside the use of unrestricted Java.
+practicetheprincipleofleastprivilegebydel- AJavapackageannotation@IsJoeEisusedtoindicatethat
+egating only the permission to enqueue, not a package is written in Joe-E. The plug-in checks every
+the permission to dequeue, to those objects class belonging to such packages and flags any violations
+thatdonotneedfullaccesstothequeue. ofJoe-Erestrictionsinamannersimilartocompilationer-
+rors. Thispackageannotation,whichisretainedatruntime,
+allowsoursystemtorecognizeJoe-Ecodeduringverifica-
+tionandatruntimeviathereflectionAPI.
+We perform checks on the Java source code rather than
+onJavaclassfilessincetheJavaruntimesubjectsbytecode
+tenuatedauthoritytoaddelementstothequeue. Theimple- toonlyalimitedsetofvalidationchecks,allowingbytecode
+mentationtechniqueforthisattenuatedauthorityiscalleda to do a number of things that Java programs cannot. The
+“facet”. Afacetdefinesanadditionalinterfaceformanipu- expanded semanticsafforded to bytecodebut not specified
+lating state that can also be manipulated via another inter- bytheJavalanguageareunfamiliarandnotclearlydefined,
+face. Whereasatypicalobjecthasasinglepublicinterface andthusmuchharderforaprogrammerorauditortoreason
+that governs access to its state, an object with facets has about.
+many such interfaces. Each of these facets is designed to Workingwithsourcecodehasdisadvantages.SinceJava
+provide a least privilege interface for a particular kind of source code is higher level than Java bytecode, the veri-
+client. In this case, the enqueue facet provides permission fiermustcorrectlyhandlealargernumberoffeatures,rais-
+toaddelementstothequeue,withoutthepermissiontore- ing the likelihood that an implementation bug in the Joe-
+moveelementsortoaccesselementsaddedbyotherclients E verifier could allow an attacker to sneak something by
+ofthequeue. the verifier. For example, the Joe-E verifier must reason
+aboutcodeimplicitlygeneratedbytheJavacompiler,such
+Usingthefacettechnique,theauthorofanobjectcanim- as default constructors, string conversions, and enhanced
+plement an attenuated capability more economically than forloops. Ourverifierinfersthepresenceoftheseimplicit
+a client could, since the state protected by the facet is al- calls,andchecksthatonlypermittedmethodsandconstruc-
+ready within the lexical scope where the facet is defined. tors are called. Another complication is that generic type
+Thiseconomyofexpressionmakesthefacettechniqueuse- parameters are not type-safe. This complicates inference
+fulevenincaseswheretheattenuationisonlyofusetoone of which toString() method will be invoked by implicit
+client. string conversions. While the Joe-E language permits fulluse of Java generics, our verifier implements a more con- collectionofmoduleswhoseinterfacesenforceleastprivi-
+servative type check than the Java compiler to ensure that legeandthusminimizetrustinthemodules. Modulesthat
+tamed-awaytoString()methodswillnotbeinvoked[10, arenolongercriticaltotheapplication’ssecurityproperties
+§4.10]. canthenbeimplementedbyprogrammerswithlessspecial-
+WehavetamedasubsetoftheJavalibrariesthatissmall, izedtraining,whomustjustensurethattheircodepassesthe
+butsufficientforwritingusefulprograms. Itwouldbeuse- verifier.Forthosefamiliarwithcapabilitydesignprinciples,
+ful to increase the set of tamed classes, as much of Java’s Joe-Eappearstobeusable; wedidnotfindtherestrictions
+utilityderivesfromitsrichclasslibrary.Whileitispossible that Joe-E imposes a serious problem in the programs we
+for Joe-E application developers to add additional classes haveimplemented.
+and enabled methods to the taming database, determining WehaveusedJoe-Etobuildtwointerestingapplications.
+whetherclassesarecapability-safeisunfortunatelyahigh- In previous work, we ported an open-source HTML pars-
+riskprocessthatrequirescarefulattentionandawarenessof ing library, originally comprising over 10K lines of Java
+possiblepitfalls. Thereisanopportunityforfutureworkin code,toJoe-E,providingdeterministicandside-effectfree
+toolsthatsimplifyandimprovethesafetyofthisprocess. HTMLparsing[4]. Here,wedescribetheWaterkenserver,
+Asmentionedabove(§4.2),someimportantfunctional- which provides secure isolation and cooperation between
+ity cannot be made safe by taming alone. Joe-E provides mutuallydistrustfulwebapplicationswritteninJoe-E.
+safe wrappers for the filesystem, for Java reflection and
+proxyingAPIs,andforlocale-independentcharacterencod- 7.1 Waterken
+inganddecodingroutines.
+The Java language only includes mutable arrays. Joe-E
+Initsstandarddistribution,Joe-Esupportsdesignandre-
+also provides read-only array types for use as collections
+viewofcodethatissingle-threaded,transientandlocal.The
+of data: ConstArray<T> is a read-only array of possibly-
+Waterkensoftwareextendsthisscopetocodethatismulti-
+mutable objects, and ImmutableArray<T> is a read-only
+threaded, persistent and networked. Waterken follows the
+array of immutable objects. We need multiple classes be-
+asynchronouslycommunicatingeventloopmodel[11]. An
+cause generic type parameters are not type-safe in Java:
+event loop is a loop that repeatedly extracts the next event
+forinstance,anobjectoftypeConstArray<String>isn’t
+offaqueueandprocessesit. Eachapplicationobjectiscre-
+guaranteed to actually contain strings, and thus might not
+ated within a single event loop, which services all invoca-
+really be immutable. A runtime check at creation ensures
+tions on the object. An event loop and the collection of
+that all elements in an ImmutableArray are in fact im-
+objects it services is called a vat. The vat is the unit of
+mutable. One alternative we considered was to use a type
+concurrency in Waterken: separate vats may process their
+annotation to distinguish between mutable and immutable
+eventsconcurrently,buteachvatissingle-threaded,sotwo
+arrays in Joe-E source code, and enforce the annotation in
+events handled by the same vat cannot be processed con-
+theJoe-Everifier. Whilethisapproachmightworkforsim-
+currently. Thevatisalsotheunitofpersistence: afterpro-
+ple cases, the lack of runtime information would greatly
+cessing of an event has completed, all changes to the vat’s
+complicate serialization and probably make reflection in-
+objectsarewrittentopersistentstorage. Vatsmaycommu-
+feasibleforimmutablearrays.
+nicatethroughexportedreferences. Whenanewvatiscre-
+TheJoe-Everifierandlibrariesarereleasedasanopen-
+ated,areferencetooneofitsobjectsisexported.Theobject
+source project, available at http://www.joe-e.org. To
+thatcreatedthenewvatreceivestheexportedreference,en-
+increaseourassuranceintheimplementation’scorrectness,
+ablingittosendasynchronousinvocationstothereferenced
+wehaveimplementedasuiteofover300unittests,includ-
+object.Anasynchronousinvocationisprocessedbytheref-
+ingseveralforeachoftheJoe-Elanguagerestrictions,cov-
+erencedobject’svatasanevent,andthereturnvaluesentto
+eringasmanycornercasesaswecoulddevise.
+thecaller’svatasanevent. Theinvocationeventandreturn
+event may also transport exported references, introducing
+7 Evaluation
+the callee or caller to objects in either’s vat, or in another
+vat.
+The greatest challenge in using Joe-E is that attaining An instance of the Waterken server can host many vats
+manyofthesecuritybenefitsrequiresarchitectingsystems within a single JVM. An application running on the Wa-
+following capability design principles, which are unlikely terkensoftwareconsistsofapplication-specificJoe-Ecode,
+to be familiar to most programmers. Consequently, using running in one or more vats, which may be hosted on
+Joe-E effectively will likely require training in capability a single Waterken server instance or spread across multi-
+concepts. Whereitisnotpracticalforeveryprogrammerto ple Waterken instances. The implementation of the Wa-
+havetheseskills,itmaybepossibleforsomeonewithsuch terkenserveriscraftedtoensurethatsecurityreviewtech-
+expertisetocarefullyarchitectasystembeingdesignedasa niques for single-threaded, transient, local Joe-E code re-mainsoundwhenappliedtoJoe-Eapplicationcoderunning referencetoavatobjectandmodifyingitaftercompletion
+ontheWaterkenplatform.Toassistverificationofitsimple- oftheenter()invocation,orduringasubsequentinvoca-
+mentation,theWaterkensoftwareitselfusesJoe-Etoprove tion. The persistence engine would then fail to detect the
+certainpropertiesofitsownimplementationand toensure modificationsinceitdidn’texpectthelatemodification,or
+that assumptions about hosted application code are valid. didn’t know that a subsequent event had access to the ob-
+Thefollowingsectionsexaminesomeofthesepropertiesto ject. A reference to a vat object could similarly escape if
+highlight different “design for review” techniques enabled usedasthereturnvaluefromatransaction. WeuseJoe-Eto
+byJoe-E.TheWaterkenservercomprisesabout13KSLOC preventtheescapeofmutablevatobjectsbydeclaringboth
+ofJoe-Ecodeand4KSLOCofJava(excludingblanklines the Transaction type and the return type of enter() to
+andcomments). implement Joe-E’s Immutable marker interface. The Joe-
+Everifiercanthusbeusedtoensurethatclientsoftheper-
+sistence engine do not have these faults. All clients of the
+7.1.1 ConsistentPersistence
+persistenceengineintheWaterkensoftwarepasstheJoe-E
+verifier.
+Processingofaneventbyavatshouldbelikeprocessingof
+In defensive programming, an object implementation
+atransactionbyadatabase:eitherthevatistransitionedtoa
+normally has sole responsibility for maintaining its invari-
+newconsistentstate,orrevertedtoitsstatepriortoprocess-
+ants. Theobject’sclientsareassumedtobebuggyoreven
+ing. Putanotherway,eitherallmutationsthatoccurduring
+malicious. Intheaboveexample,Joe-E’sImmutableinter-
+handling of an event must be persisted, or none of them
+faceisusedtorelaxthisconstraint,enablingtheDatabase
+must be. This consistency is crucial for preserving the se-
+object to depend upon particular client behavior that the
+curityofJoe-EapplicationshostedonWaterken. Forexam-
+Joe-E verifier automatically enforces. Through clever use
+ple,inthecurrencyexamplefromFig.3,ifsomemutations
+ofaJoe-E-verifiedproperty, adesignwhichpreviouslyre-
+werenotpersisted,amaliciousclientcouldgeneratemoney
+quiredreviewofallclientcodecaninsteadbemadedefen-
+from nothing by invoking the takeFrom() method during
+sivelyconsistent,sothatwedon’tneedtoreviewtheclient
+processing of an event that did not persist changes to the
+code.
+source Purse. Waterken’s persistence engine is designed
+topreventsuchviolationsofconsistency. Afteraneventis
+processed,thepersistenceenginetraversesthegraphofall
+7.1.2 CacheCoherence
+objects that were accessible during processing. Any mod-
+ified objects are written to persistent storage. If the mod- Exported references are accessed remotely using HTTP.
+ifications can not all be committed, an exception is raised An HTTP GET request results in an invocation of a get-
+and processing of a subsequent event begins by reloading termethodonanobjectinsomevat. Therequestresponse
+thevat’sstatefromitspriorpersistentstate. containsarepresentationofthereturnvaluefromthegetter
+Thecorrectnessofthepersistenceenginedependsupon method. To support caching, the Waterken server includes
+itsabilitytofindallmodificationsmadeduringprocessing an ETag header in the response. The value of the ETag
+ofanevent.ThisgoalismetbyrequiringWaterkenapplica- headerisasecurehashofthecurrentapplicationcodeand
+tionstobewritteninJoe-E.Asaresult,applicationcodeis allvatstateaccessedduringinvocationofthegettermethod.
+restricted as follows: static variables cannot be mutated AllGETrequestsareprocessedinaWaterkentransactional
+or refer to mutable objects; Java APIs that provide access event that aborts if any modifications are made, ensuring
+toexternalresources,suchasjava.io.Fileconstructors, that there are no side effects and that the request can be
+arenotaccessible,andthuscannotbeusedtocauseunmon- servedfromcache.
+itoredsideeffects;andapplicationcodeisnotabletobreak Cachecoherenceiscrucialtoapplicationcorrectnessfor
+theencapsulationofobjectsthatimplementthepersistence the same reasons as persistence consistency: either may
+engine. Theserestrictionsmakeiteasiertoreviewtheper- break code or invalidate security reasoning due to the use
+sistenceengine. of partially stale state. For caching of Waterken server re-
+The correctness of the persistence engine also depends sponses to be coherent, the ETag value must fully identify
+uponcertainrestrictionsuponthecodethatinvokesit. The theresponsetext: tworesponseswiththesameETagmust
+persistent state of each vat is encapsulated in an object of yield the same text. For performance reasons, it is best to
+type Database. An event, or transaction, is an invocation avoid generating the response text at all when there is a
+oftheDatabase’senter()method, whichtakesanargu- validcachedversion. Consequently,theETagisnotsimply
+mentoftypeTransaction.Theenter()methodprovides a hash of the response text. Instead, the Waterken server
+theTransactionobjectaccesstothevat’sobjectsandre- leverages Joe-E’s support for determinism [4] and so uses
+turns an object of the Transaction’s choosing. A faulty thehashoftheinputstotheresponsetextgenerator. Since
+Transactionobjectcouldviolateconsistencybystoringa Joe-E prevents application code from accessing sources ofnon-determinism,theWaterkenservercantrackallstateac- identifying patterns for secure programming. Our work is
+cessed by the application and thus ensure that any return closelyrelatedtoOz-E[19],anobject-capabilityvariantof
+valueisidenticaltothatproducedifthesamestateisused Oz, and Emily [20], an object-capability subset of OCaml
+again. concurrentlydevelopedwithJoe-Ethatfollowssimilarde-
+The ability to track all mutable state, together with the signprinciples.
+prohibition against reading sources of non-determinism, Object-capability principles have also been applied to
+makes any Joe-E computation cacheable and ensures that the web. The Caja project [12] provides a way to incor-
+cachescanbemadecoherent. Intheabsenceofsuchasys- porate untrusted content into a web page, introducing an
+tematic approach, caching is often implemented in an ad- object-capability subset of Javascript called Cajita as well
+hoc fashion specific to a given request. For example, any assupportforlegacyJavascriptcodebytranslatingittoCa-
+useofHTTPcachinginastandardJavaservletenvironment jita. ADsafe[2]isamorerestrictiveobject-capabilitysub-
+requires careful code review for potential cache coherence setofJavaScript,designedtosupportadvertisementswhose
+issues.Thedifficultyofperformingthisanalysissometimes security can be checked without requiring code rewriting.
+resultsindisablingofcaching. Joe-EenablestheWaterken Emily, Cajita, ADsafe, and Joe-E can all be considered
+servertoreliablyensurecachecoherency,allowingcaching examplesofsemantically-enhancedlibrarylanguages[21]:
+tobeenabledforeveryapplication. theysubsetabaselanguage,thenaugmentitsfunctionality
+byaddinglibraries.
+8 RelatedWork The Java language incorporates mechanisms for access
+control and protection, based on the security manager,
+whichisinvokedwhensensitiveoperationsareperformed.
+Capabilitieshavealonghistoryasanapproachforsecur-
+It can make use of stack inspection and code source infor-
+ing systems [8]. Early multi-user capability systems were
+mation to determine whether to allow such operations [5].
+based upon hardware support for capabilities, where each
+Thismechanismprovidescentralenforcementofasecurity
+capability indicated a resource and a set of access rights.
+policy, which is usually specified centrally and separately
+These systems were sometimes criticized for the perfor-
+from the code to which it applies. In contrast, Joe-E en-
+mance overhead imposed by the special hardware, and for
+forcessecuritypolicesimplementedbytheprogramitselfin
+the extra complexity of managing capabilities separately.
+theformofcapabilitydelegationandreferencemonitorsde-
+Joe-E minimizes performance overhead by performing se-
+finedbyencapsulatingobjects. Thisprovidesanexpressive
+curity checks at compile time as part of static verification,
+mechanismforsupportingawidevarietyofpolicies,includ-
+rather than at runtime. In Joe-E, references used to desig-
+ingfine-grainedanddynamicpoliciesthatmaybedifficult
+nate resources also carry the authorization to access those
+to enforce in Java. It also allows modularity and separa-
+resources,eliminatingtheneedtoseparatelymanageprivi-
+tionofconcernsforpolicyenforcement,becauseeachpart
+leges.
+of the security policy can be enforced at the point in the
+While hardware support for capabilities is no longer
+codewhereitisrelevant. WeexpectJava’smechanismsto
+commerciallyavailable,capability-basedoperatingsystems
+be better-suited to enforcing security on legacy code, but
+arestillfoundinresearchandsomecommercially-available
+for new code, Joe-E may help enforce and verify richer,
+high-assurancesystems,includingtheGNOSISkernelfrom
+domain-specificsecurityproperties.
+TymShare, KeyKOS [6], EROS [18], and derivatives. We
+share the view of capabilities as programmatically invok- Scala [15] is an object-oriented language that compiles
+ablereferences,butintegratethemintothelanguage. toJavabytecodeandprovidesinteroperabilitywithJava. It
+Therehasbeenagreatdealofworkonobject-capability offers better support for functional programming, support-
+languages. As far back as 1973, Morris described how a ing immutable data structures and event-based Actor con-
+programminglanguagecanprovideprotectionfeaturesthat currency. WhilewefindsomeofthespiritofScalainline
+enablecompositionofcodefrommultiplesourcesandsup- with the patterns for effective Joe-E programming, it does
+port local reasoning about security [13]. W7 implemented notprovidesecuritypropertiescomparabletoJoe-E.Scala
+these features in a Scheme environment and provided an syntactically prohibits static fields and methods, replacing
+early example of language support for capabilities [17]. them with instance fields on singleton classes. While syn-
+Joe-E was heavily influenced and inspired by E, a semi- tacticallycleaner,thisapproachcanstillprovidecapabilities
+nal object-capability language [11]; Joe-E brings many of intheglobalscope.
+thenovelsecurityfeaturesofEtoamodernlanguage(Java) Another way to enforce application-specific security
+thatmightbemorefamiliartoprogrammers,andshowshow properties is by restricting information flow between des-
+a static type system can support these security goals. We ignated security principals or labels. The Asbestos [3]
+havealsodrawnonworkintheElanguagecommunityon andHiStar[23]operatingsystemsenforceinformation-flow
+recognizinganddefiningtheobject-capabilityapproachand policies at a per-process granularity. Jif [14] implementsinformationflowrestrictionsatafinergranularity,enabling moves beyond ad-hoc responses to specific attacks toward
+eachvariabletoreceiveitsownlabelandprovidingawayto theconstructionofverifiablyrobust,trustworthysoftware.
+checkmanyoftheserestrictionsstaticallyatcompiletime.
+LikeJoe-E,JifisbaseduponJava,leveragingprogrammer
+Acknowledgements
+familiarity with Java. Information flow techniques seem
+most suitable when the security policy is concerned with
+the flow of data throughout the system; in contrast, capa- MarkMillerandMarcStieglermademajorcontributions
+bilitylanguagesseemmostrelevantwhenweareprimarily to the early design of Joe-E, and we gratefully acknowl-
+concernedwithcontrollingthesideeffectsthatasystemcan edge their sage guidance and advice. We thank Devdatta
+have. Akhawe, Arel Cordero, Matthew Finifter, and the anony-
+Privilege separation is the process of breaking a legacy mous reviewers for their helpful comments on earlier ver-
+application into two or more components that can execute sionsofthispaper.
+at different levels of operating system privilege. A proto- This material is based upon work supported by the
+typical architecture involves a trusted, high-privilege mas- National Science Foundation under grants CNS-0716715,
+ter process that does most of its work via less-privileged CCF-0424422,andCCF-0430585. Anyopinions,findings,
+slaves [16]. The privman library [7] factors out much of andconclusionsorrecommendationsexpressedinthisma-
+the logic of implementing a privilege-separated program. terialarethoseoftheauthor(s)anddonotnecessarilyreflect
+The Wedge toolkit [1] aims to facilitate the process of theviewsoftheNationalScienceFoundation.
+privilege separating legacy software by creating appropri-
+ate primitives and providing a runtime profiling tool that References
+identifies the resources used by the components to be sep-
+arated. We share the goal of architecting systems for se-
+[1] A.Bittau,P.Marchenko,M.Handley,andB.Karp. Wedge:
+curity. However, operating system approaches seem best-
+splitting applications into reduced-privilege compartments.
+suitedtocoarse-grainedprotectiondomains;Joe-Eprovides
+In 5th USENIX Symposium on Networked Systems Design
+language support for separating an architecture into many
+andImplementation(NSDI’08),pages309–322,2008.
+fine-grainedprotectiondomains.
+[2] D.Crockford. ADsafe. http://www.adsafe.org.
+Inpreviousworkweexaminedhowtoverifythatmeth-
+[3] P. Efstathopoulos, M. Krohn, S. Vandebogart, C. Frey,
+ods are functionally pure (deterministic and side-effect-
+D. Ziegler, E. Kohler, D. Mazie`res, F. Kaashoek, and
+free),andarguedthatpurityhasusefulapplicationsincom- R.Morris. LabelsandeventprocessesintheAsbestosoper-
+puter security [4]. That work described how, given an atingsystem.In20thACMSymposiumonOperatingSystem
+object-capability language, one can extend it to obtain a Principles(SOSP’05),pages17–30,2005.
+deterministic object-capability language; it described how [4] M. Finifter, A. Mettler, N. Sastry, and D. Wagner. Verifi-
+deterministic object-capability languages support verifica- ablefunctionalpurityinJava. In15thACMConferenceon
+tion of functional purity; and it discussed the application Computer and Communications Security (CCS’08), pages
+of those techniques to Joe-E. In contrast, this paper is 161–174,2008.
+concerned with how to design a practically useful object- [5] L.Gong,M.Mueller,andH.Prafullch. Goingbeyondthe
+sandbox: An overview of the new security architecture in
+capability language in the first place, rather than how to
+the Java development kit 1.2. In USENIX Symposium on
+supportdeterminismandverifiablepurity.
+InternetTechnologiesandSystems,pages103–112,1997.
+[6] N.Hardy. KeyKOSarchitecture. SIGOPSOperatingSys-
+9 Conclusions temsReview,19(4):8–25,1985.
+[7] D.Kilpatrick. Privman: Alibraryforpartitioningapplica-
+Object capabilities are a promising approach to build- tions. InUSENIXAnnualTechnicalConference,FREENIX
+Track,pages273–284,2003.
+ing software systems that provide reliable security proper-
+[8] H. M. Levy. Capability-based computer systems. Digital
+tiesandareeasiertoauditandsafelyextend. Inthiswork,
+Press,Maynard,MA,USA,1984.
+wehaveshownthattheadvantagesofobject-capabilitysys-
+[9] T.LindholmandF.Yellin. Java(TM)VirtualMachineSpec-
+tems can be achieved with moderate changes to a popular
+ification,The(2ndEdition). PrenticeHallPTR,April1999.
+type-safe object-oriented language. Defining a subset al-
+[10] A. Mettler and D. Wagner. The Joe-E language specifica-
+lows one to reason about sophisticated security properties
+tion, version 1.1, September 18, 2009. http://www.cs.
+of a program in a familiar language, obtaining the benefit
+berkeley.edu/~daw/joe-e/spec-20090918.pdf.
+of stronger guarantees about what a program is able to do
+[11] M.S.Miller. RobustComposition: TowardsaUnifiedAp-
+while leveraging existing tools and programmer expertise. proach to Access Control and Concurrency Control. PhD
+Weanticipatethatthesetechniqueswillbeusefulfordevel- thesis, Johns Hopkins University, Baltimore, Maryland,
+oping security-critical and other software, as the industry USA,May2006.[12] M.S.Miller,M.Samuel,B.Laurie,I.Awad,andM.Stay.
+Caja: Safe active content in sanitized JavaScript (draft),
+2008. http://google-caja.googlecode.com/files/
+caja-spec-2008-06-07.pdf.
+[13] J.H.Morris,Jr.Protectioninprogramminglanguages.Com-
+mun.ACM,16(1):15–21,1973.
+[14] A.C.MyersandB.Liskov. Adecentralizedmodelforin-
+formationflowcontrol.InSymposiumonOperatingSystems
+Principles,pages129–142,1997.
+[15] M.Odersky. TheScalaprogramminglanguage. http://
+www.scala-lang.org.
+[16] N.Provos. Preventingprivilegeescalation. InProceedings
+of the 12th USENIX Security Symposium, pages 231–242,
+2003.
+[17] J.A.Rees. Asecuritykernelbasedonthelambda-calculus.
+MITA.I.Memo1564,1996.
+[18] J.S.Shapiro, J.M.Smith, andD.J.Farber. EROS:afast
+capabilitysystem. In17thACMSymposiumonOperating
+SystemsPrinciples(SOSP’99),pages170–185,1999.
+[19] F.SpiessensandP.V.Roy.TheOz-Eproject:Designguide-
+lines for a secure multiparadigm programming language.
+In Multiparadigm Programming in Mozart/Oz: Extended
+ProceedingsoftheSecondInternationalConference(MOZ
+2004),pages21–40.Springer-Verlag,2005.
+[20] M. Steigler and M. Miller. How Emily Tamed the Caml.
+TechnicalReportHPL-2006-116,HPLaboratories,August
+11,2006.
+[21] B.Stroustrup.Arationaleforsemanticallyenhancedlibrary
+languages. InProceedingsoftheFirstInternationalWork-
+shoponLibrary-CentricSoftwareDesign(LCSD05),pages
+44–52,2005.
+[22] D. Wagner and D. Tribble. A security analysis of the
+Combex DarpaBrowser architecture, March 4, 2002.
+http://www.combex.com/papers/darpa-review/
+security-review.pdf.
+[23] N. Zeldovich, S. Boyd-Wickizer, E. Kohler, and
+D. Mazie`res. Making information flow explicit in
+HiStar. In 7th USENIX Symposium on Operating Systems
+DesignandImplementation(OSDI’06),2006.

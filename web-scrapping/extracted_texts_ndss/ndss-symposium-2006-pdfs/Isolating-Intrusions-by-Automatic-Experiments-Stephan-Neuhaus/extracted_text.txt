@@ -1,0 +1,610 @@
+Isolating Intrusions
+by Automatic Experiments
+StephanNeuhaus AndreasZeller
+DepartmentofComputerScience DepartmentofComputerScience
+SaarlandUniversity SaarlandUniversity
+Stephan.Neuhaus@acm.org zeller@acm.org
+Abstract server, the shell, the cat, uudecode, and C compiler com-
+mands,andfinallythe.bugtraqprocess.Tofindthesepro-
+When dealing with malware infections, one of the first cesses,weusuallystartfromanobservedfailureofthese-
+tasksistofindtheprocessesthatwereinvolvedintheattack. curitypolicy(suchasanunknownprocessnamed.bugtraq)
+WeintroduceMalfor,asystemthatisolatesthoseprocesses anduselogfilesortoolslikeTheCoroner’sToolkit[6,7]to
+automatically.In contrast to other methodsthat help ana- reasonbackwardstoitsrootcause(themalformedHTTPS
+lyzeattacks,Malforworksbyexperiments:first,werecord request).
+the interaction of the system under attack; after the intru- However,dealingexclusivelywithevidenceafterthefact
+sion has been detected, we replay the recorded events in severely limits even an expert’s chances of reconstructing
+slightlydifferentconfigurationstoseewhichprocesseswere theeventchain:
+relevantfor the intrusion.This approachhas three advan-
+tages over deductive approaches: first, the processes that Completeness. Theevidencemightnotbeenoughforthe
+are thus found have been experimentally shown to be rel- eventchaintobereliablyestablished.
+evant for the attack; second, the amount of evidence that
+Minimality. The relevant evidence might be buried in a
+must then be analyzed to find the attack vector is greatly
+hostofotherevidenceandmaythusbehardtosee.
+reduced; and third, Malfor itself cannot make wrong de-
+ductions.In a first experiment, Malfor was able to extract Correctness. Ourreasoning(byhumanormachine)might
+thethreeprocessesresponsibleforanattackfrom32candi- befaulty,leadingtowrongconclusions.
+datesinaboutsixminutes.
+To alleviate these problems, we are exploring a novel
+approachwith our system, called Malfor (short for MAL-
+ware FORensics). In a typical scenario, Malfor would be
+1. Introduction deployedonahoneypot,capturingallattackableprocesses.
+Whenthe honeypotis attacked,a host IDS signals a com-
+Whenanalyzinganattack,oneofthefirsttasks isfind- promiseandtriggersMalfor’sreplaycomponent.Insteadof
+ingoutwhichprocessesparticipatedintheattackandhow deducingafterthefactwhatmusthavehappened,weexper-
+theyarerelated.Ifwedon’thavestatisticalinformationthat iment: in order to learn which processes are necessary for
+can help us classify and isolate malicious traffic [24, 28], the break-in to occur, we repeatedly replay slightly modi-
+this must happen before we can look for the input that fiedversionsofthecapturedattack(Section2)usingacap-
+causedtheintrusion,theattackorinfectionvector.Forex- tureandreplayinfrastructurethatenablesnotonlyverbatim
+ample,whenweanalyzeaninfectionwiththeLinuxSlap- replay,butreplayunderalteredcircumstances(Section3).
+per worm, we could arrive at this analysis [21]: “Attack- Malforthenfindstheprocessesthatwererelevantfortheat-
+ershavingtheIPaddress10.120.130.140sentamalformed tackandnotifiesasystemadministrator,whocanthencom-
+client key in an HTTPS request to our Web server. This pletetheanalysiswithamuchsmallerbodyofrelevantev-
+causedabufferoverrunintheWeb serverandinvokedthe idence. This works without knowing the attack vector be-
+shell.Therunningshellthensavedauuencodedcopyofthe forehand.Malfor can also be deployedon productionsys-
+worm’ssource-code,decodedandcompiledit,andranthe temsatthepriceofsomeperformanceoverhead.Weevalu-
+generated executable under the name .bugtraq. Once run- atethetechniqueusinganexampleandfindthattheextrac-
+ning,thewormtriedtocontactothercomputersonthenet- tionofthreerelevantprocessesfromatotalof32processes
+work.”Inthisexample,therelevantprocessesaretheWeb tookaboutsixminutes(Section4).WereviewrelatedworkinSection5,listsomeassumptionsandlimitationsofMal- Inaddition,deltadebuggingisnotrestrictedtosourcecode
+forinSection6anddetailsomeofourfutureplansinSec- analysis.
+tion7. Delta debugging is a practical method. It has already
+beenusedsuccessfullytoautomaticallyfinddefectsinpro-
+gramsas largeas the GNU C Compiler[3].Its worst case
+2. Findingrelevantprocesses runningtimeisO(n2)iftherearenprocessesandexecuting
+aprocesstakesunittime,butitusuallyfinishesinO(logn)
+Howcanweefficientlyfindthoseprocessesthatarerele- time.
+vantforabreak-in,possiblyamongthousands?Ifwecould Let us apply delta debugging to an example network
+capture the interaction of the attacked system, we could serverprocesstoseehowdeltadebuggingcanfindthepro-
+viewablow-by-blowaccountofit inslowmotionandan- cessesinvolvedintheintrusion.Thisnetworkserver,named
+alyzewhatmusthavehappened.Thisiscertainlyusefulin Spud1, readsandparsesaHTTP-likecommandset froma
+ordertostudytheattack,butisneithercomplete,minimal, networksocket.Oneofthesecommandswillcausethefile
+orcorrect,aswasindicatedabove.Ifwewanttofindwhich /tmp/pwnedtobecreated.Inourevaluation,weusetheex-
+processeswere actually relevantforan intrusion,we need istenceofthisfileasabreak-inindicator:assoonasthisfile
+to be able to make experiments. For example, if we want has been successfully created, we say that a break-in has
+tocheckwhethertheinetd processwasrelevantfortheat- happened.Spud has the followingstructurewhich is typi-
+tackornot,we wouldliketoreplaytheattackwithoutthe calofmanynetworkserverprograms(seealsoFigure1):
+inetd process. If the attack still succeeds, we have experi-
+1. itdetachesitselffromthecontrollingterminal,becom-
+mentalandincontrovertibleevidencethatinetdwasindeed
+ingasessionleader;
+notrelevant.Iftheattacknowfails,itmusthavebeennec-
+2. thesessionleaderopensasocketandbindsittoawell-
+essaryfortheattack.
+knownportnumber;
+Ifwecancaptureandreplaytheprocessesinasystemso
+that we can control which processes will be executed and 3. itacceptsaconnectiononthatsocket;
+whichwillnot,wewanttofindaminimalprocess setthat 4. itforksaworkerprocess;and
+isnecessaryfortheintrusion.Iftherearenprocesses,this
+5. whilethesessionleadercontinueslistening,theworker
+wouldtakeontheorderof2n replaysintheworstcase,so
+reads a request from the newly opened socket, per-
+wearewillingtosettleforaprocesssubsetthatissmallbut
+forms the requested action (possibly using subpro-
+notnecessarilyminimal,ifwecanonlycomputeitwithless
+cessesthatrunotherprograms),andexits.2
+replays.
+ThisproblemissolvedbyDeltaDebugging,atechnique Inthisexample,theintrusioniscausedbyasinglesys-
+that originated in automated debugging and test support. tem call, the one that creates the file /tmp/pwned. The set
+Delta debugging repeatedly runs various process subsets ofrelevantprocessesthencontainstheprocessmakingthat
+anduses a test functionthat yields! (successfultermina- systemcall,anditsancestors.
+tion, no break-in), " (the break-in occurred) or (some- Assume that we have 32 processes: the command-line
+thingunexpectedhappened).Theseresultsdriveastrategy program C, the session leader S and thirty workers W 1,
+thatfindsasmallsubsetofprocessesthatmakethebreak-in ..., W 30, where W 20 executes the intrusion-causing sys-
+happen, but where removing any single process from that tem call. Delta debugging will try different subsets of the
+subset causes the break-in not to happen any more. It is set ofall processes C,S,W 1,...,W 30 andtest whether
+{ }
+comprehensivelydescribedinthepapersbyZeller[31]and theintrusionstill happens.In ourexample,theset ofrele-
+ZellerandHildebrandt[32]. vantprocesseswouldbe C,S,W 20 .
+{ }
+Deltadebuggingislikebinarysearch:ithalvesthepro- Theactualsequenceofprocesssubsetstriedbydeltade-
+cesssetandtrieseachhalfseparately.However,complica- buggingisshowninTable1.Thecolumnmarked“R”con-
+tions arise because the relevant processes need not all be
+tainstheresultofthetest:"iftheintrusionoccurs,and!
+inonehalf,whichmakesdeltadebuggingsomewhatmore if it does not occur. The other columns contain a bullet if
+complicatedthanstraightforwardbinarysearch.Incontrast thecorrespondingprocessisincludedinthetest.Forexam-
+to other methods in the same general area such as slic- ple,inrow1,processesC,S,andW 1 throughW 14 arein-
+ing[27],whichusededuction,deltadebuggingusesexper- cluded,butW 15throughW 30arenot.SinceW 20isthecul-
+iments to arrive at its conclusions: it actually tries various prit,andsinceitisnotexecuted,theintrusiondoesnothap-
+subsetsofprocessesandlets theoutcomeofthetest func-
+penandtheoutputis!.
+tiondriveitsstrategy.Itdoesnotnecessarilyfindthesmall-
+estprocesssubsetthatcausesthefailure,butinpracticewe 1 AfteracharacterfromTrainspotting[29].
+findthatresultsfromdeltadebuggingareclosetooptimal. 2 Spuddoesnotuseanysubprocesses.Figure1.Typicalprocessstructureofanetworkserver.
+Lines 1–3 try to find a subset of the original processes replay the process, we also replay these system calls, so
+thatproduce",firstbysplittingtheoriginalsetinroughly we will have recreated the state of the process as it was
+equalpartsandthensubdividingitfurtherandtryingcom- when it made the original challenge-response authentica-
+plements when that does not work. Line 14 contains the tion and the computedchallenge will be the same in both
+minimal subset needed for the intrusion. Further subsets cases. In the case of files on the local file system, Mal-
+need not be considered, because they have already been for actually executes the system calls; in the case of a re-
+tested (lines 9 and 13). Delta debuggingfinds the culprits motechallenge-responseauthentication,it replaysa previ-
+(processesC,S,andW )withonlyfourteentries. ouslyrecordedconversation.
+20
+Fromthis,wecanseethatinthisexample,Malfor’sre-
+sult is complete, minimal and correct: the processes that
+3. Capture and replay
+Malfor found, and only those, really were relevant for the
+break-in.
+Inthissection,wegivesometechnicaldetailsonourcap-
+We emphasize that Malfor’s result does not only con-
+tureandreplayinfrastructure.Inparticular,wewillfocuson
+taintherootcauseoftheattack,butallintermediateattack-
+howwecanaltercapturedeventsonreplayandhowwecan
+relevantprocessestoo.Soifanattackinvolvesalongchain
+testspecificprocesssubsets.
+ofevents,Malforwillproducealltheintermediatestepsthat
+areneededtoreproducetheattack.
+Oneconcernisthataprocesscouldnotexhibititsorig- 3.1. Overview
+inalbehaviorduringreplaybecauseittookadifferentcon-
+trol path. For example, what if a process launches an at- Security incidents happenbecause intruders send mali-
+tack only uponthe existence of certain files, or a success- cious inputs (attack vectors) to processes, which then is-
+fulchallenge-responseauthenticationwitharemoteserver? sue system calls that cause some security policy to be vi-
+Inthesecases,theprocessmusthavemadesystemcallsthat olated [22]. For example, if we assume that there are no
+causedtheseactionstobeperformed.Malforthencaptures covert channels and that confidential data was disclosed,
+thesesystemcallsandreplaysthem.Forexample,ifapro- some process must have issued a write() system call that
+cess creates a random challenge as part of the challenge- wrotethisdatatoitsforbiddendestination.Thesemalicious
+response protocol, it will have to issue system calls to do inputs are deliveredto the processes also by system calls.
+so (for example, in order to read /dev/random). When we Therefore, if we want to use delta debugging to find out# Processes R
+C S 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+1 !
+2 • • • • • • • • • • • • • • • • !
+3 • • • • • • • • "
+4 • • • • • • • • • • • • • • • • • • • • • • • • !
+5 • • • • • • • • • • • • • • • • "
+6 • • • • • • • • • • • • • • • • !
+7 • • • • "
+8 • • • • • • • • • • • • "
+9 • • • • • • • • !
+10 • • "
+11 • • • • • • !
+12 • • • • "
+13 • • • • !
+14 • "
+• • •
+Table1.ProcesssubsetsactuallytriedbydeltadebuggingSpudwithMalfor.
+howa policyviolationhappened,we must be able to cap- 3.2. Matchingsystemcalls
+tureandreplaythesystemcallsthatthoseprocessesmake.
+Inordertocaptureandreplaysystemcalls,Malforuses When we want to replaya systemcall, we haveto find
+a subsystem that sits betweena process underobservation itsmatchingcounterpartinthedatabase.Ifreplaywereper-
+and the operating system (see Figure 2). When capturing, fect,theneverythingduringreplaywouldbethesameasit
+all interesting system calls are intercepted by that subsys- was duringcapture:systemcall parameters,file descriptor
+tem and capturedin a database (steps 1, 2, 2a, 3, and4a). numbers,andprocessIDswouldallbeunchanged.Inprac-
+Whenreplaying,therequestedsystemcallismatchedinthe tice, this is not the case. For example, process IDs during
+database,modified,andreturned;theoriginalsystemcallis capture will generally differ from those during replay be-
+neverexecuted(steps1,2,3,and4b).3 causeofun-replayedprocesses,andfiledescriptornumbers
+will differ because some file operationsare replayedfrom
+Since a process has no reliable method of finding out
+thedatabase(bypassingtheoperatingsystem)andsomeare
+whethera system call actually executedor whether it was
+executed(goingthroughit). Theseparametersaremapped
+replayed from a database except by making a system call,
+weplaywiththeprocess’snotionoftheoutsideworld.This betweenthe user-modeprocess, the operatingsystem, and
+part of Malfor is therefore named Solipsy4. Since captur- thereplaydaemon.
+ingtakesplaceonarealsystem,andsincesystemcallsare Some system call parameters may be judged irrelevant
+faithfullyreplayed,anattackingprogramcannoteasilyfind formatchingbecausetheycanchangefromruntorunwith-
+outwhetherit is beingfed replayedinformationorresults outaffectingthemappingofcapturedtoreplayedcalls.An
+fromactualsystemcalls. example is the exact value of a buffer address in a read()
+system call. While irrelevant parameters are ignored, all
+Our implementationof Solipsyruns onLinux.Inorder
+othersareusedasakeyintothedatabase.
+to speed up replay, we use User Mode Linux (UML) [4]
+When a system call is thus matchedand retrieved,it is
+with copy-on-write (COW) disk images. We initially cre-
+marked as “spent” and cannot be replayed again. This is
+ate two disk images, one for capture and one for replay.
+needed to distinguish between otherwise identical system
+One contains the capture daemonand the other the replay
+calls: a process can call read() repeatedly with the exact
+daemon, but both are otherwise identical. To start replay-
+sameparameters.Inthiscase,wetaketheearliestunspent
+ing,webootUMLfromthereplaydiskimage.Duringop-
+match.
+eration,theCOW filecontainsonlythoseblocksthathave
+changed with respect to the original disk image, so in or-
+dertoresetthereplaysystemtoitsinitialstate,wecansim- 3.3. Signals
+plydeletetheCOWfileandrebootUML.
+Signals are events that are asynchronouslydelivered to
+aprocess.Inotherwords,asignalisdeliveredtoaprocess
+3 Some system calls are problematic or impossible to replay, among
+withouttheprocesshavingtoaskforit.Thisisincontrastto
+themfork()orexecve()(thesechangethecontrolflowinawaythat
+isdifficultifnotimpossibletoreplaywithoutactuallycreatinganew systemcalls,whereprocessesmustexplicitlyrequesttheir
+processorexecutinganewprogram,respectively);brk()(onsuccess, services. When a signal arrives, process execution is sus-
+memorymustactuallybeallocated);andmmap(),shmat()andrelated
+pended and a special routine in the process, called a sig-
+ones(theyallowaprocesstodoI/Owithoutextrasystemcalls).All
+thesesystemcallsarenotreplayed,butactuallyexecuted. nalhandler,isexecuted.Signalsmayoccuratanytimedur-
+4 From solipsism, the idea that the outside world comes to us only ing process execution, even while executing a signal han-
+throughoursensesandisthereforenotnecessarilyreal. dler. Typical examples are SIGSEGV, which occurs whenFigure2.ArchitectureofSolipsy.PartsofSolipsyareshowndarker.
+aprocessreferencesmemorythatitcannotaccess,suchas itfork,butassoonasP makesasystemcall,wemakethe
+anullpointer;SIGCHLD,whichoccurswhenachildpro- processexitinsteadofreplayingthecall.
+cess dies;SIGALRM,whichoccurswhena timerexpires; To support this behavior, the replay daemon registers
+orSIGINT,whichoccurswhena userinterruptsa process eventhandlersandwill forwardsystemcalls tothese han-
+fromthekeyboard. dlerswhichthendecidewhattodowiththesystemcalland
+For externally-generated signals such as SIGINT, it is withthecallingprocess:
+certainlypossible to captureand to replay them at the ex-
+thesystemcallcanbematchedinthedatabase(thede-
+act time they occurredduringcapturing[5]. However,our •
+faultaction);
+methodworksbyalteringtheprocess’s controlflowin or-
+dertofindoutwhichcircumstancesarerelevant.Therefore, thesystem callcanbe executedbytheoperatingsys-
+•
+replaywithMalforisnotverbatim,anditbecomesimpos- tem (the default action if the call cannot be found in
+sibletosaywhenorifasignalshouldbedelivered.Forthis thedatabase);
+reason,Solipsycurrentlydoesnotcaptureorreplaysignals. the process can be made to exit instead of executing
+•
+Fortunately, many important signals will be delivered thesystemcall;
+correctly,eveniftheyarenotcapturedorreplayed.Forex-
+ifthesystemcallisfork(),thenewlycreatedchildpro-
+ample,SIGSEGV,SIGCHLDandSIGALRMwillbedeliv- •
+cesscanbemadetoexitatthenextcall;or
+eredatthecorrecttimeanyway,becausetheyhavetheirori-
+the result of the system call can be computed on the
+gindirectlyinaprocess’sformeractions:accessinginvalid
+•
+fly.
+memory,creatingachildprocesswhichthenexited,orin-
+stallingatimer,respectively. Thisframeworkismoregeneralthanisstrictlyneededto
+controlprocess creation,but it allows us to extendMalfor
+3.4. Changingaprocess’s executionpath tofindnotonlytherelevantprocesses,butalsotherelevant
+inputstothoseprocesses(seeSection7onfurtherwork).
+Malforworksbytestingvarioussubsetsofprocessesto
+seeiftheintrusionhappenswhenonlytheseprocessesare 4. Initialexperience
+present. However, Malfor cannot prevent a process from
+calling fork(), so if we want to test a process subset that If Malfor is to be a practical system, it needs to be ac-
+doesnot containa processP, butP’s parentforks,we let curate, fast and easily deployed.Malfor’s accuracyis cur-What Total Median µ σ OH OH
+UML+Replay 364s 26s 26.0s 3.7s Environment Time Ded. UML
+Replayonly 174s 13s 12.4s 3.3s Dedicatedmachine 21.5s 0%
+UMLw/oSolipsy 22.4s 4% 0%
+UMLw/Solipsy,disabled 24.0s 12% 7%
+Table 2. Performance when analyzing the
+UMLw/fullSolipsy 24.3s 13% 8%
+sample attack on Spud (14 tests). All times
+are in seconds. The column labeled µ holds
+themeanandthecolumnlabeledσholdsthe Table3.PerformanceofSpudinvariousenvi-
+standarddeviation. ronments.Thecolumnlabeled“OHDed.”has
+the overhead of running Spud in the given
+environment relative to running it on a dedi-
+rentlybeingevaluated.Allwecansayatthispointisthatit catedmachine;thecolumnlabeled“OHUML”
+hassofarfoundtherelevantprocessesinallourtests.The has the same overhead relative to running
+nexttwo sections containa preliminaryperformanceeval- SpudonaUMLwithoutSolipsy.
+uation, which has results only for capturing and for delta
+debuggingthe examplefromthe previoussection. We can
+showonlyafewresultshere;wearecurrentlyworkingon On a dedicated system that did not run inside UML or
+a more completeset of statistics. The last section looks at use Solipsy (that is, Spud performed only steps 1 and 2a
+Malfor’sdeployability. in Figure2),this took21.5s. On an UML system thatdid
+Fortheseexperiments,the(un-tuned)MySQLdatabase, nothaveSolipsy(steps1and2aareperformed,butthenet-
+UMLwithSolipsyandtheoutside“attacker”wereallonthe workI/Ohastocrossamachineboundary),it took22.4s.
+samehost,a3GHzPentium4PCrunningLinux2.4,both Once Solipsy was loaded and enabled,but the service not
+asthehostkernelandtheUMLkernel.Allkernelswereoth- traced (steps 1, 2, and 2a), execution time rose to 24.0s.
+erwiseunoccupied. Whenthevulnerableservicewasalsotracedandtheresults
+putinadatabase(steps1,2,2a,3,and4a),executiontime
+4.1. Performanceofdeltadebugging was24.3s.
+Whilethesepreliminaryresultscannotbedefinitive,we
+WhenweactuallyanalyzedtheexampleattackfromSec- feel that the system calls captured in this experiment (see
+tion 2 with Malfor, we got the results summarized in Ta- Table4)aretypicaloflargersystemsandthatthereforethe
+ble2.Wecanseethatthetimespentreplayingtheprocesses numbers obtained in this experiment are representative. If
+isonaverageonlyabouthalfoftheUMLrunningtime.In that is indeed the case, the overhead of capturing would
+otherwords,abouthalfthetimeisspentbootingandshut- be about 8% when comparedto an un-tracedprocess run-
+tingdownLinuxkernels.Linuxstartuptimeishardtospeed ninginside UML (the “OverheadUML” columnTable 3),
+up;inourcase,wehavealreadydisabledallunneededser- orabout13%whencomparedtoadedicatedmachinewith-
+vices. Shutting down a UML, however,takes about ten to outeitherUMLorSolipsy(the“OverheadDedicated”col-
+eleven seconds in our setup, so if we just killed the UML umn).
+insteadofshuttingitdowncleanly,wewouldsavebetween On the one hand, both results are excellent. They also
+14 10s = 140s and14 11s = 154s ofruntime. Ifwe comparewellwiththosebyDunlapandothers[5].Onthe
+· ·
+didthat,theproportionofreplaytimetototalrunningtime other hand,it seems as if these numbersare so good only
+wouldrisetoabout75percentandthetotalrunningtimeit- becausetheprogramtakessolong,evenonadedicatedma-
+selfwoulddecreasebyabout40percent,toabout217s. chine(thefirstrowinTable3).Itsperformanceisaboutsix
+requestspersecond,whichseemsratherslow.Itremainsto
+beseen whethertheperformancefiguresareindeedrepre-
+4.2. Performanceofcapturing
+sentativeoflargernetworkservices,suchasApache.
+Inordertomeasuretheperformanceofcapturing,weran
+SpudinsuccessivelymorecompleteSolipsyenvironments, 4.3. Deployability
+as explained below. In each environment, we called Spud
+257timesinrapidsuccession.Oneofthesetimes,theser- AllofMalfor’scomponentsareeasilyinstalled:Solipsy
+vicewasmadetoexhibititsvulnerability.Overall,wethere- is a loadable kernel module, the capture and replay dae-
+fore have one command-line process, one session leader, monsareordinaryprocesses,thedeltadebuggeris alsoan
+oneintrusion-causinginteractionand256harmlessinterac- ordinary process that can additionally reside on a remote
+tions.Table3hasourresults. machine,andthedatabaseisanordinaryMySQLdatabaseOnreplay,theinitialprocessorstateisrestoredandloadin-
+accept access bind brk close
+structionsarereplayed.LikeFlightDataRecorder,BugNet
+connect execve exit fcntl64 fork
+needshardwaresupport.
+fstat64 listen llseek mmap munmap
+DunlapandothersdevelopedReVirt,anadditiontoUser
+open read setsockopt socket stat64
+ModeLinuxthatcapturesandreplaysthesequenceofma-
+unlink wait4 write
+chine instructions during an execution of Linux [5]. Re-
+Virt works by virtualizing the processes to be logged—
+Table 4. List of captured system calls in wrapping them in a virtual machine—and logging asyn-
+theexperiment.Solipsycapturesmanymore chronous events to guarantee instruction-level replay. The
+systemcallsthangiveninthistable;theyjust novelideahereisthatitisnotthehostmachinethatisbeing
+weren’tusedbySpud. logged,butthevirtualmachine.Thisobviatestheneedfor
+hardwareextensionsthatsystemslikeFlightDataRecorder
+orBugNetneed.
+without any tuning. Neither the kernel image nor the cap- All these systems were designed to facilitate or enable
+tured processes need to be changed. The latter is particu- deterministic replay, that is, replaying the exact sequence
+larlyimportantifwewanttoanalyzeprocesseswhosepro- ofinstructionsthatwereexecutedpreviously.Malformakes
+gramswecannotdebug.WethereforebelievethatMalforis no claim of determinism.In fact, the whole point of Mal-
+easilydeployed. foristochangetheexecutionflowoftheparticipatingpro-
+cesses to see whether the intrusion still occurs. When the
+replayedprocess’s control flow changes, the whole notion
+5. Relatedwork
+of“deterministic”replaybecomesproblematicbecausethe
+changedruncannotbecomparedtoanypreviousrun.
+Thereareanumberoftoolsthatenabledeterministicre-
+System call capturing or interposition has been in use
+playdebugging.Oneofthefirstproposalsforadeterminis-
+forsometimetoenablesecurityanalysesorpolicyenforce-
+ticreplaydebuggingsystemwasFlightDataRecorder[30].
+ment [9, 10]. System call interposition in the face of hos-
+FlightData Recorderis gearedat replayinganentiremul-
+tileapplicationsisdifficultandmostresearchinthatareais
+tiprocessorsystemfaithfully.Itworksbycheckpointingthe
+aimedatovercomingthesedifficulties[8].Thesystemthat
+systemandrecordingrace-relevantinformationthatwould
+ismostsimilartoSolipsyisprobablySystrace[22],asys-
+beneededtoallowfaithfulreplayfromthelastcheckpoint.
+tem that helps formulate and enforce system call policies,
+To record this information, it needs some extra hardware.
+whichalsomodifiessystemcallsonthefly.
+Flight Data Recorder itself does not replay; this is left to
+otherprogramslikeInstantReplay[13]. King and others used ReVirt to develop Backtracker, a
+Flashback[26]wasmotivatedbytheneedforarollback systemthatbuildsagraphofdependenciesbetweenevents
+facilitytoallowdebugginglargeandverylong-runningpro- suchasprocesscreation,I/O,orfiledeletionandusesthese
+gramsthatmightdisplayabugonlyafterdaysofexecution, dependencies for break-in analysis [12]. For example, if
+oronlyinspecificcircumstances.Itworksbyprovidingfa- Backtrackerwantstofindthecauseforamodificationofthe
+cilities for checkpointingand deterministic replay. Check- file/etc/passwd,itwilllookthroughitsdependencegraph,
+pointingisdonebyusingshadowprocesses:acopyofthe findthe processP thatlast modifiedthefile andwill then
+currently running process is created at some specific time recursivelyfindalleventsandprocessesthatcouldhavein-
+usingfork(),andsuspendedimmediately.Thisshadowpro- fluencedP.
+cess is then reanimated when the execution is rolled back An inherent limitation of Backtracker is that it cannot
+to thecreationpoint.Replay is donebyhijackingthe sys- findeffectswhosecausedoesnotappearinthedependency
+temcallhandler,substitutingone’sown,andcapturingsys- graph.Inouraboveexample,ifBacktrackerwantstofinda
+temcallsandtheirsideeffects.Solipsyusesessentiallythe modificationto/etc/passwd,itwilllookforsystemcallsthat
+sametechnique.SignalsarealsohandledasinSolipsy,that openandwritethepasswordfile.Wehavewrittenaprogram
+is,theyareignored. thatcreatesanewrootaccountinthepasswordfilewithout
+Another system for deterministic replay debugging is leaving traces in system calls. This programworks as fol-
+BugNet [16]. BugNet’s goal is to record enough informa- lows:
+tiontoreplaytheinstructionsimmediatelyprecedingapro-
+gramcrash.BugNetaimsonlytoreplaytheusercodeand 1. Itloadsapurpose-builtkernelmodule.5
+sharedlibraries;theuserwill notbeableto seewhatgoes
+onduringinterruptsorsystemcalls.BugNetworksbysav-
+5 This presupposes that the attacker has already gained root access.
+ingtheprocessorregistersatthebeginningofacheckpoint However,thisprogram’spurposeisnottoattack,buttoinstallaback
+andthencapturingthevalueofloadinstructionstoregisters. doorthatcannotbeanalyzedbyBacktracker.2. Uponmoduleinitialization,thekernelmodulecauses Sidiroglou and Keromytis introduce a technique that
+anewrootaccounttobeaddedtothepasswordfile.It patchesavulnerableprogram’ssourcecodeonthefly,once
+doessobycallingfunctionsinsidethekernelandnot the infection vector is isolated [23]. They focus on stack-
+bymakingadditionalsystemcalls. basedbufferoverflowsanduseheuristicsthattransformthe
+program’s source code so that the buffer overflow is con-
+3. Finally,theprogramunloadsthekernelmodule.
+tained.Thepatchedprogramistestedinaclean-roomenvi-
+ronment,bothagainsttheoriginalattackvectorandagainst
+Backtracker will not be able to answer the question
+a local test suite to ensure that it is no longer vulnerable
+“Whicheventscausedtheextrarootaccounttoappearinthe
+andthatitstillworksasexpected.Theirtechniquepresup-
+passwordfile?”becauseitlooksatthesystemcallsandde-
+posesthattheattackvectorhasalreadybeenisolated,some-
+ducesthatthereisnorelationshipbetween/etc/passwdand
+thingthatMalforisdesignedtodo.
+the process that loads the kernel module. Malfor will ac-
+tuallyexecutetheprocessesinquestionandwillbeableto
+produceafairlysmalllistofprocessesthathaveexperimen- 6. Assumptionsand limitations
+tally beenfoundto be responsibleforthe alterationof the
+password file. This limitation exists for all purely deduc- Malfor works only under certain assumptions. If these
+tivemethodsandisnotspecifictoBacktracker. assumptionsdon’thold,Malforcan bedefeated.This sec-
+tionlistssomeoftheseassumptions.
+Wecanalsomodifytheattacksothatthekernelmodule
+delaysinstallingthenewrootaccount.Thismeansthatsys- Determinism. Malfor will have problems analyzing at-
+temsarefooledthatfreezethesystemassoonastheydetect tacks that use race conditions or other forms of non-
+acompromiseinordertofindtheresponsibleprocesses. determinismtosucceed.Inprinciple,contextswitches
+James Newsomeand othershave developedTaintcheck could be added to the set of debuggable items, and
+[20].Taintcheckandproducesattacksignaturesforcertain delta debugging has even been used to find failure-
+commonexploitssuchasbufferoverflowsorformatstring inducingthreadschedules[2],butitwouldbeimprac-
+vulnerabilities by tainting all user-supplied input and fol- ticaltoimplementthisinMalfor,sinceMalforisvery
+lowing it through the computation with the help of Val- much geared towards replaying system calls without
+grind [18]. Taintcheck looks for potentially harmful uses modifyingtheoperatingsystemoranyapplications.
+ofuser-suppliedinput,whereasMalforlooksforthecauses
+FocusonProcesses. Ifanattacksucceedsbecauseofabug
+ofspecificevents,regardlessofwhethertheyarebasedon
+inasharedlibrary,Malforwillonlyfindtheprocesses
+harmfulusesofinput.
+thatwereinvolvedin thisparticularattack,nottheli-
+If there is much malicious traffic, such as in a worm
+brary that is the real culprit. We hope, however, that
+attack, this traffic may be characterized and characteristic
+Malfor’s diagnosis enables administrators to analyze
+features exploited so that it may be possible to extract at-
+theattackfurtherandultimatelytofindthebuginthe
+tack vectorswithout deductionor experimentation.Exam-
+library.
+ples of such systems are Autograph [11], EarlyBird, [24]
+SuitableTest. Malforuses anautomatedtest to checkfor
+and PAYL [28]. If the attack is not only massive, but also
+anintrusion.Ifthistestisfuzzyorproducesfalsepos-
+polymorphic,Polygraphcan be used [19]. However,since
+itives or negatives, Malfor’s diagnosis can be faulty.
+these systems are statistical in nature, they all need large
+Thiscanhappenforexampleiftheattackhasadelayed
+amountsofattacktrafficinordertowork.Incontrasttothis,
+effect.Thiscanbeavoidedbylettingmalforreplayall
+Malforfinds the relevantprocesses in a single targetedat-
+processes prior to testing subsets. If Malfor does not
+tack.
+detect an attack immediately after replaying all pro-
+Anothersystemtodetecttargetedattacksisshadowhon-
+cesses,thetestisnotsuitableforMalforandneedsto
+eypots,introducedbyAnagnostakisandothers[1].Traffic
+beadjusted.
+thatisclassifiedasanomalousisprocessedseparatelyona
+shadowhoneypot,inordertoseewhetheritleadstoanat- StateEquivalence. Forourprototype,wecannotformally
+tack. If it does, the traffic is discarded. If it does not, the provethat system states are equal duringcapture and
+trafficistransparentlyforwardedtotheproductionsystem. replay,becausethereexistsnoformalspecificationfor
+Thisapproachwillworkwellforattacksthatmovethesys- Linux’sbehavior.Inpractice,itisalsounrealistictoin-
+tem from a secure to an insecure state in a short amount sistonbit-by-bitidentity.Wesettleinsteadforaform
+of time. Attacks where the system is gradually and gen- ofisomorphismbetweensystemstates,plusmappings
+tly nudged to an insecure state through multiple stages of that make that isomorphism (hopefully) undetectable
+attack are more difficult to handle because each stage ex- to user-mode processes. Finding out the system calls
+ceptthelastonemightescapedetection.Theseattacksare thatneedtobereplayedandfindingouttherightmap-
+atleastinprincipleanalyzablebyMalfor. pings is a manual process that is imperfectby nature(becauseit relies on ourunderstandingof theseman- process’s system calls. In fact, this informationis al-
+tics of Linux system calls), but we believe that such readyextractedfromthesystemcallsbasedonheuris-
+isomorphismscanbecreated,givenenoughresources. tics. Thiscouldlead toanautomated“quickfix”fea-
+turethatsuggeststoapplyaminimalsetofchangesto
+Undetectablilty. At the moment, Malfor can be circum-
+thevulnerablesysteminordertomakeitimmunetoa
+ventedonceaprocesshasgainedsufficientprivileges.
+specificattack.
+This means that a processcould deliberatelyperform
+differently during replay than during capturing. Inte- Analyzingdistributedattacks. At the moment, we ana-
+grating Malfor more tightly with the kernel and us- lyzebreak-insthathappenonasinglecomputer.Many
+ingmandatoryaccesscontrolslikeSELinux[17]could importantsystemstodayaredistributed,however,and
+mitigate this problem; these measures would leave incident analysis on distributed systems is a relevant
+Malfor visible, but the attacker could not easily find problem. Apart from the problem of synchronizing
+outwhetheritisinthecaptureorthereplayphase. eventstreamsbetweenmachines[14],thisworkcould
+also make use of results derivedby Mattern and oth-
+7. Conclusionandfurther work ers[15] tofindeventsthatcannotbe thecauseofthe
+break-in because they happen concurrentlywith it. It
+We have introduced Malfor, a system that uses a iseasiertofindconcurrenteventsinadistributedsys-
+new experiment-based approach to analyze security inci- temthanonasinglemachine,soitcouldturnoutthat
+dents.Malforproducesresultsthatarecomplete,minimal, findingcausesofbreak-insiseasierindistributedsys-
+andcorrectbecausethe processes it finds—andonly these tems.
+processes—have been experimentally shown to be rele-
+Our broad vision is that of a self-diagnosing and self-
+vant. The amount of information that needs to be exam-
+healing system: computers detect when they are under at-
+inedinordertofindtheattackvectorisgreatlyreduced,so
+tack,useMalfortofindtheattackvectorsandpossiblyeven
+therelevantevidencehas amuchhighervisibility.Attack-
+fixes, apply the fixes and deploythe fixed components.In
+ingprocessescannoteasilydistinguishbetweentheirattack
+the race between attackers and administrators, this should
+andareplayedversion.
+givetheadministratorssomebreathingspaceinwhichthey
+Inthefuture,weplantoextendMalforinseveralways.
+canfortifytheirsystems anddeviseanddeploymoregen-
+Theseextensionsinclude:
+eraldefenses.
+Findingattackvectors. Mostimportantly,wearealready
+InformationaboutMalforcanbeobtainedfromhttp:
+workingonapplyingthesamesimpletechniquetofind
+//www.st.cs.uni-sb.de/malfor/.
+therelevantinputs,thatis,theinfectionvector.Infact,
+oneoftheoriginalapplicationsofdeltadebuggingwas
+8. Acknowledgements
+tominimizeinputstofailingtestcases[32].Thiscould
+lead to the automatic generation of a signature for a
+ThankstoSilviaBreu,HolgerCleve,ValentinDallmeier,
+NIDS like snort [25], or to a vector that can be used
+Christian LindigandThomasZimmermannfortheir valu-
+by Sidiroglou and Keromytis’s patch generation sys-
+able comments on earlier revisions of this paper. Valentin
+tem[23].
+DallmeierandThomasZimmermannalsogavegoodadvice
+Usingintrusion-causingandharmlessrunstogether.
+onsomeofthedatabaseimplementationdetailsinSolipsy.
+Currently,we use delta debuggingonlyone run—the
+The anonymous reviewers made many helpful comments.
+run that causes the intrusion. We could also use it
+ThanksarealsoduetoMichaelMiroldforthenameSolipsy
+with two runs: one that causes the intrusion, and an-
+andforvaluableearlydiscussionsaboutSolipsy’sarchitec-
+other similar one that does not. With these two runs,
+ture.
+we can find a relevant difference between two simi-
+lar runs.Delta debuggingis muchfaster for this case
+References
+than using only one run. Harmless runs are easy to
+comebyfornetworkserviceslikeSpudorApachebe-
+cause the session leader forks many similar workers, [1] K.G.Anagnostakis, S.Sidiroglou,P.Akritidis,K.Xinidis,
+E.Markatos, and A.Keromytis. Detecting targetedattacks
+mostofwhichwillnotbecausingintrusions.
+usingshadowhoneypots. InProceedingsofthe14thUsenix
+Suggestingfixesinconfigurations. If we have two sys- SecuritySymposium,Berkeley,CA,USA,Aug.2005.Usenix
+tems,oneofwhichis vulnerableto anattackandan- Association.
+otherthatisnot,wecanusedeltadebuggingtofinda [2] J.-D. Choi and A. Zeller. Isolating failure-inducing thread
+relevantdifferenceinthetwosystems’configurations. schedules. In ISSTA ’02: Proceedings of the 2002 ACM
+Whichconfigurationfilesarereadisapparentfromthe SIGSOFTInternationalSymposiumonSoftwareTestingandAnalysis,pages210–220,NewYork,NY,USA,2002.ACM [17] NationalSecurityAgency. Security-EnhancedLinuxhome-
+Press. page. http://www.nsa.gov/selinux/.
+[3] H. Cleve and A. Zeller. Locating causes of program fail- [18] N.Nethercote. Dynamic BinaryAnalysisand Instrumenta-
+ures. In Proceedings of the 27th International Conference tion. PhDthesis,UniversityofCambridge,Nov.2004.
+on Software Engineering, pages 342–351, New York, NY, [19] J.Newsome, B.Karp, and D.Song. Polygraph: Automati-
+USA,May2005.ACMPress. callygeneratingsignaturesforpolymorphicworms. InPro-
+[4] J.Dike. Theuser-modelinuxkernelhomepage. http:// ceedingsofthe2005IEEESymposiumonSecurityandPri-
+user-mode-linux.sourceforge.net/,Jan.2005. vacy,May2005.
+[20] J. Newsome and D. Song. Dynamic taint analysis for au-
+[5] G.W.Dunlap,S.T.King,S.Cinar,M.A.Basrai,andP.M.
+tomatic detection, analysis, and signature generation of ex-
+Chen. ReVirt: Enabling intrusion analysis through virtual-
+ploits on commodity software. In Proceedings of the 12th
+machine logging and replay. In Proceedings of the 5th
+InternetSocietySymposiumonNetworkandDistributedSys-
+Symposium onOperating Systems Design and Implementa-
+temSecurity,Reston,VA,USA,Feb.2005.InternetSociety.
+tion,pages211–224,NewYork,NY,USA,Dec.2002.ACM
+Press. [21] F.PerriotandP.Szor. Ananalysisoftheslapperwormex-
+ploit. http://securityresponse.symantec.
+[6] D.Farmer. Frequently asked questions about thecoroner’s
+com/avcenter/reference/analysis.slappe%
+toolkit. http://www.fish.com/tct/FAQ.html,
+r.worm.pdf,2002.
+Jan.2005.
+[22] N. Provos. Improving host security with system call poli-
+[7] D. Farmer and V. Venema. Forensic Discovery. Addison-
+cies.InProceedingsofthe12thUsenixSecuritySymposium,
+Wesley,Jan.2005.
+pages257–272,Berkeley,CA,USA,Aug.2003.UsenixAs-
+[8] T. Garfinkel. Traps and pitfalls: Practical problems in sys-
+sociation.
+temcallinterpositionbasedsecuritytools.InProceedingsof
+[23] S. Sidiroglou and A. D. Keromytis. Countering network
+theInternetSocietySymposiumonNetworkandDistributed
+worms through automatic patch generation. IEEESecurity
+SystemSecurity,pages19–34,Reston,VA,USA,Feb.2003.
+&Privacy,2005. Toappear.
+InternetSociety.
+[24] S.Singh,C.Estan,G.Varghese,andS.Savage. TheEarly-
+[9] I.Goldberg,D.Wagner,R.Thomas,andE.A.Brewer.Ase-
+Bird system for real-time detection of unknown worms.
+cure environment for untrusted helper applications (confin-
+Technical Report CS2003-0761, University of California,
+ingthewilyhacker). InProceedingsofthe6thUsenixSecu-
+SanDiego,Aug.2003.
+ritySymposium,Berkeley,CA,USA,July1996.UsenixAs-
+[25] Sourcefire,Inc. Snorthomepage. http://www.snort.
+sociation.
+org/,June2005.
+[10] K.JainandR.Sekar.User-levelinfrastructureforsystemcall [26] S.M.Srinivasan,S.Kandula,C.R.Andrews,andY.Zhou.
+interposition:Aplatformforintrusiondetectionandconfine- Flashback: A lightweight extension for rollback and deter-
+ment. InProceedingsoftheInternetSocietySymposiumon ministicreplayforsoftwaredebugging.InProceedingsofthe
+NetworkandDistributedSystemSecurity,pages19–34,Re- 2005 Usenix Annual Technical Conference, Berkeley, CA,
+ston,VA,USA,Feb.2000.InternetSociety. USA,2005.UsenixAssociation.
+[11] H.-A.KimandB.Karp. Autograph:Towardautomated,dis- [27] F.Tip.Asurveyofprogramslicingtechniques.Technicalre-
+tributedwormsignaturedetection.InProceedingsofthe13th port,CWI(CentreforMathematicsandComputerScience),
+UsenixSecuritySymposium,Berkeley,CA,USA,Aug.2004. Amsterdam,TheNetherlands,1994.
+UsenixAssociation. [28] K. Wang and S. J. Stolfo. Anomalous payload-based net-
+[12] S.T.KingandP.M.Chen. Backtrackingintrusions. InPro- workintrusiondetection. InProceedingsoftheSeventhIn-
+ceedings of the Nineteenth ACM Symposium on Operating ternationalSymposiumonRecentAdvancesinIntrusionDe-
+Systems Principles, pages 223–236, New York, NY, USA, tection,LNCS3224.Springer,Sept.2004.
+2003.ACMPress. [29] I. Welsh. Trainspotting. W. W. Norton & Company, June
+[13] T.J.LeBlancandJ.M.Mellor-Crummey. Debuggingparal- 1996.
+lelprogramswithinstantreplay.IEEETransactionsonCom- [30] M.Xu,R.Bodik,and M. D.Hill. A”flightdatarecorder”
+puters,36(4):471–482,1987. forenablingfull-systemmultiprocessordeterministicreplay.
+[14] F.Mattern. Logicaltime. InJ.U.P.Dasgupta,editor,Ency- InProceedingsofthe30thAnnualInternationalSymposium
+clopediaofDistributedComputing.KluwerAcademicPub- on Computer Architecture, pages 122–135, New York, NY,
+lishers,1999. USA,2003.ACMPress.
+[15] F. Mattern and R.Schwarz. Detecting causal relationships [31] A.Zeller. Isolatingcause-effectchainsfromcomputerpro-
+indistributedcomputations:Insearchoftheholygrail. Dis- grams. In Proceedings of the 10th ACM SIGSOFT Inter-
+tributedComputing,7(3):149–174,1994. national Symposium on the Foundations of Software Engi-
+neering,pages1–10,NewYork,NY,USA,Nov.2002.ACM
+[16] S.Narayanasamy,G.Pokam,andB.Calder. BugNet:Con-
+Press.
+tinuouslyrecording programexecutionfordeterministicre-
+[32] A. Zeller and R. Hildebrandt. Simplifying and isolating
+playdebugging. InProceedingsoftheInternationalSympo-
+failure-inducing input. IEEETransactions onSoftware En-
+siumonComputerArchitecture2005,NewYork,NY,USA,
+gineering,26(2):183–200,Feb.2002.
+June2005.ACMPress.

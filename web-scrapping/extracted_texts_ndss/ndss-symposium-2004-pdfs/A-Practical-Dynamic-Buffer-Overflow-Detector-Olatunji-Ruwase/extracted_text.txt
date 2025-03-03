@@ -1,0 +1,623 @@
+A Practical Dynamic Buffer Overflow Detector
+OlatunjiRuwase MonicaS.Lam
+TransmetaCorporation ComputerSystemsLaboratory
+3990FreedomCircle StanfordUniversity
+SantaClara,CA95054 Stanford,CA94305
+tjruwase@transmeta.com lam@stanford.edu
+Abstract than26%for14oftheprograms,andanoverheadofup
+to130%fortheremainingsix,whilethepreviousstate-of-
+the-artboundscheckerbyJonesandKellybreaks60%of
+Despitepreviouseffortsinauditingsoftwaremanually theprogramsandis12timesslower. Incorporatingwell-
+andautomatically,bufferoverrunsarestillbeingdiscov- known techniques for optimizing bounds checking into
+ered in programs in use. A dynamic bounds checker de- CRED could lead to further performance improvements.
+tects buffer overruns in erroneous software before it oc-
+cursandtherebypreventsattacksfromcorruptingthein-
+tegrityofthesystem.
+1.Introduction
+Dynamic buffer overrun detectors have not been
+adopted widely because they either (1) cannot guard
+Buffer overflows are the most common form of secu-
+againstallbufferoverrunattacks,(2)breakexistingcode,
+rity threat in software systems today, and vulnerabilities
+or (3) incur too high an overhead. This paper presents
+attributedtobufferoverflowshaveconsistentlydominated
+apracticaldetectorcalledCRED(CRangeErrorDetec-
+CERTadvisories[7].Intheyear2002,57%ofsecurityad-
+tor)thatavoidseachofthesedeficiencies. CREDfindsall
+visories for the year were related to buffer overflow vul-
+bufferoverrunattacksasitdirectlychecksforthebounds
+nerabilities.AsofAugust2003,50%ofthesecurityadvi-
+of memory accesses. Unlike the original referent-object
+soriesissuedfortheyearfellunderthiscategory. Inaddi-
+based bounds-checking technique, CRED does not break
+tion, 50%ofthe60mostseverevulnerabilitiesasposted
+existing code because it uses a novel solution to support
+on CERT/CC were caused by buffer overflow errors in
+program manipulation of out-of-bounds addresses. Fi-
+programs[8]. Asimilarpatternisalsoobservableinvul-
+nally,byrestrictingtheboundscheckstostringsinapro-
+nerabilitieslistingspostedoncomputersecuritywebsites,
+gram,CRED’soverheadisgreatlyreducedwithoutsacri-
+suchasSecurityFocus[27]andSecuriteam[26].Computer
+ficingprotectionintheexperimentsweperformed.
+worms such as Slammer, CodeRed, and more recently,
+CRED is implemented as an extension of the GNU Blaster and Welchia have exploited buffer overflow vul-
+C compiler version 3.3.1. The simplicity of our design nerabilitiesinprogramstoinflictbillionsofdollarsworth
+makes possible a robust implementation that has been of damages on the computing community. An effective
+testedonover20open-sourceprograms,comprisingover solutiontobufferoverrunswillhaveasignificantimpact
+1.2millionlinesofCcode. CREDprovedeffectiveinde- inimprovingthesecurityofourcomputingsystems.
+tecting buffer overrun attacks on programs with known
+vulnerabilities,andistheonlytoolfoundtoguardagainst 1.1.Background
+atestbedof20differentbufferoverflowattacks[34].Find-
+In a buffer-overflow attack on a vulnerable program,
+ing overruns only on strings impose an overhead of less
+the attacker attempts to modify the memory state of the
+programsothatityieldscontrolofthemachinetotheat-
+ThisresearchwasperformedwhilethefirstauthorwasatStanfordUni-
+tackerintheprivilegemodeoftheprogram. Tolaunchan
+versity,andthismaterialisbaseduponworksupportedinpartbythe
+NationalScienceFoundationunderGrantNo.0086160. attack,theattackerwouldsupplycarefully-craftedexcess
+1inputdatatotheprogram. Aprogramthatdoesnotcheck referentobjectastheoriginalpointer. Thus,givenanin-
+iftheinputexceedsitsmemorybuffersizewouldcopythe boundspointer,andtheabilitytoretrievethebaseandex-
+excessdataintolocationsadjacenttothebuffer. Bycon- tentofthereferentobject,thecheckercandetermineifthe
+trolling the contents, the attacker can cause the program computedaddressisin-bounds. However,theirapproach
+todeviatefromitsintendedpurpose. cannothandlethecasewhereanout-of-boundspointerto
+Aclassicandsimpleexampleofsuchanattack,known an object is stored and later retrieved to compute an in-
+as stack smashing[1], simply overwrites the return ad- boundsaddress. Thisweaknesscausesthetooltogener-
+dress of a function on the stack so that, when the func- atefalsealarmsonmanyexistingprograms. Furthermore
+tionreturns,controljumpstoalocationwheretheattacker thistoolimposessignificantruntimeoverheadbecauseall
+wouldhaveinsertedmaliciouscode. Othermorecomplex noncopypointeroperationsareinstrumented.
+variants attempt to modify locations referenced by func-
+1.2.Contributions
+tionpointersandtheglobaloffsettable.
+Although the buffer overrun problem surfaced many Thispaperpresentsapracticaldynamicbufferoverrun
+years ago, a practical solution has eluded the software detector called CRED (C Range Error Detector). CRED
+community despite efforts in code auditing and devel- enforces a relaxed standard of correctness by allowing
+opment of static and dynamic buffer overflow detectors. programmanipulationsofout-of-boundsaddresses(avio-
+Static buffer overflow detectors attempt to verify that all lationoftheANSICstandard)thatdonotresultinbuffer
+memory accesses are checked for overruns[11, 22, 31]. overflows. The idea is to replace every out-of-bounds
+The problem, unfortunately, is undecidable in general. pointer value with the address of a special OOB (out-of-
+Soundtoolstendtogeneratetoomanyfalsewarningsand bounds)objectcreatedforthatvalue. KeptwiththeOOB
+unsound tools can miss errors in the code. Moreover, object is the actual pointer value and information on the
+warningsgeneratedbytheanalysistoolsrequirethatpro- referentobject. TheOOBaddressescanbecopiedaround
+grammersmanuallyinspectthecodeandinsertintheap- arbitrarily,justlikeanyotherdata.Whenthevalueisused
+propriate checks. These weaknesses render static buffer asanaddress,however,itisreplacedbytheactualout-of-
+overflowdetectorsimpractical. boundsaddress. Anypointerderivedfromtheaddressis
+Dynamic buffer overflow detectors are attractive be- boundscheckedbeforeitcanbedereferenced.Ourdesign
+cause they automatically insert the necessary guards. supportstherelativelyrareout-of-boundsaddressmanip-
+However, for a dynamic detector to be deployed: it ulation,withoutincreasingtheoverheadforthecommon
+must (1) protect against all buffer overflow attacks, (2) case.Also,itminimizesthespaceoverheadbyreclaiming
+not break working code, and (3) be reasonably efficient. storageassociatedwithdeallocatedpointers,ensuringthat
+There are no buffer overflow detectors proposed to date nomemoryisleaked. Inaddition,CREDexploitstypein-
+thatsatisfyalltheserequirements. formation to minimize run-time overhead by restricting
+Some dynamic buffer overflow detectors do not of- checkstoonlyaccessesthatpresentsecurityrisks.
+fer complete protection against buffer overflow attacks; We have implemented our idea on top of Jones and
+tools such as StackGuard[10], StackShield[30], and Kelly’s extension to the GNU C compiler version 3.3.1.
+Propolice[12]attempttoguardagainstonlystacksmash- Wetestedourimplementationextensivelybyrunningiton
+ing.Boundscheckersdetectanyboundsviolationsinpro- 20 open-source programs, which together comprise over
+gram execution and hence guard against all buffer over- 1.2 million lines of code. Unlike Jones and Kelly’s im-
+flow attacks. Some bounds checkers modify the repre- plementation,whichfailedon60%oftheprograms,code
+sentation of C pointers[9, 17, 19]. They replace each generatedbyourcompilerpassedallthetestsuites. Our
+pointer in the program with a structure that holds infor- system is also shown to be effective in detecting buffer
+mationneededforboundschecking,suchasthebaseand overflows. It is the only tool reported so far to be ef-
+extentaddressofthebufferreferencedbythepointer. Not fective against a testbed of 20 different buffer overflow
+onlydoessuchmodificationincreasememorystoragesig- attacks[34].Ouroptimizationsimposeanoverheadofless
+nificantly,itisincompatiblewithlegacycode. than26% for14 oftheprograms, and anoverhead ofup
+The bounds checker proposed by Jones and Kelly is to 130% for the remaining six, while the previous state-
+particularly attractive in that no pointer representation of-the-arttoolbyJonesandKellyruns12timesslower.
+modifications are necessary[18]. They define the refer- Thisresearchshowsthatitisfeasibletobuildasimple,
+ent object of a pointer to be the program buffer that the robust, and compatible C bounds checker that can guard
+pointerisintendedtoreference. Theyobservethatthere- against all buffer overruns. The performance of our sys-
+sultofapointerarithmeticoperationmusthavethesame temcanbefurtherimprovedbyapplyingknowncompileroptimizationtechniques. Clearly, sincetherepresentationofpointershasnotbeen
+changed, uninstrumented codes can work with pointers
+1.3.PaperOrganization andobjectscreatedbytheinstrumentedcodewithoutany
+modification. Conversely, it is also easy to allow instru-
+We present the bounds-checking technique based on
+mented codes to work with pointers pointing to objects
+referent objects in Section 2, discuss its deficiency, and
+createdbyuninstrumentedcodes.
+describe our proposed solution. We then discuss an op-
+Heap objects created by uninstrumented codes are
+timization in Section 3. Section 4 presents experimental
+checked like all other heap objects. They are allocated
+resultsofapplyingCREDtocommonlyusedsoftwareap-
+and de-allocated using bounds-checked versions of mal-
+plications. In Section 5, we review other approaches to
+loc and free that appropriately update the object table.
+tackling the buffer overflow problem. Section 6 presents
+Stackandstaticobjectsdeclaredinuninstrumentedcode
+ourconclusionandfuturework.
+arecalleduncheckedobjectsanddonotappearintheob-
+ject table. Unchecked stack objects are located between
+2.BoundsCheckingUsingReferentObjects
+the stack pointer and the top of the stack. Unchecked
+staticobjectsarelocatedbetweenaddress0ofthevirtual
+Tochecktheboundsofapointer,weneedtodetermine
+memoryandtheonebytebeyondthe BSSsection,orin
+itsreferentobject,andthencheckifthepointeriswithin
+theregionwheredynamicallylinkedlibrariesareloaded.
+bounds. Because C is not type safe, allows arbitrary ad-
+Thus,aboundscheckercaneasilydetermineifanaddress
+dresscalculations,andallowspointerstopointtothemid-
+pointstoanuncheckedobjectandnotbothercheckingits
+dle of an object, it is not easy to determine the referent
+bounds.
+objectofapointer.
+Thereferent-objectbasedapproachproposedbyJones
+2.1. Jones and Kelly’s Design for Handling Out-
+and Kelly[18] is based on the principle that an address
+of-boundsPointers
+computedfromanin-boundspointermustsharethesame
+referentobjectastheoriginalpointer. Thedesigndescribedsofarassumesthateveryaddress
+Their scheme uses an object table, a run-time data iscomputedfromapointerthatisknowntobein-bounds.
+structure that collects all the base address and size in- What if we compute an out-of-bounds address, store it,
+formation of all static, heap and stack objects. To deter- and then access it later? How do we know it is out of
+mine if an address computed off an in-bounds pointer is bounds? JonesandKelly’sdesignprovidesananswerto
+in-bounds,thecheckerfirstlocatesthereferentobjectby this question. However, their design breaks if a stored
+comparingthein-boundspointerwiththebaseandsizein- out-of-bounds address is used subsequently to compute
+formationstoredintheobjecttable. Then,itchecksifthe anin-boundsaddress. This, unfortunately, happensquite
+newaddressfallswithintheextentofthereferentobject. often.
+The object table is implemented as a splay tree[29] to The C standard offers one possible way to the handle
+optimizethepointerlookups. Thesizeoftheobjecttable out-of-bounds pointers. In the C standard, pointer arith-
+is relatively small because it is linear with respect to the metic is well defined if and only if the resulting address
+numberofobjects,andnotthenumberofpointers,during lieswithintheextentofthearray,orifitpointstothevery
+programexecution. next byte after the array. This rule also applies to scalar
+Jones andKelly’s tool wasimplemented asa run-time objects by treating them simply as an array of one ele-
+libraryofcheckingroutines. Theymodifiedthefrontend ment.TheCstandardallowsthegenerationoftheaddress
+of gcc so that all object creation, address manipulations pointing immediately past an array because the value is
+and dereference operations are intercepted and replaced oftenusedtodetermineiftheendofthearrayisreached
+withcallstoappropriateroutinesinthecheckinglibrary. inaloop. Whileitislegaltogeneratetheaddressimme-
+These calls make sure that the object table is kept up to diatelypastanarray,dereferencingitresultsinundefined
+dateandthatalltheaddressesgeneratedanddereferenced behavior. Forallotherout-of-boundsaddresses,boththe
+arewithinbounds.Inaddition,thetoolprovidesabounds- generation of the address and the dereference operations
+checked version of each of the unsafe standard C library areconsideredtobeundefined.
+routinesthathavebeeninstrumentaltosuccessfulexploits JonesandKelly’sapproachtakesfulladvantageofthe
+ofvulnerableprograms. languagestandardintheirdesign. First,tohandletheoff-
+AnimportantadvantageofJonesandKelly’sapproach by-oneaddresses,theypadallobjects,withtheexception
+is that code instrumented with their tool is compati- ofparameterstoafunction,byanextrabyte. Thismeans
+ble with uninstrumented code, such as linked libraries. thatapointerpointingimmediatelypastanobjectcanbeeasily identified. The pointer’s intended referent is sim- out-of-boundsaddressvalue,andsubstitutethevaluewith
+ply the object preceding the address; the pointer can be theaddressofthecorrespondingOOBobject. Theseob-
+compared with other pointers to the same object, it can jectsaredeallocatedassoonastheyarenolongerneeded
+also be stored, but dereferencing it would cause a buffer tominimizethespaceoverhead. AnOOBobjectcontains
+overrun. Parameters in a function are not padded, other- (a) the out-of-bounds address value and (b) the referent
+wise instrumented and uninstrumented code would have objectthatthevaluerefersto. Itisnotenteredintotheob-
+differentparameterlayouts. jecttable,butratherenteredintoanout-of-boundsobject
+Second, all other out-of-bounds addresses resulting hashtable(OOBhashtable).
+from pointer arithmetic operations are replaced with a We can check if a pointer points to an OOB object
+special ILLEGAL value, definedas(void*)−2. These quickly by consulting this hash table. The hash table is
+addresses can be copied without requiring any special consulted only in the rare case where the checker could
+handling. Theycanbecasttoothertypes,asapointerto neitherfindthereferentobjectofapointerusedinanon-
+anarrayofcharactersforinstance,beforetheyarecopied. copy operation in the object table nor identify the object
+The ILLEGAL value is not allowed to be dereferenced or asunchecked.
+used to generate an address. Any such operation, easily Letusnowdescribeourtechniquestepbystep:
+identifiable because it is preceded by a cast to a pointer,
+will cause the run-time system to halt the program and 1. After every address computation, the run-time sys-
+reportabufferoverrunerror. tem checks if the address is out-of-bounds. If so, a
+Unfortunately, many existing programs do not follow specialmallocisinvokedtocreateanOOBobject;
+the C standard; 60% of the programs we tested fell into the OOB object is not recorded as a regular object
+this category. In particular, there are programs that gen- intheobjecttable,butitsaddressisenteredintothe
+erate and store out-of-bound addresses and later retrieve OOBhashtable. Theout-of-boundsaddressandthe
+thesevaluesintheircomputation,withoutcausingbuffer referent object’s address are stored in the OOB ob-
+overruns. For example, they may be used in compar- ject.
+isons and computations of in-bounds addresses. Jones
+andKelly’sapproachsubstitutestheout-of-boundaddress 2. Whenapointerisdereferenced,checkifitpointsto
+with a special ILLEGAL value whenever it is computed, an object in the object table or to an unchecked ob-
+thuscausingsuchprogramstonolongerbehavethesame. ject. If neither is the case, it is an illegal reference
+Figure 1(a) shows a simple C program that demon- and the program is halted after an appropriate error
+strates this problem. This program only allocates a heap messageisprinted.
+buffertopointerpandsetsallotherpointerstoin-bounds
+3. If a pointer is used in an arithmetic or comparison
+and out-of-bounds locations of the buffer. Figure 1(b)
+operation, checks if it points to an object or to an
+shows the memory state of an uninstrumented code af-
+unchecked object. If neither is the case, check the
+ter line 6. While s points to an illegal address, r points
+OOBhashtabletodetermineifitisanout-of-bounds
+to a legal one and can be dereferenced without causing
+value. Thereferentobjectanditsvalueareretrieved
+anerror. Ifthecodehasbeeninstrumented, thememory
+from the OOB itself. The desired operation is per-
+state after line 5 is shown in Figure 1(c). p, q have the
+formedontheactualout-of-boundsvalue.
+samereferentobject. sisfoundtobeoutofboundsand
+is therefore set to the ILLEGAL value (−2). The checker
+4. Whenanobjectisde-allocated, implicitlyifitison
+incorrectlycrashestheprogramatline6,sinceitdoesnot
+the stack and explicitly if it is on the heap, delete
+permit arithmetic on out-of-bounds pointers. It is unac-
+all OOB objects referring to the object. This pre-
+ceptableforacheckertobreakworkingcode.Figure1(d),
+ventsthehashtableandthenumberofOOBobjects
+describedinmoredetailbelow,showshowourproposed
+fromgrowingindefinitely. Simplyscanthehashta-
+techniquehandlesthisprogram.
+bleforanyOOBobjectwhosereferentobjectisbe-
+2.2.ProposedOut-of-BoundAddressesHandling ingdeleted,anddeletetheOOBobjectaswellasthe
+heapentry.
+Asdiscussedabove,itisunacceptabletolosethestored
+value of an out-of-bounds address. We must retain the Figure 1(d) demonstrates how this technique would
+valueofthepointer,andatthesametime,keeptrackofits workonourexampleprogram. Itshowsthememorystate
+referentobject. Ourapproachistocreateauniqueout-of- ofaCREDinstrumentedexecutableafterline6.TheOOB
+bounds object (OOB object) in the heap for every stored objectallowsustocorrectlydeterminethereferentobject{
+1: char *p, *q, *r, *s;
+2:
+3: p = malloc(4);
+4: q = p + 1;
+5: s = p + 5;
+6: r = s – 3;
+……………
+}
+(a) (b)
+(c) (d)
+Figure1.(a)SimpleCprogram,memorystatesof(b)uninstrumentedexecution,(c)instrumen-
+tationwithJonesandKellyChecker,(d)instrumentationwithCRED.
+andvalueofrfromthearithmeticoperationons. CRED 3.Run-timeOverhead
+isthereforecompatiblewithreal-lifeprograms.
+ThepoorperformanceoftheoriginalJonesandKelly’s
+technique is yet another obstacle to its adoption. This
+schemeincursarun-timeoverheadoneverymemoryac-
+cess involving arrays and pointers. Virtually all large,
+Notethattherearesituationswhereourschemewould usefulsoftwareusespointersextensivelyandthussuffers
+fail. Assume an out-of-bounds pointer is cast to an in- fromasignificantperformancedegradation.
+teger, used in arithmetic operation, and the result cast We recognize that buffer overflow attacks are per-
+backtoapointer. Subsequentuseoftheresultingpointer petrated by overflowing a program buffer using user-
+could lead to undetected memory safety violations since suppliedstringdata. Thus,forsecuritypurposes,weonly
+it may reference an object in the object table. One way need to check the bounds of string data and thus signifi-
+to guard against such problems is to perform an analy- cantlyreducetheoverheadofsecuringsoftwaresystems,
+sis over the program to locate and warn of any unsafe withoutcompromisingthequalityofprotectionoffered.
+cast operations. Furthermore, similar to the Jones and We modified the parsing files of gcc to check the
+Kellychecker,CRED’sinteractionwithexternallibraries bounds of only character arrays and pointers during the
+requiresnospecialhandlingforpassingin-boundspoint- constructionoftheabstractsyntaxtree. Weintroduceda
+ers. However, for out-of-bounds pointers, the address of compilationflagforspecifyingcompilationinthismode.
+the OOB object would be incorrectly passed resulting in Thus,atruntime,callstothebounds-checkinglibraryare
+undefinedbehaviorifthevalueisusedinanoncopyop- made only for strings. We maintain the table for all ob-
+eration. Webelievethiscaseisrareincorrectcode. Note jects regardless of type so that the bounds-checking ver-
+that we have not encountered such cases in the million sions of the library functions can handle casts correctly.
+linesofcodewetested. It is important to observe that when data is copied be-Program Type #Lines Vuln. Tests JK CRED
+Apache-1.3.24 webserver 73.6K no yes fail pass
+binutils-2.13.2.1 binarytools 596.5K no yes fail pass
+bison-1.875 parsergenerator 25.1K no yes fail pass
+ccrypt-1.4 encryptionutility 4.4K no yes pass pass
+coreutils-5.0 file,shell,&textutilities 69.5K no yes fail pass
+enscript-1.6.1 asciitopostscriptconverter 22.1K no yes fail pass
+gawk-3.1.2 stringmanipulationtool 36.4K yes yes fail pass
+gnupg-1.2.2 OpenPGPimplementation 71.2K no yes fail pass
+grep-2.5.1 patternmatchingutility 20.8K no yes fail pass
+gzip-1.2.4 compressionutility 5.8K yes yes pass pass
+hypermail-2.1.5 mailtoHTMLconverter 27.6K yes yes fail pass
+monkey-0.7.1 webserver 2.5K yes no pass pass
+OpenSSH-3.2.2p1 SSH1protocolimplementation 43.4K no no fail pass
+OpenSSL-0.9.7b SSL&TLStoolkit 162.7K no yes fail pass
+pgp4pine-1.76 mailencryptiontool 3.3K yes no fail pass
+polymorph-0.40 filesystemunixier 0.4K yes no pass pass
+tar-1.13 archivingutility 18.2K no yes pass pass
+WsMp3-0.0.10 webserver 3.4K yes no pass pass
+wu-ftpd-2.6.1 FTPserver 18.3K no no pass pass
+zlib-1.13 datacompressionlibrary 8.3K no yes pass pass
+Figure2.Resultsofcompatibilityexperiment.
+tweenlocationsinmemory,objectsareusuallycastdown column labeled “Vuln” indicates that the program had
+tocharacterpointersandnotviceversa. Thisobservation a known vulnerability and a publicly available exploit.
+is important in appreciating that security is not compro- Seven of the programs fell into this category and were
+misedbythistechnique. used to evaluate the protection offered by CRED. More
+than 1.2M lines of C code was evaluated during this ex-
+4.Experiments periment.
+We have implemented the techniques described above 4.2.Compatibility
+in a tool called CRED. CRED has been merged into the
+WefirstevaluatedthecompatibilityofCREDwithreal-
+latestJonesandKellycheckerforgcc3.3.1,whichiscur-
+lifeprogramsandcompareditwiththatofJK.Asastress
+rentlymaintainedbyBrugge[5].WerefertotheJonesand
+test,weranthisexperimentbycheckingforoverflowsfor
+KellycheckerasJKinthissection.
+all buffers, and not just strings. Most open-source pro-
+We carried out experiments to evaluate the effective-
+grams are distributed with a suite of self tests. We took
+nessofCREDwithrespecttocorrectness, protectionof-
+advantage of the test suites for the experiment whenever
+fered against buffer overflows and the performance im-
+they were available, and used simple tests for those pro-
+provements obtained by strings-only checking. Here we
+gramswithoutatestsuite.
+first describe the applications then our experimental re-
+ThelasttwocolumnsinFigure2indicatetheresultof
+sults.
+thisexperiment. TheJonesandKellyextensionfailedon
+12outofthe20programs. Thissuggeststhatmostofthe
+4.1.ApplicationPrograms
+programs violate the C standard by manipulating out-of-
+We used some common open-source programs for boundsaddressesthatdonotjustpointimmediatelypast
+this evaluation. Figure 2 shows the list of programs, an object. CRED, in full bounds-checking mode, passed
+along with the lines of code count as generated using allthetests. Thisexperimentalsouncoveredanumberof
+SLOCCount[32]. The “Tests” column indicates whether previously unknown bounds errors in non-string buffers
+theprogramsourcewasdistributedwithatestsuite. The when executing the test suites. This finding led to bugfixes in coreutils, bison and OpenSSL. This result sug- JK(s) CRED(s)
+geststhatCRED,initsfullboundscheckingmode,could ccrypt 26.93 23.00
+beausefulforsoftwaredevelopmentandtesting. gzip-1.2.4 0.19 0.18
+monkey-0.7.1 5.60 6.00
+4.3.Protection
+polymorh-0.4.0 0.39 0.39
+tar-1.13 0.66 0.76
+We evaluated the effectiveness of CRED in protecting
+WsMp3-0.0.10 1.48 1.48
+vulnerableprogramsagainstbufferoverflowattackswith
+wu-ftpd-2.6.1 33.40 33.40
+two experiments. These experiments were performed
+zlib-1.13 0.11 0.11
+with the optimization of checking only for overruns in
+strings.
+Our first experiment was carried out using the seven
+Figure 3. Execution times of JK and CRED
+vulnerable programs described earlier in Section 4.1.
+(full bounds-checking mode) instrumenta-
+Each program was instrumented with CRED and attacks
+tion for programs that are compatible with
+werelaunchedonthem. Ineachcase,theattemptedover-
+JK.
+flowwasdetectedandtheprogramhaltedwithanappro-
+priateerrormessage.
+The second experiment tested the effectiveness of
+CRED on a testbed of 20 different buffer overflow at- Thelargestutilizationobservedatanygivenpointintime
+tacks developed by Wilander and Kamkar for evaluating was976bytesforCRED-instrumentedbison. Thislow
+dynamicbufferoverflowdetectors[34]. Theimplemented overheadwasnotsurprisingasitisunlikelythatacorrect
+attacksusedtwooverflowtechniques. Theseareeitherto program would generate many out-of-bounds pointers at
+overflow the buffer all the way to the target or to redi- anygivenpointintime.
+rect a pointer to the target. The targets are the return
+Thesecondexperimentevaluatedtheperformanceim-
+address, function pointers, old base pointer and longjmp
+provements resulting from strings-only checking for all
+buffers. The overflows are attempted on the stack, heap,
+ofthetestprograms. Exceptforthoseapplicationsnoted
+bss and data segments. ProPolice[12], StackGuard[10],
+in Figure 4, we evaluated the performance of the system
+StackShield[30],andLibsafeandLibverify[2]wereeval-
+by timing the execution of the test suites. Apache and
+uatedinthereport. CREDsuccessfullydetectedallofthe
+OpenSSLareevaluatedwiththeirstandardbenchmarking
+attacksinthetestbed. ProPolice[12],thebestofthetools
+tools, httperf[25]forApacheandspeedforopenssl. The
+evaluated by Wilander and Kamkar[34], could only de-
+experiments were carried out on a 2.4Ghz Intel Pentium
+tect50%oftheattacksinthetestbed. Theseexperiments
+4, 1GBLinuxsystemusinggcc-3.0.4compilerwith-O2
+demonstrate that restricting bounds checking to strings
+optimization level. This machine also ran the server in
+only is effective in thwarting buffer overflow attacks on
+experiments involving the Apache, monkey and WsMp3
+vulnerableprograms.
+servers,whiletheclientranona600Mhz,dualCPU,Pen-
+tiumIII,1GBLinuxmachine.
+4.4.Performance
+The results of the experiment are presented in Fig-
+CRED offers better backward compatibility than the ure5. Fullboundschecking,liketheoriginalJKsystem,
+JKtechniquebecauseittracksout-of-boundsaddressval- imposes significant performance overhead on most pro-
+ues. To determine the performance overhead of tracking grams. The enscript application experiences a 11-times
+out-of-boundsaddresses,wecomparetheperformanceof slowdown, while ssh experiences a 12-times slowdown
+CRED, in its full bounds-checking mode, with JK. Only when instrumented with full bounds checking. Limiting
+the8programswithwhichJKiscompatiblewereusedfor the bounds-checking to strings greatly improves the per-
+thisexperiment. Theexperimentwasconductedbymea- formance for most programs. The instrumentation im-
+suringexecutiontimesittooktheinstrumentedexecutable poses an overhead of less than 26% for 14 of the pro-
+torunthetestsuite. Forprogramswithoutatestsuite,we grams. The slowdown is still significant for Apache
+ransimpletestsdescribedinFigure4.Theresultsarepre- (1.6X),enscript(1.9X),gnupg(1.8X),hypermail(2.3X),
+sentedinFigure3. Theresultsindicatethattheworstrel- monkey(1.8X)andpgp4pine(1.6X).Theseprogramsin-
+ativeperformanceexperiencedisa15%slowdownintar. volve significant string processing, thereby limiting the
+Thedifferencesarenegligibleinallothercases. Wealso effectiveness of our optimization. Fortunately, known
+evaluatedthespaceusedtomaintainOOBdatastructures. compileroptimizationscanbeappliedtoeliminateredun-Program Whatwasevaluated
+Apache-1.3.24 Responsetimeto15Ktcpconnectionsattherateof90persecond.
+monkey-0.7.1 Responsetimeto3Ktcpconnectionsattherateof50persecond.
+openssh-3.2.2p1 Latencyof126MBfiletransferusingscpviathenetworkloopbackinterface.
+OpenSSL-0.9.7b Timetosignandverify2048bitkeysusingrsa.
+pgp4pine-1.76 Timetodecrypt1MBfile
+polymorph-0.40 Timetoconvertnamesof100filestounixstyle(lowercase)names.
+WsMp3-0.0.10 Latencyofdownloadinga1.5MBfile.
+wu-ftpd-2.6.1 Latencyof126MBfiletransferviathenetworkloopbackinterface
+Figure4.Descriptionofperformancetests.
+dant bounds checks in loops and thereby reduce the per- 5.2.DynamicAnalysisApproaches
+formancepenalty[15]. Staticanalysistechniquescanalso
+StackGuardbyCowanetal.isanextensiontotheGNU
+beincorporatedtoreducetheportionofcodethatrequires
+Ccompilerthattacklesthestacksmashingattacksbyin-
+instrumentation[9].
+sertingacanarywordjustbeforethereturnaddressonthe
+stack[10]. Attemptstooverwritethereturnaddresswould
+5.RelatedWork
+result in the canary value being modified. The canary is
+A considerable amount of work has been performed verifiedwhenthefunctionisabouttoreturn,andthepro-
+on mitigating the buffer overflow problem using either gramishaltedifthecanarywasaltered. BulbaandKil3r
+static analysis or dynamic analysis. In addition com- presenttechniquesforbypassingStackGuard[6].Ourtool
+parative studies of these techniques have been carried isnotsusceptibletothesetechniques.
+out[14, 28, 33, 34]. In this section we review different ProPolice by Etoh and Yoda is another extension to
+worksineachcategory. the GNU C compiler that protects against stack smash-
+ing attacks [12]. Similar to StackGuard, ProPolice pro-
+5.1.StaticAnalysisApproaches
+tects the return address with a guard value. In addition
+Wagner et al. developed a system for detecting buffer stack allocated variables are rearranged such that local
+overflows in C programs statically[31]. Their approach charbuffersareatahigheraddress(belowtheguardvalue)
+treatsCstringsasanabstractdatatypeaccessedthrough than other local variables and pointers. Therefore local
+the library routines and models buffers as pairs of inte- char buffers cannot be overflowed to affect other local
+ger ranges (size and current length), while the detection variables. ProPolice offers no protection against other
+problem is formulated as an integer constraint problem. formsofbufferoverflowattacks,whichourtooldoes.
+The library functions are modeled in terms of how they StackShield is also an extension to the GNU C com-
+modify the size and length of strings. By trading preci- pilerthatprotectsthereturnaddressagainststacksmash-
+sionforscalabilitytheirimplementedtoolgivesbothfalse ingattacks[30]. Itdoessobystoringacopyofthereturn
+positives and false negatives. The tool found known and addressinasafeplaceonenteringafunctionandrestor-
+unknownsecurityvulnerabilitiesinSendmail8.7.5. ing it before returning. So if the return address on the
+Larochelle and Evans[22] presented a lightweight stackisoverwritten,thesavedcopywillberestoredany-
+annotation-assisted static analysis based on LCLint[13]. way and used when the function returns. Techniques to
+Thistechniqueexploitsinformationprovidedinprogram- bypassStackShieldarepresentedbyBulbaandKil3r[6].
+mers’semanticcommentstodetectlikelybufferoverflow Ourtoolisimpervioustothesetechniquesandthusoffers
+vulnerabilities. Theirtoolisneithersoundnorcomplete. betterprotectiontoprograms.
+Sagivetal.presentedCStringStaticVerifyer(CSSV), Baratloo et al. presented two complementary tech-
+a tool that statically detects string manipulation errors niques for foiling stack smashing attacks that attempt to
+withtheaidofproceduresummaries[11]. CSSVissound corrupt the return address[2]. The techniques are imple-
+and handles all C language constructs such as structures mented as dynamically loaded libraries Libsafe and Lib-
+andmultilevelpointers. Itsdisadvantagesarethatitgen- verify. Libsafe replaces vulnerable C library functions
+erates false alarms and imposes on the programmer the with safe implementations. Libverify implements a re-
+extraburdenofwritingproceduresummaries. turn address verification scheme similar to StackGuard;14
+12
+10
+8
+6
+4
+2
+0
+ehcapa slitunib nosib tpyrcc slitueroc tpircsne kwag gpung perg pizg liamrepyh yeknom enip4pgp hpromylop )pcs(hss ngis
+8402asr
+yfirev
+8402asr
+rat 3pMsW dptf-uw bilz
+Benchmark
+emit
+noitucexe
+dezilamroN
+Full checking
+Strings only
+Figure 5. Performance overhead of instrumentation with and without strings only checking
+optimization. Noninstrumentedcodeisnormalizedto1.
+however it works on executables and, as such, does not tolibraryfunctionsandissueswarningswhenbufferover-
+require recompilation of source code, making it applica- flows may occur from such uses. STOBO finds vulnera-
+ble to legacy code. A combination of both tools is inef- bilitiesinprogramsevenwhenthetestdatadoesnottrig-
+fective against overflows that is caused by dereferencing gerandoverflow. Howeveritdetectsonlyvulnerabilities
+out-of-boundsaddresses,whichourtoolcorrectlydetects. due to use of library functions. It also generates false
+Lhee and Chapin presented a buffer overflow detec- alarms.
+tiontechniqueusingarrayboundschecking[23]. Intheir
+schemeobjectfilesareaugmentedwithtypeinformation 5.3.CombinationofStaticandDynamicAnalysis
+about static and automatic buffers that is used to carry
+out this range checking. Their technique does not guard Necula et al. presented a program transformation tool
+againstoverflowscausedbyerroneouspointerarithmetic, (CCured) that adds memory safety guarantees to C
+makingitanimpracticalsolution.Ourtooloffersthispro- programs[24,9]. CCuredfirstattemptstostaticallyverify
+tection. theabsenceofmemoryerrorsinaprogrambyenforcing
+HaughandBishoppresentedSTOBO,aninstrumenta- a strong type system. It then inserts run-time checks to
+tiontoolthataidsdetectionofbufferoverflowvulnerabil- handle portions of the code for which static verification
+itiesduetouseofClibraryfunctionsduringtesting[16]. is insufficient. CCured is incompatible with complex C
+STOBOkeepstrackoflengthsofmemorybuffers,checks code, therefore manualinterventionin theform ofanno-
+iftheysatisfycertainconditionswhenusedasarguments tationsandsourcecodechangesisrequiredforthesystemto work with real-life programs. Our tool is fully auto- References
+maticandcompatiblewithcomplexCcode.
+[1] AlephOne. Smashing stack for fun and profit. Phrack,
+CyclonebyJimetal.isasafedialectofCwhichpre-
+7(49),November1996.
+ventsmemoryerrorsbyusingstaticanalysisandruntime
+[2] A.Baratloo, N.Singh, andT.Tsai. Transparentruntime
+checks in a similar manner to CCured [17]. Cyclone
+defense against stack smashing attacks. In Proceedings
+changespointerrepresentationandisthereforeincompat-
+oftheUSENIXAnnualTechnicalConference,pages251–
+ible with legacy code. Also source code changes are re- 262,June2000.
+quiredtomakeCycloneworkwithreal-lifeprograms. [3] D. Bruening, E. Duesterwald, and S. Amarasinghe.
+Kirianskyetal.presentedprogramshepherding,atech- Design and implementation of a dynamic optimiza-
+niquethatmonitorscontrolflowtransfersduringprogram tion framework for Windows. 4th ACM Workshop on
+execution in order to enforce a security policy[21, 20]. Feedback-Directed and Dynamic Optimization (FDDO-
+4),December2001.
+Programshepherdingbuildsacustomsecuritypolicyfor
+[4] D.Bruening,T.Garnett,andS.Amarasinghe. Aninfras-
+the target program using automatic static and dynamic
+tructureforadaptivedynamicoptimization. International
+analyses. Bufferoverflowsattackarethereforeprevented
+SymposiumonCodeGenerationandOptimization(CGO-
+because a successful attack would require a control flow
+03),March2003.
+transferthatwouldviolatethesecuritypolicy. Thistech-
+[5] H. Brugge. Bounds checking C compiler
+niquewasimplementedintheDynamoRIOdynamiccode http://web.inter.nl.net/hcc/haj.ten.brugge/.
+modificationsystem[3,4]. Thesystemworksonunmod- [6] BulbaandKil3r. BypassingStackGuardandStackShield.
+ified native binaries and requires no special hardware or Phrack,10(56),May2000.
+operating system support. However, it does not support [7] CERT/CC. Advisories 2002.
+self-modifyingcode. http://www.cert.org/advisories.
+[8] CERT/CC. Vulnerability notes by metric
+http://www.kb.cert.org/vuls/bymetric.
+6.Conclusions
+[9] J. Condit, M. Harren, S. McPeak, G. C. Necula, and
+W. Weimer. CCured in the real world. In Proceedings
+We presented CRED, a practical dynamic buffer over-
+oftheACMSIGPLAN2003ConferenceonProgramming
+flow detector for C programs. Our solution is built upon
+LanguageDesignandImplementation,June2003.
+JonesandKelly’stechniqueoftrackingthereferentobject
+[10] C. Cowan, P. Wagle, C. Pu, S. Beattie, and J. Walpole.
+ofeachpointer. Comparedtotheprevioussystem,ourso- Buffer overflows: Attacks and defenses for vulnerabil-
+lution does not break existing codes that compute with ityofthedecade. InProceedingsofDARPAInformation
+out-of-boundaddressesandissignificantlymoreefficient SurvivabilityConferenceandExposition,pages119–129,
+bylimitingthebufferoverruncheckstostrings. January2000.
+Our experimental results demonstrate the compatibil- [11] N. Dor, M. Rodeh, and M. Sagiv. Cssv: Towards a re-
+ity of our technique with commonly used programs and alistic tool for statically detecting all buffer overflows in
+c.InProceedingsoftheACMSIGPLAN2003Conference
+itseffectivenessindetectingbufferoverrunattacksinvul-
+on Programming Language Design and Implementation,
+nerableprograms. Theoverheadsexperiencedrangefrom
+pages155–167,June2003.
+1%to130%,dependingontheuseofstringsintheappli-
+[12] H. Etoh and K. Yoda. Protecting from stack-
+cation. These numbers are significantly better than pre-
+smashing attacks http://www.trl.ibm.com/projects/ secu-
+viously published results on dynamic bounds checking.
+rity/ssp/main.html.
+Further improvement in performance is possible using [13] D. Evans, J. Guttag, J. Horning, and Y. Tan. Lclint: A
+known techniques for optimizing bounds checking[15], toolforusingspecificationstocheckcode.InProceedings
+andusingstaticverificationtoreducetheportionofcode of the SIGSOFT Symposium on Foundations of Software
+thatrequiresinstrumentation[9]. Engineering,pages87–96,December1994.
+[14] P. A. Fayolle and V. Glaume. A buffer over-
+flow study, attacks and defenses http:// down-
+7.Acknowledgements
+loads.securityfocus.com/library/report.pdf.
+[15] R. Gupta. Optimizing array bounds checks using flow
+We thank Herman ten Brugge, John Wilander and
+analysis. ACM Letters on Programming Languages and
+membersoftheopensourcedevelopmentcommunityfor
+Systems,2(1-4):135–150,March–December1993.
+their assistance throughout this project. We also thank
+[16] E.HaughandM.Bishop. TestingCprogramsforbuffer
+David Heine, David Brumley, Constantine Sapuntzakis, overflow vulnerabilities. In Proceedings of the Network
+Andrew Myers, and the anonymous reviewers for their and Distributed System Security Symposium, February
+helpfulcommentsonthispaper. 2003.[17] T. Jim, G. Morriset, D. Grossman, M. Hicks, J. Cheney,
+andY.Wang.Cyclone:AsafedialectofC.InProceedings
+oftheUSENIXAnnualTechnicalConference,pages275–
+288,June2002.
+[18] R. Jones and P. Kelly. Backwards-compatible bounds
+checkingforarraysandpointersinCprograms. InPro-
+ceedingsoftheInternationalWorkshoponAutomaticDe-
+bugging,pages13–26,May1997.
+[19] S.C.Kendall. Bcc: Run-timecheckingforCprograms.
+InProceedingsoftheUSENIXSummerConference,pages
+5–16,1983.
+[20] V.Kiriansky, D. Bruening, and S.Amarasinghe. Secure
+execution via program shepherding. In Proceedings of
+theUSENIXSecuritySymposium,pages191–206,August
+2002.
+[21] V. Kiriansky, D. Bruening, and S. Amaras-
+inghe. Execution model via program shepherding,
+www.cag.lcs.mit.edu/commit/papers/ 03/rio-security-tm-
+638.pdf,May2003.
+[22] D. Larochelle and D. Evans. Statically detecting likely
+buffer overflow vulnerabilities. In Proceedings of the
+USENIX Security Symposium, pages 177–190, August
+2001.
+[23] K.S.LheeandS.J.Chapin.Type-assisteddynamicbuffer
+overflowdetection. InProceedingsoftheUSENIXSecu-
+ritySymposium,pages81–89,August2002.
+[24] S.McPeak,G.C.Necula,andW.Weimer.CCured:Type-
+saferetrofittingoflegacycode. InSymposiumonPrinci-
+ples of Programming Languages, pages 128 – 139, Jan-
+uary2002.
+[25] D. Mosberger and T. Jin. httperf - a
+tool for measuring web server performance
+http://www.hpl.hp.com/personal/david mosberger/httperf.html.
+[26] Securiteam. http://www.securiteam.com.
+[27] SecurityFocus. http://online.securityfocus.com/bid.
+[28] I. Simon. A comparative analysis of meth-
+ods of defense against buffer overflow attacks
+http://www.mcs.csuhayward.edu/s˜imon/security/boflo.html.
+[29] D. D. Sleator and R. E. Tarjan. Self-adjusting binary
+searchtrees. JournaloftheACM,32(3):652–686,1985.
+[30] StackShield. http://www.angelfire.com/sk/stackshield.
+[31] D.Wagner,J.Foster,E.Brewer,andA.Aiken.Afirststep
+towardsautomateddetectionofbufferoverrunvulnerabil-
+ities. InProceedingsoftheNetworkandDistributedSys-
+temsSecuritySymposium,pages3–7,February2000.
+[32] D. A. Wheeler. Sloccount
+http://www.dwheeler.com/sloccount/.
+[33] J. Wilander and M. Kamkar. A comparison of publicly
+availabletoolsforstaticintrusiondetection. InProceed-
+ingsoftheNordicWorkshoponSecureITSystems,pages
+68–84,November2002.
+[34] J. Wilander and M. Kamkar. A comparison of publicly
+availabletoolsfordynamicbufferoverflowprevention. In
+ProceedingsoftheNetworkandDistributedSystemSecu-
+ritySymposium,pages149–162,February2003.

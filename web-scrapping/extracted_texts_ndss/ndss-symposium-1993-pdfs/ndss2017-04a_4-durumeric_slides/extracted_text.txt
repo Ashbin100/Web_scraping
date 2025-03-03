@@ -1,0 +1,181 @@
+The Security Impact of
+HTTPS Interception
+Zakir Durumeric, Zane Ma, Drew Springall,
+Richard Barnes, Nick Sullivan, Elie Bursztein,
+Michael Bailey, J. Alex Halderman, Vern Paxson
+University of Michigan, University of Illinois Urbana-Champaign,
+U.C. Berkeley, ICSI, Mozilla, Cloudflare, GoogleHTTPS Interception
+Middle boxes and security software are increasingly
+intercepting HTTPS connections in order to inspect
+encrypted content.How HTTPS Interception Works
+TLS TLS
+Plaintext HTTP
+Middlebox inspects
+inner HTTP contentHow HTTPS Interception Works
+Administrator installs
+Middlebox generates
+root certificate on client
+new certificate for client
+TLS TLS
+Plaintext HTTP
+Middlebox inspects
+inner HTTP contentHow do you measure the
+total amount of interception?Change in TLS Library
+TLS TLS
+Client Middlebox Website
+Plaintext HTTP
+HTTP User Agent: ChromeMeasuring Interception
+HTTP
+TLS
+Website
+Websites can potentially detect interception by
+identifying a mismatch between network layersIdentifying Network Layers
+HTTP
+Parse HTTP User Agent Header:
+Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_2) AppleWebKit/
+537.36 (KHTML, like Gecko) Chrome/55.0.2883.95 Safari/537.36
+TLS
+No identifying field. Instead, we built a set heuristics that
+identify whether a TLS handshake is consistent with a browser.Typical TLS Handshake
+Client
+Hello
+Server
+Hello
+Certificate
+Hello
+Done
+Client
+Key
+Exch.
+[…]
+(Client Hello)Investigating Common Products
+We analyzed the TLS Client Hello messages from
+popular browsers browsers, middle boxes, client
+security software, and malware
+Every product we investigated produced a unique
+TLS Client Hello message
+Not always possible to identify product based on the
+handshake, but possible to detect whether a
+handshake is incompatible with a given browserFirefox vs. GnuTLS Client Hellos
+Extensions Extensions
+Server Name (SNI) Extended Master Secret
+Extended Master Secret Encrypt then MAC
+Renegotiation Info OCSP Status Request
+Elliptic Curves Server Name (SNI)
+[…] […]
+Ciphers Ciphers
+ECDHE_ECDSA_AES128_GCM_SHA256 ECDHE_ECDSA_AES128_GCM_SHA256
+ECDHE_RSA_AES128_GCM_SHA256 ECDHE_ECDSA_AES128_GCM_SHA386
+ECDHE_RSA_CHACHA20_SHA2156 ECDSA_CAMELLIA_128_GCM_SHA256
+ECDHE_ECDSA_AES256_GCM_SHA384 ECDSA_CAMELLIA_128_GCM_SHA384
+[…] […]
+Curves Curves
+secp256r1 secp256r1
+secp384r1 secp384r1
+secp521r1 secp521r1
+secp224r1
+secp192r1Deploying Heuristics
+We deployed our heuristics for one week at three
+large service providers:
+- Mozilla Firefox Update Servers
+- Cloudflare CDN
+- Popular E-commerce SiteOverall Interception Rates
+We find a varying amount of interception between
+vantage points:
+No Likely Confirmed
+Interception Interception Interception
+Cloudflare 88.6% 0.5% 10.9%
+96.0% 0.0% 4.0%
+Firefox
+E-Commerce 92.9% 0.9% 6.2%Overall Interception Rates
+We find a varying amount of interception between
+vantage points:
+We estimate that 5-10% of all HTTPS
+No Likely Confirmed
+connections are intercepted.
+Interception Interception Interception
+Cloudflare 88.6% 0.5% 10.9%
+96.0% 0.0% 4.0%
+Firefox
+E-Commerce 92.9% 0.9% 6.2%Measuring Security Impact
+If interception products are performing high quality
+handshakes, there isn’t an inherent security risk
+We measured the security impact of interception by
+grading the security features advertised by the
+intercepted connection and the original browser
+A F
+PFS Known broken ciphers
+Modern ciphersQuantifying Security Impact
+Grading Scale
+We defined a security
+grading scale base on
+Optimal. Equivalent to a modern
+A
+parameters advertised
+web browser
+in Client Hello
+Suboptimal. Non-ideal but not
+B
+vulnerable to attacks
+Applied to original
+browsers and the
+Known Attack. Vulnerable to
+connections we C
+known attack (e.g., RC4)
+observed in the wild
+Severely Broken. An attacker
+F
+could easily intercept connectionSecurity Grade Example
+FSecurity Impact of Interception
+Increased Decreased Severely
+Security Security Broken
+4% 27% 18%
+E-Commerce
+14% 45% 16%
+Cloudflare
+Firefox
+0% 66% 37%
+UpdatesMiddlebox Security
+Network Middleboxes have a worse security profile
+than client-side software
+62% of connections
+are less secure
+x-forwarded-for:
+192.168.15.56
+58% are severely broken
+x-bluecoat-via:
+abce6cd5a6733123Why is Security Suffering?
+We investigated the default configurations of popular
+interception products:
+Popular middleboxes that intercept TLS
+•
+connections (e.g., A10, Bluecoat, Cisco, Fortinet)
+Common antivirus software (e.g., Avast, AVG,
+•
+Kaspersky)
+We ran a series of automated tests to see with
+website configurations sites products would negotiateSecurity Profile of Interception Products
+Increased Same Decreased Severely
+TLS Security
+Security Security Security Broken
+Client Security
+0/20 2/20 18/20 10/20
+Products
+0/12 1/12 6/12 5/12
+Middleboxes
+No products implemented new HTTPS features
+beyond the TLS specification (e.g., HPKP)Moving Forward
+We need community consensus on whether
+interception is acceptable
+We need to reconsider implementing extended
+validation as browsers features instead of TLS
+We should investigate extending the TLS protocol
+to allow middle boxes to communicate session
+information to browsersConclusion
+We showed that web servers can detect
+interception by detecting a behavior mismatch
+between network layers
+We estimate that 5-10% of HTTPS connections
+are intercepted
+As a class, interception products severely reduce
+the security of HTTPS connections

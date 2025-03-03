@@ -1,0 +1,219 @@
+WebWatcher
+A Lightweight Tool for Analyzing Web
+Server Logs
+Hervé DEBAR
+IBM Zurich Research Laboratory
+Global Security Analysis Laboratory
+deb@zurich.ibm.comPROJECT GOALS
+• To automatically analyze web server logs
+• To detect compromise attempts through HTTP requests
+• To have a very small impact in terms of resources
+• To monitor HTTP servers on as many platforms as possible
+• To operate both in real time and batch modes
+• To use our knowledge of malicious HTTP requests signatures
+• To have a flexible and rich attack signature format
+• To track hosts exhibiting malicious behavior
+• To discover and learn new attack signatures
+• To remove false alarms intelligently
+NDSS 2000 -Page 2ATTACKS TARGETED
+• Penetration of the system via HTTP server vulnerabilities
+– Vulnerable CGI program requests
+– Password guessing
+– Access to sensitive information (guessing CGI names, accessing system files)
+• Denial-of-service attacks
+– Repeated accesses to non-existing resources
+– Repeated accesses to resources that cause server errors
+• Legal but undesirable activity
+– Borderline use of the HTTP protocol
+• e.g. % encoding of normal characters
+– Sensitive documents accesses
+• Policy violation (when used on firewall HTTP proxy)
+– External / internal policies governing access to web sites.
+NDSS 2000 -Page 3TECHNICAL CHOICES
+• Input: CLF/ECLF format
+host - authenticated_user [date] "request string" status bytes
+• Implementation language: Perl5
+– Portable
+– Well accepted in web server environments
+– Regular expression matching
+• Signature language: perl regular expressions
+– Easy to create simple signatures
+– Possible to create very complex ones to reduce false alarms
+• Pipelined architecture
+– Each filter corresponds to a set of verifications
+NDSS 2000 -Page 4ARCHITECTURE
+LOGS
+file
+tool
+Report
+Facilities
+Parser Pattern Combination Refined Suspicious Trusted Decision Print
+db db db db db db db
+NDSS 2000 -Page 5MODULES
+• Parser
+– Reads the request
+– Breaks the log entry into its constituent parts and check integrity
+– Refines the URL into its parts and check the format / empty string
+– Decodes any encoded characters and verify appropriateness of % characters
+• Pattern
+– Looks for signatures
+– Signatures are relevant to fields
+– Signatures are grouped into classes
+– Negative matching
+• Combination
+– Logical combination of signatures (if sig1 and sig2 then sig3)
+• Refined
+– Signature dependencies (if sig1 then match sig2)
+NDSS 2000 -Page 6MODULES (2)
+• Suspicious
+– Keeps track of suspicious hosts effectively (not signatures !)
+• Trusted
+– Eliminates alerts based on signatures
+• Decision
+– Ages and updates the tree of suspicious hosts
+• Print module
+– Prints out the alert
+• Syslog
+• Internal format
+• HTML Reporting facility
+– Overview of the results
+– Intended for batch processing
+NDSS 2000 -Page 7EXPERIMENTS
+• Data collected from (batch runs)
+– 2 medium sized commercial sites
+– University logs
+– 1 day of the Nagano Olympics website (Courtesy of Jim Challenger)
+• Data collected from an apache web server (Real time)
+– RS/6000 250 running apache 1.3.3
+• Initial signature base
+– 50 vulnerable cgi programs (now 150)
+– Directory tricks
+– Interpreters in cgi-bin
+– Sensitive files
+– ...
+NDSS 2000 -Page 8TRAFFIC ANALYSIS
+4000
+3500
+3000
+2500
+1
+2000 2
+11
+2
+5
+4 1
+1500 3 7
+11
+12 3 3
+3 5
+3
+6
+1000 4 4
+1
+3 3 16
+3
+500 6
+0
+NDSS 2000 -Page 9
+1 3 5 7 9 11 31 51 71 91 12 32 52 72 92 13 33 53 73 93 14 34 54 74 94 15 35 55 75 95 16 36 56 76 96
+Days
+(since supervision started)
+edam
+stseuqer
+fo
+rebmuN
+Since the malicious traffic is far smaller than
+the normal traffic, all days have been marked
+with a number, signifying the alarms raised by
+the monitor that particular day.
+Normal TrafficREQUEST TYPE DISTRIBUTION
+As can be seen, most requests handled by the server
+are successful, with 96% benign ones and only 4% in
+the category of client or server error.
+4
+105 200 OK
+422 204 No Content
+206 Partial Content
+4154 302 Moved Temporary
+72270
+304 Not Modified
+1 400 Bad Request
+2975 404 Not Found
+500 Internal Server Error
+99
+The malicious requests
+discovered are within these
+slices.
+The total number of requests were 80,030.
+NDSS 2000 -Page 10HOSTS AND REQUEST TYPES
+The majority of the hosts only asks for requests which
+are handled successfully by the server. The likely
+cause is that these hosts access the main page and
+then follows one or two links. If the site is working, this
+should not cause any errors.
+Hosts asking only
+23 for status code:
+76 2xx Success
+6179 1 3xx Redirection
+4xx Client Error
+5xx Server Error
+770
+mixed status
+codes
+All serious attacks were
+within this slice. One host
+did not follow this pattern
+and is thus found in the
+The server was accessed by a slice "mixed status
+total of 7049 distinct host codes."
+names during the analyzed
+time.
+NDSS 2000 -Page 11ATTACK PATTERNS
+18
+15
+12
+9
+6
+3
+0
+NDSS 2000 -Page 12
+1 3 5 7 9 11 31 51 71 91 12 32 52 72 92 13 33 53 73 93 14 34 54 74 94 15 35 55 75 95 16 36 56 76 96
+Days
+(since supervision started)
+skcattA
+fo
+rebmuN
+)stseuqer
+suoicilam(
+Host using the tool cgiScan to perform
+the attack.
+Unidentified tool
+Hosts trying only the three programs: phf,
+test-cgi, and handler in a very short time
+interval.
+Internal tests of the setup of the WWW
+server.
+A simple probe
+made by hand?DEPLOYMENT
+• WebWatcher is in operation for IBM customers
+– Batch processing
+– Weekly reporting
+• Many attack attempts detected
+– Sites are highly visible and make attractive targets
+– WebWatcher signature database is growing richer ….
+• WebWatcher interacts with the Tivoli Management Framework
+– Alerts are sent into the event correlation facility (TEC).
+– Alerts follow the IDWG data model definitions.
+– Alerts are correlated with ones coming other intrusion-detection systems (network-
+based).
+NDSS 2000 -Page 13REPORT (1)
+NDSS 2000 -Page 14REPORT (2)
+NDSS 2000 -Page 15FUTURE WORK
+• Detect denial of service attacks through legitimate requests:
+– “The Slashdot effect”.
+– Distributed denial of service attacks can be carried out effectively nowadays.
+– This requires statistical tracking of legitimate requests -> quite costly.
+• Deploy in distributed environment:
+– Challenge of distributed web servers (clusters, SP2, …).
+– The problem of sharing the suspicious hosts tree information is being studied.
+NDSS 2000 -Page 16

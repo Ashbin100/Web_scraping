@@ -1,0 +1,812 @@
+Practical Experiences with ATM Encryption
+GregoryT.Byrd NathanHillery JimSymon
+NC StateUniversity Cylink Cylink
+Raleigh,NC Morrisville,NC Morrisville,NC
+Abstract The features of ATM present some unique challenges
+for encryption. At any one point in the network many
+connections (
+CellCase is a commercial high-speed encryptor for
+AsynchronousTransfer Mode (ATM) networks, available
+since1997. Itprovidesdataconfidentialityandentityau-
+thenticationat the ATM layer, encryptingATM cell pay-
+loadsatratesfromT1(1.5Mb/s)toOC-12c(622Mb/s).
+ThoughdeployedpriortotheadoptionoftheATMForum
+SecuritySpecification(1999),CellCaseimplementsmany
+of the mechanisms defined by that standard. In this pa-
+per,wedescribehowCellCaseisdeployedinactualnet-
+works,aswellascustomerexperiencewithservicessuch
+as counter-mode encryption, key exchange, and key up-
+date. Basedonthis experience, we alsodiscuss possible
+changestotheATMForumspecification.
+1 Introduction
+Asynchronous Transfer Mode (ATM) [4] is the most
+widelydeployednetworktechnologyforbroadbandcom-
+municationsapplications. Its presence has been less no-
+ticed since it generally has been placed only within the
+inner workings of the public carrier networks. Since
+nowell-establishedalternativesexistforhigh-speedwide
+area communications, the continued growth of ATM in
+the future is very likely. Some analysts are predicting
+thatATMwillbethecommonmulti-serviceplatformfor
+consolidatingthenumerousapplication-specificnetworks
+thatexisttoday.
+ATM has powerful multiplexing capabilities that can
+beusedtoprovidequalityofservice(QoS)guaranteesto
+end-userapplications. QoSguaranteesallowATMtode-
+livertime-sensitiveinformationsuchasvoice,video,and
+telepresence applications over the same network infras-
+tructureastime-insensitiveapplicationssuchasbulkdata
+movement. QoS has been difficult to achieve in packet
+networks, since packets monopolize the link while they
+are being transmitted, blocking other packets that are to
+be routed over the same link. The delayed packets may
+causetheend-userapplicationtoexperiencedegradedper-
+formance.
+2
+2 8
+, or more than 250 million) can exist at
+a time; therefore, an encryption device must be capable
+of managing a large number of security contexts. Fur-
+thermore,thesecuritycontextcan—andgenerallydoes—
+change with each cell. At the OC-12c rate (622 Mb/s),
+the cryptographic state information for the new security
+contextmustberetrieved,used, andupdatedinless than
+705 nanoseconds (the transmission time of a single 53-
+bytecell).
+While the time and memory demands of ATM en-
+cryptionare daunting, the data movementoperationsare
+highlyregular. Thisallows the bulkofthe encryptorde-
+sign to be straightforward, leading to a minimization of
+failure modes. The implementationof the encryptorde-
+sign is partitioned so that the regular, very high-speed
+operationsarecarriedoutexclusivelyinhardware,while
+unpredictable,complexoperationsarecarriedoutinsoft-
+ware. Onceasecureconnectionhasbeenestablished,the
+softwareportionoftheencryptorisnolongerinvolvedin
+thehandlingofthedatatransportedoverthatconnection.
+The experiences we have obtained from helping cus-
+tomers use the encryptor in their networks indicate that
+the encryptor design and implementation are indeed ro-
+bust,usable,andefficient. However,asinallcaseswhen
+a device is moved from a laboratory environmentto de-
+ploymentintherealworld,wehaveencounteredanumber
+ofnewsituationsatcustomersites thathavebeeneduca-
+tional. This paper shares our experience in implement-
+inganddeployingoneofthefewcommercially-available
+ATMencryptors.Wediscusstheimpactontheencryption
+system of in-band network management, aggregation of
+multiplechannelsintopaths,andtrafficpolicing.Inaddi-
+tion,wediscusstheATMForumspecificationsthatrelate
+tosecurity,pointingoutsomeconsequencesoftheircur-
+rent provisions and offeringseveral suggestions for how
+thespecificationscouldbeenhanced.
+2 System Overview
+TheCellCasesystemprovideskey-agileATM-layeren-
+cryption,fornetworkratesfromT1(1.5Mb/s)toOC-12cPrivate
+Host
+LAN
+CU
+Private CU Public
+Host
+LAN WAN
+CU
+Private
+Host
+LAN
+Figure1.ATMEncryption. Eachcryptographicunit(CU)encryptsdataasitmovesfromthesecureprivateLAN
+to the unsecurepublic WAN. The CU on the otherside of the connectiondecryptsthe data as it moves fromthe
+publicWANtothesecureprivateLAN.HostsmaybeanytypeofATMend-userequipment. Inkey-agilesystems,
+aseparatekeyisusedforeachvirtualconnectionthroughthepublicnetwork.
+(622Mb/s).Thecryptographicunit(CU)servesasagate- The VLT contains an entry for each enabled Virtual
+way between a secure private network (or host) and the Connection(VC). (VC’s are enabled by software, as de-
+unsecure public network. The 48-byte payload of each scribedinthenextsection.)TheVLTentriesaresortedby
+ATM cell is encrypted, while the five-byteheader is left VPCI,andabinarysearchisusedtofindthecorrectentry
+unchanged, so that the cell may be switched and routed fortheincomingcell. Ifnocorrespondingentryisfound
+through the public network normally. Each virtual con- intheVLT,thecellisdiscarded. TheVLTentrycontains
+nection,denotedbyavirtualpathidentifier(VPI)andvir- flagsthatdeterminethedispositionofthiscell: itmaybe
+tualchannelidentifier(VCI)inthecellheader,hasitsown extracted(eitherbeforeorafterencryption),encrypted,or
+keyanditsowncryptographicstate. passedthroughintheclear. Ifencryptionisrequired,the
+flagsalsoindicatethemodeofencryptiontobeused.The
+2.1 Hardware flagstravelwiththecellthroughtherestofthepipeline.
+TheVLTentryalsocontainsanindexintotheVCState
+TheCUhardwareisresponsibleforcellencryptionand
+Memory. This unsorted table contains an entry for each
+interfacing to the public and private networks. Higher-
+activeconnection.Theentrycontainstheencryptionkeys
+level functions, such as ATM signaling, key exchange,
+and any other state information that must be kept for a
+andkeyupdate,areperformedbycapturingselectedcells,
+connection. Foreachconnection,twoseparatekeybanks
+deliveringthemtosoftware forprocessing,andinserting
+are maintained in the state memory, with a bit that indi-
+cellsgeneratedbysoftware.
+cates which bank is currently being used. The unused
+Figure 2 shows the hardware that controls the flow of
+bank is available for installing a new key as part of the
+cellsbetweentheprivatenetworkandthepublicnetwork.
+key update procedure; after the new key is installed, the
+This is known as the “private flow.” An identical set of
+bank bit is changedand the new key is used for encryp-
+hardware controls the public flow, from the public net-
+tion/decryption.Somestatemustbeupdatedafterthecell
+worktotheprivate,exceptthatcellsaredecrypted,rather
+isencrypted,suchasthestatevectorforcounter-modeen-
+than encrypted. Each flow is independent; there is no
+cryption.
+cryptographicstatesharedbetweenthetwopipelines.
+After theVLT,apairofFIFOqueuesareavailablefor
+First, the ATMReceiveInterfaceconvertsthephysical
+cell extractionandinsertion. Completecellsareinserted
+signalfromtheprivatenetworkintoATMcells. Thecon-
+and removed from each FIFO, not individual words or
+nectionidentifier(VPCI)isextractedfromthecellheader
+bytes. If a cell is marked for capture and there is not
+and used as an index for the VC Lookup Table (VLT).
+enoughroom in the extractionFIFO, then the entire cell
+(TheVPCIisaconcatenationofthevirtualpathidentifier
+is discarded. A cell is removedfrom the insertion FIFO
+(VPI)andthevirtualchannelidentifier(VCI).)Otherparts
+onlywhenthereisanidlecell(inthedatastream)thatcan
+ofthecellheaderareusedtodetectspecialcelltypes,such
+be replaced; a cell fromthe FIFO will never overwritea
+as Operation and Maintenance (OAM) cells. Such cells
+datacellinthecellstream. (Therefore,it canbedifficult
+may require special processing, such as being extracted
+to insert cells when a high percentage of the ATM link
+forsoftwareprocessing.
+bandwidthisfilledwithdatacells.)UserInterface
+SecurityServices
+(KeyExchange,KeyUpdate,Counter-ModeSynchronization)
+software
+hardware
+Random Pre-encrypt Pre-encrypt Post-encrypt Post-encrypt
+Number ExtractFIFO InsertFIFO ExtractFIFO InsertFIFO
+Generator
+work work
+Net AT IM nteR re fac ce eive VC TL ao bo lekup En Ec nry gp int eion AT IM ntT er ra fan cs emit Net
+Private
+index
+Public
+newstate
+VCState
+Memory
+keysandstate
+Figure2.ATMencryptor—private-to-publicflow.
+Next, the received or inserted cell is passed to the en- each connection. In this system, Triple-DES is the only
+cryption engine, along with the flags from the VLT and algorithmprovided,buttheusermaychoose56-bit,112-
+the keys and state information from the state memory. bit, or 168-bit keys (equivalent to one-key, two-key, and
+The payload of the cell is encrypted accordingly, while three-key DES encryption, respectively). Two encryp-
+theheaderisunchanged. Acellthatisnotencryptedstill tionmodesaresupported:electroniccodebook(ECB)and
+flowsthroughtheengine,withthesamelatencyasanen- ATM Forum counter mode (CM) [2], described in Sec-
+cryptedcell. tion2.3.1.
+AfterencryptionisanotherpairofFIFOqueuesforcell Outputfeedbackmodes,suchascipher-blockchaining
+extraction and insertion. As before, extraction is con- (CBC), reducethe throughputof Triple-DES by a factor
+trolledbyaflagintheVLTentryforthisconnection,and ofthree.Thesemodesarenotsupported,becausenocom-
+insertionoccurswhenanidlecellmaybeoverwritten.Fi- mercial encryptionchips were available to matchOC-3c
+nally,thecellis transmittedtothepublicnetworkbythe orOC-12ccellrateswhenthesystemwasdesigned. The
+ATMTransmitInterface. initialresearchprototype[12]usedexperimentalencryp-
+In addition to the two cell pipelines described above, tionchips[3]toachieveSingle-DESwithCBCatOC-12c
+thehardwareprovidesa singletruerandomnumbergen- rates.
+erator.Randombitsareaccumulatedintoa32-bitrandom Counter mode encryption and key update are imple-
+registerthatmaybereadbysoftware. mentedaccordingtotheATMForumSecuritySpecifica-
+tion, described below. Both requirethe insertion of Op-
+2.2 Software eration and Maintenance (OAM) cells for cryptographic
+synchronization and for key distribution. The software
+Thecryptographicunitsoftwareisresponsibleforman-
+is responsible for inserting these cells. As described
+aging the state of active connections, associating keys
+above, hardware is responsible for capturing incoming
+withsecureconnections,monitoringhardwarestatus,and
+OAMcellsforprocessingbysoftware.
+providingamanagementinterface.
+Keysmaybeassignedexplicitlybytheuser(forPVC’s
+Connectionsare establishedthroughnormalATM sig-
+andPVP’sonly),ortheymaybegeneratedautomatically
+nalingprotocols,inthecaseofSwitchedVirtualChannels
+anddistributedbetweencryptographicunitsthroughakey
+(SVC’s),orbyuseraction,inthecaseofPermanentVir-
+exchangeprotocol. Thekeyexchangeprotocolis similar
+tual Channels or Paths (PVC’s and PVP’s). In the case
+tothethree-exchangeprotocolintheATMForumSecurity
+of SVC’s, the calling and called end system addresses
+Specification.Itprovidesconfidentiality,mutualauthenti-
+are matched against an access control list to determine
+cation,andprotectionfromreplayandman-in-the-middle
+whethera connectionshouldbe encrypted, passedin the
+attacks.
+clear, or disallowed. The cryptographicparameters of a
+PVP/PVC connection are set by the user when the con-
+2.3 ATMForumSecuritySpecification
+nectionisestablished.
+Cryptographicparameters,suchas keylength, encryp- The ATM Forum is a consortium of ATM vendors
+tion mode, and key update interval, are independent for and users that establishes standards for ATM equip-Encryption Decryption
+Update Update
+StateVector StateVector
+Function Function
+Key Encrypt Key Encrypt
+Keystream Keystream
+Plaintext Ciphertext Plaintext
+Figure3.ATMForumCounterModeEncryption
+ment. In February 1999, a specification for ATM secu- fines protocols for security message exchange, key ex-
+rity was approvedby the Forum[2]. It establishes stan- change, and key update. Security message exchange is
+dard algorithms and protocols for data security in the supported by the definition of standard information ele-
+user plane—providing transfer of user data across vir- ments (IE’s) that are used to construct and parse secu-
+tualconnections—andthecontrolplane—providingcon- rity messages. The information elements are defined to
+nectionestablishment,releaseandotherconnectionfunc- beconsistentwithIE’susedinUNI(User-NetworkInter-
+tions. face)signaling[4].
+Thefollowingsecurityservicesaredefinedfortheuser ThenextthreesectionsintroducethepartsoftheATM
+plane: entityauthentication,dataconfidentiality,dataori- ForumSecuritySpecificationthataremostrelevanttothe
+ginauthenticationandintegrity,andaccesscontrol.Inthe CellCase system: counter-mode encryption, key update,
+control plane, services for entity authenticationand data andkeyexchange.
+origin authentication and integrity are defined. We will
+concentrateondataconfidentialityandentityauthentica-
+2.3.1 Counter-ModeEncryption
+tionintheuserplane,sincethosearetheservicesprovided
+bytheCellCasesystem.
+Countermodeisamethodforimplementingastreamci-
+Data confidentiality protects user data from unautho-
+pher using a block cipher. The block cipher encrypts
+rized disclosure. The payload of each ATM cell is
+a changing state vector, and the result is used as a key
+encrypted using a symmetric-key algorithm, such as
+stream. As shownin Figure 3, the key stream is bitwise
+DES [6], two-key EDE Triple-DES [1], or FEAL [11].
+exclusive-ORedwiththeplaintexttogenerateciphertext.
+Symmetric-key algorithms are chosen because of their
+To decrypt, the same key stream is generated by the re-
+speedandbecauseoftheavailabilityofhigh-speedhard-
+ceiver (by encrypting the same sequence of state vector
+ware implementations. Encryption is performed at the
+valueswiththesamekey)andisexclusive-ORedwiththe
+ATMlevel,withthepayloadofeachATMcellencrypted
+ciphertext,recoveringtheoriginalplaintext.
+and the cell header left in the clear. The standard spec-
+LikeCBC, countermodeencryptionmaskspatternsin
+ifies two modes of encryption: CBC and counter mode.
+the plaintext. Unlike CBC, counter mode does not re-
+(Formoreinformationaboutthesealgorithmsandencryp-
+quirefeedbackfromthe ciphertextstreamintotheplain-
+tionmodes,seeSchneier[10],chapters12,13,and15,or
+textstream.ThisisparticularlyimportantforTriple-DES,
+Menezesetal.[5],chapter7.)
+sincethefeedbackreducesthroughputbyafactorofthree.
+Entityauthenticationdetermineswhethertheidentities
+Counter modetakes fulladvantageof thefastest encryp-
+ofthecalledandcallingpartiesinanATMconnectionare
+tionchipsavailable,leadingtoasystemthatscalesnatu-
+genuine. This service is essential forestablishingsecure
+rallywithtechnologytoOC-12candmulti-gigabittrans-
+connections,sinceit protectsagainstattacks that involve
+missionrates.
+impersonation of a trusted entity. Approved algorithms
+ThestatevectordefinedbytheATMForumisdesigned
+for authenticationincludesymmetric-key-basedmessage
+for high-performance encryption of ATM cells. Each
+authenticationcodes(MAC’s),usingDESandFEAL,and
+cell payloadis 48bytes, which correspondstosix64-bit
+public-key digital signatures, such as those provided by
+blocks. Part of the state vectoris a counterfromzeroto
+RSA [9], DSA [7], and ESIGN [8]. (See Schneier [10],
+five, identifying the six blocks in the cell. These state
+chapters19–20,orMenezesetal.[5],chapters9and11.)
+vector values can be generated independently, so all six
+Tosupporttheseservices,theSecuritySpecificationde-
+blockscanbeencryptedordecryptedinparallel.Anotherpart of the state vector is a 21-bit linear feedback shift
+register(LFSR),whichisadvancedonestateforeachcell.
+Thisdefinitionallows
+2
+2 1
+(cid:0) 1
+keystreamvaluestobegen-
+eratedwithnorepeatedelements.
+Mostoftheremainderofthestatevectorisdevotedtoa
+35-bitjumpcounter. Thesenderandreceiverareperiod-
+ically resynchronized by incrementing the jump counter
+and resetting the LFSR to its starting value (5A5A
+1 6
+).
+Resynchronizationisnecessarytorecoverfromlostcells;
+without synchronization,countermode encryptionexpe-
+riences infinite error extension when a ciphertext cell is
+lost.
+Even without cell loss, synchronization must occur to
+avoid repeatingthe key stream. Therefore, a connection
+mustbesynchronizedatleastevery
+2
+2 1
+channel, after it has been setup through the normal sig-
+nalingmechanism. Thisprotocolallowstheresponderto
+choose security parameters from a list presented by the
+initiator, and it uses challenge and response to protect
+againstreplay.
+3 CustomerExperiences
+Inthissection,weillustratethepracticalrealitiesofde-
+ploying ATM encryption in customer networks. Gener-
+ally,ourexperienceshavebeenverygood,validatingthat
+encryption can effectively be applied at the ATM layer.
+Full line rates for commonly deployed network band-
+widths from 1.5Mb/s to 622 Mb/s aresupported. There
+isessentiallynoimpactontrafficdistributionpatternsand
+cells. Forafull-
+negligibledelayisintroduced. Encryptionhasverysmall
+rateOC-12cconnection,thiscorrespondstoabout0.7sec-
+impactondelayvariation.Thedegreeofinteroperationof
+ondsworthofdata.
+ATMnetworkequipmenthasproventobehigh.
+Synchronization is accomplished through the use of
+Ofcourse,muchcanbelearnedfromtheunanticipated
+specialOAMcells,calledSessionKeyChangeover(SKC)
+situationsthatoccurinreal-worldenvironments. Forthe
+cells. Thepayloadofthe SKC cell containsa new jump
+rest of this section, we describesome ofthosesituations
+number; upon receiving an SKC cell, the cryptographic
+andthelessonslearnedfromthem.
+unitsetsthejumpnumberforthatconnectiontothevalue
+containedinthecell,andtheLFSRandotherpartsofthe 3.1 NetworkEquipmentIssues
+statevectorareresettotheirstartingvalues.
+Acustomerobservedthatchannelsencryptedincounter
+modewouldoccasionallyhavecorrupteddata. Theerror
+2.3.2 KeyUpdate
+rate was correlated to the amount of traffic that the net-
+TheSecuritySpecificationdefinesaprotocolforchanging workswitchwashandling.
+the data encryptionkeyforan active connectionwithout The switch supported two modes of handling OAM
+disruptingdata flow. The new key is encrypted(using a cells: itcouldbeconfiguredtointerceptend-to-endOAM
+previously negotiated shared key) and placed in another cellsorletthempassthroughundisturbed. Evenwiththe
+specialOAMcell,calledaSessionKeyExchange(SKE) interceptfunctiondisabled,theproblembehaviorwasstill
+cell,whichissentalongwithuserdataontheconnection. observed.However,whenavirtualpathconnection(VPC)
+Upon receiving an SKE cell, the cryptographic unit de- wasestablishedthroughtheswitchandthesamecounter
+crypts the enclosed key and installs it in the unused key mode traffic sent over it no errors were reported. The
+bankforthatconnection. OAMcellinterceptfunctionwasnotavailableforVPC’s.
+ASessionKeyChangeover(SKC)cellsignalsthatthe An ATM analyzer was attached directly to the switch
+newkeyshouldbeusedforsubsequentcells. Thisis the and configured to generate a stream of user cells with
+same SKC used for counter mode synchronization, de- OAM cells periodically intermixed. The tester was also
+scribedabove.Inadditiontoanewjumpnumber,theSKC configured to receive the cell stream output from the
+cellcontainsakeybankidentifier,whichindicateswhich switchandcomparethecontentofthedatacellstoassure
+key bank should be used for encryption for subsequent theirvalueswerecorrect.
+data cells. In connectionsthat do not use countermode, At the start of the test, the traffic rate was low and
+onlythekeybankidentifierisused—thejumpnumberis the trafficdistributioncell streamoutputfromtheswitch
+ignored. matched the traffic distribution of the input cell stream.
+As the rate of data input to the switch was gradually
+increased, the distribution of cells in the output stream
+2.3.3 KeyExchangeProtocol
+changed more and more from the pattern of the input
+TheSecuritySpecificationdefinestwokeyexchangepro- stream. In particular, position of the OAM cells relative
+tocols.Thetwo-exchangeprotocolisintendedforin-band totheusercellsshiftedlaterintime.Eventuallythisshift-
+keyexchange,combinedwiththenormalcallsetupproce- ingintimecausedanOAMcelltoleavetheswitchaftera
+dure. Itallowsnonegotiationofsecurityparameters,and datacellthatoccurredlaterintheinputcellstream.
+it relies on timestamps for replay protection. The three- Since OAM cells are used for counter mode synchro-
+exchangeprotocolperformskeyexchangeontheuserdata nization, this re-orderingof the cell stream would causelossofsynchronizationbetweentheencryptorandthede- sulting ciphertexts together to retrieve the XOR of the
+cryptor. Inotherwords,acellwouldbedecryptedwitha original plaintexts. In other words, for plaintexts
+portionof the key stream different from that used to en-
+crypt the cell; the resulting plaintext cell would be cor-
+rupted.
+Thesettingofend-to-endOAMcellinterceptiondidnot
+seemtohavemuchimpactonthisbehavior. Theproblem
+wasreportedtotheswitchvendor,whodeterminedthatin-
+terceptionofend-to-endOAMcellswasnevercompletely
+disabled. The vendor created a test build of the switch
+softwarewithafixforthisanomaly. Whenthistestcode
+wasloadedontheswitchinthetestnetworkandtheATM
+analyzer test rerun, the cell sequence integrity of OAM
+cells was preserved. Running the customer application
+withthistestbuildalsoshowedthattheproblemhadbeen
+resolved.
+Thelessonhereisthattheinterceptfunctioncannever
+be reliably used on a counter mode channel connection.
+A customer must choose between counter mode encryp-
+tion for security and OAM cell interception for network
+management. Inordertosupportbothfunctions: (1)The
+switchmustrecognizesynchronizationOAMcells (SKC
+cells)andpassthemwithoutinterception.(2)Theencryp-
+tormustrecognizenon-SKCOAMcellsandpassthemin
+the clear. If the OAM cells are not encrypted, then they
+maybereorderedwithrespecttodatacellswithoutaffect-
+ingthedecryptionprocess. (Thisfeatureis supportedby
+theCellCaseencryptor.)
+3.2 VirtualPathConnections
+The CellCase system and its research prototype [12]
+werebothdesignedtoprovideencryptionforvirtualchan-
+nelconnections(VCC’s). ATMnetworksalsosupportvir-
+tual path connections (VPC’s), in which switching and
+routing is based only on a cell’s virtual path identifier
+(VPI).Fromamanagementstandpoint,wedecidedtosup-
+port paths in the encryptor, partly to ease administration
+of largenumbersofrelated channels andalso to provide
+aninterfacethatwas similar to themanagementofATM
+switchesandinterfaces.
+In CellCase, a path is implemented as a collection of
+independentchannels,managedasanintegralunit. Inthe
+initial implementation,each channelin the pathuses the
+sameencryptionkey,butthestateofeachchannelismain-
+tainedseparately.
+For a counter mode path, this means that each chan-
+nelhasanindependentlymaintainedstatevector,aswell.
+Thishastwoimportantconsequences.First,eachchannel
+must be synchronized independently. Second, using the
+samekeyforeachchannelmeansthatthesamekeystream
+isgeneratedtoencryptdataontheseparatechannels.
+When two plaintexts are encrypted with the same key
+stream, an attackercan exclusive-OR (XOR) the two re-
+A
+and
+B
+,andkeystream
+K
+,
+( K (cid:8) K ) = ( A (cid:8) B
+A(
+) (cid:8)
+(cid:8)
+0
+K )
+=
+(cid:8)
+A
+( B
+(cid:8)
+(cid:8)
+B
+K
+:
+) = ( A (cid:8) B ) (cid:8) This may reveal
+informationtotheattackerthatmakesiteasiertorecover
+oneorbothplaintextmessages.Forinstance,ifoneplain-
+textcontainsawell-knownoreasilyguessedpattern,this
+isenoughtorecoverpartoftheotherplaintext.
+Oneapproachtosolvingtheproblemistousedifferent
+ranges ofthe jumpnumberfor eachchannelin the path.
+Thisreducestheeffectivelifetimeofakey,however,since
+thenumberofcellsthatcanbeencryptedisdeterminedby
+thenumberofuniquevaluesofthestatevector.Foralarge
+path,onewithmanyactivesecurechannels,theeffective
+keylifetimebecomesimpracticallyshortifthestatevector
+spaceisdividedamongthechannels.
+To solve this problem, the CellCase software was
+changedtouseaseparatekeyforeachchannelinthepath.
+Thekeyforeachchannelisderivedfromapath’ssession
+keyandtherelativepositionofthechannelinthepath. A
+keyexchangeorkeyupdateoperationestablishestheses-
+sion key for the path as a whole, and this session key is
+thenusedtoderivekeysforeachchannelinthepath.
+Another customer-reported problem further illustrates
+the consequencesof implementinga pathas a collection
+of channels. The customer reported that they enabled a
+securepaththatappearedtobepassingdataproperly,but
+the decryptingCUreportedfailuresonkeyupdates. Ob-
+viously,theappropriatekeyvalueswereinstalled,atleast
+forthechannelsthatcarriedthetestdatatraffic.However,
+sincethekeyupdatewasreportedasfailing,thekeyvalue
+foratleastoneofthechannelswasnotbeingsetproperly.
+Furtheranalysisshowedthatnotallthechannelsinthe
+rangeofthesecurepathhadbeenestablishedthroughthe
+publicnetwork. Inotherwords,aparticularrangeofVCI
+values was enabled as a path in each CU, but not ev-
+erychannelinthatrangewasprovisionedinthenetwork.
+Forexample,supposetheuserateachendoftheconnec-
+tionprovisionspath10withchannels32through255. In
+the network, however, channels 10/32 through10/63are
+provisionedas permanentvirtual channels(PVC’s). The
+otherchannels(10/65–10/255)arenotprovisionedinthe
+network. Perhaps the user intends that they will be es-
+tablished later, and he does not wish to reconfigure the
+cryptographicstateatthattime.
+Duringakeyupdateoperation,thenewkeyistransmit-
+ted using SKE cells on one channel of the path, specifi-
+cally the channel with the lowest VCI (32, in our exam-
+ple). However, since the state of each channel is main-
+tainedseparately,SKCcellsmustbesentoneachchannel
+to complete the changeover process. Therefore, the key
+update process could not be completed on the channels
+that were not provisionedin the network(10/65through10/255),andthedecryptingCUreportedthisasafailure. connectionisencryptedinECBmode,theimpactofadata
+The ATM Forum Security Specification views a VPC cellbeingdiscardedistheabsenceofsixblocksinthere-
+as asingle connection,witha singlecryptographicstate. coveredplaintext. For counter mode, however, loss of a
+ThisisconsistentwiththetreatmentofVPC’sintheATM data cell causes loss of synchronizationbetween the en-
+network: only the VPI of a cell is significant. (Certain cryptinganddecryptingCU’s. Allsubsequentdataiscor-
+VCI values are reserved for network use, however, and rupted until the next synchronizationevent. This is also
+cells containingthose VCI values must be passed in the trueifthelostcellisasynchronization(SKC)cell,since
+clear.) ThisviewofaVPC canbeimplementedwiththe theencryptingCUresetsthestatevectorforthisconnec-
+currentCellCasehardwarebyreferringallchannelsinthe tionbutthedecryptingCUdoesnot.
+pathtoacommonstatememoryindex.(Sinceeachcellin Duringkeyupdate, loss of anSKE cell (whichcarries
+theVPCupdatesthestatevector,andthusthekeystream, the new key value) is unlikely to cause data corruption,
+the duplicate keystream problem described above would because multiple SKE cells are sent for each keyupdate
+notoccur.)Amorespace-efficientapproach,however,re- event. Loss of an SKC cell does cause corruption,how-
+quiringfewerVLT entries,wouldbe tochangethe hard- ever,sincetheencryptingCUchangestothenewkeybut
+waretoexamineonlytheVPIofa cellassociatedwitha thedecryptingCUdoesnot. MultipleSKCcellsarealso
+VPC. sent, however, so the corruption should cease when an
+SKCcellissuccessfullyreceivedbythedecryptor.
+3.3 TrafficPolicing We anticipated the effects of policing during design,
+but we didn’tknowhow to quantifyits impact. We also
+One ofthe attractive features ofATM is its provisions
+didn’thaveanybasisforpredictinghowprevalentpolic-
+for guaranteed bandwidth allocated to a connection. A
+ingwouldbenoratwhatdataratesitwouldbeused. Itis
+bandwidth contract is established between the end user
+exactlythiskindofunanticipated—andunanticipatable—
+andthenetworkwhenaconnectionisestablished,andthe
+factorthatmostchallengeadesign. Asaresult,theCell-
+network equipment is expected to enforce that contract
+Case implementation was changed to allow the user to
+by giving priorityto cells on that connectionor discard-
+control the rate at which cells may be inserted into the
+ingcellsiftheenduserexceedstheallocatedbandwidth.
+datastream.
+When the end user tries to match its traffic to the provi-
+Inourexperience,trafficpolicingatarategreaterthan
+sionedbandwidth,itiscalledtrafficshaping. Theactions
+10%ofthelineratewith250-microsecondcelldelayvari-
+taken by the network to enforce the bandwidth contract
+ationtolerance(CDVT)isunlikelytocauseproblemsfor
+arecalledtrafficpolicing.
+operationoftheATMencryptors.Inpractice,muchlower
+Two behaviors can manifest themselves when using
+ratescanbesupportedwithouterror.
+ATMencryptorsinnetworksinwhichtrafficflowsarepo-
+liced. Thesimplestbehaviorresultsfromtherateofdata
+4 Suggested Changes to the ATM Forum
+from the source of traffic entering the network through
+Specification
+the encryptor. During periods when the traffic source is
+transmitting data at exactly the policed rate, there is no
+Inthecourseofdevelopingandmarketingacommercial
+bandwidth available for security functions, such as key
+ATMencryptor,wehaveuncoveredseveralsubtleaspects
+exchange,keyupdate,andcountermodesynchronization.
+of the security services that can hinder performanceand
+TheCUinsertsthecellsrequiredforthesefunctionsany-
+customer satisfaction. In this section, we describe a few
+way,sinceithas noawarenessofthebandwidthcontract
+ofthoseareas andsuggest changestotheForumspecifi-
+that the customer has with the service provider. Hence,
+cationtoaddressthem.
+boththedatacellsandthesecurityfunctioncellsenterthe
+publicnetwork. Cells exceedingthe contractedratemay
+4.1 NegotiatingKeyExchangeParameters
+be discarded by the public network. The cells discarded
+mightbedatacells,securitycells,oramixofboth. Key exchange requires authentication of the CU’s, as
+Duringkeyexchange,alostcellmeansthatthekeyex- well as encryption of the session keys. In the CellCase
+changemessage is not receivedproperlyat thepeer CU. protocol, the RSA public-key algorithm is used to both
+Dependingontheprotocol,themessagemayberesentor signandencryptkeyexchangemessages. Thelatencyof
+theentirekeyexchangemaybeabandoned.Sincenodata these operations severely limits the rate at which secure
+is being sent on the connection during a key exchange, connectionscanbeestablished.
+problemswithpolicingduringthisphasearetypicallydue Toincreasecallsetuprates,asharedsecretkeyencryp-
+totheburstinessofthekeyexchangetraffic. tion key (KK) is established during the initial key ex-
+After the connection is established, any data cell loss change.TheKKisusedforencryptionduringsubsequent
+willresultincorruptionoftherecoveredplaintext. Ifthe keyexchangesbetween thesametwo CU’s. Authentica-tionisimpliedbytheabilitytoencryptusingtheKK. keyalgorithmwas chosen, thenthecallingCU mustuse
+EachCU isabletokeepa limitednumberofKK’s as- the KKassociated withthecalled CU. However,theCU
+sociatedwithotherCU’s. ThenumberofpeerCU’s,how- maynothaveaKK—asdescribedearlier,itmayhavedis-
+ever,ispotentiallyunbounded.AKKfromapreviousex- cardedtheKKtomakeroominits cache,oritmayhave
+changemaybedeletedinordertostoreanewKKfroma been reset since the last exchange. Because it does not
+morerecentexchange.1 Theprotocolmustthereforedeal have a KK, the calling CU cannot complete the key ex-
+with the case in which one CU has a KK (and therefore change;itmustberestarted,andthistimeonlythepublic-
+wantstousethefastkeyexchangeprotocol)andonedoes keyalgorithmshouldbelistedasanalternative.
+not(andthereforerequiresthepublic-key-basedprotocol). Currently,theredoesnotappeartobeawayforthecall-
+Anotherconsiderationfortheuseofsymmetric-keyal- ing CU to restart the exchangewithoutdroppingand re-
+gorithmsisthattheCUclosertothecallinitiator(known establishing the connection. To save this overhead, the
+as the calling CU) may not know the identity of the CU Forum specification could allow the first message to be
+that will intercept the call for the call responder(known repeated,effectivelyrenegotiatingthesecurityparameters
+asthecalledCU).First,aCUmayacceptcallsonbehalf fortheexchange.
+of many end users. Second, a different CU may handle
+successive calls to the same end user, due to changes in 4.2 KeyUpdate
+routing from one call to the next. Therefore, the called
+The CellCase system implements the ATM Forum
+party address cannot reliably predict the identity of the
+mechanism for changingthe encryptionkey of an active
+CU on the responding end of the call. Since the KK is
+connection,describedinSection2.3.2.Onesourceofcon-
+associatedwithaCU,notwithanendsystem,thecalling
+fusionforcustomersis thattheupdateis aunidirectional
+CU cannot determine which KK to use for a connection
+process:onlyonedirectionalflowisaffected,andthereis
+untilitlearnstheidentityofthecalledCU.
+nofeedbackfromthedecryptingCUtoindicatewhether
+In the CellCase system, the called CU determines
+thekeyupdatewassuccessful.
+whether the fast key exchange protocol can be used. If
+OneCUinitiatesakeyupdatebygeneratinganewen-
+it has a KK associated with the calling CU, it generates
+cryption key, installing it in the alternate hardware key
+akeyexchangemessageusingthatKK.Whenthecalling
+bank, encrypting the key with a shared master key, and
+CUreceivesthefirstkeyexchangemessage,itlearnsthe
+sending the encrypted key downstream in an SKE cell.
+identityofthecalledCU andwhetherthat CU possesses
+Since the ATM connection does not insure delivery of
+a KK for this exchange.If the calling CU also possesses
+cells,multiplecopiesoftheSKEcellaresent. Still,there
+a KK, it continues the fast exchange protocol. If not, it
+is no guaranteethat the SKE cell is actually receivedby
+initiatesanewfullauthenticationmessagesequence.The
+the peer CU downstream. Also, there is no information
+calledCUthendeterminesthatthepublic-keyprotocolis
+communicatedtotheinitiatingCUaboutwhethertheSKE
+beingusedand respondsaccordingly. A newKK pairis
+wasreceived.
+generatedasaside-effectofexecutingthepublic-keypro-
+When an SKE cell is received, the cell payload is de-
+tocol.
+crypted(usingthesamemasterkey)andtheresultingses-
+Consider the same scenario using the ATM Forum
+sionkeyis loadedintothepeerCU’s alternatekeybank.
+three-pass protocol. (The two-pass protocoldoes not al-
+TheinitiatingCUwaitsanappropriateamountoftimeaf-
+low security parameters to be negotiated.) The calling
+tersendingitslastSKEcell—theForumspecifiesatleast
+CU generates a list of encryption and authentication al-
+onesecond—andtheninitiatesakeychangeover.AnSKC
+gorithmsthatmaybeusedforkeyexchange.Inthiscase,
+cell is inserted into the data stream before the encryp-
+itlists asymmetric-keyalgorithm(e.g.,Triple-DES)and
+tion engine; the payload of the SKC cell causes the en-
+apublic-keyalgorithm(RSA),eventhoughitdoesnotyet
+cryptionhardwaretoswitchtothealternatekeybankfor
+knowtheidentityofthecalledCU.
+subsequentdatacells. (For counter-modeconnections,it
+Asbefore,thecalledCUlooksinitscachetoseeifithas
+also resets the state vectortoits initial value.) TheSKC
+aKKestablishedwiththecallingCU.IfitdoeshaveaKK,
+cell then flows downstream to the peer CU, which also
+itselectsthesymmetric-keyalgorithmandusestheKKto
+switches to the alternate key bank. As with the SKE,
+encryptthe keyexchangemessage. If it does nothave a
+severalSKC cells are sent (eachindicatingthesamekey
+KK, it uses the public-keyalgorithm. In either case, the
+bank)toreducetheprobabilityofSKCcellloss.
+choiceofalgorithmisconveyedintheresponsemessage.
+The key update procedure described here only affects
+Upon receipt of the second message, the calling CU
+onedirectionofdataflow,fromtheinitiatortothedown-
+knows the identity of the called CU. If the symmetric-
+stream CU. To change the key in the other direction, a
+1IntheCellCasesystem,KK’sarenotpersistentacrosssystemreset, separatekeyupdatemust beinitiatedbythe downstream
+creatinganothersituationinwhichoneCUmaynothaveavalidKK. CU.StartUpdate
+BadAckRec’d [sendSKE] SKERec’d [sendack]
+SKERec’d
+XmitTimerExpires
+[sendack]
+A [sc ek ndRe Sc K’ Cd ] IDLE AbortT [aim boe rtr ]Expired S SK ENE_ T B X [sma ed ni dtA T Sc im Kk EeR ]re Ec x’d pires OldSKE [iR gne oc r’ ed ] IDLE Abort [a(P boa rr tt ]ialSKC) A SEC NK T_
+AbortTimerExpires
+(noSKC)
+[sendrareack]
+AckRec’d[sendSKC] AckRec’d[sendSKC]
+(a)Sender (b)Receiver
+Figure4.Simplifiedstatediagramsforthe(a)senderand(b)receiverofareliablekeyupdate.
+Because thereis no acknowledgementfrom thedown- rorislogged,butthereceivercontinuestosendACK’sat
+streamCU,theinitiatingCU doesnotknowwhetherthe areducedtimeinterval. InthecaseofaPVPconnection,
+newkeyvaluehasbeeninstalledatthedecryptor. There- anSKCcellmustbereceivedonallallocatedchannels;if
+fore,themanagementinterfaceontheinitiatingCUmay SKC’s are received on some channels, but not all, when
+report that the key update was successful, even though thetimerexpires,thereceivercompletestheupdateforall
+subsequentdatapassedonthatconnectionwillnotbede- channelsandlogsanerror.
+cryptedproperlyatthereceivingend. This bidirectionalapproachdoes notworkforconnec-
+Feedbackfromcustomersindicatesaneedforakeyup- tions withnobandwidthallocatedin theupstreamdirec-
+date protocol that is reliable in two ways: (1) there is a tion. Suchconnectionsare atypical, however,exceptfor
+high degree of confidence that the key update will com- point-to-multipoint connections. Unidirectional connec-
+plete,eveninthepresenceofnetworkerrors,and(2)the tionscanusetheoriginalunidirectionalprotocol,withthe
+sender of a key update knows whether the new key has reliable protocol providedfor the more typical case of a
+beenreceivedatthedownstreamCU.Figure4showssim- bidirectionalpoint-to-pointconnection.
+plifiedstatediagramsforthesenderandreceiverinsucha
+protocol.(Someerrorhandlingtransitionsarenotshown.) 5 Conclusion
+ThesenderinitiatesanupdatebysendinganSKEcell,
+containingthe new key to be installed (encryptedwith a Encryption at the ATM layer is a relatively new tech-
+masterkey,asdescribedabove).Itthenwaitstoreceivean nology, one that in many ways combines the speed and
+acknowledgementcell (ACK) from the downstreamCU. simplicity of a bulk link encryptorwith the flexibility of
+The ACK is a specially formatted SKE cell, containing anapplication-layerencryptor. Wehaveattemptedinthis
+thekeynumberassociatedwiththemostrecentlyreceived papertopassonourexperiencesbringingthistechnology
+SKEcell. Thesenderperiodicallyre-sendstheSKE cell to market. These experiencescanbe summarizedwith a
+untilanACKisreceived. fewobservations:
+When an ACK is received by the sender, it completes
+theupdateprocessbysendinganSKCcell,whichtellsthe
+receivertostartusingthenewkey. AnSKCcellistrans-
+mittedeachtimeavalidACKisreceived. Ifanimproper
+ACKisreceived,suchasonethatcontainsthewrongkey
+number,thenthe updateprocessis restarted—anew key
+isgeneratedandinstalledbythereceiver,andanewSKE
+cellissentdownstream.
+If no ACK is received within a user-specified timeout
+period,thentheupdateisabortedandthesenderreportsan
+error. Uponfailure,anewupdateisautomaticallysched-
+uledafterauser-definedtimeinterval.
+Atthereceiver,anewSKEcellindicatesthestartofan
+updatetransaction.Thenewkeyisretrievedandinstalled,
+and an ACK cell is sent upstream. An ACK cell is sent
+periodically,untilanSKCcellarrives,indicatingthatthe
+newkeyshouldbeusedfordecryption. IfnoSKCcellis
+receivedwithinauser-specifiedtimeoutperiod,thenaner-
+(cid:15)
+ATM encryption works. There are hundreds of en-
+cryptors in use today in production networks. The
+encryptorsaretransparenttotherest ofthenetwork
+equipment, requiring no modifications to hardware
+or software in the private or public networks. Full
+lineratesaresupportedwithverylittleaddedlatency.
+(cid:15)
+InteroperabilitywithotherATMnetworkequipment
+isgenerallyverygood,buttherearesometimesprob-
+lemsinthedetails,suchastheOAMinterceptprob-
+lem(Section3.1). Inourexperience,theseareusu-
+allyduetominordifferencesininterpretationofex-
+istingstandards,exposedbytheuniquerequirements
+ofthesecurityfeatures.
+(cid:15)
+The security context for a virtual path connection
+(VPC)shouldbetreatedasasingleentity,ratherthan
+as a collection of channel contexts. This simplifiesthekeygenerationandkeyupdateprocessesforthe
+path.
+(cid:15)
+RequirementsfortheCU to insertcells canconflict
+withtrafficpolicing. Strategiestoavoidthisinclude
+shapingtrafficaftertheencryptor,havingtheencryp-
+torparticipateinthebandwidthcontract,orreducing
+the rate at which cells are inserted by the CU, and
+allowingfortheadditionofsecurityoverheadwhen
+shapingtrafficenteringtheCU.
+(cid:15)
+Renegotiationofsecurityparametersshouldbesup-
+ported during key exchange. This allows faster en-
+cryption and authentication algorithms to be used
+as appropriate, which is critical for sustaining high
+setupratesforsecureconnections.
+(cid:15)
+A reliable key update mechanism should be pro-
+vided,oratleastamechanismthatprovidesfeedback
+astowhethertheupdateissuccessfulatboththeen-
+cryptinganddecryptingCU’s.
+(cid:15)
+Since the ATM encryptor is a flow-through device, it
+canhaveaminimalimpactontrafficdistributionpatterns.
+Specifically,itispossiblefortrafficstreamswithvarying
+quality of service needs to be directed through an ATM
+encryptor without the QoS requirements being violated.
+We predict that the conflicting implications of the store-
+and-forwardnatureof packethandling andthe emerging
+requirements for quality of service guarantees in packet
+networkswillposethegreatestchallengestothedesigners
+ofhighperformancepacketencryptors.
+References
+[1] ANSI X9.17 (Revised). American National Standard
+for Financial Institution Key Management (Wholesale).
+AmericanBankersAssociation,1985.
+[2] ATM Forum. ATM security specification, version
+1.0. ATM Forum Standard AF-SEC-0100.000, Feb.
+1999. ftp:://ftp.atmforum.com/pub/approved-specs/af-
+sec-0100.000.pdf.
+[3] H.EberleandC.P.Thacker. A1-Gbit/secondGaAsDES
+chip. InProceedingsoftheIEEE1992CustomIntegrated
+Counter mode allows high-throughput encryption, CircuitsConference,May1992.
+butitismoresensitivetonetworkconfigurationand [4] R.Ha¨ndel,M.N.Huber,andS.Schro¨der.ATMNetworks:
+behavior.Celllossandcellorderinghaveamorepro- Concepts, Protocols, Applications. Addison-Wesley, 3rd
+foundimpactoncountermodethanonothermodes edition,1998.
+that either do not require synchronization(ECB) or [5] A. J. Menezes, P. C. van Oorshot, and S. A. Vanstone.
+HandbookofAppliedCryptography. CRCPress,1997.
+areself-synchronizing(CBC).Also, theneedto ex-
+[6] NationalBureauofStandards. Dataencryptionstandard.
+plicitly resynchronize adds the burden of inserting
+FIPSPUB46-1,USDepartmentofCommerce,Jan.1988.
+andprocessingsynchronizationcellstotheCU’s,and
+[7] NationalBureauofStandards. Digitalsignaturestandard.
+it can aggravate problems with policing on connec-
+FIPSPUB186,USDepartmentofCommerce,May1994.
+tionsthatoperateneartheircontractedbandwidth. [8] T.Okamoto. Afastsignatureschemebasedoncongruen-
+tialpolynomial operations. IEEETransactions on Infor-
+Ourexperiencesdemonstratethathighdatarateencryp-
+mationTheory,36(1):47–53,Jan.1990.
+tionattheATMcelllayerispractical. Thisdesigncanbe [9] R.Rivest,A.Shamir,andL.M.Adleman. Amethodfor
+extendedto evenhigher data rates throughtheuse of ei- obtainingdigitalsignaturesandpublic-keycryptosystems.
+therhigherspeedencryptiondevicesormultiple encryp- Commun.ACM,21(2):120–126,Feb.1978.
+tion pipelines. These changes will have little impact on [10] B. Schneier. Applied Cryptography: Protocols, Algo-
+the overall architecture and on cell delay or delay varia- rithms,andSourceCodeinC. JohnWileyandSons,Inc.,
+tioncharacteristicsofthecurrentimplementation. 2ndedition,1996.
+[11] A. Shimizu and S. Miyaguchi. Fast Data Encipherment
+This design offers a glimpse of the challenges that
+AlgorithmFEAL. InEUROCRYPT’87, pages 267–278.
+confront the designer of high performance packet en-
+Springer-Verlag,1988.
+cryption devices. Packet encryptors also have to handle
+[12] D. Stevenson, N. Hillery, G. Byrd, F. Gong, and
+rapidchangesofsecuritycontextsfrompackettopacket.
+D.Winkelstein. Designofakeyagilecryptographicsys-
+Thedatamovementrequirementsaremoredemandingin temforOC-12crateATM.InSymposiumonNetworkand
+packet encryption than in cell encryption, since packet DistributedSystemSecurity,Feb.1995.
+payloadscanbemuchlarger(andsmaller)thanATMcell
+payloadsandareofunpredictablelength. Therefore,the
+scheduling of memory and encryption resources will be
+muchmorecomplicatedinapacketencryptor.

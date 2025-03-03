@@ -1,0 +1,1286 @@
+Dynamic Virtual Address Range Adjustment
+for Intra-Level Privilege Separation on ARM
+Yeongpil Cho, Donghyun Kown, Hayoon Yi, and Yunheung Paek
+ECE and ISRC, Seoul National University
+{ypcho, dhkwon, hyyi}@sor.snu.ac.kr, ypaek@snu.ac.kr
+Abstract—Privilege separation has long been considered as a entire system [12], [21], [49]. Privilege separation stemming
+fundamentalprincipleinsoftwaredesigntomitigatethepotential from the work of Saltzer and Schroeder [33], [34] has been
+damage of a security attack. Much effort has been given to considered as a fundamental principle in software design that
+develop various privilege separation schemes where a monolithic can mitigate such a security concern. To enforce this security
+OS or hypervisor is divided into two privilege domains where
+principleinthedesign,oneintuitiveschemehasbeenisolating
+one domain is logically more privileged than the other even
+critical parts of system software inside another software with
+if both run at an identical processor privilege level. We say
+higherprivilege.However,thereareseveralproblemswiththis
+that privilege separation is intra-level if it is implemented for
+scheme. First of all, it conflicts with the common tendency
+software of a certain privilege level without any involvement
+or assistance of more privileged software. In general, realizing that, in many cases, system software already runs with the
+intra-level privilege separation mandates developers to rely on highest privilege level in the system. Also, the mandatory
+certain security features of the underlying hardware. So far, involvement of more privileged software in its design usually
+such development efforts however have been much less focused entailsfrequentswitchingbetweendifferentprivilegelevelsfor
+on ARM architectures than on the Intel x86 family mainly the security enforcement, which will become a definite cause
+because the architectural provision of ARM security features of the overall system performance degradation. Therefore, to
+wasrelativelyinsufficient.Unlikeonx86,as aresult,thereexists
+cure these problems, there has been active research on intra-
+no full intra-level scheme that can be universally applied to any
+level schemes [15], [46], [4] whose aim is to enforce privilege
+privilegelevelonARM.However,asmalwareandattacksincrease
+separation without any reliance on or involvement of other
+against virtually every level of privileged software including
+privileged levels. In these schemes, system software is broken
+an OS, a hypervisor and even the highest privileged software
+armored by TrustZone, we have been motivated to develop a into typically two domains: the inner and outer. Since these
+technique, named as Hilps, to realize true intra-level privilege domains are split from one monolithic body, they are running
+separation in all these levels of privileged software on ARM. in the same processor privilege level, but logically graded in a
+PivotaltothesuccessofHilpsisthesupportfromanewhardware way that the inner domain becomes more privileged than the
+feature of ARM’s latest 64-bit architecture, called TxSZ, which outerone.Inmostcases,theinnerdomainoccupiesjustasmall
+we manipulate to elastically adjust the accessible virtual address fractionoftheoriginalsystemsoftware,with(logically)higher
+range for a program. In our experiments, we have applied Hilps
+privilege, and owns exclusive control authority over sensitive
+to retrofit the core software mechanisms for privilege separation
+systemresources,i.e.,pagetablesandsystemcontrolregisters,
+into existing system software and evaluated the performance of
+that are critical to security. Thus, as a trusted computing base,
+the resulting system. According to the experimental results, the
+the inner domain can defend the system software from being
+systemincursonaveragejustlessthan1%overhead;hence,we
+conclude that Hilps is quite promising for practical use in real subverted entirely even if the outer domain is under control of
+deployments. attackers.
+For protection of the inner domain, the first requirement is
+I. INTRODUCTION
+toguaranteethatthememoryregionofonedomainisisolated
+A variety of system software such as an operating system from the other in the same privilege level. To efficiently and
+(OS)andhypervisorhasamonolithicdesign,whichintegrates completelyfulfillthisrequirementforintra-levelisolation,one
+its core services into one huge code base, thereby encompass- must somehow rely on a special hardware facility that can
+ing them all in a single address space and executing them in applydifferentmemoryprotectionpoliciesrespectivelytoboth
+the same processor privilege level (i.e., ring 0 and VMX-root the domains even if they share the same privilege to access
+modesinIntelx86orsvcandhypmodesinARM).Therefore, the memory space. For memory protection, the conventional
+bugs,errorsandvulnerabilitiesresidinginafractionofsystem hardware support from the memory management unit (MMU)
+softwarecanbeeasilyexploitedtosubvertotherpartsoforthe can no longer be expected because the MMU specializes
+only in enforcing access permissions according to processor
+privilege levels. In view of this observation, researchers, in
+Permission to freely reproduce all or part of this paper for noncommercial theireffortstodevelopintra-levelisolationmechanisms,hadto
+purposes is granted provided that copies bear this notice and the full citation
+find alternative hardware facilities for memory protection. As
+on the first page. Reproduction for commercial purposes is strictly prohibited
+without the prior written consent of the Internet Society, the first-named author examples, there are several seminal studies [15], [46] that rely
+(for reproduction of an entire paper only), and the author’s employer if the on the write protection feature of the x86 family architecture
+paper was prepared within the scope of employment. to implement their isolation mechanisms. The x86 processor
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+has a special bit, called the write-protection (WP) bit, which
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23024 is, in general, turned on or off in order to restrict or permitwriteaccesstospecificmemoryregions.Inthosestudies,they In this paper, we introduce a novel technique, named as
+make use of the WP bit in a way that they modify page tables Hilps, to implement intra-level privilege separation in every
+to configure the memory regions for the inner domain to be level of privileged software on ARM. At the center of Hilps,
+write-protected by the bit. Now when the bit is on, the outer thereisahardwarefield,calledTxSZ,whichhasbeenfirstin-
+domain, even if it belongs to the same privilege level with troduced in ARM’s latest 64-bit architecture (a.k.a AArch64).
+the inner domain, cannot tamper with the inner one. Along Particularly noteworthy is the fact that we could tailor TxSZ
+with the isolation mechanism based on the WP bit, they have to function for memory protection on ARM similarly to the
+also devised an additional mechanism to properly manipulate WP bit on x86. For general purpose, we manipulate the values
+the bit when the control switches between the two domains. of TxSZ in order to expand or reduce the range of the
+This domain switching mechanism works follows. When the valid (or accessible) virtual address space dynamically. To
+control is transferred to the inner domain, the bit is reset (WP realize the two core mechanisms for privilege separation (i.e.,
+= 0), which subsequently allows the inner domain to perform intra-levelisolation anddomain switching),Hilps exploitsthis
+memory operations normally. After which, the bit will be set hardware function of TxSZ for dynamic virtual address range
+on when the control returns back to the outer domain in order adjustment, as will be explained in Section IV. In short, for
+to protect the inner domain again. intra-level isolation, Hilps initially allocates the inner domain
+region separately from the memory region reachable from the
+The greatest strength of the WP bit for privilege separation outer domain. Later when the outer domain takes execution
+is that it can provide the same write protection for virtually control, Hilps reduces the valid virtual address range so as to
+all privilege levels and types of system software on the x86 leave out the inner domain region, effectively rendering the
+processor. In modern software architectures, it is by no means inner domain unreadable from the outer domain. When the
+unusualformorethanonelevelsofsystemsoftwaretocoexist control is transferred to the inner domain, the valid virtual
+inasystemsoastoprovideversatileservicesforitsusers.The address range is expanded so as to cover the inner domain
+mostfamiliarcasefoundinarealsystemwouldbethatanOS region again, which will allow the inner domain to operate
+isinstalledtogetherwithahypervisor.Inthesesystems,aswill normally with full access permissions on the entire memory
+be discussed in Section II, the attackers aiming to manipulate regionforboththedomains.TheultimateobjectiveofHilpsis
+system resources and take over the control of a system have tograntthesedomainsasymmetricmemoryaccesspermissions
+been able to compromise each and every level of system such that the inner domain in effect becomes more privileged
+software. As a means to counteract such potential threats, the than its counterpart. It is hereby worth empathizing that our
+WP bit serves by capitalizing on its all-across-level memory TxSZ-based mechanisms can be universally applied to system
+protection capabilities. In fact, its versatile capabilities have software regardless of its privilege level. Therefore, we claim
+already been actively used by researchers to diversify their that Hilps achieves full intra-level privilege separation on
+intra-level privilege separation solutions for different levels of AArch64 at all privilege levels of system software.
+privilegedsoftwareonx86machineslikethoseforanOS[15]
+To test the feasibility of Hilps for intra-level privilege sep-
+and for a hypervisor [46].
+aration, we have retrofitted both the TxSZ-based isolation and
+domain switching mechanisms into existing system software
+Sadly on the other hand, such active research work has
+runningonAArch64,asexhibitedinSectionIV.Nowifdevel-
+not been conducted for ARM-based machines whose security
+operswanttodeploytheirsecurityapplicationsinoursecurity-
+concerns are of utmost importance in today’s mobile market.
+enhanced system, they can deploy the applications simply in
+We ascribe this mainly to want of the ample architectural
+a protected region of the inner domain. As a result, residing
+provision of ARM’s security features for memory protection.
+in the secure execution environment, the applications would
+Morespecifically,ARMtraditionallyhadnosecurityhardware
+safely handle their secure transactions or monitor the poten-
+functionally equivalent to the WP bit. Partially because of
+tially compromised outer domain. For our experiments, we
+this, it was not until recently that some efforts to develop
+have implemented intra-level privilege separation in existing
+privilege separation solutions for ARM are reported in the
+system software running on the versatile express V2M-Juno
+literature [4]. But these solutions still have several limitations.
+r1 platform [6]. Our experiments (see Section VI) reveal that
+Mostofall,theyarenottrulyintra-levelschemes.Forinstance,
+ourTxSZ-basedmechanismsforprivilegeseparationarequite
+when they design a privilege separation solution for the OS
+efficientintermsofperformance,whichwecreditprimarilyto
+on ARM, they need to depend on more privileged software
+theefficaciousmemoryprotectionsupportfromtheunderlying
+(i.e.,ahypervisor).Thisisobviouslyforlackofduehardware
+TxSZ hardware. The bare system, which is augmented just
+to support intra-level isolation in ARM devices, as described
+with our privilege separation mechanisms and yet without any
+above. This results in another limitation that their design to
+installed security applications, incurs on average less than
+mandate the reliance on the hypervisor in the solution for the
+1 % overhead for the overall system. Of course, as more
+OSisnolongerviabletosolutionsforthehypervisoritselfora
+securityapplicationsareinstalled,theoverheadshouldincrease
+TrustZonesecureOS.Notsurprisingly,theirexistingsolutions
+proportionally. However the experiments also show that it
+arealltargetingthenormalOSesrunningonseveralvariations
+remains reasonably small with normal application loads.
+of ARM architectures. As malware and attacks on ARM
+devices increase against virtually every level of privileged The limitation of our TxSZ-based strategy for intra-level
+software including not a normal OS but also a hypervisor privilege separation is that it cannot be applied to the tradi-
+and even a secure OS armored by TrustZone, it is essential to tional ARM 32-bit architecture since the TxSZ field is newly
+develop a powerful solution that can be used to fully enforce equippedinARM’slatest64-bitarchitecture.Nevertheless,we
+privilege separation at the same time in any level or type of still believe that this limitation does not significantly devalue
+software on the devices. the technical contributions of our research because from the
+2factthatAArch64israpidlybecomingthenormforthenewest
+structtag_TC_NS_SMC_CMD{ intget_sys_time() {
+line of ARM processors, it is evident that our solution can be … ….
+unsigned intoperation_phys; // v2 and v3 are holding time values from get_time()
+applied to not only today’s but also tomorrow’s ARM-based … *(int*)(cmd->operation_phys+ 4) = v2;
+computing systems in the market. The technical contributions }; *(int*)(cmd->operation_phys+ 4) = 1000 * v3;
+}
+that we claim in this paper are listed below.
+• An introduction of a novel technique, Hilps, that can Fig.1. CVE-2015-4422.AnexamplevulnerabilityofthesecureOS.
+implementintra-levelprivilegeseparationonAArch64
+inavarietyofsystemsoftwarewithdifferentprocessor Normal World Secure World
+privilegelevels,suchasanormalOS,ahypervisorand
+a secure OS.
+• An intra-level isolation mechanism that protects the Outer Inner
+domain domain
+inner domain from the outer domain by elastically
+adjusting the virtual address range.
+• Alight-weightmechanismthatensuressecureswitch-
+ings between the inner and outer domains.
+• A complete realization of Hilps that demonstrates the
+feasibility of our proposed isolation and switching
+mechanisms for AArch64 machines.
+II. THREATMODELANDRELATEDWORK
+Inthissection,wemotivatetheneedforourapproach.For
+this, we begin by defining the threat model, which shapes the
+subsequent discussion on the comparison with related work.
+A. Threat Model
+1)SystemSoftwareandSecurityThreats: ARMprocessors
+have recently added two hardware extensions for the sake
+of strengthening support for virtualization and security. The
+virtualization extension enables to install and take advantage
+of a hypervisor, which, as a mediator located between an
+OS and the underlying hardware, facilitates the system to run
+multiple OSes by controlling interactions passing through it.
+The security extension, also known as TrustZone, partitions
+system resources into two worlds: the normal world and
+the secure world. In the normal world, which corresponds
+to a conventional execution environment, a normal OS and
+hypervisor are installed to execute ordinary applications and
+handle interactions with users. In the secure world, on the
+otherhand,asecureOSisinstalledtobuildatrustedexecution
+environment and to securely execute trusted applications that
+deal with sensitive data.
+In summary, different levels of system software, such as a
+normal OS, hypervisor and secure OS, can coexist in ARM-
+based systems. This enriches the functionality of the system,
+but it also increases security risk as it introduces additional
+attack surface. For example, to subvert the system, attackers
+may try to compromise a normal OS, which has control au-
+thorityoversystemresources.However,inacoexistentsystem,
+attackerscouldachievethesameobjectivebycompromisinga
+hypervisor or a secure OS. Which would be far more fatal
+because those types of system software run with a higher
+privilege level than a normal OS. Unfortunately, ensuring the
+securityofsystemsoftwareisanarduousproblem,considering
+thatevencarefullydesignedcodeinevitablycontainsbugsand
+vulnerabilitiesinproportiontoitssize[28],[10],[29].Infact,
+normalOSeshavebeenknowntohaveanumberofvulnerabil-
+ities [1] and other levels of system software are no exception.
+Hypervisors have been examined to have vulnerabilities [2],
+leveL
+egelivirP
+Normal OS Secure OS
+Outer Inner
+domain domain
+Hypervisor
+Outer Inner
+domain domain
+Fig.2. Fullintra-levelprivilegeseparation.
+[23], and, recently, it was shown that even secure OSes can
+becompromisedbyexploitablevulnerabilities[38],[31],[43],
+[32].
+For example, Figure 1 describes the pseudo-code of the
+vulnerability, CVE-2015-4422 [38], that can be used to com-
+promise the secure OS of the Huawei Hisilicon Kirin 925
+processor. Note that, generally, a normal OS can communi-
+cate with a secure OS through a narrow interface based on
+the SMC (Secure Monitor Call) instruction. In the example
+system, the normal OS sends the secure OS a command
+withthetag_TC_NS_SMC_CMDstructure,whichisallocated
+in the normal OS. If the secure OS receives a command,
+then it handles the command and returns a result to the
+normal OS. In this case, the get_sys_time() function
+of the secure OS returns the current time of the secure
+world to the normal OS. However, the get_sys_time()
+function does not check the validity of a destination address
+(tag_TC_NS_SMC_CMD::operation_phys) where the
+time value will be stored. Therefore, attackers in the
+normal OS can manipulate arbitrary memory locations
+of the secure OS by sending commands with a crafted
+tag_TC_NS_SMC_CMD::operation_phys.
+2)The Ability of Attackers: We assume that all software
+attacksthatwouldcompromisesystemsoftwarecanbecarried
+out. By exploiting vulnerabilities, attackers may attempt to do
+anythingallowedwithintheprivilegelevelofthevictimsystem
+software.Specifically,theymayexploitarbitrarymemoryread
+capabilities to disclose secrets in system software. They may
+alsoleveragearbitrarymemorywritecapabilitiestomanipulate
+control data (return addresses or function pointers) and non-
+control data to subvert system software. In many cases, their
+attacksinvolve tampering with system resources, such aspage
+tablesandsystemcontrolregisters,inordertofacilitatefurther
+attacks by incapacitating protection capabilities of the system.
+However, we assume that attackers do not mount side-
+channel attacks to reveal secrecy of system software. They
+are also assumed not to launch any types of hardware attacks.
+Therefore, memory attacks, such as cold boot attacks and
+3TABLEI. COMPARISONOFHARDWARE-ASSISTEDSECURITYSOLUTIONSFORPRIVILEGEDSYSTEMSOFTWARE.
+Solution NeedforHigherPriv.Layer Architecture KeyHardwareFeature NormalOS Hypervisor SecureOS(TrustZone)
+SecVisor[36] Yes x8632/64-bit ExtendedPaging Support NotSupport -
+SIM[37] Yes x8632/64-bit ExtendedPaging,CR3-Target-List Support NotSupport -
+SecPod[45] Yes x8632/64-bit ExtendedPaging,CR3-Target-List Support NotSupport -
+HyperSentry[8] Yes x8632/64-bit SystemManagementMode Support Support -
+TZ-RKP[7] Yes ARM32/64-bit TrustZone Support Support NotSupport
+SPROBES[19] Yes ARM32/64-bit TrustZone Support Support NotSupport
+NestedKernel[15] No x8664-bit Write-Protection Support Support -
+HyperSafe[46] No x8664-bit Write-Protection Support Support -
+SKEE[4] No ARM32-bit TTBCR Support NotSupport Support
+SKEE[4] Yes ARM64-bit ExtendedPaging Support NotSupport NotSupport
+Hilps No ARM64-bit TxSZ Support Support Support
+bus monitoring attacks, are beyond the scope of this paper. the software they intend to protect. This more privileged layer
+Similarly, JTAG attacks are not considered either. may own exclusive capability of monitoring and controlling
+systemresourcessuchthatitcansafelyguardsensitivesystem
+3)Security Guarantee: Hilps implements privilege sepa-
+resources against potential attacks. A clear advantage of this
+ration to increase the security level of system software by
+design is that it does not entail substantial changes in the
+isolating the inner, secure domain from the outer domain. To
+current software architecture. However, earlier studies have
+defend the outer domain, which potentially be under control
+commonly agreed that this is inferior majorly in two aspects
+of attackers, against corrupting the inner domain region, we
+to the intra-level privilege separation solutions introduced in
+ensure the integrity of its TxSZ-based mechanisms for intra-
+Section I. One is that it always tends to put its trust on
+levelisolationanddomainswitching.Asaresult,thecodeand
+more privileged software for its solution to work, hence being
+data(i.e.,sensitivesystemresourcesandsecurityapplications)
+infeasible to solve security problems for the most privileged
+residingintheinnerdomainareisolatedandprotectedfromthe
+software. The other is that it suffers from a longer latency,
+outer domain. Recall that multi levels of system software may
+possibly reaching up to thousands of CPU cycles [7], in
+run in a single machine. Hilps covers this typical situation by
+switching between two different privilege layers.
+supportingfullintra-levelprivilegeseparation.Therefore,even
+if different levels of system software simultaneously operate In light of analysis on other security solutions, a growing
+in the system, Hilps can be applied separately and offer each number of studies have proposed various intra-level privilege
+ofthemcertainsecurityadvantagewithprivilegeseparationas separationschemesattemptingtoprovidealternativesolutions.
+described in Figure 2. Software Fault Isolation (SFI) [13], [26], [16], [14], one of
+such schemes, is realized by integrating a number of in-lined
+4)Trusted Computing Base: Hilps is designed to operate
+referencemonitors[35]intosystemsoftwareforexhaustiveac-
+based on salient hardware features provided by AArch64.
+cesscontrolenforcement.SFIboastsitsexcellentapplicability
+Therefore, we assume that all hardware components do not
+thanks to its hardware independent design, but it has a serious
+contain any bugs or vulnerabilities, such as RowHammer
+drawbackthatthesystemperformancedegradesproportionally
+bug [22]. We assume that the integrity of the code base
+totheamountofinstrumentedcode.Tominimizeperformance
+belongingtoprivilegeseparationmechanismsimplementedby
+degradation, other research has exerted effort to attain high
+Hilps is formally verifiable. That is, there is no exploitable
+efficiency by taking full advantage of underlying hardware
+vulnerability in them, and this assumption is not violated
+supports in their schemes. To this end, some researchers
+during the boot sequence because we also assume that system
+strive to utilize hardware features for their hardware-assisted
+software that applies our technique is loaded intact with a
+memory protection capabilities. As representative examples,
+secure boot mechanism such as AEGIS [41] or UEFI [44].
+Nested Kernel [15] and HyperSafe [46] have successfully
+evinced the effectiveness of their hardware-assisted privilege
+B. Related Work
+separation schemes in terms of performance as well as secu-
+By abandoning the monolithic design and modularizing rity. In particular, as explained in Section I, their underlying
+core services, the micro-kernel design [25], [24] can prevent hardwarefeature,theWPbit,makestheirsolutionsforprivilege
+damage of a fraction of the OS kernel from spreading across separation applicable to both an OS and a hypervisor.
+thewholekernel.Similarattemptshavebeenmadeondifferent
+Due primarily to the relatively abundant hardware support
+system software [47], [40]. Through in-depth study [24], [47],
+for security, a majority of privilege separation schemes have
+the performance of these schemes is almost comparable to
+been centered on Intel x86 architectures. To the best of our
+current monolithic system software. Nevertheless, the micro-
+knowledge, SKEE [4] is the only and most notable work to
+kernel design has been deemed unrealistic in that it usually
+realize privilege separation on ARM’s commodity processors
+necessitates a complete remodeling of the current system
+today. This is in fact, in our view, the closest work to
+software architecture. Considering practicality, many research
+ours in that our goal is also to find a doable solution for
+effortshavestruggledtoenhancethesecurityofthemonolithic
+privilege separation on ARM. However, due to the lack of
+system software without major modification.
+the availability of key hardware features, SKEE can only be
+As a more realistic design to strengthen system software applied to limited levels of system software in comparison
+security,researchersturntheirfocusontoanadditionalsecurity with Hilps. First, targeting ARM’s 32-bit architecture, SKEE
+layerinthesystem,suchasahypervisor[36],[37],[39],[45], capitalizes mainly on Translation Table Base Control Register
+SMM of Intel [20], [8], [51], [9], DRTM of Intel TXT [27] or (TTBCR) for dynamic page table activation and successfully
+TrustZoneofARM[19],[7],whichhasahigherprivilegeover implements the two essential mechanisms for isolation and
+4Normal World Secure World
+EL0 EL0 TTBR1_EL1 region
+EL1 EL1
+EL2 Never mapped
+EL3
+TTBR0_ELx region
+Fig.3. ExceptionLevelsofAArch64
+switching described in Section I. To be more specific, SKEE
+createsseparatepagetablesfortheinnerdomainandactivates
+them in a timely manner by modifying the N field of TTBCR
+only when the inner domain is in control. However, as this
+hardware feature is only defined in the kernel privilege level
+on AArch32, SKEE is not commonly applicable to different
+levels of system software, such as hypervisors.
+Unfortunately, SKEE faces a similar limitation on ARM’s
+64-bit architecture. As ARM has abandoned the original
+TTBCR feature in this new line of processors, SKEE opts for
+the software-based page table swap technique introduced by
+Nooks [42]. Recall that this swap technique has an intrinsic
+security loophole [39], [37] in that attackers can exploit it
+to load a maliciously crafted page table. To resolve the
+problem, SKEE resorts to an additional method that hardens
+the technique in a way to operate deterministically. For this, it
+is compelled to rely on a complementary technique, called
+extended paging, which must be supported and controlled
+by a hypervisor. Despite the lack of due hardware support,
+the solution manages to achieve remarkable performance. It,
+however, also comes with a major limitation. The mandatory
+involvement of a hypervisor for extended paging manifests its
+limitation that the same solution is not viable for privilege
+separation on the hypervisor itself or secure OS. In contrast,
+owing to the availability of TxSZ at all levels of system
+software on AArch64, Hilps can be equally applied to any
+types of system software.
+Table I summarizes the comparison of Hilps and other
+hardware-assisted security solutions for system software. To
+compare the coverage of each solution, we deemed that a
+solution supports a specific type of system software if its key
+hardware features are available on the privilege level where
+the system software runs. For example, the TrustZone-based
+approach of TZ-RKP [7] can be adopted to not only a normal
+OSbutalsoahypervisor.Therefore,evenifauthorsofTZ-RKP
+did not handle a hypervisor in their paper, we considered that
+TZ-RKP can support a hypervisor as well. Such a comparison
+clearly shows two advantage of Hilps. First, Hilps does not
+requirethehelpofhigherprivilegedsoftwaresuchthatitdoes
+not unnecessarily bloat the size of trusted computing base.
+Second, Hilps relies on TxSZ, which commonly exists in all
+processor privilege levels of AArch64, such that it facilitates
+the enforcement of intra-level privilege separation in all levels
+of privileged system software.
+III. BACKGROUND
+In this section, we provide the background information
+relevant to our target 64-bit architecture, AArch64.
+ecapS
+sserddA
+lautriV
+0xFFFF_FFFF_FFFF_FFFF
+264-2(64-TCR_EL1.T1SZ)
+0xFFFF_0000_0000_0000
+(Boundary, when TCR_EL1.T1SZ = 16)
+0x0000_FFFF_FFFF_FFFF
+(Boundary, when TCR_ELx.T0SZ = 16)
+2(64-TCR_ELx.T0SZ)-1
+0x0
+Fig.4. ThechangeofthevirtualaddressrangedependingonTCR ELx.TxSZ
+A. Exception Level
+In AArch64, the processor privilege levels of AArch32
+are mapped onto the exception levels (ELx). As described in
+Figure 3, four exception levels are defined in AArch64 and
+an exception level with a larger number x corresponds to a
+higher privilege level. Generally, each exception level is used
+to execute different levels of software as follows:
+• EL0: Applications
+• EL1: Normal OSes and Secure OSes
+• EL2: Hypervisors
+• EL3: Secure monitors1
+B. Virtual Address Range
+At every exception level, AArch64 provides two types of
+core registers for the virtual address translation management.
+As the first type, Translation Table Base Registers (TTBRs)
+hold the base physical address of the current page table for
+mapping between virtual and physical addresses. At level
+1, there are two registers, TTBR0_EL1 and TTBR1_EL1,
+provided for applications and the OS, respectively. At all
+the other levels, AArch64 supports only one register, that is,
+TTBR0 EL2 at EL2 and TTBR0 EL3 at EL3. As displayed in
+Figure 4, TTBR0_ELx is used to translate the virtual address
+spacestartingfromthebottom(0x0),andTTBR1_EL1isused
+to translate the virtual address space starting from the top
+(0xFFFF FFFF FFFF FFFF).Theregistersofthesecondtype
+are Translation Control Registers (TCR_ELx) that determine
+variousfeaturesrelatedtoaddresstranslationateachexception
+level, such as translation granule size, cacheability and share-
+ability. In particular, the two fields T0SZ and T1SZ within
+TCR_ELx are used to define the valid virtual address ranges
+thatareallowedforvirtual-to-physicaladdresstranslation.Fig-
+ure 4 depicts how virtual address ranges vary with the values
+of TCR_ELx.T0SZ and TCR_EL1.T1SZ. Since the current
+version of AArch64 supports the maximum virtual address
+range of 48-bit (256 TB) for each TTBR, the virtual address
+range reaches the boundary when TxSZ is 16, and it varies
+in inverse proportion to TxSZ. In the current AArch64 Linux,
+the default value of the TxSZ is 25, indicating that the 39-
+bit (512 GB) virtual address range is available in each kernel
+and user space. Once TxSZ is programmed, any memory
+access exceeding the virtual address range is forbidden, and
+the system generates a translation fault if violated.
+1Generally,securemonitorsactasamediatorthatperformsacontextswitch
+betweenthenormalandsecureworlds.
+5Outer Domain Inner Domain Outer Domain View Inner Domain View
+hook Page Table Outer Domain Code Outer Domain Code
+Management (perm: rx) (perm: rx)
+hook Interface System Control Register Outer Domain Data Outer Domain Data
+Configuration (perm: rw) (perm: rw)
+Page Table Page Table
+hook Security Application
+(perm: r) (perm: rw)
+Intra-level Isolation Inner Domain Code Inner Domain Code
+Mechanism Domain Switching (Not accessible) (perm: rx)
+Outer Domain Inner Domain Mechanism Outer Domain Inner Domain
+Region Region Region Region Inner Domain Data Inner Domain Data
+(Not accessible) (perm: rw)
+Valid Virtual Address Range Valid Virtual Address Range
+Fig.5. Theoverviewofourtechniquethatimplementsintra-levelprivilege Fig.6. Addressspacelayoutoftheinnerandouterdomainswithassigned
+separation,Hilpsdividessystemsoftwareintotheinnerdomain(moreprivi- permissions.Characterr,wandxmeanread,writeandexecution,respectively.
+leged)andtheouterdomain(lessprivileged)byusingtheintra-levelisolation
+anddomainswitchingmechanisms.
+the principle of privilege separation. We implement the intra-
+level isolation mechanism to protect the inner domain. By
+C. Translation Lookaside Buffer dynamically adjusting the range of virtual address space, this
+mechanism enables the isolation and concealment of memory
+A Translation Lookaside Buffer (TLB) is a hardware com-
+for the inner domain. This operates in close interaction with
+ponent that aims to reduce the overhead of address translation
+the domain switching mechanism whose primary role is to
+bycachingrecentlyusedvirtual-to-physicaladdressmappings.
+securely transfer control between the two domains. At every
+Inthesituationthatmultipletasksruninasystemconcurrently,
+moment of control transfer, the former is controlled by the
+cached TLB entries must be flushed at every context switch
+latter in a way to reveal or hide the inner domain accordingly
+between tasks in order to prevent them from being exploited
+in a timely manner. Basically, the key purpose of these
+by others. However, such frequent flush would induce a
+mechanisms is to make the two domains have asymmetric
+substantial increase of TLB miss rates. To eliminate such
+views on the memory address space. For this, as displayed
+redundant TLB flushes, therefore, AArch64 supports Address
+in Figure 6, each domain is assigned different access permis-
+SpaceIdentifier(ASID)atEL0andEL12.ByaddingtheASID
+sions for memory blocks such that the inner domain obtains
+field to TLB entries, it permits a task to use certain TLB
+unrestricted permissions to access the whole memory region
+entriesholdingthesameASIDwiththecurrent.OnAArch64,
+whereastheouteronehasmorerestrictedaccesses,particularly
+the current ASID is defined by TTBR. Recall hereby that
+to the region for the inner domain.
+two registers TTBR0_EL1 and TTBR1_EL1 are involved in
+address translation at EL1. Therefore at this level, AArch64 A pivotal condition for the success of this strategy is that
+lets TCR_EL1.A1 decide which ASID of these registers the outer domain must not be allowed to manipulate any
+becomes the current ASID. security-sensitive system resources, such as page tables and
+system control registers, that may be used to invalidate our
+However, adopting ASID has its drawbacks as well. In
+core mechanisms. To meet this condition, the outer domain
+the case of widely shared system resources, such as the OS
+is deprived of control authority over security-sensitive system
+kernel code and data, caching them in the TLB with multiple
+resources. Instead, the outer domain is only allowed to send
+ASIDs might degrade performance because it increases TLB
+requests through a specified interface to the inner domain for
+pressure.Tomitigatethisproblem,AArch64presentsthenon-
+controllingtheseresources.Uponreceivingsucharequest,the
+Global (nG) flag in the page table descriptor. By clearing the
+inner domain determines whether to accept or reject it. In the
+flag,thecorrespondingpagescometobeseenfromeverytask
+sensethatasecureentitypossessesexclusivecontrolauthority
+regardless of their ASID values.
+over sensitive resources, our intra-level privilege separation
+technique is as powerful in terms of security strength as
+IV. DESIGN a conventional virtualization-based security solution relying
+on trap-and-emulation. Consequently, if there are security
+In this section, we present the design and implementation
+applications demanding a secure environment for execution,
+detailsofHilps,focusingonthetwocoremechanismsofpriv-
+the system software redesigned by our technique can offer
+ilege separation, i.e., the intra-level isolation and the domain
+them protection and monitoring capabilities comparable to the
+switching.
+Virtual Machine Introspection (VMI) research [18].
+A. Overview of Hilps B. Intra-Level Isolation Mechanism
+Figure 5 describes our technique that we use to implement Figure 7 illustrates how we realize the intra-level isolation
+the two core mechanisms of privilege separation. We divide mechanismbasedonthedynamicvirtualaddressrangeadjust-
+system software into the inner and outer domains, adhering to ment. By either reducing or expanding the range of the valid
+address space at runtime, Hilps blocks or allows access to the
+2EL2andEL3donotsupportASID. memoryregionoftheinnerdomaindependingonwhichofthe
+61st-Level Page Table Entries 1st-Level Page Table Entries
+in Outer Domain Virtual Address Space in Inner Domain
+0x0000_003F_FFFF_FFFF
+Shadow Mappings
+of Page Tables
+(perm: rw)
+Inner Domain Data
+Inner Domain Code
+0x0000_0020_0000_0000
+boundary
+0x0000_001F_FFFF_FFFF 255
+Inner Domain
+Page Tables Inner Domain
+(Not available)
+(perm: r)
+boundary 128 256 Entries
+127 Outer Domain Data 127 VA[37:30]
+128 Entries
+VA[36:30] Outer Domain Outer Domain Code Outer Domain
+TTBR0_ELx 0 0x0000_0000_0000_0000 0 TTBR0_ELx
+(TCR_ELx.T0SZ=27) (TCR_ELx.T0SZ=26)
+(a) The address mapping strategy when system software uses TTBR0
+1st-Level Page Table Entries 1st-Level Page Table Entries
+in Outer Domain Virtual Address Space in Inner Domain
+boundary
+0xFFFF_FFFFF_FFFF_FFFF 511
+Outer Domain
+Page Tables Outer Domain
+(Not available) (perm: r)
+384
+Outer Domain Data 383
+Outer Domain Code
+Inner Domain 0xFFFF_FFE0_0000_0000 512 Entries
+Inner Domain
+(Not available) 0xFFFF_FFDF_FFFF_FFFF VA[38:30]
+Shadow Mappings
+of Page Tables
+(perm: rw)
+boundary 128
+127 Inner Domain Data 127
+128 Entries Outer Domain
+VA[36:30] Outer Domain Inner Domain Code (Not used)
+TTBR1_EL1 0 0xFFFF_FFA0_0000_0000 0 TTBR1_EL1
+(TCR_EL1.T1SZ=27) (TCR_EL1.T1SZ=25)
+(b) The address mapping strategy when system software uses TTBR1
+Outer Domain Inner Domain Outer Domain Inner Domain
+(37-bit, TCR_ELx.T0SZ=27) (38-bit, TCR_ELx.T0SZ=26) (37-bit, TCR_ELx.T0SZ=27) (38-bit, TCR_ELx.T0SZ=26)
+or or or or
+(37-bit, TCR_EL1.T1SZ=27) (39-bit, TCR_EL1.T1SZ=25) (37-bit, TCR_EL1.T1SZ=27) (39-bit, TCR_Er L1.T1SZ=25)
+Time
+(c) Timeline of virtual address range adjustment
+Fig.7. Thevirtualaddressmappingstrategiesforisolatingtheinnerdomainfromtheouterdomain.AhypervisorandasecuremonitorrunningatEL2and
+EL3,respectively,usethemappingstrategy(a),andanormalOSandasecureOSrunningatEL1usethemappingstrategy(b).
+7511 translated by TTBR1_EL1 expands in the opposite direc-
+Outer Domain Entries
+(in Inner Domain) tion to that by TTBR0_ELx. This means that when Hilps
+384 Inner Domain
+383 Entries increases or decreases the value of TCR_EL1.T1SZ, the
+valid virtual address range and the valid first-level entries
+Inner Domain Entries of the current page table change in the opposite direction.
+For example, when TCR_EL1.T1SZ is 27, the address
+0xFFFF FFE0 0000 0000islinkedtothe0thfirst-levelentry
+128 Outer Domain
+127 Entries (see VA[36:30] is 0). Whereas, when TCR_EL1.T1SZ is
+Outer Domain Entries
+(in Outer Domain) changed to 26, the same virtual address is linked to the
+0
+256th entry (see VA[37:30] is 256), and instead, the address
+1st-Level Page Table Entries 2nd-Level Page Table Entries 0xFFFF FFC0 0000 0000 is linked to the 0th entry (see
+VA[37:30] is 0). Such a discrepancy in the linkage between
+Fig.8. Thelinkagebetweenthefirst-levelandsecond-levelpagetableentries
+thevirtualaddressesandthefirst-levelpageentrieswouldlead
+atEL1.
+the same virtual addresses of the inner and outer domains to
+be mapped to different physical addresses.
+two domains is currently in control. When the outer domain
+To resolve the problem, Hilps introduces an alternative
+seizes execution control, Hilps leaves the inner domain region
+address mapping strategy illustrated in Figure 7.(b). In this
+out of the valid virtual address range, thereby preventing the
+case, the valid virtual address range of the inner domain
+inner domain from being exposed and possibly exploited. On
+(39-bit, 512 GB) is four times larger than that of the outer
+theotherhand,whiletheinnerdomainholdsexecutioncontrol,
+domain through a change of TCR_EL1.T1SZ to 25 from
+the valid virtual address range is expanded to cover both the
+27; accordingly, the number of the first-level entries of the
+innerandouterdomainregions,implyingthattheinnerdomain
+current page table increases to 512 from 128. Hilps uses 256
+ownsafullaccesscoveragereachingtheentirememoryspace.
+entries in the middle (from the 128th to the 383rd) to map
+1)Intra-LevelIsolationwithTTBR0: Figure7.(a)describes the inner domain region. Note that, even if the bottom 128
+our general address mapping strategy used to carry out intra- entries (from the 0th to the 127th) are originally used to map
+level isolation that can be applied for any system software the outer domain region, Hilps, in the inner domain, does not
+running with TTBR0_ELx at all exception levels ELx, such use these entries to map the outer domain region due to the
+as a hypervisor (EL2) and secure monitor (EL3). Note that aforementioned discrepancy problem. Instead, Hilps uses the
+as the two domains share the same page table, the value of top 128 entries (from the 384th to the 511st) for this purpose,
+TTBR0_ELx remains constant whether either the inner or as, in the inner domain, these entries correspond to the virtual
+outerdomainisincontrol.Whiletheouterdomainhascontrol, address space of the outer domain region. To do this, Hilps
+its valid virtual address range is restricted to 37-bits3 (128 copies the contents of the bottom 128 entries to the top 128
+GB) by setting TCR_ELx.T0SZ to 27. By doing this, all 128 entries, thereby configuring the top first-level entries to point
+first-level entries of the current page table, indicated by the to the same second-level entries that are pointed to by the
+upper seven bits of the virtual address (VA[36:30]), are used bottom first-level entries as described in Figure 8. As a result,
+tomaptheouterdomain.Inthiscase,theouterdomaincannot Hilps can let the inner domain access the outer domain region
+access the inner domain because there are no valid entries without the discrepancy problem because the virtual address
+associated with the memory region of the inner one. On the space of the outer domain region remains the same between
+otherhand,whentheinnerdomainhascontrol,thevalidvirtual the inner and outer domains. Lastly, as the inner domain must
+address range is expanded to 38-bits (256 GB) by changing be able to maintain a synchronized address view of the outer
+TCR_ELx.T0SZ to 26. As a result, the number of valid first- domain, if the bottom 128 entries of the current page table
+level entries of the current page table increases to 256 from are populated or modified, Hilps repeats the same operations
+128,andtheuppereightbitsofthevirtualaddress(VA[37:30]) onto the top 128 entries. This synchronization method does
+indicateassociatedentries.Inthiscase,theoriginal128entries not incur any noticeable overhead as the first-level entries are
+stillcorrespondtothememoryregionoftheouterdomain,and rarely modified after initial set-up.
+theexpanded128entriesareusedfortheinnerdomain,located
+3)Shadow Mappings of Page Tables: To prevent the outer
+outside of the outer domain. Therefore, the inner domain can
+domain from modifying the contents of page tables, the
+access the entire memory regions of both domains without
+memory regions of page tables are configured as read-only.
+restrictions.
+However, as the inner and outer domains share the same
+2)Intra-Level Isolation with TTBR1: A normal OS and page tables, the inner domain also can be hindered by such a
+secure OS, which typically run at EL1, adopt TTBR1_EL1 restriction. To address this problem, Hilps creates the shadow
+for address translation on AArch64. Unfortunately, for mappings of the page tables that are configured as not only
+OSes, we cannot use the general isolation mechanism de- readable but also writable and locates them by adding a fixed
+signed for other system software adopting TTBR0_ELx, offset in the virtual address space of the inner domain as
+described in Section IV-B1. That is because the transla- described in Figure 7. Therefore, the inner domain can update
+tion style with TTBR1_EL1 somewhat differs from that the contents of the page tables through the shadow mappings.
+with TTBR0_ELx. To explain this in more detail, recall
+our remarks in Section III-B that the virtual address space 4)Page Table Integrity: To maintain the validity of the
+intra-level isolation mechanism, Hilps must ensure that the
+337-bits refers to a quarter of the default virtual address range setting of pagetablessatisfythefollowingconstraints:(1)nopartofthe
+Linux,butwebelieveitwouldbeenoughformobiledevices. innerdomaincanbemappedtothememoryregionoftheouter
+8domain,(2)theouterdomaincodemustbeconfiguredasread- wellknownthatattackersexploitDMAtoavoidthemonitoring
+only, and (3) privileged instructions that can configure system ofasecurityentityresidinginCPU[11],[30].Inthesameway,
+control registers must not be executable in writable memory attackerswouldbeabletoevademonitorsresidingintheinner
+regions or in less privileged software’s memory regions4. To domain.
+achievethis,Hilpsadoptsthepagingdelegationtechniqueused
+AsameansofthwartingDMAattacks,leveragingIOMMU
+inpreviouswork[7],[45],[15],[4].Hilpsallowsonlytheinner
+[3] has been popularly used on x86 systems. On ARM, Hilps
+domain to conduct page table modifications after verifying
+can use the System MMU [5] as the counterpart of IOMMU.
+that each modification adheres to these constraints. In order
+To accomplish this, Hilps prevents the outer domain from
+to accomplish this, Hilps initially configures page tables as
+modifying the page tables of the System MMU. Then when
+read-only to prevent the outer domain from modifying them.
+a request comes from the outer domain, the inner domain
+In addition, it instruments the outer domain code to route all
+modifies the tables and allows DMA only after ensuring that
+page table modification operations to the inner domain. The
+thereisnopagetableentrypointingtoaninnerdomainregion.
+inner domain then checks the constraints and performs those
+operations for the outer domain. Although the page tables However, not all peripherals can take advantage of the
+are configured as read-only, the inner domain can modify System MMU. Even in this case, Hilps needs to restrict
+the contents of the page tables through the shadow mapping the outer domain from controlling DMA directly. On ARM,
+described in Section IV-B3. peripherals can perform DMA with their own custom DMA
+controller or with the general-purpose DMA controller of the
+5)Control Authority for System Control Registers: Even
+SoC. In either case, the outer domain can only control DMA
+if the integrity of the page tables is preserved, our isolation
+through memory-mapped control registers. Therefore, similar
+mechanismcanstillbeincapacitatedthroughexploitingsystem
+to DMA protection with the System MMU, Hilps can restrict
+control registers. For example, the outer domain could modify
+DMA by only allowing the inner domain to write to regions
+SCTLR to remove memory protection by disabling the MMU
+corresponding to DMA control registers.
+or TCR to enlarge its virtual address range and access the
+inner domain region. Therefore, Hilps must deprive the outer
+C. Domain Switching Mechanism
+domain of control authority over system control registers. For
+this, similar to past research [7], [15], [4], Hilps replaces To transfer control between execution environments with
+privileged instructions that control such sensitive registers in different privilege levels, special instructions, i.e., SVC, HVC
+the outer domain with hooks so as to verify and emulate or SMC, have been utilized. However, Hilps cannot use this
+them in the inner domain. We can ensure the validity of this traditional method, as the inner and outer domains run at an
+method because, first, as instruction opcodes have a fixed identical privilege level. Therefore, Hilps needs to design and
+length and are aligned on AArch64, Hilps can exhaustively implementitsownmechanismthatperformsdomainswitching
+identify privileged instructions. Second, due to the constraints by executing a series of ordinary instructions. To achieve
+enforced on the page tables mentioned in Section IV-B4, this, we create an interface function, IDC, which stands for
+attackerscannotexecuteanyprivilegedinstructionintheouter Inner Domain Call. The IDC performs the control switching
+domain. operation between the inner and outer domains, acting as
+a wrapper function for a handler which processes incoming
+6)SupportforMulti-coreEnvironment: Ourintra-leveliso-
+requests in the inner domain. It provides the outer domain
+lation mechanism relies on the dynamic virtual address range
+with a unique way to enter the inner domain. In addition,
+adjustment based on TxSZ. Fortunately, as TCR containing
+IDCs are implanted across the outer domain and are invoked
+the TxSZ field exists per processor core, Hilps can enforce
+with specific parameters in order to handle sensitive resources
+the intra-level isolation to each core separately by controlling
+by sending relevant requests to the inner domain (refer to
+each TxSZ of cores. That is, the outer domain is banned from
+Section IV-B4 and IV-B5).
+accessing the inner domain region, even if the inner and outer
+domains simultaneously run on different cores. Figure 9 describes the details of the IDC. Although this
+particular implementation is intended to operate at EL1, it
+7)Support for Loadable Module: Loadable modules, is generally applicable to other ELs with slight modifications
+sometimes, can be added to the outer domain to extend described in Section IV-C5. The IDC is divided into the entry
+functionality (particularly, in a normal OS). However, it can and exit gates. If the IDC is invoked in the outer domain,
+provide attackers with room to compromise the inner domain the entry gate disables interrupts, expands the virtual address
+by inserting privileged instructions relevant to system control range, switches to the inner domain stack, and then jumps to
+registers into the outer domain. To address this problem, if the inner domain handler. After the inner domain finishes its
+Hilps detects any populations of new code pages or any work and returns from the handler, the exit gate executes the
+modifications of code pages from the outer domain, it scans sequenced tasks of the entry gate in the opposite direction.
+thecorrespondingpagestoconfirmwhetherornottheyinclude
+privileged instructions and to enforce the protection policy 1)Virtual Address Range Adjustment: The key role of the
+described in Section IV-B5. IDC is to control the valid virtual address range to reveal or
+concealtheinnerdomainregiondependingonthedirectionof
+8)Restriction on DMA: To improve the performance, pe- the domain switch. Hence, the entry and exit gates expand
+ripherals can access DRAM through Direct Memory Access and reduce the valid virtual address range by modifying
+(DMA) without the mediation of the CPU. Unfortunately, it is TCR_ELx.TxSZ.
+4ThiscanbeachievedbysettingtheXN(eXecute-Never)andPXN(Privi- TheouterdomainhasnomeanstomodifythevalueofTCR
+legedeXecute-Never)bitonthecorrespondingpagetabledescriptors. by the restriction described in Section IV-B5. To expose the
+91 /** 34 adrp x5, InnerDomain_stack Get the base address of the inner domain stack
+2 * Inner Domain Call (IDC) 35 add x5, x5, x6, lsl #12 Get the inner domain stack of the current core
+3 * 36 mov x6, sp Get the outer domain stack
+4 * @param cmd a command 37 mov sp, x5 Switch to the inner domain stack
+5 * @param [arg0-arg3] four parameters 38 str x6, [sp, #-8]! Save the outer domain stack
+6 * / 39
+7 .global IDC 40 adrp x5, InnerDomain_handler Get the address of the innerdomain handler
+8IDC: 41 blr x5 Jump to the inner domain handler
+9 42
+10 /* Theentry gate */ 43
+11 mrs x5, DAIF Read interrupt status 44
+12 stp x30, x5, [sp, #-16]! Save interrupt status 45 /* The exit gate */
+13 msr DAIFset, 0x3 Disable interrupts 46 ldp x6, [sp], #8 Restore the outer domain stack
+141: 47 mov sp, x6 Switch to the outer domain stack
+15 mrs x5, tcr_el1 Read the current TCR 482:
+16 and x5, x5, #0xfffffffffffdffff ; Set TCR.T1SZ to 25 49 mrs x5, tcr_el1 Read the current TCR
+17 orr x5, x5, #0x400000 ; Set TCR.A1 50 and x5, x5, #0xffffffffffbfffff ; Set TCR.T1SZ to 27
+18 msr tcr_el1, x5 Configure TCR 51 orr x5, x5, #0x20000 ; Clear TCR.A1
+19 isb Instruction synchronization barrier 52 msr tcr_el1, x5 Configure TCR
+20 53
+21 mov x6, #0xc03f Check the value of TCR 54 mov x6, #0xc03f Check the value of TCR
+22 mov x7, #0x1b ; TCR.T1SZ = 25 (39-bit address space) 55 mov x7, #0x1b ; TCR.T1SZ = 27 (37-bit address space)
+23 movk x6, #0xc07f, lsl #16 ; TCR.T0SZ = 27 (37-bit address space) 56 movk x6, #0xc07f, lsl #16 ; TCR.T0SZ = 27 (37-bit address space)
+24 movk x7, #0x8059, lsl #16 ; TCR.TG1 = 0b10 (4KB page size) 57 movk x7, #0x801b, lsl #16 ; TCR.TG1 = 0b10 (4KB page size)
+25 and x5, x5, x6 ; TCR.TG0 = 0b00 (4KB page size) 58 and x5, x5, x6 ; TCR.TG0 = 0b00 (4KB page size)
+26 cmp x5, x7 ; TCR.A1 = 1 (Use TTBR1.ASID) 59 cmp x5, x7 ; TCR.A1 = 0 (Use TTBR0.ASID)
+27 b.ne 1b If not correct, configure TCR again 60 b.ne 2b If not correct, configure TCR again
+28 61
+29 mrs x6, mpidr_el1 Get number of the current core [0-n] 62 ldp x30, x5, [sp], #16 Restore interrupt status
+30 ubfx x5, x6, #8, #4 63 msr DAIF, x5 Enable interrupts
+31 and x6, x6, #0xf 64 isb Instruction synchronization barrier
+32 orr x6, x6, r5, lsl #2 65
+33 add x6, x6, #1 Add 1 to the core number 66 ret Return to the outer domain
+Fig.9. ThedetailedimplementationofanIDC(InnerDomainCall)atEL1.TheIDCconsistsoftheentrygatethatexpandsthevalidvirtualaddressrange
+torevealandentertheinnerdomainandtheexitgatethatreducesthevalidvirtualaddressrangetohidetheinnerdomainandreturntotheouterdomain.
+innerdomain,therefore,attackersresidingintheouterdomain The overall performance impact of disabling interrupts
+mayattempttomanipulateTCRbyjumpingtotheTCRcontrol is limited under the assumption that the inner domain does
+instructions (Line 18 and 52) in the gates. This could be more not run time-consuming security applications. Our evaluation
+fatal because TCR consists of several fields having a direct results show that this assumption does not undermine the
+bearingonthesecurityoftheinnerdomain,i.e.,TxSZ,Axand valueofHilps.Nonetheless,supportingmorecomplexsecurity
+TGx that control the address translation system. Fortunately, applicationsbyallowinginterruptsremainsasoneofourgoals
+all fields of TCR just hold constant values after they are set for future work.
+up at system boot-up. Therefore, even if attackers succeed
+3)ASID Assignment: After control returns back from the
+to manipulate TCR, we can prevent them from accessing the
+innerdomaintotheouterdomain,attackersintheouterdomain
+inner domain by not allowing the outer domain to run with
+may be able to eavesdrop on the inner domain region through
+a modified TCR. To do this, we insert simple code snippets
+cached TLB entries storing address mappings of the inner
+confirming the correctness of the value of TCR behind TCR
+domain. To resolve this problem, the IDC needs to invalidate
+control instructions, as seen in Line 21-27 and 54-60 of the
+all TLB entries associated with the inner domain in the exit
+IDC code.
+gate before returning to the outer domain, but this solution is
+likelytodegradeperformanceasitincreasestheTLBmissrate.
+2)Interrupt Disabling: The IDC disables interrupts at the
+Fortunately, AArch64 features ASID at EL1. Therefore, we
+entry gate to ensure the atomicity of the gates. It may simply
+can eliminate such expensive TLB invalidations when system
+harden our TxSZ-based privilege separation mechanisms by
+softwarerunsatEL1.Toachievethis,weconfiguretheaddress
+preventingcontrolfrombeinginterceptedbytheouterdomain
+space of the inner domain as non-global and assign a unique
+when the control is in the gates or in the inner domain.
+ASID to the inner domain. Then the outer domain having a
+However, this can be bypassed if attackers bend the control-
+different ASID is restricted from accessing the inner domain
+flow to skip the interrupt-disabling instructions (Line 11-13)
+throughcachedTLBentriesduetothemis-matchoftheASID.
+in the entry gate. Attackers then can maliciously generate
+interrupts to get control (1) immediately after modifying TCR To implement this, Hilps must change the current ASID
+intheentrygateor(2)whiletheexecutionoftheinnerdomain. while switching domains. Considering that, at EL1, ASID is
+Figure10describeshowwethwartthisattack.Weaddanother defined by TTBRx_EL1, Hilps needs to change the current
+code snippet, similar to Line 54-60 of the IDC code, before ASID by updating the value of TTBRx_EL1. However, per-
+the interrupt handler. The code snippet checks the value of forming this in the IDC may weaken the security level of
+TCR, and if TCR does not have the value corresponding to Hilps, as it may expose a sensitive TTBR update instruction
+the outer domain (that is, interrupts are occurred in the inner to attackers. Therefore, Hilps uses TCR_EL1.A1 to change
+domain or in the middle of the IDC), then it halts the system. thecurrentASID.AccordingtothedefaultsettingofAArch64
+Additionally, through the method explained in Section IV-B5, Linux, TCR_EL1.A1 is 0; i.e., TTBR0_EL1 determines the
+we prohibit attackers from modifying VBAR to relocate the current ASID. Hilps leaves the outer domain to follow the
+interrupt handler, thereby preventing them from evading the setting of Linux, but in the inner domain, it lets TTBR1_EL1
+explained verification process for TCR. determinethecurrentASIDbytogglingTCR_EL1.A1during
+10Entry gate of IDC
+Jump Interrupt disabling
+TCR configuration Interrupt
+Interrupt Vector Table
+Verification of TCR
+…
+Subverting control-flow
+at EL1: No
+Interrupt if TCR_EL1.T1SZ== 27
+Halting the system
+Inner Domain at EL2 or EL3:
+if TCR_ELx.T0SZ== 27
+Yes
+Jump …
+TCR configuration Interrupt Interrupt Handler
+Verification of TCR
+Interrupt enabling
+Exit gate of IDC
+Fig.10. Adefensemechanismforprotectingtheatomicityoftheswitchingmechanismagainstcontrol-flowhijackingattacks,initiatedfromtheouterdomain.
+the domain switching. Recall that TTBRs are managed by the code instrumentation. By instrumentingthe outerdomain with
+inner domain; thus, Hilps can assign a unique ASID to the in- IDCs, the inner domain can accumulate the behavior of
+nerdomainby(1)writingauniqueASIDtoTTBR1_EL1and the outer domain, such as system call invocations or system
+(2)avoidingtheassignmentofthesameASIDtoTTBR0_EL1. resource accesses, and pass them to security applications for
+monitoring. Second, as the inner domain has exclusive control
+4)Inner Domain Stack: The stack is frequently used as a
+authority over page tables, it can enforce access-policies over
+means of attacks, such as code reuse attacks; moreover, many
+specific regions of the outer domain. The inner domain can
+types of critical data are temporally stored in the stack. Thus,
+alsodetectaccess-policyviolationsbyinsertingIDCsintothe
+the inner domain should use its own stack, separate from the
+exceptionhandleroftheouterdomainandcanthenletsecurity
+outer domain. Therefore, the entry gate of the IDC switches
+applications inspect these violations.
+the value of the stack pointer to a preallocated stack in the
+innerdomain(Line29-38),andtheexitgaterestoresthestack
+pointer to that of the original one (Line 46-47). Note that, as V. IMPLEMENTATION
+Hilps supports multi-core environments, the inner domain of
+In this section, we explain how we implemented a pro-
+each core has its own stack.
+totype of Hilps to demonstrate the feasibility. The prototype
+5)Port to Different Exception Levels: When we incorpo- is incorporated into AArch64 Linux Kernel 3.10 of Android
+rateHilpsintoanormalOSorasecureOSrunningatEL1,we 5.1.1
+can use the IDC as described in Figure 9. However, if Hilps
+For a prototype implementation, the kernel corresponding
+is applied to other levels of system software running at EL2
+to the outer domain should be modified to be deprived of
+or EL3, such as a hypervisor and a secure monitor, the IDC
+controlcapabilitiesforsensitivesystemresources.Forthis,we
+needs to be modified slightly. Note that the ASID feature is
+substituted IDCs for privileged instructions of the kernel that
+not supported at EL2 and EL3; thus, the IDC must perform
+modifythecontentsofpagetablesandsensitivesystemcontrol
+the TLB invalidation to prevent the inner domain from being
+registers,suchasTCR,TTBR0_EL1,TTBR1_EL1,VBARand
+revealed to the outer domain. More specifically, in the code
+SCTLR, which can affect the safety of the inner domain. We
+of IDC, TCR control instructions (Line 18 and 52) do not
+also modified the kernel to configure all page tables as read-
+have to change the value of TCR.A1 and a TLB invalidation
+only by setting access permission bits of specific page table
+instruction (TLBI*) must be inserted in Line 61 of the exit
+entriesmappingthememoryregionsofthepagetables.Thisis
+gate.Subsequently,accordingtoSectionIV-B1,theIDCneeds
+necessary to prevent the page tables from being compromised
+tosetTxSZto26insteadof25whenenteringtheinnerdomain
+byattackers,butentailsaprobleminimplementation.Actually,
+(However, this is not mandatory if the inner domain requires
+as there are mixed-pages containing both page tables and
+a much larger address space).
+kernel data objects, an access permission modification to the
+mixed-pages would disturb benign memory operations for the
+D. Monitoring Capability kernel data objects and cause the kernel to crash. To address
+this problem, we eliminated such mixed-pages by reserving
+Our intra-level privilege separation technique can make
+read-only memory regions and allocating page tables from
+the inner domain provide sufficient monitoring capabilities to
+these regions.
+security applications residing in the inner domain region. The
+inner domain initially provides unrestricted memory access
+for security applications. In addition, it can enable security TABLEII. ROUND-TRIPCYCLES(RTC)
+applications to monitor system behaviors by mimicking the
+Bigcore Littlecore
+trap-and-emulation technique, widely used in virtualization w/ASID w/TI w/ASID w/TI
+environments. To achieve this, our technique may employ RTC 424 832 210 249
+11TABLEIII. LMBENCHRESULTS
+Bigcore Littlecore
+Hilps Overhead Hilps Overhead
+Test Native Native
+w/ASID w/TI w/ASID w/TI w/ASID w/TI w/ASID w/TI
+nullsyscall 0.44 0.44 0.44 0.00% 0.00% 0.43 0.44 0.44 2.33% 2.33%
+open/close 6.37 6.35 6.44 -0.31% 1.10% 12.65 12.67 12.74 0.16% 0.71%
+stat 2.65 2.64 2.66 -0.38% 0.38% 5.06 5.11 5.14 0.99% 1.58%
+sig.handlerinst 0.68 0.68 0.69 0.00% 1.47% 0.91 0.91 0.91 0.00% 0.00%
+sig.handlerovh 3.26 3.27 3.32 0.31% 1.84% 5.98 5.94 5.97 -0.67% -0.17%
+pipelatency 12.81 14.27 18.38 11.40% 43.48% 26.70 28.54 31.80 6.89% 19.10%
+pagefault 1.88 2.40 3.80 27.66% 102.13% 2.81 3.69 5.52 31.32% 96.44%
+fork+exit 148.36 176.84 240.18 19.20% 61.89% 255.05 292.21 369.69 14.57% 44.95%
+fork+execv 163.58 195.35 254.10 19.42% 55.34% 279.70 314.50 396.36 12.44% 41.71%
+mmap 2323.00 2796.00 3992.00 20.36% 71.85% 4654.00 5187.00 6718.00 11.45% 44.35%
+TABLEIV. SYNTHETICBENCHMARKRESULTS
+Hilps Overhead
+Test Native
+w/ASID w/TI w/ASID(σ) w/TI(σ)
+CF-Bench 42243.5 41111.8 36770.4 2.68%(11.00) 12.96%(13.58)
+singlecore 842.6 844.4 840.0 -0.21%(0.93) 0.31%(0.97)
+GeekBench
+multicore 1891.6 1880.5 1886.0 0.59%(0.98) 0.30%(1.64)
+Quadrant 8137.9 8092.7 8139.2 0.56%(1.48) -0.02%(1.47)
+productivity 4382.3 4291.8 4494.5 2.07%(10.80) -2.56%(4.26)
+Smartbench
+gaming 2597.7 2552.4 2563.4 1.74%(13.45) 1.32%(9.29)
+browser 2895.1 2893.2 2862.6 0.07%(2.03) 1.12%(2.63)
+Vellamo
+metal 1350.9 1352.6 1348.9 -0.13%(0.47) 0.15%(0.57)
+Antutu 41033.9 40964.3 40298.7 0.17%(2.22) 1.79%(1.83)
+To retrofit our technique into the kernel, additional modi- ASID and TLB invalidation to help reasonable performance
+fications are needed. We defined memory regions for the page prediction when our privilege separation technique is incorpo-
+tables and the inner domain’s code and data by modifying rated into different levels of system software.
+the linker script of the kernel. In the early boot-up sequence
+(before enabling the MMU), kernel page tables are initialized A. Switching Overhead
+to map these memory regions following our mapping strategy
+The major portion of overhead of our privilege separation
+described in Figure 7. Page table regions are mapped in the
+mechanismsisfromthetransitionsbetweentheinnerandouter
+outer domain with read-only permission. The inner domain
+domains by IDCs. To investigate the overhead imposed by
+regions are mapped out of the valid address space of the outer
+each IDC, we invoked a null IDC, which does not perform
+domain. Subsequently, the outer domain transfers control to
+any operation, and measured the elapsed time using the per-
+the inner domain by invoking an IDC. The inner domain
+formance monitor supported by AArch64. In addition, as the
+then initializes its data structures and creates the shadow
+big.LITTLEisaprevalentfeatureinrecentARM-basedmobile
+mappings of the page tables to be able to perform page table
+devices, we performed experiments separately in big and little
+managementsinsteadoftheouterdomain.Next,itenablesthe
+cores.Theexperimentwasrepeated100timesandtheaverage
+MMUbyconfiguringSCTLRandreturnstotheouterdomain.
+results are reported in Table II.
+Note that the protection scheme for DMA attacks is not
+The result shows the lightweightness of the IDC. Even
+considered. However, we do not believe that this will damage
+though big cores operate with about two times faster clock
+theaccuracyoftheperformanceevaluationinthenextsection,
+speed, we can see that the IDC using ASID consumes near
+as IDC invocations for DMA protection would only account
+constant time regardless of types of cores. However, the same
+for a small portion in the whole execution time.
+tendency is not found when the IDC invalidates TLB entries.
+This result is attributed to the different TLB structure of big
+VI. EVALUATION
+and little cores.
+In this section, we evaluate our intra-level isolation tech-
+nique by performing a case study for measuring the per- B. Micro Benchmarks
+formance overhead of the prototype of Hilps, described in
+As the prototype is targetting the normal OS, it could
+Section V. Experiments have been conducted on the versatile
+impose a performance penalty on system calls. To measure
+express V2M-Juno r1 platform [6], which ships with Cortex-
+suchoverhead,weperformedexperimentsusingtheLMBench
+A57 1.15 GHz dual-core processor and Cortex-A53 650 MHz
+test suite. Similar to the case of measuring RTC of the IDC,
+quad-core processor in a big.LITTLE design and 2 GB of
+experiments are done in consideration of the big.LITTLE
+DRAM.
+feature. Table III reports the results for two versions of the
+Experimental Group. In the case study, as the prototype prototype together. It shows that the prototype does not slow
+runs at EL1 by default, our privilege separation technique can down null, open/close, stat and signal handling system calls
+benefit from the ASID feature. On the other hand, in the case becausetheydonottouchsensitiveresourcesthataremanaged
+that the prototype does not run at EL1, the technique needs to in the inner domain. Contrarily, the prototype degrades the
+relyonTLBinvalidationtoprotecttheinnerdomain,asitcan performance of other system calls that are related to memory
+nolongerusetheASIDfeature.Inourexperiments,therefore, management. For example, to handle a page fault (by copy-
+we evaluate both variations of the prototype that operate with on-write or demand paging), the outer domain has to modify
+12TABLEV. LMBENCHRESULTSWITHASECURITYAPPLICATION
+Bigcore Littlecore
+Hilps Overhead Hilps Overhead
+Test Native Native
+w/ASID w/TI w/ASID w/TI w/ASID w/TI w/ASID w/TI
+nullsyscall 0.44 0.81 1.28 84.09% 190.91% 0.43 1.01 1.66 134.88% 286.05%
+open/close 6.37 7.28 8.73 14.29% 37.05% 12.65 13.82 16.09 9.25% 27.19%
+stat 2.65 3.09 3.78 16.60% 42.64% 5.06 5.79 6.84 14.43% 35.18%
+sig.handlerinst 0.68 1.09 1.64 60.29% 141.18% 0.91 1.49 2.19 63.74% 140.66%
+sig.handlerovh 3.26 3.68 4.44 12.88% 36.20% 5.98 6.55 7.45 9.53% 24.58%
+pipelatency 12.81 19.86 27.84 55.04% 117.33% 26.70 40.44 50.04 51.46% 87.42%
+pagefault 1.88 2.38 3.74 26.60% 98.94% 2.81 3.73 5.48 32.74% 95.02%
+fork+exit 148.36 182.54 237.13 23.04% 59.83% 255.05 292.61 374.27 14.73% 46.74%
+fork+execv 163.58 195.19 257.85 19.32% 57.63% 279.70 322.22 404.57 15.20% 44.64%
+mmap 2323.00 2786.00 3878.00 19.93% 66.94% 4654.00 5148.00 6641.00 10.61% 42.69%
+TABLEVI. SYNTHETICBENCHMARKRESULTSWITHASECURITYAPPLICATION
+Hilps Overhead
+Test Native
+w/ASID w/TI w/ASID(σ) w/TI(σ)
+CF-Bench 42243.5 36218.1 33107.9 14.26%(5.00) 21.63%(4.37)
+singlecore 842.6 842.0 839.2 0.07%(0.54) 0.40%(1.04)
+GeekBench
+multicore 1891.6 1890.6 1882.3 0.05%(1.11) 0.49%(1.59)
+Quadrant 8137.9 8032.8 8056.8 1.29%(1.88) 1.00%(2.28)
+productivity 4863.8 4738.4 4253.8 2.58%(4.60) 12.54%(6.54)
+Smartbench
+gaming 2649.9 2434.2 2613.4 8.14%(9.58) 1.38%(12.18)
+browser 2895.1 2892.2 2807.2 0.10%(2.10) 3.04%(2.32)
+Vellamo
+metal 1350.9 1341.7 1341.8 0.68%(0.65) 0.67%(0.67)
+Antutu 41033.9 40861.1 40307.9 0.42%(1.92) 1.77%(2.58)
+certainbitsofthecorrespondingpagetableentriesbyinvoking systemofAndroid.Therefore,oursecurityapplicationmimics
+IDCs. The test results also show that the performance impact Aurasiumtomonitorthebehaviorofapplications.Specifically,
+of TLB invalidations to be more significant, even considering we first inserted IDCs in system call handlers to pass system
+itsrelativelylongRTC.ThisisattributedtoTLBinvalidations call numbers and arguments to the security application in
+increasingtheTLBmissrate.Insummary,theprototypeusing the inner domain. The transferred data are stored in a ring
+ASIDandTLBinvalidationintroduceabout8.9%and29.5% buffer that are allocated in the inner domain for each core.
+performance overhead on average, respectively. Then, the security application parses the data to understand
+the corresponding behavior of applications. For example, by
+C. Macro Benchmarks monitoring a system call, sys_connect, and its argument,
+the security application can identify the IP address and port
+Toevaluatetheperformanceimpactoftheprototypeonthe
+number of a network connection being established, thereby
+overall system, we experimented with six different synthetic
+denying applications access to banned websites. Moreover,
+benchmark applicationsthat can be publiclydownloaded from
+by monitoring another system call, sys_ioctl, and argu-
+the Google Play Store: CF-Bench 1.3, GeekBench 3.4.1,
+ments, we can track the binder, which provides an inter-
+Quardrant 2.1.1, Smartbench 1.0.0, Vellamo 3.2 and Antutu
+processcommunicationcapabilitytoapplications.Inparticular,
+6.0.1. We repeated each benchmark 10 times, and the results
+as applications use the binder to communicate with other
+are reported in Table IV with a standard deviation. In conclu-
+applications and service processes, by inspecting established
+sion,thefinalbenchmarkscoresreflectingreal-worldscenarios
+bindconnections,thesecurityapplicationcanmonitorwhether
+exhibitthefeasibilityoftheprototypewith0.97%(whenusing
+applicationscomplywithgivenaccesspoliciesforservicesand
+ASID)and2.42%(whenusingTLBinvalidation)performance
+resources.
+overhead on average.
+Tomeasuretheperformancedegradationwhenthesecurity
+D. Security Application Benchmark application is installed, we experimented with the same micro
+and macro benchmarks. The results of Table V show that this
+If system software adopts our intra-level privilege sepa-
+security application incurs certain overhead in system calls
+ration technique, developers can deploy various security ap-
+due to the number of intercepts and parsing operations, but
+plications to monitor the system. It is difficult to determinis-
+the overhead could be considered negligible in the case of
+tically measure or estimate the amount of influence security
+time-consuming system calls such as mmap. Table VI shows
+applications may have on performance. Therefore, instead
+that the amount of performance overhead imposed by the
+of struggling to provide general information, we build, as
+example security application is acceptable. In conclusion, the
+an example, a security application performing system call
+performanceoverheadincreasesto3.07%(whenusingASID)
+examination and present its performance impact.
+and 4.77 % (when using TLB invalidation) on average.
+Theexamplesecurityapplicationwascreatedbasedonthe
+idea of Forrest [17]. It intercepts system calls and extracts VII. DISCUSSION
+high-level information from them. This is relatively simple to
+In this section, we discuss remaining issues and possible
+implementinourtechnique,butitprovidesausefulmeansfor
+future extensions for Hilps.
+monitoring the system behavior. For example, Aurasium [48]
+showsthatexaminingthesystemcalldataenablesamorefine- Porting Effort. In order to logically deprivilege the outer
+grainedpolicyenforcementthanthatofthedefaultpermission domain,Hilpsentruststheinnerdomainwithexclusivecontrol
+13authoritiesforprivilegedregistersandpagetables.Weachieve government(MSIP) (No. R0190-16-2010, Development on the
+this by adopting a code instrumentation technique that incurs SW/HW modules of Processor Monitor for System Intrusion
+porting cost. For example, we modified about 1800 SLOC Detection) and (No. R-20160222-002755, Cloud based Secu-
+of the AArch64 Linux kernel to apply Hilps. According rity Intelligence Technology Development for the Customized
+to previous works using this technique [15], [4], [7], [19], Security Service Provisioning), the National Research Foun-
+such a porting effort is commonly considered reasonable and dation of Korea(NRF) grant funded by the Korea government
+acceptable. (MSIP) (No. 2014R1A2A1A10051792), and the Brain Korea
+21 Plus Project in 2017.
+Vulnerable Security Applications. Attackers may tamper
+with both the inner and outer domains by exploiting vulnera-
+REFERENCES
+bilitiesofsecurityapplications.InHilps,however,itwouldbe
+extremely difficult to manipulate security applications in such [1] “Linux kernel vulnerabilities,” http://www.cvedetails.com/product/47/
+a fashion. One reason is that the outer domain communicates Linux-Linux-Kernel.html?vendor id=33.
+with a security application in the inner domain through a [2] “Xen:Vulnerabilitystatistics,”http://www.cvedetails.com/vendor/6276/
+XEN.html.
+verynarrowinterface.Anotheristhatonlyauthorizedsecurity
+[3] D. Abramson, “Intel virtualization technology for directed i/o,” Intel
+applications are included in the binary of system software,
+technologyjournal,2006.
+and they are loaded intact into the system alongside Hilps via
+[4] R. B. J. M. W. S. R. W. Ahmed M. Azab, 1 Kirk Swidowski and
+a pre-verified secure boot sequence.
+P.Ning,“Skee:Alightweightsecurekernel-levelexecutionenvironment
+forarm,”inProceedingsoftheNetworkandDistributedSystemSecurity
+On-demand Installation of Security Applications. To
+Symposium,2016.
+cope with attacks which cannot be handled by the security
+[5] ARM, “System memory management unit (smmu),” http://www.arm.
+applications existing in the inner domain, installing a new
+com/products/system-ip/controllers/system-mmu.php.
+security application would be preferred. In Hilps, updating a
+[6] ——, “Versatile express juno r1 development platform,” in ARM
+firmware image is the only available means for this purpose. 100122 0100 00 en,2015.
+However, as it adversely affects the flexibility, we consider [7] A.M.Azab,P.Ning,J.Shah,Q.Chen,R.Bhutkar,G.Ganesh,J.Ma,
+allowing security applications to be installed on demand. To andW.Shen,“Hypervisionacrossworlds:Real-timekernelprotection
+enable this, we plan to extend Hilps with two kinds of inter- fromthearmtrustzonesecureworld,”inProceedingsofthe21stACM
+SIGSACConferenceonComputerandCommunicationsSecurity,2014.
+faces respectively supporting the development and installation
+of security applications. In this case, however, Hilps itself [8] A.M.Azab,P.Ning,Z.Wang,X.Jiang,X.Zhang,andN.C.Skalsky,
+“Hypersentry: enabling stealthy in-context measurement of hypervisor
+would be threatened if malicious security applications are
+integrity,” in Proceedings of the 17th ACM conference on Computer
+installed. To relieve this problem, we may need to strongly andcommunicationssecurity,2010.
+isolate each security applications to inhibit their influence by [9] A. M. Azab, P. Ning, and X. Zhang, “Sice: a hardware-level strongly
+using sandbox solutions like NaCl [50]. isolatedcomputingenvironmentforx86multi-coreplatforms,”inPro-
+ceedingsofthe18thACMConferenceonComputerandCommunica-
+tionsSecurity,2011.
+VIII. CONCLUSION
+[10] V.R.BasiliandB.T.Perricone,“Softwareerrorsandcomplexity:an
+Privilege separation has been a popular security principle empiricalinvestigation,”CommunicationsoftheACM,1984.
+in the software design that can enhance the security level of [11] M.Becher,M.Dornseif,andC.N.Klein,“Firewire:allyourmemory
+monolithic system software. This paper introduces our tech- arebelongtous,”ProceedingsofCanSecWest,2005.
+nique, Hilps, that has been developed to enforce this security [12] J. Bickford, R. O’Hare, A. Baliga, V. Ganapathy, and L. Iftode,
+principleinsystemsoftwarerunningonARM-basedmachines. “Rootkits on smart phones: attacks, implications and opportunities,”
+in Proceedings of the 11th workshop on mobile computing systems &
+The major novelty of Hilps lies in its unique implementation
+applications,2010.
+scheme for two underpinning mechanisms, domain switching
+[13] M. Castro, M. Costa, J.-P. Martin, M. Peinado, P. Akritidis, A. Don-
+and intra-level isolation, based on the TxSZ hardware field
+nelly, P. Barham, and R. Black, “Fast byte-granularity software fault
+for dynamically adjusting virtual address ranges of running isolation,” in Proceedings of the 22nd ACM SIGOPS symposium on
+software. Thanks to ARM’s new salient hardware support, Operatingsystemsprinciples,2009.
+Hilps has been used to securely incorporate various security [14] J. Criswell, N. Dautenhahn, and V. Adve, “Virtual ghost: Protecting
+solutionsforthefirsttimeintoalllevelsofprivilegedsoftware applications from hostile operating systems,” Proceedings of the 19th
+International Conference on Architectural Support for Programming
+on AArch64, including a normal OS, a hypervisor and even
+LanguagesandOperatingSystems,2014.
+an ARM TrustZone secure OS. In addition, the paper argues
+[15] N. Dautenhahn, T. Kasampalis, W. Dietz, J. Criswell, and V. Adve,
+for practical use of our technique in real deployments by
+“Nestedkernel:Anoperatingsystemarchitectureforintra-kernelpriv-
+presenting our experimental evidence that the extra runtime ilegeseparation,”inProceedingsofthe20thInternationalConference
+overhead incurred by Hilps is acceptably small. Considering on Architectural Support for Programming Languages and Operating
+thatAArch64isthestandardarchitectureforARM’snewgen-
+Systems,2015.
+eration64-bitprocessors,wesuggestthatourtechniquewould [16] U.Erlingsson,M.Abadi,M.Vrable,M.Budiu,andG.C.Necula,“Xfi:
+Softwareguardsforsystemaddressspaces,”inProceedingsofthe7th
+be a viable tool to efficiently enforce privilege separation on
+symposiumonOperatingsystemsdesignandimplementation,2006.
+commoditymobiledevicesinthefutureaswellasthepresent.
+[17] S.Forrest,S.A.Hofmeyr,A.Somayaji,andT.A.Longstaff,“Asense
+ofselfforunixprocesses,”inProceedingsofthe17thIEEESymposium
+ACKNOWLEDGMENT onSecurityandPrivacy,1996.
+[18] T. Garfinkel, M. Rosenblum et al., “A virtual machine introspection
+We thank anonymous reviewers for the support and in-
+based architecture for intrusion detection,” in Proceedings of the Net-
+sightful remarks that improved the paper. This work was workandDistributedSystemSecuritySymposium,2003.
+partly supported by Institute for Information & communica-
+[19] X.Ge,H.Vijayakumar,andT.Jaeger,“Sprobes:Enforcingkernelcode
+tions Technology Promotion(IITP) grant funded by the Korea integrityonthetrustzonearchitecture,”2014.
+14[20] Intel, “Trusted execution technology: Software development guide,” [44] E. Unified, “Inc. unified extensible firmware interface specification,”
+2008. 2014.
+[21] V. P. Kemerlis, M. Polychronakis, and A. D. Keromytis, “ret2dir: [45] X.Wang,Y.Chen,Z.Wang,Y.Qi,andY.Zhou,“Secpod:aframework
+Rethinking kernel isolation,” in Proceedings of the 23rd USENIX forvirtualization-basedsecuritysystems,”inUSENIXAnnualTechnical
+SecuritySymposium,2014. Conference,2015.
+[22] Y. Kim, R. Daly, J. Kim, C. Fallin, J. H. Lee, D. Lee, C. Wilkerson, [46] Z.WangandX.Jiang,“Hypersafe:Alightweightapproachtoprovide
+K.Lai,andO.Mutlu,“Flippingbitsinmemorywithoutaccessingthem: lifetime hypervisor control-flow integrity,” in Proceedings of the 31st
+An experimental study of dram disturbance errors,” in Proceeding of IEEESymposiumonSecurityandPrivacy,2010.
+the 41st Annual International Symposium on Computer Architecuture, [47] C. Wu, Z. Wang, and X. Jiang, “Taming hosted hypervisors with
+2014. (mostly) deprivileged execution.” in Proceedings of the Network and
+[23] S.T.KingandP.M.Chen,“Subvirt:Implementingmalwarewithvirtual DistributedSystemSecuritySymposium,2013.
+machines,”inProceedingsofthe27thIEEESymposiumonSecurityand [48] R.Xu,H.Sa¨ıdi,andR.Anderson,“Aurasium:Practicalpolicyenforce-
+Privacy,2006. ment for android applications,” in Proceedings of the 21st USENIX
+SecuritySymposium,2012.
+[24] G.Klein,K.Elphinstone,G.Heiser,J.Andronick,D.Cock,P.Derrin,
+D. Elkaduwe, K. Engelhardt, R. Kolanski, M. Norrish et al., “sel4: [49] W. Xu, J. Li, J. Shu, W. Yang, T. Xie, Y. Zhang, and D. Gu, “From
+Formalverificationofanoskernel,”inProceedingsofthe22ndACM collision to exploitation: Unleashing use-after-free vulnerabilities in
+SIGOPSsymposiumonOperatingsystemsprinciples,2009. linux kernel,” in Proceedings of the 22nd ACM SIGSAC Conference
+onComputerandCommunicationsSecurity,2015.
+[25] J.Liedtke,“Onmicro-kernelconstruction,”inProceedingsofthe15th
+ACMSymposiumonOperatingSystemsPrinciples,1995. [50] B. Yee, D. Sehr, G. Dardyk, J. B. Chen, R. Muth, T. Ormandy,
+S.Okasaka,N.Narula,andN.Fullagar,“Nativeclient:Asandboxfor
+[26] Y.Mao,H.Chen,D.Zhou,X.Wang,N.Zeldovich,andM.F.Kaashoek,
+portable,untrustedx86nativecode,”inProceedingsofthe30thIEEE
+“Software fault isolation with api integrity and multi-principal mod-
+SymposiumonSecurityandPrivacy,2009.
+ules,”inProceedingsofthe23rdACMSIGOPSSymposiumonOper-
+atingSystemsPrinciples,2011. [51] F.Zhang,J.Wang,K.Sun,andA.Stavrou,“Hypercheck:Ahardware-
+assisted integrity monitor,” Dependable and Secure Computing, IEEE
+[27] J. M. McCune, B. Parno, A. Perrig, M. K. Reiter, and H. Isozaki, Transactionson,2014.
+“Flicker: An execution infrastructure for TCB minimization,” in Pro-
+ceedingsoftheACMEuropeanConferenceinComputerSystems,2008.
+[28] S.C.MisraandV.C.Bhavsar,“Relationshipsbetweenselectedsoftware
+measuresandlatentbug-density:Guidelinesforimprovingquality,”in
+ComputationalScienceandItsApplicationsICCSA,2003.
+[29] T.J.OstrandandE.J.Weyuker,“Thedistributionoffaultsinalarge
+industrial software system,” in ACM SIGSOFT Software Engineering
+Notes,2002.
+[30] D. R. Piegdon and L. Pimenidis, “hacking in physically address-
+able memory,” in Seminar of Advanced Exploitation Techniques, WS
+2006/2007,2007.
+[31] D. Rosenberg, “Qsee trustzone kernel integer overflow,” in Black Hat
+USA,2014.
+[32] T.Roth,“Nextgenerationmobilerootkits,”inHackInParis,2013.
+[33] J. H. Saltzer, “Protection and the control of information sharing in
+multics,”CommunicationsoftheACM,1974.
+[34] J. H. Saltzer and M. D. Schroeder, “The protection of information in
+computersystems,”ProceedingsoftheIEEE,1975.
+[35] F. B. Schneider, G. Morrisett, and R. Harper, “A language-based
+approachtosecurity,”inInformatics,2001.
+[36] A.Seshadri,M.Luk,N.Qu,andA.Perrig,“Secvisor:Atinyhypervisor
+toprovidelifetimekernelcodeintegrityforcommodityoses,”inPro-
+ceedings of the 21st ACM SIGOPS Symposium on Operating Systems
+Principles,2007.
+[37] M. I. Sharif, W. Lee, W. Cui, and A. Lanzi, “Secure in-vm monitor-
+ing using hardware virtualization,” in Proceedings of the 16th ACM
+conferenceonComputerandcommunicationssecurity,2009.
+[38] D.Shen,“Attackingyourtrustedcore:Exploitingtrustzoneonandroid,”
+inBlackHatUSA,2015.
+[39] A.SrivastavaandJ.T.Giffin,“Efficientmonitoringofuntrustedkernel-
+modeexecution,”inProceedingsoftheNetworkandDistributedSystem
+SecuritySymposium,2011.
+[40] U.SteinbergandB.Kauer,“Nova:amicrohypervisor-basedsecurevir-
+tualizationarchitecture,”inProceedingsofthe5thEuropeanconference
+onComputersystems,2010.
+[41] G. E. Suh, D. Clarke, B. Gassend, M. Van Dijk, and S. Devadas,
+“Aegis: architecture for tamper-evident and tamper-resistant process-
+ing,” in Proceedings of the 17th annual international conference on
+Supercomputing,2003.
+[42] M.M.Swift,B.N.Bershad,andH.M.Levy,“Improvingthereliability
+of commodity operating systems,” in Proceedings of the 19th ACM
+SymposiumonOperatingSystemsPrinciples,2003.
+[43] J.ThomasandN.Keltner,“Herebedragons,”inRECONCanada,2014.
+15

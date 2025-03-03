@@ -1,0 +1,1243 @@
+Address-Oblivious Code Reuse:
+On the Effectiveness of Leakage-Resilient Diversity
+Robert Rudd,∗ Richard Skowyra,∗ David Bigelow,∗ Veer Dedhia,∗ Thomas Hobson,∗
+Stephen Crane,† Christopher Liebchen,‡ Per Larsen,§ Lucas Davi,¶
+Michael Franz,§ Ahmad-Reza Sadeghi,‡ Hamed Okhravi∗
+∗MIT Lincoln Laboratory. {firstname.lastname,dbigelow}@ll.mit.edu
+†Immunant, Inc. sjc@immunant.com
+‡CYSEC/TU Darmstadt.{christopher.liebchen,ahmad.sadeghi}@trust.tu-darmstadt.de
+§University of California, Irvine. {perl,franz}@uci.edu
+¶University of Duisburg-Essen. lucas.davi@uni-due.de
+Abstract—Memory corruption vulnerabilities not only allow I. INTRODUCTION
+modification of control data and injection of malicious payloads;
+Memory corruption has been a primary attack vector
+they also allow adversaries to reconnoiter a diversified program,
+customize a payload, and ultimately bypass code randomization against computer systems for decades [2]. Memory corruption
+defenses.Inresponse,researchershaveproposedandbuiltvarious attacksrangefromconventionalstacksmashingtechniques[44]
+leakage-resilient defenses against code reuse. Leakage-resilient to more sophisticated code-reuse attacks (CRAs) such as
+defensesusememoryprotectiontechniquestopreventadversaries return-oriented programming (ROP) [50], which emerged in
+from directly reading code as well as pointer indirection or response to the widespread adoption of defenses such as W⊕X
+encryption techniques to decouple code pointers from the ran- (Write⊕eXecute). Part of the appeal of memory corruption to
+domizedcodelayout,avoidingindirectleakage.Inthispaper,we
+attackers is the ability to execute arbitrary code on a remote
+show that although current code pointer protections do prevent
+targetsystemafterhijackingthecontrolflow.Despitenumerous
+leakage per se, they are fundamentally unable to stop code
+advances, comprehensively protecting native code written in
+reuse. Specifically, we demonstrate a new class of attacks we
+C/C++ from ROP and other CRAs remains an open challenge.
+call address-oblivious code reuse that bypasses state-of-the-art
+leakage-resilience techniques by profiling and reusing protected
+Code-reusedefensesareeitherbasedonenforcement[1,33,
+code pointers, without leaking the code layout. We show that
+41] or randomization [7, 23, 34, 37]. In this paper, we focus
+an attacker can accurately identify protected code pointers of
+on state-of-the-art code randomization techniques that provide
+interest and mount code-reuse attacks at the abstraction level
+of pointers without requiring any knowledge of code addresses. resilience against information leakage attacks and have shown
+We analyze the prevalence of opportunities for such attacks in to be both efficient and scalable to large codebases. We call
+popular code bases and build three real-world exploits against such techniques leakage-resilient defenses.
+Nginx and Apache to demonstrate their practicality. We analyze
+Preventing all types of information leakage is extremely
+recently proposed leakage resilient defenses and show that they
+are vulnerable to address oblivious code reuse. Our findings challenging. Direct leakage of memory content (a.k.a., memory
+indicatethatbecauseoftheprevalenceofcodepointersinrealistic disclosure) [53, 56], indirect leakage of addresses from the
+programs and the fundamental need to expose them to “read” stackorheap[17],andside-channels[5,9,42,48]aredifferent
+operations(evenindirectly),diversitydefensesfaceafundamental forms of information leakage that have been used successfully
+design challenge in mitigating such attacks. to bypass recent code randomization defenses [17, 18]. Due to
+the prevalence and threat of such information leakage attacks,
+recentdefenseshavebeenbasedonathreatmodelthatassumes
+the attacker can read and write arbitrary memory if allowed
+DISTRIBUTIONSTATEMENTA.Approvedforpublicrelease:distribution by the page permissions [7, 11, 15, 16].
+unlimited.
+Execute-only code memory (a.k.a. execute-no-read, XnR,
+ThismaterialisbaseduponworksupportedbytheDepartmentofDefense
+or X-only) is used by many leakage-resilient defenses [3, 11,
+underAirForceContractNo.FA8721-05-C-0002and/orFA8702-15-D-0001.
+15, 22] to shield randomized code layouts from direct leakage.
+Any opinions, findings, conclusions or recommendations expressed in this
+materialarethoseoftheauthor(s)anddonotnecessarilyreflecttheviewsof Some defenses [3, 58, 61] relax ideal X-only code permissions
+theDepartmentofDefense. tohandlelegacybinariesthatmayembedreadabledataincode,
+butthesedefenseshavebeenshowntobelacking[54,61].The
+most powerful leakage-resilient defenses also prevent indirect
+Permission to freely reproduce all or part of this paper for noncommercial
+leakage by hiding code pointer destinations, e.g., using pointer
+purposes is granted provided that copies bear this notice and the full citation
+on the first page. Reproduction for commercial purposes is strictly prohibited encryption [38] or an indirection layer [15].
+without the prior written consent of the Internet Society, the first-named author
+(for reproduction of an entire paper only), and the author’s employer if the
+Goals and Contributions.
+paper was prepared within the scope of employment.
+NDSS ’17, 26 February - 1 March 2017, San Diego, CA, USA
+In this paper, we will consider a state-of-the-art leakage-
+Copyright 2017 Internet Society, ISBN 1-891562-46-0
+http://dx.doi.org/10.14722/ndss.2017.23477 resilient defense that combines the strengths of all concrete,leakage-resilient defenses [3, 11, 15, 16, 22, 38] proposed filesystemtodirectlyleakmemorycontenteveninthepresence
+to date. We will not consider leakage-tolerant defenses of defenses such as GRSecurity [55]. Both these vectors can
+which seek to obsolete leaked information via runtime re- be used to maliciously leak actual non-readable code pages,
+randomization [7, 23, 37]. We use Readactor–one of the after which conventional ROP attacks become straightforward.
+most comprehensive implementations of a leakage-resilient In other words, if these vectors are not blocked by the defense,
+code randomization defense–to demonstrate a new class of theattackercanuseconventionalROPattacksinsteadofhaving
+CRAs, which we call Address-Oblivious Code Reuse (AOCR), to resort to AOCR.
+that can generically bypass leakage-resilient defenses without
+In summary, our contributions are as follows:
+knowledge of the code layout. The intuition behind AOCR
+is that execute-only permissions apply just to code, not code
+• We present AOCR, a new class of CRAs that generi-
+pointers (e.g., function pointers and return addresses). Code
+cally bypass state-of-the-art leakage-resilient defenses
+pointers/identifiers must be readable for programs to function
+by reusing indirect code pointers. Unlike existing
+correctly. Various execute-only defenses use indirection or
+attacks, AOCR does not rely on the layout of vtables
+encryption to protect these code pointers, but these alternative
+or the allocation and use of registers which renders
+code pointer representations remain exploitable by adversaries.
+COOP-centric defenses ineffective [16, 59].
+Specifically,wedemonstratethatanattackercanprofilethis
+• We demonstrate that code-reuse attacks can be con-
+layer of indirection in code pointers by observing the state of
+structed out of protected code pointers without direct
+the protected program remotely, and extract these indirect code
+knowledge of the code layout. We do so by building
+pointers.Wethenshowthatbyonlyreusingtheseindirectcode
+three AOCR exploits targeting Nginx and Apache.
+pointers, an attacker can achieve malicious behavior without
+explicitly requiring read access to the diversified code. We call • We present two techniques to accurately profile the
+our attack Address-Oblivious Code Reuse because its strength indirection layer (Malicious Thread Blocking) and
+liesinthefactthatitdoesnotneedtoleakorotherwiselearnthe chain (Malicious Loop Redirection) AOCR gadgets
+address of code snippets in order to successfully exploit them. that make our attacks highly practical.
+Rather, by stitching together their indirect code pointers, the
+• We discuss two main implementation challenges to
+attackercansuccessfullyexecutecodesnippetswhileremaining
+achieve ideal leakage resilience in modern operating
+oblivioustotheirrandomized(hidden)addresses.UnlikeCOOP
+systems that further demonstrate the difficulty of effec-
+attacks [47], our AOCR attack does not rely on the layout of
+tively and universally enforcing memory permissions.
+vtables,theallocations,ortheuseofregisters.Inasense,AOCR
+can be thought of as position-independent form of CRA.
+II. THREATMODEL
+To accurately profile indirect code pointers in a running
+process remotely, we devise a new attack technique that we Our threat model assumes that a remote attacker uses a
+call Malicious Thread Blocking (MTB). To chain indirect memory corruption vulnerability to access arbitrary memory
+code pointers, we show a new exploitation technique against and achieve remote code execution on the victim machine.
+imperative programming languages we call Malicious Loop We assume W⊕X is deployed to prevent code injection and
+Redirection (MLR). modification. Moreover, we assume that the software executing
+on the target system is protected by a state-of-the-art leakage-
+Using these techniques, we build two real-world AOCR
+resilient randomization-based defense capable of stopping
+exploits against Nginx and one against Apache, that each
+conventional [50] and just-in-time [53] CRAs. In particular, we
+hijack the control flow and execute arbitrary code. Unlike
+assume that the target system:
+recent attacks on some leakage-resilient techniques that focus
+on particular technique-specific or implementation weaknesses 1) maps code pages with execute-only permissions to
+[39], these attacks generically bypass leakage-resilient tech- prevent direct leakage [3, 15, 22];
+niques, and are not limited to Readactor, which we solely 2) hides,encrypts,orobfuscatescodepointerstoprevent
+use for demonstration and evaluation purposes. We discuss indirect leakage [11, 15, 38];
+the generality of these attacks against other recent defenses 3) randomizes the code layout at any granularity up to
+and show that many of them are also vulnerable to AOCR in (and including) individual instructions [27, 45];
+Section VII. 4) randomizes the entries of function tables [16] ren-
+dering COOP [47] and return-into-libc attacks
+In contrast to previous attacks on the implementation of
+cumbersome.
+leakage resilience [39], our AOCR attack can bypass ideal
+implementations and comprehensive applications of leakage-
+We assume that dynamically generated code is protected in the
+resilience techniques. However, we also show that enforcing
+same way as code compiled ahead of time since the alternative
+ideal and comprehensive execute-only defenses is surprisingly
+is insecure as mentioned by Crane, et al. [15]. We do not
+difficult. We call these caveats implementation challenges and
+consider side-channel attacks arising from memory sharing
+discuss two practical attack vectors in Linux systems. The first
+and deduplication between processes and virtual machines or
+vector maliciously redirects Direct Memory Access (DMA)
+attacks exploiting weaknesses in the underlying hardware. Our
+operationsthatdonotabidebypagepermissions.Unlikerelated
+threatmodelisconsistentwithrelatedworkonleakage-resilient
+work in this domain that focuses on abusing DMA through
+randomization-based defenses against code reuse.
+malicious hardware devices, we show that an attacker can trick
+thesystemtoissuemaliciousDMArequestsonitsbehalfusing While strong enforcement-based and randomization-based
+software-only attacks. The second vector uses Linux’s proc defenses in the literature have assumed that the adversary can
+2read and write arbitrary memory, we demonstrate that practical No Hiding Hiding
+attacks can in fact be mounted by a less powerful adversary. RX code XO trampolines
+t_F: …
+III. ADDRESS-OBLIVIOUSCODEREUSE(AOCR)ATTACK F: Observable Hidden
+XO code
+Current state-of-the-art randomization-based defenses [3, 4, F:
+11,15,16,22,38]aimtopreventCRAsbylimitinganattacker’s
+ability to disclose the code layout, either by leaking the code
+itself or by leaking code pointers. As noted in Section II,
+the adversary is assumed to have arbitrary read and write ptr icptr
+capabilities. Two primary techniques are employed to stop
+these adversaries:
+RW stack Adversary RW stack
+• Execute-onlypermissionspreventreadaccessestocode
+Observable Observable
+pages (existing W⊕X policies already prevent writes
+attacker infers that icptr → F( )
+to code pages). Thus, any attempts by an attacker to
+directly disclose the locations and contents of code Fig. 1. Profiling of indirect code pointers by comparing Protected and
+pages will lead to a segmentation violation. Execute- UnprotectedExecutionStates
+only permissions are either implemented in software
+using page fault handlers [3] or with hardware-assisted
+that icprt is the pointer to the indirection layer (trampoline
+paging (e.g., Extended Page Tables) [15, 16, 29].
+or encrypted pointer) that corresponds to F.
+• Code pointer indirection and encryption seeks to
+prevent indirect memory disclosure by decoupling To infer this mapping, we exploit the fact that programs
+code pointers from the code layout. Indirect memory execute in a manner that inherently leaks information about
+disclosure happens when an attacker learns about code the state of execution. Knowledge about the execution state of
+locations from the code pointers temporarily stored a program at the time of a memory disclosure enables us to
+on stack or heap. Some approaches alter the pointer infer the icptr→F mapping from a leaked icptr.
+representation using fast XOR encryption [11, 14, 38]
+Anattackercanuseherknowledgeaboutfunctionaddresses
+to prevent indirect leakage. Others use indirection
+in the unprotected version of the program (i.e., attacker’s local
+mechanisms [4, 15]. For instance, Readactor [15]
+copy) to infer the locations of indirect code pointers in the
+replaces all observable code pointers with pointers to
+protectedversion.WeillustratethisideainFig1.Byobserving
+trampolines. A forward trampoline is simply a direct
+what function pointers are placed in observable memory (i.e.,
+jump to a function stored in execute-only memory.
+stack or heap) in the unprotected version, an attacker can infer
+Because the location of the forward trampoline and
+that the pointers observed in the protected version must be the
+the function it jumps to are randomized independently,
+corresponding indirect code pointers of the same functions.
+attackers cannot infer the function layout by observing
+the trampoline layout.
+Atahigh-level,toperformtheprofiling,theattackercollects
+a list of function pointers from an unprotected version of
+In this section, we describe a code-reuse attack that
+the application offline, then she collects some indirect code
+genericallycircumventsleakage-resiliencetechniquesdescribed
+pointers from the protected application in an online manner
+above, even under the strong assumption that these techniques
+by sending the victim a few queries and observing parts
+are universally and ideally enforced. We show how an attacker
+of its data memory (e.g., stack). This allows the attacker
+can indeed use indirect code pointers to launch meaningful
+to create a mapping between the discovered indirect code
+exploits, without requiring the knowledge of code addresses.
+pointers and their underlying functions. The attacker can
+Thisisachievedbyprofilingindirectcodepointerstodetermine
+then chain these indirect code pointers to achieve the desired
+the underlying code to which they point. We demonstrate how
+malicious behavior. Since the code snippets pointed to by these
+multiple profiled indirect code pointers can be used together
+indirect code pointers behave like traditional ROP gadgets
+to launch a chained AOCR attack akin to traditional ROP, but
+we call them AOCR gadgets. Note that this attack can be
+at the granularity of code blocks identified by indirect code
+completed successfully without knowing the actual location
+pointers.
+(addresses) of the underlying functions. Although these steps
+look straightforward, in practice the attacker faces a number
+A. Profiling and Malicious Thread Blocking
+of technical challenges. Here, we describe the techniques we
+The goal of profiling is to determine the original function devised to overcome these challenges.
+F()thatisinvokedbyanindirectcodepointericptr.Various
+Repeatedly disclosing memory with precise timing to read
+X-only defenses use different names for indirect code pointers.
+indirect code pointers is a na¨ıve first approach to create an
+For example, Readactor [15] calls them trampoline pointers,
+accurate mapping of pointers to underlying functions. However,
+while ASLR-Guard [38] calls them encrypted code locators.
+since the state of the system changes rapidly, this can result in
+We use the generic name “indirect code pointers”, but the
+inaccuracies in the mappings that may eventually cause a crash
+discussions apply to these and similar defenses.
+at exploitation time. To enhance the precision of the mapping,
+Anattackerwhocanidentifythemappingoficptr→Fcan wedevisedatechniquethatwecallMaliciousThreadBlocking
+redirect control flow to F indirectly via icptr. “→” denotes (MTB).
+3Thread T Thread T call(int arg1, int arg2) {
+A mutex = 1 B
+fptr(arg1, arg2); }
+lock(mutex)
+…
+time1 unlock(mutex) call_with_defaults() {
+… fptr(default_arg1, default_arg2);}
+mutex = 0
+lock(mutex) If the attacker modifies the region of memory
+time2 …
+u n l o c k ( m utex)
+containing fptr, the next invocation of call or
+… call_with_defaults will be redirected to an indirect
+code pointer chosen by the attacker. Unlike ROP and similar
+mutex = 1
+attacks, this redirection is consistent with the high-level
+lock(mutex)
+time3 … Malicious semantics of C, and is thus unaffected by any underlying
+unlock(mutex) Thread randomization (at the instruction-level, basic block-level,
+… Blocking
+function-level, or library-level). In a valid C program fptr
+can potentially point to any function in the program.
+Fig.2. Normalvs.MaliciousThreadBlocking
+Hijacking control flow in this manner does have limitations.
+Iftheattackerendsuphijackingacallliketheoneincall,the
+Inthecaseofprogramsthatutilizethreading,wecanemploy attacker will have very limited ability to control the arguments.
+MTB to enable us to profile a broader range of indirect code The x86 64 ABI mandates a calling convention in which the
+pointers and avoid dependence upon strict timing requirements first few arguments must be passed via registers. It is much
+for triggering the disclosure vulnerability. more difficult to control a register value than it is to control a
+memory value. Some diversity techniques further complicate
+The approach of MTB is to use one thread, T , to cause
+A
+thisbyrandomizinghowregistersareallocatedtovariablesand
+another thread, T , to hang at an opportunistic moment by
+B
+how registers are saved to and restored from the stack [15, 45].
+manipulating variables that cause T ’s execution to block, e.g.,
+B
+by maliciously locking a mutex. By opportunistically blocking
+An attacker can overcome these defenses by concentrating
+a thread, we can more easily locate and map desired indirect on hijacking calls like the call in call_with_defaults.
+codepointerswithoutworryingaboutrapidchangesinmemory. call_with_defaults invokes fptr on global variables.
+A memory disclosure vulnerability may be triggered in T that
+A As global variables are stored in memory, they are trivial
+enables memory inspection at a known point in execution in
+to modify. If an attacker is able to locate a function like
+T B. Note that this technique avoids any timing unpredictability call_with_defaults, she will be able to redirect control
+that the attacker may face when trying to trigger a disclosure
+to a function of her choosing, with up to two arguments of her
+in thread T at the appropriate time in execution for thread
+A choosing. We found many such cases in our experiments with
+T . The idea of this approach is illustrated in Figure 2.
+B Nginx and Apache, as discussed in Section IV.
+As one example of this technique in practice, we show in
+SectionIVhowanattackercanlockamutexinNginxtocause
+C. Chaining via Malicious Loop Redirection
+a thread to block upon returning from a system call. Triggering
+amemorydisclosurevulnerabilityinanotherthreadatanypoint
+An attacker wishing to chain multiple AOCR gadgets
+after the system call enables the attacker to inspect a memory
+together faces another challenge: after calling an indirect code
+state that she knows contains indirect code pointers relevant
+pointer, the execution returns to the original call site. This
+to the system call. To more easily distinguish one system call
+makes it difficult for the attacker to take the execution control
+from another, the attacker can supply a unique input and scan
+back after a single function call. For example, in Readactor,
+disclosed memory for that input. For instance, if the attacker
+trampolines consist of a call immediately followed by a jump
+wishes to profile the open() call, she may supply a unique
+to the original call site; any redirected call will end with a
+file name as normal input to the program. Upon inspecting the
+return to normal program execution. Theoretically, there is a
+stackofablockedthread,theattackerwouldexpecttofindthis
+window, potentially very narrow, between the invocation of a
+unique value as an argument to the open() call. An attacker
+redirected call and the return of the redirected call in which
+can continually block and unblock a thread by manipulating
+an attacker may modify the return address to maintain control.
+the mutex until this value is discovered in disclosed memory,
+This approach requires a very precise level of timing which
+which indicates that the attacker has located the relevant frame
+may be difficult to achieve in practice.
+for open(). We illustrate this technique in more depth in our
+real-world exploits. Another option can be to use COOP-style attacks [47] to
+chain AOCR gadgets together using virtual functions. How-
+B. Passing Proper Arguments ever, COOP attacks have various limitations that make them
+undesirable in an address oblivious attack. First, COOP relies
+Aftertheattackerhasmappedrelevantindirectcodepointers
+on the dynamic dispatch implementation based on vtables; as
+to their underlying functions, it is straightforward to redirect
+such,itrequirestheleakageofvtableaddresses.Second,COOP
+control flow to one of the functions. For the purpose of control-
+is hindered by vtable-randomization or register-randomization
+flow hijacking, knowing an indirect code pointer address is just
+defenses [16, 59]. Third, COOP only applies to object-oriented
+as good as knowing the address of a function.
+languages, and is thus unavailable in applications developed in
+Consider the following code fragment: C (e.g., Nginx).
+4while (task) {
+target Nginx and the third targets the Apache HTTP Server.
+task->fptr(task->arg);
+The attacks are tested on Readactor as a proof-of-concept, but
+task = task->next;
+they are generally applicable to other leakage-resilient defenses
+}
+as we discuss in Section VII. Nginx Attack 1 uses profiling to
+locate and call indirect code pointers (trampolines) for open
+and _IO_new_file_overflow and uses these to hijack
+Fig.3. AloopwithacorruptiblecallsiteappropriateforMLR control. Nginx Attack 2 and the Apache Attack use profiling
+to locate call trampolines for functions that eventually reach
+XO trampolines XO trampolines exec. Our exploits only assume the existence of memory
+write_tramp write_tramp corruption vulnerabilities akin to CVE 2013-2028 (Nginx) and
+open_tramp open_tramp CVE-2014-0226 (Apache).
+... ...
+func_tramp_01 func_tramp_01
+A. Nginx Attack 1
+func_tramp_03 func_tramp_03
+We ran our experiments on stock Nginx 1.9.4 configured
+RW non-code RW non-code with support for asynchronous I/O. While this configuration is
+fptr fptr notdefault,itisverycommonlyused.Thedefaultconfiguration
+arg arg
+next next is generally not used in practice, and Nginx strives to be as
+portable as possible in its default configuration. By default,
+Nginx does not support HTTP SSL (https), ipv6, asynchronous
+fptr fptr I/O, or threading and runs a single worker process. Nginx
+arg arg specificallyrecommendstheuseofthreadpoolsforperformance
+next next
+benefits [6].
+Before Attack During Attack
+The aim of our attack is to cause Nginx to perform a
+malicious write to a file from a buffer located in execute-only
+Fig.4. MaliciousLoopRedirection(MLR)
+memory.Thisrequireslocatingaddressesoffunctionsthatopen
+and write files. We must also locate an indirect call site with
+To overcome this, we introduce a new technique we call enough corruptible arguments to call our target functions.
+Malicious Loop Redirection (MLR), which only depends on
+We began by inspecting the Nginx source code for suit-
+language-level semantics widely found in C applications (loops
+able, corruptible call sites. We were able to find an indirect
+over function pointers). In an MLR attack, an attacker chains a
+call site that retrieved both of its arguments from memory
+set of indirect code pointers (i.e., AOCR gadgets) using loops
+in Nginx’s main loop for worker threads. On line 335 of
+that contain indirect call sites in their body.
+core/ngx_thread_pool.c, the following call is made:
+An appropriate redirectable loop gadget in MLR is a loop
+task->handler(task->ctx, tp->log);
+that:
+This call site is ideal for our purposes: both the function
+1) has a loop condition that can be subverted by an
+pointer itself and the arguments are obtained by referencing
+attacker (e.g., the loop condition is in RW memory),
+fields of structs retrieved from memory, which are thus
+and
+corruptible.
+2) it must call functions through code pointers
+Whilethis callsiteis suitablefor callingopen,which only
+A simple example is presented in Fig 3. If task points requires two arguments, it does not allow us to call write,
+to attacker-controllable memory, the attacker can cause the
+whichrequiresthree.Asitseemedunlikelythatabettercallsite
+program to perform calls to multiple functions of her choosing
+couldbefound,webegansearchingforwaystoperformawrite
+by creating several fake task structures and setting up their
+via a function that only takes two arguments. We eventually
+task->next pointers to point to the next AOCR gadget. found _IO_new_file_overflow, an internal function in
+When the loop runs, AOCR gadgets are executed one by one
+the GNU C Library (glibc) used when a write to a file is about
+without loss of control on attacker’s side. We depict this attack
+to overflow its internal buffer. The signature for this function
+graphically in Fig 4.
+is included below:
+While some defenses implement register randomization to
+_IO_new_file_overflow(_IO_FILE *f,int
+prevent chaining computations together, it does not prove to be
+ch)
+an effectivedeterrent inthis situation.The high-level semantics
+of the call dictate that the first argument will be taken from f is a pointer to an _IO_FILE, glibc’s internal version
+task->arg and moved to rdi, so our method of chaining of the C standard library type FILE. ch is the character that
+AOCR gadgets using MLR succeeds against any randomization was being written when the overflow occurred. If a pointer to
+technique that preserves the x86 64 ABI. an attacker controlled _IO_FILE were to be passed to this
+function,theywouldbeabletoreliablyperformawritefroman
+IV. REAL-WORLDEXPLOITS arbitrary buffer of arbitrary size to an arbitrary file descriptor.
+In this section we present three real-world exploits combin- Tolocatetheindirectcodepointersofthesefunctionsduring
+ing various techniques described earlier. The first two exploits an attack, we perform profiling as described in Section III.
+5_IO_new_file_overflow can be located using only anal- state. To prevent this, before sending a signal, the requesting
+ysis of in-memory values. Locating open, however, requires threadusesaCompareandExchangeinstructionthatcanensure
+the use of the MTB technique. At a high level this attack TCB_CANCELING is false, TCB_CANCELTYPE is true and
+proceeds in four phases: setTCB_CANCELINGtotrueatomically.pthread_cancel
+performs this instruction in a loop until it succeeds.
+1) Locate a mutex for MTB.
+2) Profile an indirect code pointer for open (our first Analogously, upon exiting a cancellation point, a thread
+AOCR gadget). uses a Compare and Exchange instruction to both ensure
+3) Profile an indirect code pointer for TCB_CANCELING is false and to set TCB_CANCELTYPE to
+_IO_new_file_overflow (our second AOCR false.Thisinstructionisalsoexecutedinaloopuntilitsucceeds.
+gadget). Therefore TCB_CANCELING is a Mutual Exclusion Device
+4) Corrupt Nginx’s task queue so that a worker thread (mutex) that prevents concurrently disabling asynchronous
+makescallstoourprofiledtrampolinesusingtheMLR cancellation and sending an asynchronous cancellation signal.
+technique. By setting TCB_CANCELING to true, an attacker can force
+a thread to loop in __pthread_disable_asynccancel,
+1)Locating a mutex: During execution, Nginx makes forever waiting for a signal that will never come.
+severalopensystemcalls.Duringthesecalls,theaddressofthe
+trampoline (i.e., indirect code pointer) for open is vulnerable Many cancellation points map directly to
+system calls and these system calls are surrounded
+to being read by an attacker. However, in practice, determining
+by __pthread_enable_asynccancel and
+the exact address of this trampoline is difficult. Furthermore,
+__pthread_disable_asynccancel. A simplified
+the attacker would have to perform a read within the very
+example of glibc’s implementation of open is presented below:
+narrow window of opportunity in which the address is on the
+stack. We overcome this difficulty by employing MTB. glibc’s
+threading implementation supports a feature known as thread __pthread_enable_asynccancel();
+cancellation.Therearetwoformsofcancellation:asynchronous, open syscall;
+which means athread’s executioncan be cancelled at any point __pthread_disable_asynccancel();
+in its execution, and deferred, which means any cancellation
+requestsaredeferreduntilaspecialpredeterminedpointknown Since glibc’s open function uses a cancellable system
+as a cancellation point. call we can profile a trampoline for open by setting
+TCB_CANCELING to true and reading it off the stack when it
+Every thread in a program contains a Thread Control Block
+hangs in the __pthread_disable_asynccancel after
+(TCB). This structure contains thread-specific information and
+open.
+is used by glibc for maintaining metadata such as thread local
+storage, the current extent of the thread’s stack, and thread can- Having identified a suitable mutex for MTB, we then
+cellation.InsidetheTCBisafieldnamedcancelhandling. determineawaytolocateitatruntime.Ascancelhandling
+This field contains flags representing various aspects of a is a field of a thread’s TCB, given the base address of a TCB,
+thread’scancellationstate.Weareconcernedwiththefollowing it is trivial to locate cancelhandling. In glibc every TCB
+flags: contains a header with the type tcbhead_t. The first field of
+thisstructureisdefinedasvoid *tcb;whichis,actually,just
+• TCB CANCELTYPE: indicates that the thread can be
+a pointer to itself. The fact that the TCB begins with a pointer
+cancelled asynchronously via a signal.
+to itself makes it easily distinguishable in memory. Given an
+• TCB CANCELING: indicates that the thread’s cancel- 8-byte value aligned at a known 8-byte aligned address, if the
+address is equal to its contents the address might represent the
+lation state is being mutated.
+beginningofaTCB.Inpractice,forNginx,theTCBistheonly
+• TCB CANCELED: indicates that the thread was value on the stack that satisfies this property. Thus, starting
+successfully canceled. from a known stack address, we can locate a thread’s TCB
+by scanning backward for self-referential pointers. Once we
+Before entering a cancellation point, glibc executes locate a thread’s TCB we can leverage cancelhandling to
+__pthread_enable_asynccancel, a function that en-
+execute MTB against the thread. Additionally, since all TCBs
+ablesasynchronouscancellationbysettingTCB_CANCELTYPE
+are connected via linked list pointers, locating a single TCB
+to true. After exiting a cancellation point, glibc executes
+allows us to locate the TCBs of all other threads.
+__pthread_disable_asynccancel,afunctionthatdis-
+ablesasynchronouscancellationbysettingTCB_CANCELTYPE 2) Profiling open: Using the mutex found in the previous
+to false. A thread’s cancellation can be requested by calling section, we can cause a thread of our choosing to hang at a
+pthread_cancel, which will set TCB_CANCELED to true non-determinatesystemcall.BymodifyingTCB_CANCELING
+if asynchronous cancellation is disabled. If asynchronous to false then true in quick succession, we can permit that
+cancellation is enabled the requesting thread will send a signal thread’s execution to continue and then stop again at a non-
+tothetargetthreadandasignalhandlerwillmarkthethreadfor determinate system call. As Nginx makes many system calls
+cancellation.Thisuseofsignalscreatesthepossibilityofadata that involve cancellation points, locating open requires the
+race: if a thread is in the process of requesting a cancellation ability to distinguish when a thread is blocked at open versus
+and the target thread disables asynchronous cancellation before when it is blocked at some other cancellable system call. We
+the requesting thread sends its signal, the target thread will be distinguish these situations by exploiting knowledge of how
+forcedtoexecuteitscancellationhandlerwhileinanunexpected Nginx responds to requests for static files.
+6When Nginx receives an HTTP GET request for static structures in local variables, meaning few pointers to glibc’s
+content, it transforms the requested path into a path on the datasegmentareonthestack.Theattackisfurthercomplicated
+local filesystem. It calls open on this path and, if successful, by the fact that we cannot dereference random stack values
+responds with the file’s contents. If open fails, it responds due to the risk of causing a segmentation fault.
+with HTTP 404 Not Found. During this process, a pointer
+Instead, we find a pointer into the heap, which occur
+to a string containing the path will be present on the stack. To
+more frequently in the stack. While pointers into the heap
+determine whether or not Nginx is blocked at an open call
+are common, they are not easily distinguishable from non-
+we craft an HTTP request with a unique string and examine
+pointer values. To distinguish heap pointers we perform a
+all strings pointed to from Nginx’s stack.
+simple statistical analysis on the values of the stack, the details
+void next_syscall(struct pthread *tcb) of which we will present in a technical report for the sake of
+{ brevity. Here we briefly describe this analysis.
+/* Rapidly mutate the cancelhandling field
+* to allow thread to proceed to next system Wecollect8-bytevaluesfroma2-pagerangestartingatthe
+* call bottom of the stack. We bin these values based on their top 48
+*/
+bits; i.e., all values in the range (0, 0x0FFFFF) are placed in
+tcb->cancelhandling |= 4;
+tcb->cancelhandling &= ˜4; the first bin, all values in the range (0x100000, 0x1FFFFF) are
+} placed in the second bin, and so on. We then sort the bins by
+theirsize.Inourexperiments,whenNginx’sstackispartitioned
+void *profile_open()
+in this fashion, the largest bin corresponds to non-pointers, the
+{
+second largest bin corresponds to stack pointers, and the third
+const char *fprint = "4a7ed3b71413902422846"
+struct pthread *main_tcb = find_main_tcb(); largebincorrespondstoheappointers.Thisisduetothesizeof
+while (next_syscall()) { the address space available to a 64-bit program; any individual
+if (string_in_stack(rsp, fprint)) { regionofallocatedmemorywillbeseveralordersofmagnitude
+return *rsp
+smallerthanthedistancebetweentheregionscausingclustering
+}
+} ofvalues.Wefoundthat,forNginx,2pagesofvaluescollected
+} at a single point in time is enough to reliably distinguish heap
+pointers. If, for some reason, we needed a higher degree of
+Fig.5. Pseudocodeforprofilingopen precision, this technique could be extended to either collect
+valuesatmultiplepointsintime,ortocollectvaluesfrommore
+If our string is sufficiently distinct (an example request is pages of the stack.
+provided below), we can easily determine whether or not the
+Nowthatwehavepointersintotheheap,itbecomespossible
+current system call was made while processing our request.
+for us to analyze the heap. We leverage this to find a pointer
+In practice, if Nginx does not find a requested file, the string
+to main_arena, a glibc global variable. main_arena is a
+holding the path is discarded and no pointers will appear to
+structure used by glibc to maintain information on allocated
+it on the stack in subsequent system calls. Thus, if we know
+chunks of memory. To accelerate allocation operations, glibc
+that both (1) Nginx is blocked at a system call and (2) Nginx’s
+partitions chunks into pre-sized bins and stores them in
+stack contains a pointer to our constructed string, we can be
+sure Nginx is blocked at open. On average, we have been main_arena. Every heap chunk allocated via malloc,
+able to locate open by inspecting under 50 blocked system calloc, or realloc is prefixed with metadata containing a
+calls. The pseudocode for profiling open is shown in Fig 5. pointer back to the main_arena bin it came from. We take
+advantage of this to locate a pointer into main_arena.
+GET /4a7ed3b71413902422846 HTTP/1.1
+Startingfromthesmallestpointerinourbinofheappointers,
+we collect 8-byte values from a 20 page range of the heap. We
+3) Profiling _IO_new_file_overflow: We profile
+then filter out values unlikely to be pointers.
+_IO_new_file_overflow by taking advantage of glibc’s
+implementation of the stdio FILE type. Every FILE Our criteria for discarding non-pointers is described below.
+contains a file descriptor, pointers to the file’s buffers,
+1) Discard all values that are not multiples of 8
+and a table of function pointers to various file operations.
+2) Discard all values greater than 0x7FFFFFFFFFFF
+_IO_new_file_overflow is included among these func-
+3) Discard all values less than 0x1000
+tion pointers. By locating a valid FILE, we can easily locate
+_IO_new_file_overflow as the ordering of functions
+Finally, we partition the remaining values into bins of size
+withinthetableisfixed.FindingavalidFILEpointerinNginx
+0x100000. The most common pointer of the largest bin will
+proved to be a challenge as Nginx uses file descriptors instead
+be a pointer into main_arena. This is due to most chunks
+of FILE pointers. In this situation, scanning the stack will not
+of the heap being allocated out of the same bin.
+yield a pointer to a valid FILE object. To overcome this, we
+locate glibc’s FILE for the standard output stream stdout. Now that we have a pointer into glibc’s data section we
+stdout is a global variable and is always automatically can search for stdout. We identify stdout by scanning
+initializedonstartup.Sincestdoutisaglobalvariabledefined backwards from main_arena, and looking for a region
+by glibc, it is located in glibc’s data segment. Due to ASLR, that is both a valid FILE and has the value 1 for its
+the location of glibc’s data segment cannot be known a priori; underlying file descriptor. At this point, the location of
+nor can it be directly inferred from the address of the stack. _IO_new_file_overflow can be trivially read off of
+Additionally, Nginx does not keep many pointers to glibc stdout.
+74)CorruptingtheNginxTaskQueue: ThemainloopforNg- oblivious,butfurtherstepsbuiltontopofitcantakeadvantage
+inxworkerthreadsislocatedinngx_thread_pool_cycle. of conventional ROP or even code injection techniques (after
+All new worker threads spin in this loop, checking if new tasks disabling W⊕X) for ease of implementation.
+have been added to their work queue. A simplified version of
+this loop is presented below: B. Nginx Attack 2
+for (;;) { We now illustrate the generality of our techniques by
+task = queue_get(tp->task_queue); performing a second attack against Nginx that both (1) targets
+task->handler(task->ctx, tp->log); different functions and (2) corrupts a different call site.
+}
+This attack relies on invoking Nginx’s master process loop
+from anattacker-controlledworkerin order totrigger a specific
+To carry out the attack, we leverage our MLR technique.
+signal handler and cause arbitrary process execution. There are
+We craft a fake task structure in the region of the stack that
+three phases to this attack:
+originally contained Nginx’s environment variables. At startup
+Nginx copies these to a new location and the original location 1) Use profiling to get the address of the master process
+goes unused. loop.
+We initialize our fake task such that task->handler 2) Use MTB to corrupt a function pointer to point at the
+points to open and task->ctx points to master process loop.
+html/index.html. We also modify tp->log to 3) Set global variables via MTB to cause the master
+be equal to (O_DIRECT | O_SYNC | O_WRONLY | process loop to call exec under attacker-chosen
+O_TRUNC). While this invalidates the tp->log pointer, in parameters.
+practice, threads do not log unless Nginx is compiled in debug
+Forthesakeofbrevity,wedescribethedetailsofthisattack
+mode. When the worker thread executes this task, it will
+in Appendix A.
+open the file in O_DIRECT mode, allowing us to perform an
+FDMA attack.
+C. Apache Attack
+Once we have our fake task structure, we can append it to
+Finally, we describe an attack using similar techniques
+the task queue and wait for Nginx to execute the task. In most
+against the Apache HTTP Server. While previous attacks have
+cases, this happens instantaneously, so after a few seconds we
+focused on Nginx, MTB and profiling are general and can be
+can be confident our call has occurred. We repeat this process
+applied to other targets. Arbitrary process execution can be
+100 times so that there will be at least 100 file descriptors in
+achieved on the Apache web server using a similar approach:
+O_DIRECT mode opened by the Nginx process.
+Forthecallto_IO_new_file_overflow,webeginby 1) Use profiling to find the indirect code pointer of the
+creating a fake FILE that matches stdout except for the exec-like function ap_get_exec_line.
+following fields: 2) Use MTB to corrupt a function pointer to point at
+ap_get_exec_lineandcauseanexeccallunder
+1) file->file__fileno = 75 attacker control.
+2) file->file_IO_write_base =
+file->vtable->__overflow & 0xFFF Forthesakeofbrevity,wedescribethedetailsofthisattack
+3) file->file_IO_write_ptr = in Appendix B.
+file->file_IO_write_base + 0x1000
+4) file->file_IO_read_end = All exploits succeeded in control hijacking while Apache
+file->file_IO_write_base and Nginx were protected by full-featured Readactor. Note
+that Turing completeness is trivially provided if the inputs to
+Next,wemodifyourfaketasksuchthattask->handlerpoints exec() or system() can be compromised. An example of
+to_IO_new_file_overflowandtask->ctxpointstoourfake this is in Nginx Attack 2, where we leverage an exec() call
+FILE. We also modify tp->log to be -1 EOF. This will cause
+made by Nginx to execute a reverse shell written in python.
+_IO_new_file_overflow to think the write buffer overflowed
+just as the end of the file was reached, so it will immediately flush
+the buffer via a write. Once we have crafted our fake arguments V. GENERALITYOFAOCRATTACKS
+we append the fake task to the task queue and wait for the task
+The sophisticated exploitation techniques discussed in this
+to be executed. Conceptually _IO_new_file_overflow will be
+papermayprovidetheimpressionthatopportunitiesforsuchex-
+executing the equivalent of the following code:
+ploits are rare. We argue that, in fact, the exploitable constructs
+write(75,\_IO\_FILE\_Overflow & ˜0xFFF, 0x1000); are very common in real-world code bases. Code pointers
+are extremely common in any production-level application or
+Whichresultsinadumpfromexecuteonlymemoryintothe
+server, so the opportunities for leaking indirect code pointers
+file html/index.html. We can then retrieve this page of
+are almost certainly present too. It is also a common idiom in
+code by sending GET /index.html HTTP/1.1. We now
+C to pass around structs filled with function pointers as a way
+havethecontentsofapageofcodeataknownlocationandthat
+to perform dynamic dispatch, which also provides additional
+can be reused in arbitrary ways. If necessary, we can perform
+code pointers.
+this as many times as we want to leak more pages of memory.
+Note that this is an optional and additional step to the initial We also argue that the MTB technique used to facilitate
+exploit detailed above. The initial exploit is completely address the exploits is both optional and surprisingly easy to find.
+8A. Necessity of MTB VI. X-ONLYIMPLEMENTATIONCHALLENGES
+Upuntilthispoint,weassumedanidealandcomprehensive
+In our exploits, we leveraged MTB to simplify the identifi-
+implementation of execute-only memory that our AOCR
+cation of the open() callstack. MTB allowed us to assume
+attack can bypass. However, actually achieving such an ideal
+that at the time of our probe Nginx or Apache was blocked
+and comprehensive implementation is surprisingly difficult in
+immediately before a system call, reducing the set of possible
+practice.Leakycodepointerprotectionisnottheonlychallenge
+callstacks to less than 10 and providing unlimited time to read
+facing code randomization defenses. Modern operating systems
+the stack. This allowed us to profile a pointer to the open()
+such as UNIX-based systems provide a myriad of facilities
+system call in seconds.
+that can potentially leak protected memory to an attacker. In
+While MTB makes profiling substantially easier, it is not this section, we briefly discuss two such vectors that are hard
+required to successfully perform such an attack. The attack to mitigate and are in fact unprotected in the execute-only
+can succeed even if the targeted thread was still running. defenses that we studied. The first, Direct Memory Access
+However, instead of having to identify the open() callstack (DMA), offers attackers the potential to bypass execute-only
+out of approximately 10 possibilities, the attacker would have protectionbyabusingmemoryaccessandleakingcodedirectly.
+to identify it out of potentially hundreds of possibilities. To UnlikerelatedworkthatfocusesonabusingDMAviamalicious
+quantify the difficulty of such an attack we captured a sample hardware devices, we discuss an attack that is a form of the
+of stack traces, and analyzed whether an attacker is still able confused deputy attack through which an application can fool
+to identify a targeted function call. the system to make malicious DMA requests on its behalf
+using software-only attacks. The second vector is the proc
+Therefore, we ran Nginx under Linux perf tools in filesystem in Linux that can potentially leak information about
+sampling mode, and captured 2,500 samples of the callstack execute-only memory. Preventing this vector is hard because
+(approximately 200 unique) over a period of 10 seconds. Of disabling it would break many benign applications.
+those2,500sampledcallstacks,about12samples(∼0.5%)were
+If these vectors are available, an attacker can use them
+the targeted open() callstack from our attack. Without MTB,
+to leak code pages directly, and does not have to resort to
+the application might modify the stack during a probe. An
+AOCR techniques. We discuss them here to further illustrate
+attacker can tolerate this by repeating the probes to confirm the
+thechallengesofeffectivelypreventingCRAattacksincomplex,
+results.Giventhissmalladjustment,wefoundthatourprofiling
+modern systems.
+attack (see Section III-A) is still effective in identifying the
+open() callstacks without generating false-positives.
+A. Forged Direct Memory Access Attack
+Execute-only defenses protect code pages from direct read
+accessesbyapplyingadditionalpermissionstomemorypagesin
+B. Applicability of MTB
+software [3] or hardware [15, 22]. This enforcement, however,
+applies only to regular memory accesses (i.e., TLB-mediated).
+WhileMTButilizesmutexestoexertcontroloveratarget,it
+Accesses performed by devices capable of Direct Memory
+isimportanttonotethatthisdoesnotmeanaprogramneedsto
+Access (DMA), e.g., GPUs, disk drives, and network cards, do
+relyonmutexestobevulnerabletoMTB.Infact,inourexploits,
+not undergo translation by the MMU and are unaffected by
+we do not target a mutex used by Nginx. Instead we target a
+page permission. We call these accesses “non-TLB-mediated.”
+mutex used by glibc. Due to the use of mutexes by glibc to
+implement POSIX compliance, any application that both (1) is TheideaofexploitingsystemsviaDMAiswellstudied,es-
+multithreadedand(2)performsI/Oispotentiallyvulnerable.As peciallyinthecontextofDMA-capableinterfaceswithexternal
+threadsareusedtoperformI/Owithoutblockinganapplications connectors, e.g., IEEE 1394 “Firewire” and Thunderbolt.
+execution, this makes MTB applicable to a very large variety
+Asdescribedinthethreatmodel(SectionII),wearemainly
+of server applications. In fact, on Linux, performing I/O on
+concerned about a remote attacker. For that, the attacker must
+threads is essentially the only way to achieve non-blocking file
+beabletoperformsoftware-basedDMAfromauserspaceappli-
+I/O (Nginx claims performance improvements of up to 9x by
+cation. Typically, user space applications cannot directly make
+simply enabling threaded I/O).
+requests to DMA-capable devices. However, some user space
+functionality is implemented via the kernel requesting a device
+Furthermore, it is not necessary for an application to
+to perform DMA against a userspace-controlled address. Ex-
+be explicitly multi-threaded. There are many situations in
+amples of this include OpenCL’s CL_MEM_USE_HOST_PTR
+which application frameworks make use of threads internally,
+flag and Linux’s O_DIRECT flag.
+unbeknownst to the application. Examples of this include (1)
+libuv: the framework for asynchronous I/O. Used in projects AnattackercanuseLinux’sO_DIRECTflagtomaliciously
+such as node.js and the Julia language, libuv implements request software-based DMA to bypass execute-only memory
+all file operations via a thread pool; (2) OpenJDK: the permissions, thus alleviating the need for compromised pe-
+open source implementation of the Java Platform, Standard ripheral devices or hardware attacks. We call such an attack
+Edition. OpenJDK implements asynchronous I/O via a thread a Forged DMA (FDMA) attack which is a form of confused
+pool; (3) glibc: the POSIX asynchronous I/O functions (e.g. deputyattack,andbrieflydemonstrateitsfeasibility.Thenovelty
+aio_read())areimplementedwithglibc-internalthreadsand of FDMA is its broad applicability remotely and from user
+mutexes. Thus, even seemingly single-threaded applications space applications. Unlike well-studied DMA attacks such the
+may be vulnerable simply due to underlying frameworks one used in bypassing Xen [62], FDMA does not require a
+creating threads. malicious device or kernel permissions.
+9Applications that use the O_DIRECT flag natively are directly leaks the executable regions. Note that even when the
+vulnerable to our FDMA attack. More surprisingly though, vulnerability does not allow arbitrary file reads, the procfs
+even applications that never use the O_DIRECT flag, but pass attack can be mounted by performing a data-only corruption
+theflagstofilereadorwriteoperationsthroughaflagsvariable on any file read operation.
+residing in data memory are also vulnerable to this attack. An
+The procfs attack also allows a leakage of the actual
+attacker can perform a simple data-only attack to maliciously
+code pointers followed by a traditional ROP attack, without
+change the flag variable to O_DIRECT in order to force a
+requiring the sophistication of an AOCR attack.
+regular file operation to become a DMA access.
+Because procfs is baked into the Linux ecosystem as the
+We investigated the prevalence of direct I/O and flags vari-
+needed native interface for many system utilities and programs,
+ables is in popular real-world software packages. Our analysis
+removing or otherwise blocking access to it would disrupt a
+focused on Internet-facing web servers (AOLserver, Apache,
+major kernel API and break a Linux distribution. Fundamental
+Boa, lighttpd, Nginx, OpenSSH, Squid, and Firebird) due to
+Linux command-line tools depend on access to procfs, most
+their exposure and database managers (Hypertable, MariaDB,
+notably free, kill, pkill, pgrap, pmap, ps, pwdx,
+Memcached, MongoDB, MySQL, PostgreSQL, Redis, and
+skill,slabtop,snice,sysctl,tload,top,uptime,
+SQLite) due to their focus on fast I/O. The results indicate that
+vmstat, w, and watch. Similarly, additional programs in
+the majority of web servers and database managers (13 out of
+GNU coreutils and binutils, and the util-linux package make
+16) do not natively use the O_DIRECT flag; however, 10 out
+use of procfs. Debuggers like gdb and system monitoring
+of 16 of them (AOLserver, Nginx, OpenSSH, Squid, Firebird,
+tools like nmon are among the many other programs reliant
+Hypertable, MongoDB, MySQL, PostgreSQL, and SQLite) use
+upon the continued functionality of procfs.
+variables to store flags that can be corrupted by an attacker
+to set the O_DIRECT flag. As such, an attacker can use an The exposed nature of procfs has long been recognized
+FDMA attack in these applications to read execute-only code and attacks proposed to exploit it especially with regard to
+pages to build a conventional ROP attack even in the presence differential privacy [30, 64]. Although it cannot be removed
+of execute-only defenses. The FDMA attack would obviate entirely due to the above-mentioned concerns, some defenses
+the exploit, and does not require an AOCR attack to bypass have attempted to restrict access to procfs. For example,
+execute-only memory permissions. GRSecurity’s kernel patchset [55] has several configuration
+options to restrict access to procfs entries by user or group,
+with the intent that different critical processes can run as
+B. Procfs Attack
+different users and be unable to compromise other processes.
+The proc filesystem is another implementation challenge One recent defense [63] proposes falsifying information in
+that can obviate execute-only bypasses. procfs to mitigate other types of attacks.
+The proc filesystem is a file-like structure that contains However, these defenses focus on blocking other processes’
+information about each process. It is implemented for a variety access to the procfs of a given process; they do not prevent
+of UNIX-like operating systems [20, 32]. In this paper, we access by a process to its own procfs entry set, and any
+focus on the Linux implementation of procfs [10]. finer-grained procfs restriction by username would result
+in breaking benign applications. As such, effectively securing
+The Linux kernel creates a directory for each process that
+procfswithoutbreakingbenignapplicationsremainsanopen
+canbeaccessedvia/proc/<process id>/.Processescan
+research problem.
+accesstheirowndirectoryvia/proc/self/.Thefileswithin
+the procfs directory are, for the most part, treated in the
+VII. IMPACTONLEAKAGE-RESILIENTDEFENSES
+samewayasanyotherfileinafilesystem.Theyhaveownership
+settings and assigned permissions, and are accessed via the Defenses that do not provide leakage resilience are trivially
+same mechanisms as any other file. Through them, a wealth vulnerable to AOCR and weaker forms of information leakage.
+of information about the process is made available: details Therefore, we focus on those that offer (some) resilience.
+about program invocation, processing status, memory access,
+Direct leakage refers to attacks that read code pages, while
+file descriptors, networking, and other internal details.
+indirect leakage refers to attacks that leak code addresses
+Several of the procfs files (e.g., auxv, maps, from the stack or heap during execution. Since AOCR attacks
+numa_maps, pagemaps, smaps, stat, syscall, leak hidden or indirection (e.g., trampoline) pointers indirectly
+exe, stack, and task) include memory addresses that from the stack or heap, they are a form of indirect leakage
+reveal information about the randomized code layout. The attacks. Also, since non-TLB-mediated leakages directly read
+mem file even allows direct disclosure of the process memory code pages (using mechanisms not protected by memory
+regardless of memory permissions. permissions), they are a form of direct information leakage.
+Accordingly, there are four sub-classes of information leakage:
+To carry out a procfs attack, the attacker needs to (1)
+direct leakage via TLB-mediated code reads, direct leakage
+discover the location of a suitable piece of executable memory,
+via non-TLB-mediated code reads, indirect leakage of code
+and (2) leak executable memory directly by corrupting the
+pointers, and indirect leakage of indirect code pointers.
+filename argument to a file read operation. The maps and
+smaps files provide, among other things, the starting and Our attacks are applicable to randomization defenses
+ending addresses of each mapped memory region, along with regardless of the granularity or type of randomization. For
+that region’s memory permissions and the file (if any) with example, various randomization defenses propose library-level,
+which the region is associated. After that, reading the mem file function-level, or instruction-level randomization approaches.
+10TABLEI. DEFENSESPROTECTINGAGAINSTDIFFERENTCLASSESOFINFORMATIONLEAKAGEATTACKS
+DirectLeaks IndirectLeaks
+TLB-Mediated Non-TLB-Mediated CodePointerLeaks IndirectCodePointerLeaks
+Defenses
+(e.g.,bufferover-read[56]) (e.g.,DMA§VI) (e.g.,Retaddr.leak[17]) (e.g.,AOCR§III)
+PointGuard[14]
+Oxymoron[4]
+Isomeron[17]
+XnR[3]
+HideM[22]
+Readactor[15,16]
+Heisenbyte[58]
+NEAR[61]
+ASLR-Guard[38]
+TASR[7]
+InAOCR,weabuseandchainindirectcodepointerstoachieve Nginx.
+control-flow hijacking. Regardless of how the underlying code
+Heisenbyte [58] and NEAR [61] prevents executable region
+has been randomized, as long as the semantics remain intact,
+leakages by making any code-area read destructive. Therefore,
+our profiling attack remain applicable. In attacks that use
+thesetechniquescanonlymitigateTLB-mediateddirectleakage.
+implementationchallenges(FDMA),theexactcontentsofcode
+Non-TLB-mediated memory accesses do not cause a byte
+pages are read (via non-TLB-mediated accesses), so regardless
+destruction; thus, they are not mitigated. Indirect leakages
+of the how intrusive the randomization is, we can disclose the
+also remain possible because code pointers are not protected
+randomized code and perform a conventional ROP attack.
+in any way.
+TableIsummarizesleakage-resilientrandomizationdefenses
+ASLR-Guard [38] provides leakage resistant ASLR by
+and their vulnerabilities to various types of attacks. We briefly
+decoupling code and data, storing code locators in a secure
+discusseachdefenseandhowourattacksapplyinthefollowing.
+region of memory, and encrypting code locators that are stored
+PointGuard [14] protects all pointers stored in memory by in observable memory. As a result, code locators themselves
+masking them with an XOR key. It therefore prevents leakage cannot leak because they are encrypted whenever placed in
+of code addresses via pointers. However, indirect leakage of regular memory. However, the encrypted forward pointers can
+encrypted pointers and direct leakage attacks remain possible. be profiled and reused by an attacker. This is hinted at in the
+paperitself:“...attackersmayreused[sic]theleakedencrypted
+Oxymoron [4] attempts to prevent JIT-ROP attacks by codelocatorstodivertcontrolflow.”Directcodereads,whether
+adding a layer of indirection to instructions such as branches they are through TLB (e.g., buffer over-reads) or not, also
+that reference other code pages. While Oxymoron thwarts the remain possible in ASLR-Guard.
+recursive disassembly step of the original JIT-ROP attack, it
+does not protect all pointers to code. Davi et al. [17] show an TASR [7] re-randomizes code regions at every I/O system
+attack against Oxymoron, exploiting indirect address leakage. call pair to mitigate any potential information leakage. It also
+They then propose Isomeron that combines execution-path fixes the code pointers on the stack and heap for every re-
+randomizationwithcoderandomizationtobuildindirectleakage randomization. It can potentially mitigate all classes of remote
+resistance.Neitherofthesetechniquespreventdirectcodereads. leakage attacks, but it requires source code for compilation
+and it cannot mitigate leakages within the application boundary
+XnR [3] and HideM [22] perform permission checks on (e.g., in JIT-ROP attacks).
+memory accesses to implement execute-only, thus preventing
+TLB-mediated code reads. They, however, do not check non-
+VIII. MITIGATINGADDRESS-OBLIVIOUSCODEREUSE
+TLB-mediated code reads. They are also vulnerable to indirect
+leakage attacks, since code pointers are not hidden or protected Since AOCR attacks induce unintended control flows,
+in any way during execution. Leakage of return addresses or enforcing control-flow integrity is one way to mitigate them.
+functionpointersfromthestackorheapremainspossibleduring Isolating indirect code pointers using code-pointer integrity is
+execution. another option. These mitigations, however, come with their
+own set of performance and security challenges, so we only
+Readactor [15] utilizes Extended Page Table permissions to
+consider ways to extend leakage-resilient diversity to counter
+enforceexecute-onlypermissionandaddsalayerofindirection
+AOCR in this section.
+(trampolines) to prevent indirect leaks. Therefore, it prevents
+TLB-mediated direct code reads and indirect leaks of code Although our variant of code reuse is oblivious to the code
+pointers (e.g., return addresses and function pointers). Its layout, it is not oblivious to the data layout. In particular, it
+permissions, however, do not apply to non-TLB-mediated makes assumptions on the layout of structures as well as the
+accesses as demonstrated in Section VI. Moreover, leakage layoutofglobalvariables.Therefore,onemightarguethatthese
+of trampoline pointers (i.e., indirect code pointers) are possible areas need randomization too. Techniques to do so are well
+as demonstrated by our AOCR attack against Apache and known in the literature [13, 23, 36]. However, this would not
+11preventadversariesfromreadingandwritingthedatastructures motivatedfine-graineddiversityapproaches[34]thatrandomize
+after diversification so our attacks could, at least in theory, be at the level of individual code pages [4], functions [31], basic
+extended to leak the data layout. blocks [60], or single instructions [25, 27, 45]. The emergence
+of JIT-ROP [53] and side-channel attacks [5, 28, 48] that
+Perhaps a better strategy is to extend the code pointer
+directly or indirectly disclose the randomized code layout
+indirection layer with an authentication step to prevent misuse.
+undermined the assumption that these finer-grained diversity
+Onewaytoinstantiatethisideaistohaveeverycallingfunction
+techniques address the shortcomings of ASLR [26]. These
+store a cookie in a register before using an indirect pointer and
+findings led to work on leakage-resilient code randomization
+have the callee function check the register for the expected
+defenses. We already discussed these defenses and how their
+cookie value (after which the cookie register must be cleared
+security is impacted by AOCR attacks in Section VII. For the
+to avoid spills to the stack [35]). Cookies would simply be
+sake of brevity, we do not repeat that discussion here.
+random values stored as immediate operands in execute-only
+code to prevent leakage. This scheme would prevent abuse Davi,etal.[17]demonstratedthefirstattackagainstleakage-
+of trampolines for direct calls but would not prevent abuse resilient diversity approaches. In particular, they showed that
+of indirect calls or returns because we may not know their execute-only memory (on its own) does not provide sufficient
+control-flow targets at compile time [19]. protection against all JIT-ROP attacks. This inspired subse-
+quent work on code pointer hiding [15, 38]. Maisuradze, et
+To protect indirect calls and returns from abuse, we can
+al.[39]thendemonstratedthatthepredictabilityofdynamically
+still verify that the function pointer used in an indirect call or
+compiled code provides another way to bypass execute-only
+return was correctly stored and not forged without having to
+defenses without directly disclosing the code. However, our
+compute the control-flow graph at compile time. To do so, we
+AOCR attacks are strictly more powerful as none of these
+can leverage the recently proposed cryptographically-enforced
+earlier attacks are fully oblivious to the code layout. The attack
+control flow integrity, CCFI, technique by Mashtizadeh, et
+by Davi, et al., requires that the code is either readable or that
+al. [40]. In Readactor, an indirect code pointer is simply the
+the code is not randomized below the page level. The attack by
+address of the forward trampoline; to prevent AOCR, we can
+Maisuradze, et al. assumes that i) pointers into JIT compiled
+associate each indirect pointer and return address with a hash-
+code are not protected against indirect leakage, and ii) that
+basedmessageauthenticationcode,HMAC.Notethatifweuse
+JIT compiled code is not randomized below the function level.
+thestoragelocationoftheindirectcodepointer(nottheaddress
+Since we only rely on the high-level semantics of the code, our
+itpointsto)asinputtotheHMACfunction,copyingtheindirect
+bypass is not even stopped by instruction-level randomization.
+pointer from one storage location to another (as our AOCR
+requires) will cause the HMAC check to fail. CCFI uses an In work closely related to ours, Snow, et al. [54] evaluated
+128-bit AES-based HMACs and stored the AES key in SIMD the effectiveness of leakage-resilience techniques relying on
+registers. This led to high performance overheads (52% on destructivereadssuchasHeisenbyte[58]andNEAR[61].Their
+averageonSPECCPU2006),especiallyrelativetoconventional main finding was that destructive reads can be bypassed using
+CFI approaches, but has the undeniable advantage of enforcing socalledconstructivereloads.Suchreloadsexploitthefactthat
+a very precise CFI policy without the need for complicated and multiplecopiesofthesamecodeareoftenloadedintothesame
+brittle static analysis. Moreover, future hardware will likely process which means that adversaries can disclose one copy
+include hardware support for protection of return addresses, and reuse code from another, thereby avoiding any gadgets
+whichwouldsimplifyourtasktoprotectionofforwardpointers. destroyed by adversarial reads. However, the constructive read
+techniques are limited to bypassing leakage-resilience defenses
+Ourworkaddstothegrowingbodyofevidenceshowingthat
+relying on destructive reads while our techniques generalize to
+it is nigh impossible to avoid all types of information leakage.
+all of the defenses listed in Table I.
+If given the choice between randomizing more implementation
+aspects or incorporating (or switching to) enforcement-based Gawlik,etal.[21]reportedthatthesecurityassumptionsof
+mitigations,thelatterseemslikeabetterchoicew.r.t.attainable leakage-resilientdefensescanbeweakenedbyusingcrashresis-
+security. Enforcement-based mitigations also have important tant exploitation primitives. These primitives allow adversaries
+practical advantages in that they naturally do not interfere to scan memory without crashing when trying to read execute-
+with code signing, distribution, memory de-duplication, or only memory or accessing unmapped memory. However, as
+debugging; code diversity engines must be carefully designed the authors note, crash-resilience techniques cannot bypass the
+to avoid interference in these areas. Readactor++ [16] system, unlike our AOCR attacks.
+Go¨ktas¸, et al. [24] demonstrated that malicious thread
+IX. RELATEDWORK
+spraying can, in certain instances, be used to find even very
+Our work mainly relates to memory corruption vulnera- small hidden memory regions associated with a particular
+bilities and mitigation thereof. The literature in these areas thread (the safe stack). However, malicious thread spraying
+is vast. We refer the interested reader to the relevant sur- does not disclose the code layout in our threat model since
+veys [12, 34, 43, 52, 57] and focus on closely related work. we assume perfect use of code pointer hiding and fine-grained
+randomization.
+Early work on the effectiveness of ASLR found that 32-
+bit address spaces do not allow sufficient entropy in the Memorydeduplicationbetweenprocessesorbetweenvirtual
+layout to prevent brute force guessing [51]. A decade later, it machines in a public cloud poses another threat to information
+became clear that not even 64-bit ASLR implementations are hiding. Early work demonstrated how to leak the base address
+impervioustobrute-forceattacks[8]andexploitsnowroutinely of 64-bit ASLR in a cloud environment [5]. Subsequent work
+bypass ASLR using a variety of techniques [42, 49, 56]. This showed how to leak entire pages [9, 46]. These techniques
+12rely on timing side channels induced by the copy-on-write [5] A.Barresi,K.Razavi,M.Payer,andT.R.Gross. CAIN:Silently
+semantics of deduplicated, writable pages and thus do not help Breaking ASLR in the Cloud. In WOOT, 2015.
+leak the contents of read-only or execute-only memory pages. [6] V. Bartenev. Thread pools in nginx boost perfor-
+mance9x,2015,https://www.nginx.com/blog/thread-pools-boost-
+performance-9x/.
+X. CONCLUSION
+[7] D. Bigelow, T. Hobson, R. Rudd, W. Streilein, and H. Okhravi.
+In this paper, we evaluated the effectiveness of leakage- Timely rerandomization for mitigating memory disclosures. In
+resilient code randomization. We presented a generic class ACM Conference on Computer and Communications Security,
+of attacks, Address-Oblivious Code Reuse (AOCR), that can CCS, 2015.
+bypass ideal execute-only defenses including the state-of-the [8] A. Bittau, A. Belay, A. J. Mashtizadeh, D. Mazie`res, and
+D. Boneh. Hacking blind. In 35th IEEE Symposium on Security
+art system, Readactor, and showed two new attack techniques
+and Privacy, S&P, 2014.
+to facilitate AOCR. We demonstrated that AOCR is a realistic
+[9] E. Bosman, K. Razavi, H. Bos, and C. Giuffrida. Dedup est
+threat with three concrete attacks against Nginx and Apache.
+machina: Memory deduplication as an advanced exploitation
+Wealsodiscussedtwoimportantimplementationchallengesthat vector. In 37th IEEE Symposium on Security and Privacy, 2016.
+practitioners must address to correctly deploy leakage-resilient [10] T. Bowden, B. Bauer, J. Nerin, S. Feng, and S. Seibold. The
+defenses. /proc filesystem. Linux Kernel Documentation, 2009.
+[11] K.Braden,S.Crane,L.Davi,M.Franz,P.Larsen,C.Liebchen,
+Our findings add to the mounting body of evidence that
+and A.-R. Sadeghi. Leakage-resilient layout randomization for
+preventinginformationleakswithoutaddressingtherootcauses
+mobiledevices. In23rdAnnualNetworkandDistributedSystem
+of memory corruption vulnerabilities is fiendishly hard if not Security Symposium, NDSS, 2016.
+downright impossible. As long as the adversaries can observe [12] N.Burow,S.A.Carr,S.Brunthaler,M.Payer,J.Nash,P.Larsen,
+andswapcodepointers(ortheirencrypted/indirectequivalents), and M. Franz. Control-flow integrity: Precision, security, and
+code reuse attacks remain possible. Our main contribution is performance. CoRR, abs/1602.04056, 2016.
+to show, for the first time, that such attacks can be constructed [13] P. Chen, J. Xu, Z. Lin, D. Xu, B. Mao, and P. Liu. A practical
+withoutanyknowledgeoftherandomizedcodeaddresses.Thus, approach for adaptive data structure layout randomization. In
+20th European Symposium on Research in Computer Security,
+we conclude that i) the research community is running up
+ESORICS, 2015.
+against the limits of leakage-resilient diversity techniques and
+[14] C. Cowan, S. Beattie, J. Johansen, and P. Wagle. Pointguard:
+that ii) enforcement techniques seem like the most attractive
+protecting pointers from buffer overflow vulnerabilities. In 12th
+way to further raise the bar against exploitation.
+USENIX Security Symposium, USENIX Sec, 2003.
+[15] S. Crane, C. Liebchen, A. Homescu, L. Davi, P. Larsen, A.-R.
+ACKNOWLEDGMENTS Sadeghi, S. Brunthaler, and M. Franz. Readactor: Practical code
+randomization resilient to memory disclosure. In 36th IEEE
+This material is based upon work partially supported by
+Symposium on Security and Privacy, S&P, 2015.
+the Defense Advanced Research Projects Agency (DARPA)
+[16] S. Crane, S. Volckaert, F. Schuster, C. Liebchen, P. Larsen,
+under contracts FA8750-15-C-0124, FA8750-15-C-0085, and L.Davi,A.-R.Sadeghi,T.Holz,B.D.Sutter,andM.Franz.It’sa
+FA8750-10-C-0237, by the National Science Foundation under TRaP:Tablerandomizationandprotectionagainstfunction-reuse
+award number CNS-1513837 as well as gifts from Mozilla, attacks. In ACM Conference on Computer and Communications
+Oracle and Qualcomm. Security, CCS, 2015.
+[17] L.Davi,C.Liebchen,A.-R.Sadeghi,K.Z.Snow,andF.Monrose.
+Any opinions, findings, and conclusions or recommenda-
+Isomeron: Code randomization resilient to (Just-In-Time) return-
+tions expressed in this material are those of the authors and orientedprogramming. In22ndAnnualNetworkandDistributed
+do not necessarily reflect the views of the Defense Advanced System Security Symposium, NDSS, 2015.
+Research Projects Agency (DARPA), its Contracting Agents, [18] I. Evans, S. Fingeret, J. Gonzalez, U. Otgonbaatar, T. Tang,
+the National Science Foundation, or any other agency of the H. Shrobe, S. Sidiroglou-Douskos, M. Rinard, and H. Okhravi.
+U.S. Government. Missing the point(er): On the effectiveness of code pointer
+integrity. In 36th IEEE Symposium on Security and Privacy,
+This work was supported in part by the German Science S&P, 2015.
+Foundation (project S2, CRC 1119 CROSSING), the European [19] I. Evans, F. Long, U. Otgonbaatar, H. Shrobe, M. Rinard,
+Unions Seventh Framework Programme (609611, PRACTICE), H. Okhravi, and S. Sidiroglou-Douskos. Control jujutsu: On
+and the German Federal Ministry of Education and Research the weaknesses of fine-grained control flow integrity. In ACM
+within CRISP. Conference on Computer and Communications Security, CCS,
+2015.
+[20] R.FaulknerandR.Gomes. Theprocessfilesystemandprocess
+REFERENCES
+modelinunixsystemv. InUSENIXTechnicalConference,ATC,
+[1] M.Abadi,M.Budiu,U´.Erlingsson,andJ.Ligatti. Control-flow 1991.
+integrity. InACMConferenceonComputerandCommunications [21] R. Gawlik, B. Kollenda, P. Koppe, B. Garmany, and T. Holz.
+Security, CCS, 2005. Enabling client-side crash-resistance to overcome diversification
+[2] J. P. Anderson. Computer security technology planning study. andinformationhiding. In23rdAnnualNetworkandDistributed
+volume 2. Technical report, DTIC Document, 1972. System Security Symposium, NDSS, 2016.
+[3] M. Backes, T. Holz, B. Kollenda, P. Koppe, S. Nu¨rnberger, and [22] J.Gionta,W.Enck,andP.Ning. HideM:Protectingthecontents
+J. Pewny. You can run but you can’t read: Preventing disclosure of userspace memory in the face of disclosure vulnerabilities.
+exploits in executable code. In ACM Conference on Computer In 5th ACM Conference on Data and Application Security and
+and Communications Security, CCS, 2014. Privacy, CODASPY, 2015.
+[4] M. Backes and S. Nu¨rnberger. Oxymoron: Making fine-grained [23] C. Giuffrida, A. Kuijsten, and A. S. Tanenbaum. Enhanced
+memory randomization practical by allowing code sharing. In operating system security through efficient and fine-grained ad-
+23rd USENIX Security Symposium, USENIX Sec, 2014. dressspacerandomization. In21stUSENIXSecuritySymposium,
+13USENIX Sec, 2012. focus in the blur of moving-target techniques. Security Privacy,
+[24] E. Go¨ktas¸, R. Gawlik, B. Kollenda, E. Athanasopoulos, G. Por- IEEE, 12(2):16–26, Mar 2014.
+tokalidis, C. Giuffrida, and H. Bos. Undermining information [44] A.One. Smashingthestackforfunandprofit. Phrackmagazine,
+hiding (and what to do about it). In 25th USENIX Security 7, 1996.
+Symposium, 2016. [45] V. Pappas, M. Polychronakis, and A. D. Keromytis. Smashing
+[25] J. Hiser, A. Nguyen, M. Co, M. Hall, and J. Davidson. ILR: the gadgets: Hindering return-oriented programming using in-
+Where’d my gadgets go. In 33rd IEEE Symposium on Security placecoderandomization. In33rdIEEESymposiumonSecurity
+and Privacy, S&P, 2012. and Privacy, S&P, 2012.
+[26] T. Hobson, H. Okhravi, D. Bigelow, R. Rudd, and W. Streilein. [46] K. Razavi, B. Gras, E. Bosman, B. Preneel, C. Giuffrida, and
+OntheChallengesofEffectiveMovement. InACMCCSMoving H. Bos. Flip feng shui: Hammering a needle in the software
+Target Defense (MTD) Workshop, Nov 2014. stack. In 25th USENIX Security Symposium, 2016.
+[27] A.Homescu,T.Jackson,S.Crane,S.Brunthaler,P.Larsen,and [47] F. Schuster, T. Tendyck, C. Liebchen, L. Davi, A.-R. Sadeghi,
+M. Franz. Large-scale automated software diversity—program and T. Holz. Counterfeit object-oriented programming: On the
+evolution redux. IEEE Transactions on Dependable and Secure difficulty of preventing code reuse attacks in C++ applications.
+Computing, PP(99):1, 1 2015. Pre-Print. In 36th IEEE Symposium on Security and Privacy, S&P, 2015.
+[28] R.Hund,C.Willems,andT.Holz. Practicaltimingsidechannel [48] J. Seibert, H. Okhravi, and E. So¨derstro¨m. Information leaks
+attacks against kernel space ASLR. In 34th IEEE Symposium without memory disclosures: Remote side channel attacks
+on Security and Privacy, S&P, 2013. on diversified code. In ACM Conference on Computer and
+[29] Intel. Intel 64 and IA-32 architectures software developer’s Communications Security, CCS, 2014.
+manual. ch 28, 2015. [49] F. J. Serna. CVE-2012-0769, the case of the perfect info leak,
+[30] S. Jana and V. Shmatikov. Memento: Learning secrets from 2012.
+process footprints. In 33rd IEEE Symposium on Security and [50] H.Shacham. Thegeometryofinnocentfleshonthebone:return-
+Privacy, S&P, 2012. into-libcwithoutfunctioncalls(onthex86). InACMConference
+[31] C. Kil, J. Jun, C. Bookholt, J. Xu, and P. Ning. Address space on Computer and Communications Security, CCS, 2007.
+layout permutation (ASLP): towards fine-grained randomization [51] H. Shacham, M. Page, B. Pfaff, E.-J. Goh, N. Modadugu, and
+of commodity software. In 22nd Annual Computer Security D. Boneh. On the effectiveness of address-space randomization.
+Applications Conference, ACSAC, 2006. In Proc. of ACM CCS, pages 298–307, 2004.
+[32] T.J.Killian. Processesasfiles. InUSENIXAssociationSoftware [52] R. Skowyra, K. Casteel, H. Okhravi, N. Zeldovich, and
+Tools Users Group Summer Conference, STUG, 1984. W. Streilein. Systematic Analysis of Defenses Against Return-
+[33] V. Kuznetsov, L. Szekeres, M. Payer, G. Candea, R. Sekar, and Oriented Programming. In 16th International Symposium on
+D. Song. Code-pointer integrity. In 11th USENIX Symposium ResearchinAttacks,Intrusions,andDefenses(RAID’13),LNCS,
+on Operating Systems Design and Implementation, OSDI, 2014. pages 82–102, Oct 2013.
+[34] P. Larsen, A. Homescu, S. Brunthaler, and M. Franz. SoK: [53] K. Z. Snow, F. Monrose, L. Davi, A. Dmitrienko, C. Liebchen,
+Automated software diversity. In 35th IEEE Symposium on andA.Sadeghi. Just-in-timecodereuse:Ontheeffectivenessof
+Security and Privacy, S&P, 2014. fine-grained address space layout randomization. In 34th IEEE
+[35] C. Liebchen, M. Negro, P. Larsen, L. Davi, A.-R. Sadeghi, Symposium on Security and Privacy, S&P, 2013.
+S. Crane, M. Qunaibit, M. Franz, and M. Conti. Losing control: [54] K. Z. Snow, R. Rogowski, J. Werner, H. Koo, F. Monrose, and
+Ontheeffectivenessofcontrol-flowintegrityunderstackattacks. M. Polychronakis. Return to the zombie gadgets: Undermining
+InACMConferenceonComputerandCommunicationsSecurity, destructive code reads via code inference attacks. In 37th IEEE
+CCS, 2015. Symposium on Security and Privacy, 2016.
+[36] Z. Lin, R. D. Riley, and D. Xu. Polymorphing software by [55] B. Spengler. Grsecurity. Internet [Nov, 2015]. Available on:
+randomizing data structure layout. In 6th International Confer- http://grsecurity.net, 2015.
+ence on Detection of Intrusions and Malware, and Vulnerability [56] R.Strackx,Y.Younan,P.Philippaerts,F.Piessens,S.Lachmund,
+Assessment, DIMVA, 2009. and T. Walter. Breaking the memory secrecy assumption. In
+[37] K. Lu, S. Nu¨rnberger, M. Backes, and W. Lee. How to Make 2nd European Workshop on System Security, EUROSEC, 2009.
+ASLRWintheCloneWars:RuntimeRe-Randomization. In23rd [57] L. Szekeres, M. Payer, T. Wei, and D. Song. Sok: Eternal war
+Annual Network and Distributed System Security Symposium, in memory. In IEEE Symposium on Security and Privacy, 2013.
+NDSS, 2016. [58] A.Tang,S.Sethumadhavan,andS.Stolfo.Heisenbyte:Thwarting
+[38] K. Lu, C. Song, B. Lee, S. P. Chung, T. Kim, and W. Lee. memorydisclosureattacksusingdestructivecodereads. InACM
+ASLR-Guard: Stopping Address Space Leakage for Code Reuse Conference on Computer and Communications Security, CCS,
+Attacks. InACMConferenceonComputerandCommunications 2015.
+Security, CCS, 2015. [59] V.vanderVeen,E.Goktas,M.Contag,A.Pawlowski,X.Chen,
+[39] G. Maisuradze, M. Backes, and C. Rossow. What Cannot Be S.Rawat,H.Bos,T.Holz,E.Athanasopoulos,andC.Giuffrida.
+Read,CannotBeLeveraged?RevisitingAssumptionsofJIT-ROP A tough call: Mitigating advanced code-reuse attacks at the
+Defenses. In 25th USENIX Security Symposium, USENIX Sec, binary level. In 37th IEEE Symposium on Security and Privacy,
+2016. 2016.
+[40] A. J. Mashtizadeh, A. Bittau, D. Boneh, and D. Mazie`res. [60] R.Wartell,V.Mohan,K.W.Hamlen,andZ.Lin. Binarystirring:
+CCFI:cryptographicallyenforcedcontrolflowintegrity. InACM self-randomizinginstructionaddressesoflegacyx86binarycode.
+Conference on Computer and Communications Security, CCS, InACMConferenceonComputerandCommunicationsSecurity,
+2015. CCS, 2012.
+[41] S. Nagarakatte, J. Zhao, M. M. Martin, and S. Zdancewic. [61] J. Werner, G. Baltas, R. Dallara, N. Otternes, K. Snow,
+SoftBound: Highly compatible and complete spatial memory F. Monrose, and M. Polychronakis. No-execute-after-read:
+safety for C. In ACM Conference on Programming Language Preventing code disclosure in commodity software. In 11th
+Design and Implementation, PLDI, 2009. ACMSymposiumonInformation,ComputerandCommunications
+[42] A. Oikonomopoulos, E. Athanasopoulos, H. Bos, and C. Giuf- Security, ASIACCS, 2016.
+frida. Poking holes in information hiding. In 25th USENIX [62] R. Wojtczuk. Subverting the Xen hypervisor. In Blackhat USA,
+Security Symposium, USENIX Sec, 2016. BH US, 2008.
+[43] H. Okhravi, T. Hobson, D. Bigelow, and W. Streilein. Finding [63] Q. Xiao, M. K. Reiter, and Y. Zhang. Mitigating storage
+14side channels using statistical privacy mechanisms. In ACM the target function’s execution causes an exec under our
+Conference on Computer and Communications Security, CCS, control. This can be achieved via the range of signals that
+2015. Nginx can handle in ngx_master_process_cycle.
+[64] K. Zhang and X. Wang. Peeping tom in the neighborhood: In particular, Nginx provides a new_binary signal used
+Keystrokeeavesdroppingonmulti-usersystems.In18thUSENIX
+to provide rolling updates to a new version of the server
+Security Symposium, USENIX Sec, 2009.
+without compromising availability. This signal handler
+is invoked whenever a global integer variable named
+APPENDIX ngx_change_binary is non-zero. The path to the
+binary is stored in ngx_argv, another global variable. By
+A. NGINXATTACK2DETAILS corrupting the first global value we ensure that an exec
+Nginx’s design employs a master process, which provides call will eventually be made when the log handler pointer is
+signal handling and spawns worker processes to handle dereferenced. By corrupting the latter, we ensure that a binary
+requests via fork calls. This processing loop is implemented of our choice is executed. For example, setting ngx_argv to
+by the ngx_master_process_cycle function, which the values shown in Figure 6 will create a reverse shell bound
+is called from main after Nginx configures itself. The to a chosen IP address (127.0.0.1 in this case).
+trampoline address of this function can be determined
+via profiling after causing a system call to hang. Since
+B. APACHEATTACKDETAILS
+ngx_master_process_cycle forks, worker processes In order to maintain portability across operating systems,
+inherit the parent’s current stack. This includes the return Apache uses its own portable runtime libraries (APR and APR-
+address trampoline of ngx_master_process_cycle. Util) instead of directly calling functions in libc. However,
+Recall that return addresses are replaced with a pointer to a modules may call functions in this library that the base Apache
+trampoline whose code resembles the following: process does not. The build process must ensure that all
+APR functions and related utility libraries are linked during
+call ngx_master_process_cycle compilation whether or not they are explicitly used in the base
+jmp callsite_main code. This is achieved via an exports.c file for each library.
+Each of these files contains function pointers to every function
+The return address points to the jmp instruction. From that inthatlibrary.Theyarelinkedtotheexecutableduringprogram
+address, we can easily derive where the call instruction is compilation, and loaded into the data section of memory on
+located. execution.
+Identifying the relevant return address on the stack is Oneoftheseexportedfunctionsis ap_get_exec_line
+straightforward, as Nginx’s initial execution is predictable. The inApache’sserverutilitylibrary(httpd.h),whichtakesthree
+ngx_master_process_cycleframewillbenearthebase arguments: a pointer to a valid memory pool, a command to
+of the stack, immediately after the main stack frame. run, and the arguments to supply that command. We recover
+the trampoline for this function by profiling while hanging
+Once the address of ngx_master_process_cycle
+execution via MTB. The region of memory containing pointers
+is found, we can take advantage of a function pointer in the
+from exports.c is easily identified, as it contains nothing
+Nginx worker’s log handler. The log_error_core function
+but function pointers (with common higher-order bits) pointing
+contains a pointer to a log handler function taking three
+tofunctionsinonelibrary.Theorderinwhichfunctionpointers
+arguments: p = log -> handler(log, p, last-p).
+aredeclaredinexports.cisdeterministic,sorecoveringthe
+There are multiple system calls in the function prior to the
+pointer for ap_get_exec_line is straightforward.
+pointer being dereferenced during a logging event, which
+enables us to hang the program via MTB and corrupt the Next, we corrupt a function pointer to point to the revealed
+handlertopointinsteadat ngx_master_process_cycle. address. When choosing the pointer, we must ensure that
+In order to prevent a program crash, we must also modify the the parameters passed to ap_get_exec_line are passed
+firstargument(log)toresemblethengx_cycle_texpected correctly,asthisattackdoesnotrelyonglobalvariableslikethe
+by ngx_master_process_cycle. The parameter is not Nginx variant. Additionally, our ability to modify memory is
+used in our attack, so any non-crashing value suffices. limited to the periods surrounding system calls. Only functions
+that pass parameters via pointers to memory addresses are
+ngx_argv[0] = "/usr/bin/python3" viable. Given these criteria we chose to corrupt the errfn
+ngx_argv[1] = "-c" pointer in sed_reset_eval, part of Apache’s mod_sed.
+ngx_argv[2] = "import os,socket,subprocess;
+The errfn pointer is dereferenced in the eval_errf
+s=socket.socket(socket.AF_INET,
+function, which pulls all of its parameters from pointers to
+socket.SOCK_STREAM);
+memory. Similar functions are available in other modules,
+s.connect((\\\’127.0.0.1\\\’,1234));
+[os.dup2(s.fileno(),i) for i in range(3)]; should mod_sed not be available.
+subprocess.call([\\\’/bin/sh\\\’,\\\’-i Finally, we set errfn to point to ap_get_exec_line.
+\\\’]);"
+The first argument pointer is corrupted to point at a valid
+ngx_argv[3] = 0
+apr_pool_tobject,whichtheattacker-controllerworkerwill
+likely already have. (APR pools are used to handle memory
+Fig.6. ReverseShellinNginxwithAOCR
+allocation in Apache.) The second pointer is made to point at
+Once we have pointed the log handler at a string containing the path to a binary of our choice. When
+ngx_master_process_cycle, we must ensure that the errfn pointer is dereferenced, the binary is executed.
+15

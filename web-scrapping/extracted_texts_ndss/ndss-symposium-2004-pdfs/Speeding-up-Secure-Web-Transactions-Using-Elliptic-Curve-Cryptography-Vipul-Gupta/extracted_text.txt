@@ -1,0 +1,527 @@
+Speeding up Secure Web Transactions Using
+Elliptic Curve Cryptography
+VipulGupta,DouglasStebila∗, Stephen Fung*,
+Sheueling Chang Shantz, NilsGura, HansEberle
+Sun Microsystems,Inc.
+2600Casey Avenue
+MountainView,CA 94043
+http://research.sun.com/projects/crypto
+Abstract TheSSLprotocolisapplicationindependent–conceptu-
+ally, any application that runs over TCP can also run over
+SSL. This is an important reason why its deployment has
+Elliptic Curve Cryptography (ECC) is emerging as an outpacedthatofothersecurityprotocolssuchasSSH[32],
+attractive alternative to traditional public-key cryptosys- S/MIME [25] and SET [19]. There are manyexamplesof
+tems(RSA,DSA,DH).ECCoffersequivalentsecuritywith applicationprotocolslikeTELNET,FTP,IMAPandLDAP
+smaller key sizes resulting in faster computations, lower running transparently over SSL. However, the most com-
+powerconsumption,aswellasmemoryandbandwidthsav- monusageofSSLisforsecuringHTTP[11],themainpro-
+ings. WhilethesecharacteristicsmakeECCespeciallyap- tocoloftheWorldWideWeb.2
+pealingformobiledevices,theycanalsoalleviatethecom- Between its conception at Netscape in the mid-1990s,
+putationalburdenonsecurewebservers. through its standardization within the IETF (Internet En-
+ThisarticlestudiestheperformanceimpactofusingECC gineering Task Force) in the late-1990s, the protocol and
+with SSL,thedominantInternetsecurityprotocol. We cre- its implementations have been scrutinized by some of the
+ated an ECC-enhancedversion of OpenSSLandused it to world’s foremost security experts [31]. Today, SSL is
+benchmarkthe Apache web server. Our results show that, trustedtosecuretransactionsforsensitiveapplicationsrang-
+underrealistic workloads, anApachewebserver canhan- ingfromwebbanking,tostocktrading,toe-commerce.
+dle13%–31%moreHTTPSrequestspersecondwhenusing Unfortunately,the use of SSL imposesa significantper-
+ECC-160ratherthanRSA-1024reflectingshort-termsecu- formance penalty on web servers. Coarfa et al. [9] have
+rity levels. At security levelsnecessary to protectdatabe- reported secure web servers running3.4 to 9 times slower
+yond 2010, the use of ECC-224 over RSA-2048 improves comparedtoregularwebserversonthesamehardwareplat-
+serverperformanceby120%–279%. form. Slow response time is a major cause of frustration
+foron-lineshoppersandoftenleadsthemtoabandontheir
+electronic shopping carts during check out. According to
+one estimate, the potential revenue loss from e-commerce
+1. Introduction
+transactionsabortedduetoWebperformanceissuesexceeds
+Secure communicationis an intrinsic requirementof to- severalbilliondollarsannually[33].
+day’s world of on-line transactions. Whether exchanging Initsmostcommonusage,SSLutilizesRSAencryption
+financial, businessorpersonalinformation,peoplewantto to transmita randomlychosen secretthatis used to derive
+knowwith whomtheyarecommunicating(authentication) keys for data encryptionand authentication. The RSA de-
+andtheywishtoensurethattheinformationisneithermodi- cryptionoperationisthemostcomputeintensivepartofan
+fied(dataintegrity)nordisclosed(confidentiality)intransit. SSL transaction for a secure web server. Several vendors
+The Secure Sockets Layer(SSL) protocol[12] is the most such as Broadcom, nCipher, Rainbow and Sun now offer
+popularchoiceforachievingthesegoals.1 specializedhardwaretooffloadRSAcomputationsandim-
+proveserverperformance.
+∗OnastudentinternshipfromtheUniversityofWaterloo. ThispaperexplorestheuseofEllipticCurveCryptogra-
+1Throughout this paper, we use SSL to refer to all versions of the phy (ECC), an efficient alternative to RSA, as a means of
+protocol including version 3.1 also known as Transport Layer Security
+(TLSv1.0)[10]. 2TheuseofHTTPoverSSLisalsoreferredtoasHTTPS.Table1.Acomparisonofpublic-keycryptosystems[30].
+Public-keysystem Examples MathematicalProblem Bestknownmethodfor
+solvingmathproblem
+(runningtime)
+Integerfactorization RSA, Givenanumbern, Numberfieldsieve:
+1/3 2/3
+Rabin-Williams finditsprimefactors exp[1.923(logn) (loglogn) ]
+(Sub-exponential)
+Discretelogarithm Diffie-Hellman Givenaprimen,and Numberfieldsieve:
+1/3 2/3
+(DH),DSA, numbersgandh,findx exp[1.923(logn) (loglogn) ]
+ElGamal suchthath=gx modn (Sub-exponential)
+Ellipticcurve ECDH, GivenanellipticcurveE pPollard-rhoalgorithm:
+discretelogarithm ECDSA andpointsP andQonE, n
+findxsuchthatQ=xP (Fullyexponential)
+improvingSSLperformancewithoutresortingtoexpensive HellmanandDSAcanallbeattackedusingsub-exponential
+specialpurposehardware.ECCwasfirstproposedbyVictor algorithms,butthebestknownattackonECCrequiresex-
+Miller [20] and independentlyby Neal Koblitz [17] in the ponential time. For this reason, ECC can offer equivalent
+mid-1980sandhasevolvedintoa maturepublic-keycryp- securitywithsubstantiallysmallerkeysizes[18].
+tosystem. Compared to its traditional counterparts, ECC Public-keyschemesaretypicallyusedtotransportorex-
+offersthe same level of security using much smaller keys. changekeysforsymmetric-keyciphers. Sincethesecurity
+Thisresultsinfastercomputationsandsavingsinmemory, of a system is only as good as that of its weakest com-
+powerandbandwidththatare especially importantin con- ponent, the work factor needed to break a symmetric key
+strainedenvironments,e.g.mobilephones,PDAsandsmart mustmatchthatneededtobreakthepublic-keysystemused
+cards. More importantly, the advantage of ECC over its for key exchange. Table 2 showsNIST guidelines[23] on
+competitorsincreasesassecurityneedsincreaseovertime. choosingcomputationallyequivalentsymmetricandpublic-
+Recently,theNationalInstituteofStandardsandTechnol- keysizes. Notably,theuseof1024-bitRSAdoesnotmatch
+ogy(NIST)approvedECCforusebytheU.S.government the128-bitoreven112-bitsecuritylevelnowusedforsym-
+[29]. Severalstandardsorganizations,suchasIEEE,ANSI, metric ciphersin SSL, let alone the higher(192-and 256-
+OMA(OpenMobileAlliance)andtheIETF,haveongoing bit)keysizesofferedbyAES[22],NIST’snewreplacement
+effortstoincludeECCasarequiredorrecommendedsecu- forDES.ThisunderscorestheneedtomigratetolargerRSA
+ritymechanism. TheuseofECCwithSSL isdescribedin key sizes in order to deliver the full security of symmet-
+anIETFdraft[14]. Wehaveimplementedthatspecification ricalgorithmswithmorethan80-bitkeys. Recentworkby
+in OpenSSL [24] and created a version of the Apache [4] Shamir and Tromer [26] on integer factorization suggests
+web server capable of handlingHTTPS transactions using that the migration needs to happen sooner than previously
+bothRSAandECC. thoughtnecessary.Theyestimatethataspecializedmachine
+Therestofthispaperisstructuredasfollows. Section2 capableofbreaking1024-bitRSAinunderoneyearcanbe
+provides an overview of ECC technology. Section 3 de- builtfor$10-$50milliondollars. Consequently,RSALab-
+scribes the SSL protocol and its usage of RSA and ECC oratoriesnowconsiders1024-bitRSAtobeunsafefordata
+public-key cryptosystems. Section 4 outlines the experi- thatmustbeprotectedbeyond2010andrecommendslarger
+ments we conducted to compare the performance of RSA keys for longer term protection [15]. At higher key sizes,
+andECC-basedSSL. Section5presentsananalysisofour RSA performance issues become even more acute. Since
+experimental results. Finally, we summarize our conclu- the performance advantage of ECC over RSA grows ap-
+sionsanddiscussfutureworkinSection6. proximatelyasthecubeofthekeysizeratio,wideradoption
+ofECCseemsinevitable.
+2. ECC basics Unlike conventionalpublic-key cryptosystems based di-
+rectlyonfinite-fieldarithmetic,ECCoperatesoveragroup
+At the foundation of every public-key cryptosystem is
+ofpointsonanellipticcurvedefinedoverafinitefield. Its
+a hard mathematical problem that is computationally in-
+maincryptographicoperationisscalarpointmultiplication,
+tractable.Therelativedifficultyofsolvingthatproblemde-
+which computesQ = kP (a point P multiplied by an in-
+terminesthesecuritystrengthofthecorrespondingsystem.
+teger k resulting in another point Q on the curve). Scalar
+Table 1 summarizes three types of well known public-key
+multiplicationisperformedthroughacombinationofpoint-
+cryptosystems. Asshownin the last column,RSA, Diffie-change, 128-bit RC4 for bulk encryption, and SHA for
+Table2.Equivalentkeysizes(inbits).
+hashing.
+Sym- ECC RSA/ MIPSYrs Protection
+ThetwomaincomponentsofSSLaretheHandshakepro-
+metric DH/DSA toattack lifetime
+tocolandtheRecordLayerprotocol.TheHandshakeproto-
+12
+80 160 1024 10 until2010 colallowsanSSLclientandservertonegotiateacommon
+24
+112 224 2048 10 until2030 ciphersuite,authenticateeachother,andestablishashared
+28
+128 256 3072 10 beyond2031 master secret using public-key algorithms. The Record
+47
+192 384 7680 10 Layer derives symmetric keys from the master secret and
+66
+256 512 15360 10 usesthemwithfastersymmetric-keyalgorithmsforbulken-
+cryptionandauthenticationofapplicationdata.
+Since public-key operations are computationally expen-
+additions and point-doublings. For example, 11P can be
+sive, the protocol’s designersadded the ability for a client
+expressed as 11P = (2((2(2P)) + P)) + P. The secu-
+and server to reuse a previously established master secret.
+rity of ECC relies on the difficulty of solving the Elliptic
+This feature is also known as “session resumption”, “ses-
+CurveDiscreteLogarithmProblem(ECDLP),whichstates
+sionreuse”or“sessioncaching”. Theresultingabbreviated
+that given P and Q = kP, it is hard to find k. Besides
+handshake does not involve any public-key cryptography,
+thecurveequation,animportantellipticcurveparameteris
+and requiresfewer and shorter messages. Experimentsin-
+thebasepoint,G,whichisfixedforeachcurve. InECC,a
+dicatethatsessioncachingdoesindeedimprovewebserver
+largerandomintegerkactsasaprivatekey,whiletheresult
+performance[13]. The followingsubsectionsdescribe full
+ofmultiplyingtheprivatekeykwiththecurve’sbasepoint
+andabbreviatedSSLhandshakesusingRSAandECC.
+Gservesasthecorrespondingpublickey.
+SSL allows both client- and server-side authentication.
+Not everyelliptic curve offersstrong security properties
+However, due to the difficulty of managing user certifi-
+andfor somecurvesthe ECDLP maybe solvedefficiently
+cates across multiple client devices, the former is rarely
+[28]. Sinceapoorchoiceofthecurvecancompromisese-
+used. User authentication, in such cases, happens at the
+curity,standardsorganizationslikeNISTandSECG(Stan-
+applicationlayer,e.g.throughpasswordssentoveranSSL-
+dards for Efficient CryptographyGroup) have published a
+protected channel. Authenticationof the SSL client is not
+set of curves [8, 29] that possess the necessary security
+discussedfurtherinthispaper.
+properties. The use of these curves is also recommended
+asameansoffacilitatinginteroperabilitybetweendifferent 3.1.RSA-basedfullhandshake
+implementationsofasecurityprotocol.
+TheEllipticCurveDiffieHellman(ECDH)keyexchange Today,themostcommonlyusedpublic-keycryptosystem
+[2] and the Elliptic Curve Digital Signature Algorithm for establishing the master secret is RSA. Figure 1 shows
+(ECDSA) [3] are elliptic curve counterparts of the well- theoperationofanRSA-basedhandshake.3 Theclientand
+known Diffie-Hellman and DSA algorithms, respectively. server first exchange random nonces (used for replay pro-
+InECDHkeyagreement,twocommunicatingpartiesAand tection) and negotiate a cipher suite with ClientHello and
+B agree to use the same curve parameters. They gener- ServerHello messages. The server then sends its signed
+ate their private keys kA and kB, and corresponding pub- RSApublickeyintheServerCertificatemessage.Theclient
+lic keys QA = kAG and QB = kBG. The parties ex- verifies the server’s RSA key and uses it to encrypta ran-
+changetheirpublickeysandeachmultipliesitsprivatekey domly generated 48-byte number (the premaster secret).
+andtheother’spublickeytoarriveatacommonsharedse- TheencryptedresultissentintheClientKeyExchangemes-
+cret kAQB = kBQA = kAkBG. While a description of sage. The server uses its RSA private-key to decrypt the
+ECDSAisnotprovidedhere,itsimilarlyparallelsDSA. premaster secret. Both end points then use the premaster
+secrettocreateamastersecretwhich,alongwithpreviously
+3. Overviewofthe SSL protocol exchangednonces,isusedtoderivethecipherkeys,initial-
+ization vectors and MAC (Message Authentication Code)
+SSL is the most widely used security protocol on keys for bulk encryptionand authenticationby the Record
+the Internet today. It offers encryption, source authen- Layer.
+tication and integrity protection for data and is flexi-
+ble enough to accommodate different cryptographic algo- 3.2.ECC-basedfullhandshake
+rithms for key agreement, encryption and hashing. How-
+The operation of an ECC-based SSL handshake, as
+ever,thespecificationdescribesparticularcombinationsof
+specified in [14], is shown in Figure 2. Through the
+these algorithms, called cipher suites, which have well-
+understood security properties. For example, the cipher 3InbothFigure1andFigure2,messagesmarkedwithanasteriskare
+suiteTLS RSA WITH RC4 128 SHAusesRSAforkeyex- optionalandonlysentincertainsituations.Client Server Client Server
+ClientHello (Initial proposal) ClientHello (Includes id of session
+to be reused)
+ServerHello (Ciphersuite negotiated)
+ServerHello (Echoes client−chosen
+Certificate (Conveys server’s RSA session id)
+ServerKeyExchange* encryption key (e,n))
+CertificateRequest* [ChangeCipherSpec] (Both parties reuse master
+ServerHelloDone Finished key from a prior session)
+Certificate*
+ClientKeyExchange (Client verifies server’s [ChangeCipherSpec]
+key and sends encrypted Finished
+random secret: r e mod n
+CertificateVerify*
+Application Data Application Data
+[ChangeCipherSpec]
+Finished (Server decrypts secret:
+r=(r e mod n) d mod n) Figure3.AbbreviatedSSLhandshake.
+[ChangeCipherSpec]
+Finished (Ready for bulk encryption,
+authentication)
+Application Data Application Data incorporationofECCis nota largechange. However,due
+to the greater popularity of RSA-based key exchange, the
+Figure1.RSA-basedSSLhandshake.
+rest of this paper compares ECC against RSA rather than
+DH/DSA.
+first two messages (processed in the same way as for
+3.3.Abbreviatedhandshake
+RSA),theclientandservernegotiateanECC-basedcipher
+suite, e.g. TLS ECDH ECDSA WITH RC4 128 SHA. The TheabbreviatedhandshakeprotocolisshowninFigure3.
+ServerCertificatemessagecontainstheserver’sECDHpub- Here,theClientHellomessageincludesthenon-zeroIDof
+lickeysignedbya certificateauthorityusingECDSA.Af- a previouslynegotiated session. If the server still has that
+ter validating the ECDSA signature, the client conveysits session informationcachedandis willingto reusethe cor-
+ECDH public key to the server in the ClientKeyExchange responding master secret, it echoes the session ID in the
+message. Next,eachentityusesitsownECDHprivatekey ServerHellomessage.4 Otherwise,itreturnsanewsession
+and the other’s public key to perform an ECDH operation IDtherebysignalingtheclienttoengageinafullhandshake.
+and arrive at a shared premaster secret. The derivation of Thederivationofsymmetrickeysfromthemastersecretand
+the master secret and symmetric keys is unchanged com- theexchangeofChangeCipherSpecandFinishedmessages
+paredtoRSA. isidenticaltothefullhandshakescenario.
+The abbreviated handshake does not involve certificates
+Client Server
+or public-key cryptographic operations, so fewer (and
+ClientHello (Initial proposal) shorter)messagesareexchanged. Consequently,anabbre-
+ServerHello (Ciphersuite negotiated)
+viated handshake is significantly faster than a full hand-
+Certificate (Has server’s ECDH
+public key, Qs =k s G, shake.
+signed w/ ECDSA)
+ServerKeyExchange*
+CertificateRequest* 3.4.Public-keycryptographyinSSL
+ServerHelloDone
+Certificate*
+(Client verifies server’s Thepublic-keycryptographicoperationsperformedbya
+key, computes ECDH
+client and server in differentmodesof the SSL handshake
+shared secret k c Q s ,
+ClientKeyExchange sends its public key aresummarizedbelowandinTable3.
+Q c =k c G)
+CertificateVerify*
+1. RSA-basedhandshake
+[ChangeCipherSpec]
+Finished (Server computes ECDH TheclientperformstwoRSA public-keyoperations–
+shared secret: k s Q c onetoverifytheserver’scertificateandanothertoen-
+[ChangeCipherSpec] =k s k c G=k c Q s ) cryptthepremastersecretwiththeserver’spublickey.
+Finished (Ready for bulk encryption, TheserverperformsoneRSAprivate-keyoperationto
+authentication)
+Application Data Application Data decrypt the ClientKeyExchange message and recover
+thepremastersecret.
+Figure2.ECC-basedSSL handshake(ECDH-
+2. ECDH-ECDSA-basedhandshake
+ECDSAkeyexchange).
+The client performs an ECDSA verification to verify
+the server’s certificate and then an ECDH operation
+using its private ECDH key and the server’s public
+The use of ECDH and ECDSA in TLS mimics the use
+of DH and DSA, respectively. The TLS specification [10] 4Thelikelihoodofacachehitdependsontheserver’sconfigurationand
+alreadydefinesciphersuitesbasedonDHandDSA sothe itscurrentworkload.Table3.Public-keycryptographicoperationsinanSSLhandshake.
+RSA ECDH-ECDSA Abbreviated
+Client RSAverify +RSAencrypt ECDSAverify +ECDHop none
+Server RSAdecrypt ECDHop none
+ECDH key to compute the shared premaster. All the 2. In the financial institution model, the first web page
+server needs to do is perform an ECDH operation to providesalinktoaloginscreenprotectedbySSL.Af-
+arriveatthesamesecret. ter a successful login, all subsequent pages are also
+protected. This usage is exemplified by ETrade and
+3. Abbreviated handshake No public-key operations are
+WellsFargoand,onaverage,requiresonenewsession
+performed in the abbreviated handshake since the
+foreveryeightpages.
+client andserver reuse a previouslycalculatedmaster
+secret. 4.1.Performancemetrics
+4. Evaluationmethodology AnSSLclientfetcheswebpagessequentiallybutaserver
+handles multiple requests concurrently. Due to this differ-
+Themaingoalofourexperimentswastostudytheperfor- enceinoperation,weusetwodistinctmetricsforevaluating
+manceimpactofreplacingRSAwithECCintheSSLpro- performancefromtheclient’sandserver’sperspective.
+tocol.Besidespublic-keycryptography,anHTTPStransac-
+tion involvesseveralother operationsincludingsymmetric First-ResponseTime: This is the delay between initiating
+encryption, hashing, message parsing and file system ac- an SSL handshake(either fullor abbreviated)and re-
+cess. The cost of encryption and hashing depends on the ceivingthefirstpacketintheHTTPSresponse.Itmod-
+amount of data transferred. The effective cost of public- elsthelatencyexperiencedbyauserbetweenclicking
+key operations is determined by the frequency of session on a URL and seeing the first update to the browser
+reuse which eliminates the need for public-key operations window.
+for some transactions. In order to get a realistic estimate
+Fetchespersecond: This measures the rate at which a
+of SSL performance, it is important to use an appropriate
+serverfulfillswebpagerequests.
+workloadforthetests.
+Other studies on SSL performance [5, 6, 9] have either
+4.2.Experimentsperformed
+reusedtheworkloadforastandard(notsecure)webserver
+orsynthesizedonebasedonmeasurementsfromasampling Weusedapublic-domaintoolcalledhttp load[1]torun
+of secure web sites [7, 9]. We chose the latter approach multiple HTTPS fetches in parallel and measured the rate
+since “real-life” workloads for standard and secure web at which an Apache server satisfies these requests as well
+serversarelikelytobedifferent.Inparticular,ourworkload astheresponsetimeexperiencedbyclients. Weperformed
+is based on Badia’s survey [7] of six popular banking, in- thisexperimentusing:
+vestmentandretailsites(Amazon,Datek,ETrade,Fidelity,
+MerrillLynchandWellsFargo). Thesurveyfoundthatthe (cid:15) Two different cipher suites: TLS RSA WITH RC4
+aggregatepagesize rangesbetween10KBto70KBwith a 128 SHA and TLS ECDH ECDSA WITH RC4 128
+30KBmedian.5 Italsoidentifiedtwoprimaryusagemodels SHA to comparethe use of RSA and ECC in an SSL
+impactingSSLsessionreuse. handshake.Foreachciphersuite,westudiedthreedif-
+ferentsecuritylevels—1024,1536and2048bitsfor
+1. In the shopping cart model, web sites reserve SSL RSAand160,192and224bitsforECC.ForECC,we
+strictly for transporting sensitive information like chosethreeellipticcurves(secp160r1,secp192r1,and
+credit card numbers and personal information. Ama- secp224r1 [8, 29]) defined over prime integer fields
+zonisa representativeexampleofthisusagemodel– recommendedbyNISTand/orSECG.Inthefollowing
+SSL is used whena customer is finalizing a purchase wewilluseECC-160,ECC-192andECC-224toindi-
+but not when he is browsing through available prod- cate theaforementionedcurvesandRSA-1024,RSA-
+ucts. The survey found an average of one new SSL 1536, RSA-2048 to indicate RSA with key sizes of
+sessionforeverythreepagesinthisusagemodel. 1024, 1536 and 2048 bit, respectively. As shown in
+Table2,ECC-160providesthesamesecurityasRSA-
+5A“page”consistsofanHTMLfileandoneormoreembeddedimages.
+1024 and ECC-224 matches RSA-2048. The smaller
+Anaveragepagein[7]consistsofan18KBHTMLfileandsevenimage
+filesaveraging1245byteseach. keysareconsideredadequateforshort-termprotectionTable4.Measuredperformanceofpublic-keyalgorithms.
+ECC-160 RSA-1024 ECC-192 RSA-1536 ECC-224 RSA-2048
+Time(ms) 3.69 8.75 3.87 27.47 5.12 56.18
+Ops/sec 271.3 114.3 258.1 36.4 195.5 17.8
+Performanceratio 2.4: 1 7.1: 1 11: 1
+Key-sizeratio 1: 6.4 1:8 1: 9.1
+but the larger keys are recommended for longer-term 5. Analysisofexperimental results
+protection(beyond2010).
+5.1.ECCandRSAmicrobenchmarks
+(cid:15) Fourdifferentfilesizes:0KB,10KB,30KBand70KB.
+We used the OpenSSL speed program to measure RSA
+These choices allow us to study the relative cost of
+decryption and ECDH operation for different key sizes (a
+handshake and record layer processing in SSL under
+minor enhancement was made for collecting RSA-1536
+avarietyofconditions.
+numbers). These are the public-key cryptographic oper-
+(cid:15) Four different session reuse models: 0% reuse (all ations performed by a server when using RSA and ECC
+cipher suites, respectively. Our results, shown in Table 4,
+fetches create a new session), 66% reuse (1 new ses-
+highlighttheperformanceadvantageofECCoverRSAfor
+sionforeverythreefetches),87.5%reuse(1newses-
+differentsecuritylevels. Notethattheperformanceadvan-
+sion for every eight fetches) and ˜100% reuse (only
+tageofECCgetsevenbetterthanitskey-sizeadvantageas
+thefirstfetchfromaclientcreatesanewsession). We
+securityneedsincrease.
+hadtomodifyhttp loadtosupportsessionreuse. The
+measurementsobtainedfor0%and100%reusedonot
+5.2.Server-sidecostsofanHTTPSfetch
+havemuchpracticalsignificance,buttheydoallowus
+toanalyticallypredictserverthroughputforanyinter- Acharacteristicmeasurefortheperformanceofasecure
+mediatereusefigure. webserveristherateatwhichitcanserviceHTTPSconnec-
+tions. Figure4showstheaveragetimetakenbytheserver
+We also used the OpenSSL speed command to measure
+tofulfillanHTTPSrequestfordifferentpagesizesandpub-
+theperformanceofrawRSAandECCoperationsfordiffer-
+lickeyswithnosessionreuse. MicrobenchmarksforECC,
+entkeysizes. Sinceanysecurityprotocolwilllikelyinvolve
+RSA, RC4, and SHA allowed us to estimate their relative
+other(nonpublic-key)operations,thesemeasurementspro-
+costs within the overall processing time. RSA decryption
+videanupperboundontheexpectedperformanceimprove-
+continuestobethedominantcostinallofthesecases. Ac-
+mentfromreplacingRSAwithECC.
+cordingtoSPECWeb99whichmodelsreal-worldwebtraf-
+fic, 85% of the files are under 10KB. For such files, RSA
+4.3.Platform
+takesupanywherebetween63%to88%oftheoveralltime
+OurexperimentsusedtheApache2.0.45webservercom- dependingonthesecuritylevel.
+piled with OpenSSL-SNAP-20030309 (to be released as This suggests that efforts to reduce the RSA cost or re-
+OpenSSL 0.9.8) using the Sun Forte Developer 7 C com- place it with a cheaper alternative will have a significant
+piler.ThissnapshotofthedevelopmentversionofOpenSSL payoff. Indeed, employing ECC reduces the server’s pro-
+includesECCcodecontributedbySunMicrosystemsLabo- cessing time for new SSL connections across the entire
+ratories[27].Enhancementsweremadetothemod sslcom- rangeofpagesizesinourstudy.Wemeasuredareductionin
+ponentofApacheinordertomakeitECCaware. processingtimefrom29%forapagesizeof70Kcomparing
+We ran the server on a single 900 MHz UltraSPARC ECC-160with RSA-1024upto 85%forafile size of10K
+III processor with 2GB of memory inside a Sun Fire comparingECC-224 with RSA-2048. In our experiments,
+V480 server running the Solaris 9 operating system.6 For itwasn’tuntilweincreasedthefilesizeto1MBthatweno-
+the HTTPS clients, we used a prototype Sun Fire server ticedECCandRSAperformingcomparably.Atthesesizes,
+equippedwithseven900MHzUltraSPARCIIIprocessors, public-key costs are no longer dominant and other factors
+14GBofmemoryandalso runningthe Solaris9 operating suchasnetworksaturationbecomemoreimportant.
+system. Theserverandclientmachineswereconnectedvia
+5.3.Clientlatencyv/srequestrate
+a100Mbethernetnetwork.
+6Theserverusedinourtestsisequippedwithfoursuchprocessorsbut Latency v/s throughput plots provide another means to
+theotherthreewereturnedofffortheseexperiments. studytheefficiencyofasystem.AmoreefficientwebserverFigure4.RelativecostsinanHTTPStransactionfordifferentfilesizes.
+can be expected to handle a higher page request rate with
+lowerdelays.Figure5plotsthefirst-responsetimereported
+by http load as a function of page requests generated per
+second. The results shown are for a 30KB page size and
+66%sessionreusereflectingtheshoppingcartusagemodel.
+Here again, we notice that the use of ECC allows the
+server to handle a larger number of requests (30%-270%
+more)comparedtoRSA.Atcurrentsecuritylevelsandun-
+der low load, clients experience comparable latencies for
+ECC-160andRSA-1024.Thatis,thetimetakenforpublic-
+key operations is low compared to SSL processing over-
+headsandnetworklatencies. However,thesaturationpoint
+oftheserverisreachedearlierwithRSA-1024leadingtoa
+sharpincreaseinlatencyataround110requestspersecond.
+ForRSA-2048,clientsexperience90msoflatency,primar-
+ilyduetotheRSAoperationontheserver,evenunderlow
+serverload. Incomparison,theexhibitedlatencyforECC-
+224 is only 35ms or less than 40% of the RSA case.7 In
+addition,theserversaturationpointforECC-224isreached
+significantly later at around 140 requests per second com-
+Figure 5. Response time v/s throughput plot
+paredto40requestspersecondforRSA-2048.
+forApachewebserver.
+7Themeasuredroundtriplatencybetweentheclientandserverwas3ms
+fora15KBpingpayloadand6msfora30KBpayload.5.4.Impactofsessionreuse expected for other protocolslike S/MIME, SSH and IPsec
+[16].
+Session reuse diminishesthe impact of public-keyoper-
+Already, there is considerable momentum behind
+ations on the average HTTPS processing time at the web
+widespreadadoptionoftheAdvancedEncryptionStandard
+server. Figure6was obtainedbymeasuringthe maximum
+(AES)whichspecifiestheuseof128-bit,192-bitand256-
+sustainedserverthroughputreportedbyhttp loadfor30KB
+bit symmetric keys. As indicated in Table 2, key sizes for
+pageaccesseswith0%and100%sessionreuse.Throughput
+public-key cryptosystems used to establish AES keys will
+numbersforotherreusevalueswerederivedanalyticallyus-
+correspondinglyneedtoincreasefromcurrentlevels. This
+ingthefollowingformula(hereTr denotesserverthrough-
+would favor the use of ECC over RSA. Furthermore, as
+putforr%sessionreuse)andthevaluesderivedforT66and
+users become increasingly sensitive to on-line privacy is-
+T87.5wereverifiedempirically.
+sues,theyarelikelytodemandprotectionformoreoftheir
+1 transactions. For example, Yahoo! users might demand
+Tr = (1− 10r 0)/T0+( 10r 0)/T100 the option to protect their email accesses, not just the lo-
+gin password, with SSL. Similarly, book lovers might de-
+As expected, increasing the percentage of session reuse mandprivacyprotectionfortheirbrowsinghabitsonAma-
+decreases the performance impact of choosing any par- zon. Webelievethesetrendsbodewellforbroaderdeploy-
+ticular public-key cryptosystems. However, even under ment of ECC, in not just wireless environments but also
+the financial institution usage model with session reuse desktop/serverenvironments.
+valueashighas87.5%,anECCbasedserverhandles13% Besides OpenSSL, we have also added ECC support
+more requests compared to RSA at smaller key sizes and to Netscape Security Services (NSS) [21]. This open-
+120% more at larger key sizes. Considering the shop- source cryptographic library powers the Mozilla/Netscape
+pingcartmodel,theperformanceadvantageduetoECCat browsers and the web, directory and messaging servers in
+66%sessionreuseincreasessignificantlyto31%forECC- Sun’s Java Enterprise System. We are now targetingECC
+160/RSA-1024 and 279% for ECC-224/RSA-2048. The support in these servers and intend to perform a similar
+relativeperformanceofECCoverRSAimprovesfurtherfor studyfortheirrepresentativeworkloads.
+smallerpages.
+7. Acknowledgments
+TheauthorswouldliketothankSumitGuptaforhishelp
+in implementingECCciphersuitesin OpenSSLandShih-
+HaoHungforaddingsessionreusesupporttohttp loadand
+hishelpinsettingupourperformancetestbed.
+Sun,SunMicrosystems,ForteDeveloper,SunFire,UltraSPARC,SolarisandJava
+EnterpriseSystemaretrademarksorregisteredtrademarksofSunMicrosystems,Inc.,
+intheUnitedStatesandothercountries.
+References
+[1] AcmeLabsSoftware,seehttp://www.acme.com/soft-
+ware/http load/
+[2] ANSIX9.63,“EllipticCurveKeyAgreementandKey
+TransportProtocols”,AmericanBankersAssociation,
+1999.
+Figure 6. Throughput v/s session reuse plot
+forApachewebserver. [3] ANSI X9.62, “The Elliptic Curve Digital Signature
+Algorithm (ECDSA)”, American Bankers Associa-
+tion,1999.
+6. Conclusionsand future work [4] Apache Software Foundation, see http://www.
+apache.org/.
+The above analysis suggests that the use of ECC cipher
+suitesofferssignificantperformancebenefitstoSSLclients [5] G. Apostolopoulos, V. Peris, D. Saha, “Transport
+and servers especially as security needs increase. While Layer Security: How much does it really cost?”, In
+thisstudyhasfocusedonSSL,similarimprovementscanbe Proc.ofIEEEInfocom,1999.[6] G.Apostolopoulos,V.Peris,P.Pradhan,D.Saha,”Se- [19] MasterCardInternationalandVisaInternational,“Se-
+curing electronic commerce: reducing the SSL over- cure Electronic Transaction Specification, Version
+head”, IEEE Network, Vol 14, No 4, pp 8–16, Jul. 1.0”,http://www.setco.org/,May1997.
+2000.
+[20] V. Miller, “Uses of elliptic curves in cryptography”,
+[7] L. Badia, “Real World SSL Benchmarking”, Rain- Crypto 1985, LNCS 218: Advances in Cryptology,
+bow Technologies Whitepaper, Sep. 2001, see Springer-Verlag,1986.
+http://www.rainbow.com/insights/whitePDF/RealWorld
+SSLBenchmarking.pdf. [21] Mozilla Organization, “Netscape Security Services
+(NSS)”, see http://www.mozilla.org/projects/security/
+[8] Certicom Research, “SEC 2: Recommended Elliptic
+pki/nss
+Curve Domain Parameters”, Standards for Efficient
+Cryptography,Version1.0,Sep.2000. [22] NIST, “Advanced Encryption Standard (AES)”, see
+http://csrc.nist.gov/CryptoToolkit/aes,Dec.2001.
+[9] C. Coarfa, P. Druschel, D. Wallach, “Performance
+Analysis of TLS Web Servers”, Network and Dis- [23] NIST,“SpecialPublication800-57:Recommendation
+tributedSystemsSecuritySymposium’02,SanDiego, for Key Management. Part 1: General Guideline”,
+California,Feb.2002. DraftJan.2003.
+[10] T. Dierks and C. Allen, January 1999. “The TLS [24] OpenSSLProject,seehttp://www.openssl.org/.
+Protocol - Version 1.0.”, IETF RFC 2246, see
+http://www.ietf.org/rfc/rfc2246.txt [25] B.Ramsdell,“S/MIMEVersion3MessageSpecifica-
+tion”,RFC2633,Jun.1999.
+[11] R. Fielding et al., “Hypertext Transfer Protocol –
+HTTP/1.1”,RFC2616,Jun.1999. [26] A.ShamirandE.Tromer,“FactoringLargeNumbers
+withtheTWIRL Device”,Crypto2003,LNCS2729,
+[12] A. Frier, P. Karlton and P. Kocher, “The SSL3.0
+Springer-Verlag,Aug.2003.
+Protocol Version 3.0”, see http://home.netscape.com
+/eng/ssl3/. [27] S. Shankland, “Open-source group gets Sun security
+gift”,Sep.2002,seehttp://news.com.com/2100-1001-
+[13] A.Goldberg,R.Buff,A.Schmitt,“SecureWebServer
+958679.html.
+PerformanceDramaticallyImprovedbyCachingSSL
+Session Keys”, In Proc. of Workshop on Internet
+[28] N.Smart,“HowSecureAreEllipticCurvesoverCom-
+ServerPerformance,SIGMETRICS’98,Jun.1998.
+positeExtensionFields?”,EUROCRYPT2001,LNCS
+2045,Springer-Verlag,pp.30–39,2001.
+[14] V. Gupta, S. Blake-Wilson, B. Moeller, C. Hawk,
+“ECC Cipher Suites for TLS”, IETF internet draft
+[29] U.S. Dept. of Commerce/NIST, “Digital Signature
+<draft-ietf-tls-ecc-03.txt>, work in progress, Jun.
+Standard(DSS)”,FIPSPUB186-2,Jan.2000.
+2003.
+[30] S.A.Vanstone,“Nextgenerationsecurityforwireless:
+[15] B. Kaliski, “TWIRL and RSA Key Size”, RSA
+ellipticcurvecryptography”,ComputersandSecurity,
+Laboratories Technical Note, May 2003, see
+Vol22,No5,Aug.2003.
+http://www.rsasecurity.com/rsalabs/technotes/twirl.html.
+[31] D.Wagner,B.Schneier,“AnalysisoftheSSL3.0pro-
+[16] S. Kent and R. Atkinson, “Security Architecture for
+tocol”, 2nd USENIX Workshop on Electronic Com-
+theInternetProtocol”,RFC2401,Nov.1998.
+merce,Nov.1996.
+[17] N.Koblitz,“Ellipticcurvecryptosystems”,Mathemat-
+icsofComputation,48:203-209,1987. [32] T.Ylonen,T.Kivinen,M.Saarinen,T.Rinne,S.Lehti-
+nen“SSHProtocolArchitecture”,IETFInternetdraft,
+[18] A. Lenstra and E. Verheul, “Selecting Cryptographic
+workinprogress,Jul.2003.
+KeySizes”,JournalofCryptology14(2001)pp.255-
+293,seehttp://www.cryptosavvy.com/. [33] ZonaResearch,“TheNeedforSpeedII”,ZonaMarket
+Bulletin,Issue5,Apr.2001.

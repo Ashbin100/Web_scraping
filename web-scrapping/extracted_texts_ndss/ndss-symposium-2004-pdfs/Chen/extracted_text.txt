@@ -1,0 +1,996 @@
+Analyzing and Comparing the Protection Quality of
+Security Enhanced Operating Systems
+HongChen NinghuiLi ZiqingMao
+CenterforEducationandResearchinInformationAssuranceandSecurity
+andDepartmentofComputerScience,PurdueUniversity
+{chen131,ninghui,zmao}@cs.purdue.edu
+Abstract 7], Security Enhanced Linux (SELinux) [19], AppAr-
+mor [5, 1], and Usable Mandatory Integrity Protection
+Host compromise is a serious computer security (UMIP)[16]. Someofthesesystemshavebeenwidely
+problemtoday. Tobetterprotecthosts, severalManda- deployed. Forexample,SELinuxissupportedinanum-
+toryAccessControlsystems,suchasSecurityEnhanced ber of Linux distributions, including Fedora, Debian,
+Linux (SELinux) and AppArmor, have been introduced. Gentoo,EnGardeandUbuntu[3],andAppArmorissup-
+In this paper we propose an approach to analyze and portedinLinuxdistributionsincludingSUSE,PLD,Par-
+compare the quality of protection offered by these dif- dusLinux,Annvix,UbuntuandMandriva[2].
+ferent MAC systems. We introduce the notion of vul-
+Given the existence of these protection systems, a
+nerability surfaces under attack scenarios as the mea-
+natural desire is to understand and compare the qual-
+surement of protection quality, and implement a tool
+ity of protection (QoP) offered by them. A system ad-
+called VulSAN for computing such vulnerability sur-
+ministratorwouldwanttoknowtheQoPofferedbythe
+faces. In VulSAN, we encode security policies, system
+MACsystemheisusing. NotethatbyanMACsystem,
+states,andsystemrulesusinglogicprograms. Givenan
+wemeanboththemechanism(e.g.,SELinuxorAppAr-
+attack scenario, VulSAN computes a host attack graph
+mor) and the specific policy being used in the system,
+and the vulnerability surface. We apply our approach
+because the QoP is determined by both. More specif-
+to compare SELinux and AppArmor policies in several
+ically, it would be very useful for an administrator to
+Linuxdistributionsanddiscusstheresults. Ourtoolcan
+know: WhatkindsofattacksarepreventedbytheMAC
+alsobeusedbyLinuxsystemadministratorsasasystem
+system my host is using? What does it take for an at-
+hardeningtool.BecauseofitsabilitytoanalyzeSELinux
+tackertopenetratethedefenseofthesystem,e.g.,toin-
+aswellasAppArmorpolicies,itcanbeusedformosten-
+stallarootkitonmyhost? CantheattackerleaveaTro-
+terpriseLinuxdistributionsandhomeuserdistributions.
+jan horse program on my host such that when the pro-
+gramislateraccidentallyexecutedbyauser,myhostis
+takenoverbytheattacker? WoulditbemoresecureifI
+useacompetingdistributionwhicheitherhasadifferent
+1 Introduction MACmechanismororhasdifferentpolicysettings?
+In this paper, we develop a tool called Vulnerability
+Hostcompromiseisoneofthemostseriouscomputer Surface ANalyzer (VulSAN) for answering these ques-
+security problems today. A key reason why hosts can tions. We analyze the QoP by measuring the vulnera-
+beeasilycompromisedisthattheDiscretionaryAccess bilitysurfaceforattackscenarios. Anattackscenariois
+Control(DAC)mechanismintoday’soperatingsystems defined by an attack objective and the attacker’s initial
+is vulnerable to Trojan horses and the exploitation of resources. For example, “remote to full control” is an
+buggy software. Recognizing this limitation of exist- attackscenarioinwhicharemoteattackerwantstofully
+ing DAC mechanisms, in the past decade there have control the system. Other attack scenarios can be “re-
+been a number of efforts aiming at adding some form motetoleavingatrojan”,“localtofullcontrol”,etc. A
+of Mandatory Access Control (MAC) to Commercial- vulnerabilitysurfaceofasystemisalistofminimalat-
+Off-The-Shelf(COTS)operatingsystems. Examplesin- tackpaths.Eachattackpathconsistsofasetofprograms
+clude Low Water-Mark Access Control (LOMAC) [6, such that by compromising those programs the attackscenariocanberealized. Vulnerabilitysurfaceisrelated is used, the system has seven length-1 attack paths in
+toattacksurface[11]whichisaconceptintheMicrosoft the scenario when a remote attacker wants to install a
+Security Development Lifecycle (SDL). Attack surface rootkit. They correspond to the seven network-facing
+uses the resources that might be used to attack a sys- daemon programs running as root, namely apache2,
+tem to measure the attackability of the system (details cupsd, nmbd, rpc.mountd, smbd, sshd, and vsftpd.
+are discussed in Section 2). They are different in that Among them, the SELinux policy confines only cupsd.
+vulnerabilitysurfaceprovidespotentialmulti-stepattack This shows that the often claimed strong protection of
+pathsofasystemwhileattacksurfaceconsiderspoten- SELinuxisnotrealized,atleastinsomepopularLinux
+tialentrypointsofattacks.VulSANcomputesthevulner- distributions. Wealsonotepoliciesindifferentdistribu-
+abilitysurfacesforattackscenariosunderSELinuxand tionsofferdifferentlevelsofprotectionevenwhenthey
+AppArmor. Todothis,VulSANencodestheMACpol- use the same mechanism. For example, the SELinux
+icy,theDACpolicyandthestateofthehostintoProlog policy in Fedora 8, which is a version of the targeted
+facts, and generates a host attack graph for each attack policy,offerstighterprotectionthanthatinUbuntu8.04,
+scenario, from which it generates minimal attack paths which is a version of the reference policy. We also
+whichconstitutethevulnerabilitysurface. observe that Ubuntu 8.04 and SUSE Linux Enterprise
+VulSANcanbeusedbyLinuxsystemadministrators Server 10 expose different vulnerability surfaces when
+asasystemhardeningtool. Asystemadministratorcan theybothuseAppArmor. Also,oneattackscenariothat
+use VulSAN to compute the host attack graphs for at- neitherSELinuxnorAppArmoroffersstrongprotection
+tack scenarios that are of concern. By analyzing these iswhenaremoteattackerleavesamaliciousexecutable
+graphs,theadministratorcantrytohardenthesystemby programsomewhereinthesystemandwaitsforittobe
+tweakingthesystemandpolicyconfigurations. Forex- accidentally executed by users, at which point the pro-
+ample,theadministratorcandisablesomenetworkdea- cess would not be confined by the MAC system. This
+mon programs, remove some unnecessary setuid-root attack is possible for two reasons. First, both SELinux
+programs, or tweak the MAC (SELinux or AppArmor) andAppArmorconfineonlyasubsetoftheknownpro-
+policies to better confine these programs. After mak- gramsandleaveanyprogramnotexplicitlyidentifiedas
+ing these changes, the system administrator can re-run unconfined. Second,asneitherSELinuxnorAppArmor
+theanalysistoseewhetheritachievesthedesiredobjec- performs information flow tracking, the system cannot
+tive. BecauseVulSANusesintermediaterepresentation tellaprogramleftbyaremoteattackerfromoneorigi-
+ofthesystemstateandpolicy,itispossibletomakethe nallyinthesystem.
+changes in the representation and to perform analysis, The rest of the paper is organized as follows: Sec-
+beforeactuallydeployingthechangestotherealsystem. tion 2 presents the background and related work. Sec-
+BecauseVulSANcanhandlebothSELinuxandAppAr- tion 3 discusses our analysis approach. Section 4 talks
+mor, which are the two MAC systems used by major abouttheimplementationofVulSAN.Section5presents
+Linux distributions, it can be used for most enterprise the results of comparing SELinux with AppArmor in
+Linuxdistributionsandhomeuserdistributions. severalLinuxdistributions. Section6concludesthepa-
+VulSANcanalsobeusedtocomparetheQoPofpoli- per.
+ciesbetweendifferentsystems. Suchcomparisonshelp
+system administrators to select which Linux distribu- 2 BackgroundandRelatedWork
+tionstouse. Inaddition, theyalsohelpsystemharden-
+ing. IfanadministratorknowsthatanotherLinuxdistri- Security-Enhanced Linux [19] (SELinux) is a secu-
+butionwiththesameservicesdoesnothaveaparticular ritymechanisminLinuxthathasbeendevelopedtosup-
+vulnerabilitypath,thentheadministratorknowsthatitis portawiderangeofsecuritypolicies.SELinuxhasbeen
+possibletoremovesuchapathwhileprovidingthenec- integratedintoLinuxKernelsince2.6. InSELinux,ev-
+essaryservices,andcaninvestthetimeandefforttodo ery process has a domain and every object has a type.
+so. Objectsarecategorizedintoobjectsecurityclasses,such
+WehaveappliedVulSANtoanalyzetheQoPofsev- asfiles,folders,sockets,etc. Asetofoperationsarede-
+eral Linux distributions with SELinux and AppArmor. fined over each object security class (e.g., read, write,
+ComparingthedefaultpoliciesofSELinuxandAppAr- execute,lock,create,rename,etcforafile). ASELinux
+mor for the same Linux distribution (namely Ubuntu policy defines processes of which domains can access
+8.04 Server Edition), we find that AppArmor offers objectsofwhichtypeswithwhichoperations. Apolicy
+significantly smaller vulnerability surface, while the also defines how to determine the domain of a process
+SELinux policy with Ubuntu 8.04 offers only slightly and how the domain changes when a process executes
+smaller vulnerability surface compared with the case anotherprogram.
+whennoMACisused.Morespecifically,whennoMAC AppArmor [1] is an access control system that con-fines the access permissions on a per program basis. It cerned with more than just providing a policy analysis
+confines programs that are likely to be attacked, e.g., tool;weneedtoalsocomeupwithappropriatewaysof
+server programs that face network and setuid root pro- queryingthetoolandanalyzingtheresult.
+grams. Foreveryprotectedprogram,AppArmordefines Comparing the QoP offered by different systems is
+a program profile. A profile is a list of permitted ac- challenging because different policy models are used.
+cesses,includingfileaccessesandcapabilities. Thepro- Forexample,SELinuxusesTypeEnforcement(TE),and
+files of all protected programs constitute an AppArmor AppArmorconfinessecurity-criticalprogramswithpro-
+policy. Ifaprogramdoesnothaveaprofile,itisbyde- files. Currentlythereexistsnotooltocomparethesecu-
+faultnotconfined. Ifaprogramhasaprofile,itonlyhas rity of systems protected using different technologies.
+permissionsspecifiedintheprofile. There is an ongoing debate about which of SELinux
+PreviousapproachesforanalyzingSELinuxsecurity andAppArmorisabettersystem,butsuchdebateoften
+policies include Gokyo [14, 13], SLAT [8], PAL [21], centers on the mechanism and lacks actual comparison
+APOL [24, 10], SELAC [25], NETRA [18], and of the security offered by the standard policies shipped
+PALMS[9]. Gokyo[14,13]identifiesasetofdomains with these protection systems. As a result, such com-
+andtypesastheimplicitTrustedComputingBase(TCB) parison tends to become rhetoric wars. In [15] Cowan
+of a SELinux policy. Integrity of the TCB holds if no from Novell and Riek from Red Hat debated about us-
+type in it can be written by a domain outside the TCB. ability,simplicity,andpolicyimplementation(labelsvs.
+SLAT [8] verifies if a SELinux policy satisfies certain pathnames) between AppArmor and SELinux. QoP is
+information flow goals. It answers questions such as: not discussed in details. We believe that comparisons
+Is it true that all information flow paths in a system involvingactualdeployedpoliciesarenecessary. Itmay
+from a starting security context to a final security con- betheoreticallypossibletoconfigureaMACsystemto
+textgothroughaseriesofspecificsteps? PAL[21]pro- offer very strong protection, but it is the shipped stan-
+vides similar functionalities to SLAT. It differs in that dardpolicythatdeterminestheQoPinreality,sincevery
+it is implemented in XSB, a logic programming sys- fewpeoplechangetheshippedpolicy. Inourapproach,
+tem. ThisenablesPALtohandleotherkindsofqueries. we perform a concrete measurement of QoP for both
+APOL[24]isatooltoanalyzetherelationshipsbetween mechanismsusingshippedpolicies.
+domainsandtypesinaSELinuxpolicy. In[10]theau- Attacksurfaceisproposedasametrictomeasurethe
+thorsaugmentAPOLtofindpathsfromsusceptibledo- attackabilityofasystem[11,12]:“Theattacksurfaceof
+mains to security sensitive domains. The selection of an app is the union of code, interfaces, services, proto-
+susceptible and security sensitive domains is manually cols,andpracticesavailabletoallusers,withastrongfo-
+done. ThequerylanguageislessflexiblethanSLATor cusonwhatisaccessibletounauthenticatedusers.” The
+PAL,butitprovidesagraphicaluserinterfacetodisplay heuristic is that a larger attack surface indicates a less
+theresults. SELAC[]isaformalmodeltodescribethe securesystem. Reducingtheattacksurfaceispartofthe
+semanticsofaSELinuxpolicy. Theauthorsdevelopan MicrosoftSecurityDevelopmentLifecycle(SDL)[11].
+algorithm based on SELAC to verify if a given subject In[17],Manadhataetal. proposetomeasureasystem’s
+canaccessagivenobjectinagivenmode. NETRA[18] attacksurfaceintermsofthreekindsofresourcesused
+isaanothertoolforanalyzingexplicitinformationflow in attacks on the system: methods, channels and data.
+relationships in access control configurations. It has Two IMAP and two FTP programs are evaluated using
+beenappliedtoanalyzeWindowsXPandSELinuxpoli- thismethod.
+cies. PALMS[9]isatoolforanalyzingSELinuxMLS Attack graph is used to analyze the security of net-
+policy,andwasusedtoverifythattheSELinuxMLSref- works in existing works [22, 20]. Our approach also
+erence policy satisfies the simple security property and computes a graph similar to an attack graph. However,
+the*-propertydefinedbyBellandLaPadula[4]. our problem space is different, as we consider control
+of processes under different access control restrictions,
+Our work is different in the following ways. First,
+rather than control of network-connected hosts. Also,
+VulSAN supports analyzing AppArmor in addition to
+weperformadditionalanalysisontheresultedgraphto
+SELinux. Second, VulSAN utilizes the current system
+generateallminimalattackpathsforanalysisandcom-
+state(suchaswhichfilesexistinthesystem)aswellas
+parisonpurposes.
+DAC policies (such as which users can write to a file
+according to the DAC permission bits) in addition to
+the MAC policies. As shown in Section 5.2, consider- 3 OverviewofOurApproach
+ingDACisnecessarytoobtainaccurateanalysisresults.
+Third, our goal, which is to compute the vulnerability To analyze and compare the QoP of MAC systems,
+surfaceunderdifferentattackscenarios,isdifferentfrom we need a way to define the QoP first. Lacking such a
+that of existing tools. In particular we need to be con- definitionpreventsdebatesaboutthevirtuesofdifferentSecurity Policy
+Machine Configuration Fact Collector System Facts
+Host Attack
+Machine State System Rules Host Attack Graph Attack Path Analyzer Minimal Attack Paths
+Graph Generator
+Query:
+Initial Resources
+Attack Objective
+Figure1.SolutionOverview
+systemstogobeyondsubjectiveandrhetoricarguments. graphthatrepresenttheattackobjectivegoalattack
+In this paper, we present a first attempt at coming up states.
+withapragmaticdefinition.
+5. Analyzethehostattackgraph. Whatwecareabout
+The MAC systems are motivated by the threats and
+arethepathsfrominitialattackstatestogoalattack
+attacks facing today’s operating systems, thus they
+states. Themostinterestingpathsaretheonesthat
+should be evaluated by their ability to defend against
+are “minimal”. VulSAN generates all the minimal
+these attacks. Our approach generates all possible at-
+attackpaths.
+tackpathsthatcanleadanattackertocontrolofthesys-
+tem. WeanalyzetheQoPundermultipleattackscenar-
+Figure1showstheoverviewofourapproach.
+ios. Each attack scenario has two aspects. One is the
+Theinterestingresultfromthehostattackgraphisthe
+objective of the attacker (e.g., load a kernel module or
+attackpaths. Anattackpathisapaththatstartsfroman
+plant a trojan horse). The other is the initial resources
+initialattackstateandendswithagoalattackstate.Sup-
+the attacker has (e.g., can connect to the machine from
+posetherearetwoattackpathsp andp , andwehave
+network,orhasalocalaccount). Basedonthescenario, 1 2
+V(p ) ⊂ V(p )(V(p)representsthesetofedgelabels
+VulSANgivesallpossibleattackpaths. 1 2
+alongthepath). Thenwearenotinterestedinp sinceit
+Ourapproachconsistsoffollowingsteps: 2
+iseasiertorealizep thantorealizep .Anattackpathp
+1 2
+isdesirablewhentheredoesnotexistanotherattackpath
+1. Establisharunningserverastheanalysistarget.
+p(cid:48) suchthatV(p(cid:48))⊂V(p). Wecallsuchpathsminimal
+paths.
+2. Translatepolicyrulesandsystemstateinformation
+into Prolog facts. We write parsers for SELinux We define the vulnerability surface of a protection
+andAppArmorpolicies. Wewritescriptstocollect systemasthesetofallminimalattackpaths. Eachpath
+informationofthefilesystemandrunningservices. includes the programs that must be exploited to realize
+theattackobjective.
+3. Encodewhattheattackercandotobreakintoasys- When we compare two protection systems A and B
+tem and escalate privileges in one or more steps. underthesameattackscenario,wefirstgeneratethesets
+Foreachsecurity-enhancedmechanism,wedefine of all minimal attack paths of the two protection sys-
+thenotionofattackstatestodescribetheattacker’s tems,calledP andP . Foranypathp∈P ,wesay:
+A B A
+currentprivileges. ForeachMACsystemwewrite
+a library of system rules that describe how an at- • pisastrongpathifthereexistsapathp(cid:48) ∈P Bsuch
+tacker exploits a program to cause state transition
+thatV(p)⊂V(p(cid:48)).
+undertheMACsystem.
+• pisaweakpathifthereexistsapathp(cid:48) ∈P such
+B
+thatV(p)⊃V(p(cid:48)).
+4. Encodeanattackscenariointoaquery,andusethe
+querytogeneratethehostattackgraph. Ahostat-
+• p is a common path if there exists a path p(cid:48) ∈ P
+B
+tackgraphisadirectedgraph. Thegraphnodesare
+suchthatV(p)=V(p(cid:48)).
+attack states, and graph edges correspond to state
+transitions. Edgesaremarkedbyprograms,andby • pisauniquepathotherwise.
+compromising marked programs the attacker can
+cause state transitions. We call the nodes of the WhencomparingAandB, acommonpathshowsa
+graphthatrepresenttheattacker’sinitialresources common way to exploit both systems. A strong path p
+initial attack states, and we call the nodes of the of system A suggests that, if the attacker compromises(1) file_info(path(’/usr/bin/passwd’),
+thesameprogramsinpundersystemB,shewillneedto
+type(regular), owner(0), group(0),
+compromisemoreprogramstoachievetheattackobjec- uper(1,1,1), gper(1,0,1), oper(1,0,1),
+setuid(1), setgid(0), sticky(0),
+tiveinB.AweakpathpofAsuggeststhat,compromis-
+se_user(’system_u’), se_role(’object_r’),
+ingasubsetoftheprogramsinpunderB alreadyhelps se_type(’bin_t’)).
+(2) user_info(’root’, 0, 0).
+theattackertoachievetheobjectiveinB. Auniquepath
+(3) group_info(’mail’, 8, [dovecot]).
+p of A suggests that A is more vulnerable than B be- (4) process_running(4412, 0, 0,
+’/usr/lib/postfix/master’,
+causebyrealizingp,anattackercancompromiseAbut
+system_u, system_r, initrc_t).
+not B. By examining the strong, weak, common, and (5) process_networking(4412).
+uniqueattackpathsindetails,wecanbetterunderstand
+(1) is the fact for file /usr/bin/passwd. The fact encodes the
+thedifferencesofQoPbetweentwosystems. file name, type, owner, group, user/group/world permissions, se-
+Therearetwoapproachestousethesetsofminimal tuid/setguid/stickybit,andsecuritycontextofthefile. (2)isthefact
+forrootuser,whichincludestheusername,useridandgroupid. (3)
+attackpathstocomparetheQoPoftwosystems. Inone isthefactformailgroup,whichincludesthegroupname,groupid
+approach,onemakesnoassumptionaboutwhetherone andgroupmembers.(4)isthefactforthepostfixmasterprocess.The
+factcontainstheprocessid(pid),userid(uid),groupid(gid),executed
+programiseasiertocompromisethananotherprogram. program,andthesecuritycontextoftheprocess.(5)isthefactforthe
+Inthisapproach,onecouldonlypartiallyordertheQoP sameprocessas(4),denotingthattheprocessisopentonetwork.
+as measured by the host vulnerability surfaces of dif-
+Figure2.SampleFactsofSystemState
+ferent systems. P has higher QoP than P when all
+A B
+minimalattackpathsforP areeithercommonpathsor
+A (1) dom_priv(’user_ssh_t’, ’bin_t’, ’file’,
+weakpaths. Thatis,foreveryminimalattackpathpfor [’ioctl’, ’read’, ’getattr’, ’lock’,
+’execute’, ’execute_no_trans’]).
+P , either P has the same path, or there exists a path
+A B (2) se_typetrans(old_dom(’user_ssh_t’),
+p(cid:48)forP thatcontainsastrictsubsetoftheprogramsin new_dom(’user_xauth_t’),
+B
+p, which means that p(cid:48) is easier to exploit than p. The type(’xauth_exec_t’)).
+(3) se_domain(’user_ssh_t’).
+strengthofthisapproachisthatthecomparisonresultre- (4) se_type(’bin_t’).
+mainsvalidevenwhensomeprogramsaresignificantly
+(1)saysaprocessrunningunderdomain‘userssht’hasthefollowing
+easier to exploit than other programs. The drawback is permissionsoverafilewithtype‘bint’: ioctl,read,getattr,etc. The
+thatoftentimestwoprotectionsystemsarenotdirectly factisderivedfromaTEAccessVectorRule.(2)saysifaprocessrun-
+ningunderdomain‘userssht’executesanexecutablefilewithtype
+comparable. Most of the analysis in this paper use this ‘xauthexect’,thedomainoftheprocessshouldtransitiontodomain
+approach. ‘userxautht’.ThefactisderivedfromaTETypeTransitionRule.(3)
+says‘userssht’isaSELinuxdomain. (4)says‘bint’isaSELinux
+In the second approach, one views each program type. Factslike(3)and(4)areusedtoenumerateSELinuxdomains
+as one unit, implicitly assuming that all programs are andtypes.
+equal. By making this assumption, it is possible to
+Figure3.SampleFactsofSELinuxPolicy
+come up with a total order among all protection sys-
+tems. However, thedrawbackisthatthevalidityofthe
+assumptionisquestionable. Inafewhead-to-headcom- Theinformationaboutfilesystemconsistsoffactsof
+parisonsinthispaper,weusethisapproach. Whenever all relevant files, system users, system groups and run-
+wedoso,wewillexplicitlystatetheassumptionthatall ningprocesses.SeveralsamplePrologfactsaredepicted
+programsareconsideredequal. inFigure2. Weonlyconsidersystemfactsthatarerel-
+Theidealsolutionistobeabletoquantifytheefforts evant to our security analysis. Irrelevant information,
+needed to exploit different programs. However, this is likeCPU/memoryconsumptionofaprocess,isnotcon-
+a challenging open problem that appears unlikely to be sidered. Whetherapieceofsysteminformationisrele-
+solvedanytimesoon. vanttoouranalysisdependsonthesystemrules(which
+willbediscussedlater),andtheMACsystemtobeana-
+4 OurTool lyzed. Somefactsaresecurity-relevantunderallprotec-
+tionmechanisms, likeuid/gidofaprocess; whilesome
+factsareuniquetoaparticularmechanism,likesecurity
+VulSAN consists of the following components: the
+contextsinSELinuxandprocessprofilesinAppArmor.
+Fact Collector, the Host Attack Graph Generator, and
+The encoding of Prolog facts for security policies
+theAttackPathAnalyzer.
+varyfordifferentsecuritymechanisms. Forexample,in
+SELinuxpolicies,thereareseveralkindsofstatements,
+4.1 FactCollector
+e.g., Type Enforcement Access Vector Rules and Type
+Enforcement Transition Rules. We also define all the
+FactCollectorretrievesinformationaboutthesystem domains and types. Figure 3 gives several sample Pro-
+stateandsecuritypolicy,andencodestheinformationas log facts which are generated based on a SELinux pol-
+factsinProlog. icy. OurparserforSELinuxpolicyisbasedonthetool(1) aa_capability(’/usr/lib/postfix/master’, daccanexecute(Uid, Gid, Program) : Decide if a process with
+’net_bind_service’). certainuidandgidcanexecuteaprogram.
+(2) aa_access_mode(’/usr/lib/postfix/master’,
+’/etc/samba/smb.conf’, r(1), w(0), dacexecve(Uid, Gid, NewUid, NewGid, Program) : Decide the
+ux(0), px(0), ix(0), m(0), l(0)). newuidandgidofaprocessafterexecutingaprogram.
+(1) says the program /usr/lib/postfix/master has the capability of secanexecuteprog(Domain,Program,NewDomain):Decideifa
+netbindservice. (2)saystheprogramcanreadsambaconfigurefile processwithcertaindomaincanexecuteaprogram,andwhatthenew
+/etc/samba/smb.conf.Factslike(2)definetheprivilegesofaprogram domainisafterexecution.
+overacertainfileorfilepattern.
+aafileprivilege(Profile, File, Mode) : Decide if a process with a
+certainprofilecanaccessafilewithacertainmode,e.g.,read,write,
+Figure4.SampleFactsofAppArmorPolicy execute.
+aanewprofile(Profile,Program,NewProfile):Getthenewprofile
+of a process after executing a program. A profile can be ‘none’
+meaningthereisnoprofileconfiningtheprocess.
+checkpolicy.
+In AppArmor, a profile defines the privileges of a
+Figure5.SampleSystemRules
+certain program. A privilege can be a capability, or a
+set of permissions over a file or file pattern. Figure 4
+gives some sample Prolog facts of an AppArmor pol- Prolog. The state transition depends on the current
+icy. OurparserforAppArmorpolicyisbasedonappar- attackstate,thecompromisedprogramandthepolicy.
+mor parser. Asoneexampleofsystemrules,wenowdiscusshow
+to encode domain transition under SELinux. The logic
+4.2 HostAttackGraphGenerator to decide domain transition is described in [23], and is
+non-trivial. SupposethecurrentdomainisOldDom,the
+Host Attack Graph Generator takes system facts, a type of the executable is Type and the new domain is
+libraryofsystemrulesandtheattackscenarioasinput, NewDom. Wesummarizethelogicasfollows:
+andgeneratesthehostattackgraph.Wefirstdiscusshow
+1. IfOldDomdoesn’thavefileexecutepermissionon
+todefineattackstates.
+Type,theaccessisdenied.
+In our analysis, the basic unit is a process. The
+attack state of a process consists of process attributes 2. If there is a type transition rule: ‘type transition
+that are related to access control enforcement. Uid OldDom Type: process NewDom’, the access is
+and gid of a process are used in Linux DAC mech- grantedonlywhenOldDomhasprocesstransition
+anism, which is the default mechanism. MAC sys- permission on Type and NewDom has file entry-
+tems give additional process attributes. In SELinux, pointpermissiononType. Otherwisetheaccessis
+thecurrentdomainofaprocessisasecurityrelatedat- denied. Iftheaccessisgranted,theprocessrunson
+tribute. Hencetheattackstateofaprocessisdescribed thedomainNewDomafterexecutingtheprogram.
+asproc(uid,gid,domain). InAppArmor,anattackstate
+3. If there isn’t such a type transition rule, the ac-
+is represented as proc(uid,gid,profile) where profile is
+cess is granted only when OldDom has file exe-
+theprofilethatconfinestheprocess.
+cute no trans permission on Type. Otherwise the
+Given the attack state of a process controlled by the
+access is denied. If the access is granted, the pro-
+attacker,theprivilegesavailabletotheattackerisdefined
+cessrunsontheoriginaldomainOldDomafterex-
+by the policy. For example, under SELinux, a process
+ecutingtheprogram.
+withacertaindomaincanonlyhaveacertainsetofper-
+missions. Permissions also depend on the uid and gid. Using logic programming the domain transition logic
+Figure5givessomerelevantpredicatestodescribesuch canbeencodednaturally. RelatedPrologcodeisshown
+enforcement. inFigure6.
+Suppose the attacker controls a process p, she may The initial resources of the attacker can be repre-
+exploit or launch a program prog to further control an- sented as a set of initial attack states. Suppose the at-
+other attack state. We are interested in all the potential tackercanconnecttothemachinefromthenetwork,the
+attackstatesthatmightbecontrolledbyanattacker. initial attack states are encoded in Figure 7(a). Simi-
+In SELinux, we represent the fact that the larly, we use a set of goal attack states to represent the
+attacker can control a certain attack state as objectiveoftheattacker. Theencodingoftheobjective
+se node(proc(uid,gid,domain)). If the attacker toloadakernelmoduleisdepictedinFigure7(b).
+controls attack state s , and after exploiting a program Given the initial attack states and the goal attack
+1
+prog she can control attack state s , the transition is states, we can generate the host attack graph that con-
+2
+represented as se edge(s ,s ,prog). Here se node(·) tainsallthepotentialstatesthattheattackercancontrol.
+1 2
+and se edge(·,·,·) are both dynamic predicates in ThepseudocodeisdepictedinFigure8.1: functionGENERATE MINIMAL ATTACK PATHS
+2: V ←V ∪vg
+se_can_execute_type(Domain, Type, NewDomain) :- 3: forallgoalattackstatenodevdo
+se_typetrans(old_dom(Domain), 4: addanedgefromvtovg,
+new_dom(NewDomain), type(Type)), 5: theexploitedprogramfortheedgeisempty
+!, 6: forallv∈V do
+se_domain_privilege(domain(Domain), 7: MP(v)←φ
+type(Type), class(file), op(execute)),
+8: forallinitialattackstatenodevdo
+se_domain_privilege(domain(Domain),
+9: MP(v)←{φ}
+type(NewDomain), class(process),
+op(transition)), 10: repeat
+se_domain_privilege(domain(NewDomain), 11: stable←true
+type(Type), class(file), op(entrypoint)). 12: foralle∈Edo
+13: forallp∈MP(e.v1)do
+se_can_execute_type(Domain, Type, NewDomain) :- 14: p(cid:48)←append(p,e)
+se_domain_privilege(domain(Domain), 15: if∃p0∈MP(e.v2)s.t.V(p(cid:48))⊂V(p0)then
+type(Type), class(file), op(execute)), 16: RemoveallsuchpathsfromMP(e.v2)
+se_domain_privilege(domain(Domain), type(Type), 17: ifnot∃p1∈MP(e.v2)s.t.V(p(cid:48))⊃V(p1)then
+NewDomaic nla =ss D( of mi al ie n) ., op(execute_no_trans)), 1 18 9:
+:
+M staP b( le e. ←v2) fa← lseMP(e.v2)∪{p(cid:48)}
+20: untilstable
+21: returnMP(vg)
+Figure6.RulesforDomainTransition
+Symbols Meaning
+V Thesetofhostattackgraphnodes
+E Thesetofhostattackgraphedges
+vg Thevirtual“goal”nodeaddedsuchthateachgoal
+net_init(proc(Uid,Gid,Domain), [Program]) :-
+attackstatehasanedgetovg
+MP MP(v)storesthesetofminimalattackpathsto
+process_networking(Pid),
+nodev
+process_running(Pid, Uid, Gid, Program,
+_, _, Domain).
+e.v1,e.v2 Thestartingnodeandendingnodeofanedgee
+V(p) Thesetofallexploitedprogramsalongthepathp
+append(p,e) Appendedgeetotheendofpathp
+(a) Initial resources: the attacker can connect to the machine from
+network
+load_module_goal(proc(0, _Gid, Domain)) :- Figure9.MinimalAttackPathsGeneration
+se_domain_privilege(domain(Domain), _,
+class(capability), op(sys_module)).
+(b)Attackobjective:toloadakernelmodule
+4.3 AttackPathAnalyzer
+Figure 7. Predicates for Initial Attack
+StatesandGoalAttackStates Attack Path Analyzer finds all the minimal attack
+paths in a host attack graph. Figure 9 describes the it-
+erativealgorithmusedbyAttackPathAnalyzer. Theal-
+gorithmrepeatedlyupdatesasetofpathsforeachnode
+untilallthesetsarestablized.
+1: functionGENERATE GRAPH NODE(s)
+2: ifsisalreadyagraphnodethen 4.4 ToolStatus
+3: return
+4: Addsasagraphnode We have implemented VulSAN in Linux. VulSAN
+5: ifsisagoalattackstatethen has been used to evaluate SELinux and AppArmor in
+6: return severalLinuxdistributions. Weplantofurtherimprove
+7: forallprogramprogthatscanexecutedo thetoolandreleaseittothepublicinthefuture(possi-
+8: s(cid:48) ←theattackstateafterexecutingprog blyunderthetermsandconditionsoftheGNUGeneral
+9: Add(s,s(cid:48))asagraphedgewithlabelprog PublicLicense(GPL)).
+10: Generate Graph Node(s(cid:48))
+1: functionGENERATE HOST ATTACK GRAPH 5 ComparingSELinuxwithAppArmor
+2: forallInitialattackstatesdo
+3: Generate Graph Node(s)
+We use three attack scenarios to evaluate our ap-
+proach. The first is for a remote attacker to install a
+Figure 8. Algorithm for Host Attack Graph
+rootkit. We assume the rootkit is installed by loading
+Generation
+akernelmodule. Thesecondisforaremoteattackerto
+plant a Trojan horse. We use two definitions of trojan
+attacks: (1) the attacker can create an executable in afolder on the executable search path or user’s home di-
+rectory (2) the attacker can create an executable in any
+foldersuchthatanormaluserprocess(withauser’suid andrunsunderunconfineddomaininSELinuxorisnot confined by any profile in AppArmor) can execute. In bothcases,afterthetrojanprogramisexecutedthepro-
+cess should be unconfined. We call (1) a strong trojan
+caseand(2)aweaktrojancase. Thethirdisforalocal
+attackertoinstallarootkit. WeanalyzetheQoPunderseveralconfigurations:
+1. Ubuntu8.04(weusetheServerEditionforallthe
+testcases)withSELinuxandUbuntu8.04withAp- pArmor. To understand what additional protec- tion MAC offers on top of DAC, we also evalu-
+ateUbuntu8.04withDACprotectiononly(without
+MACprotection).
+2. Fedora8withSELinuxandSUSELinuxEnterprise
+Server10withAppArmor. Wecomparetheresults
+with Ubuntu 8.04/SELinux and Ubuntu 8.04/Ap-
+pArmortoshowthatdifferentdistributionswiththe
+samemechanismprovidedifferentlevelsofprotec- tion.
+3. Ubuntu 8.04 with SELinux. In the evaluation, we onlyanalyzetheSELinuxpolicy. Weusetheresult toshowthatonlyconsideringMACpolicywithout DACpolicyandsystemstateisnotsufficient.
+The active services include: sshd, vsftp, apache2,
+samba, mysql-server, postfix, nfsd, named, etc. In Fe-
+dora 8, the SELinux policy is the targeted policy that shipped with the distribution. In Ubuntu 8.04, the SELinuxpolicyisthereferencepolicythatcomeswith the selinux package. The AppArmor policy is the one thatcomeswiththeapparmor-profilespackage.
+5.1 SELinux vs. AppArmor vs. DAC only on
+Ubuntu8.04
+Ubuntu 8.04 Server Edition supports both SELinux and AppArmor. This offers an opportunity for us to compare the QoP of SELinux and AppArmor head to head. We also include the case in which only DAC is usedinthecomparison.
+ARemoteAttackertoInstallaRootkit Inthisattack
+scenario,theattackerhasnetworkaccesstothehost,and
+the objective is to install a rootkit via loading a kernel
+module. The host attack graphs for SELinux, AppAr-
+mor and DAC only are shown in Figure 10, Figure 11
+andFigure12,respectively. Thecomparisonofminimal
+attackpathsbetweenSELinuxandAppArmorisshown
+inFigure13.
+Among the three cases, AppArmor has the small-
+est vulnerability surface. SELinux has all the minimal
+tini
+tneilchd/nibs/
+dlqsym/nibs/rsu/
+dhss/nibs/rsu/
+dspuc/nibs/rsu/deman/nibs/rsu/pamtrop/nibs/
+dtats.cpr/nibs/
+2ehcapa/nibs/rsu/ dbmn/nibs/rsu/
+)t_cpchd
+,201 ,101(corp
+)t_denifnocnu
+,911
+,011(corp
+)t_dhss
+,0 ,0(corp
+)t_dspuc ,0 ,0(corp
+)t_denifnocnu ,711 ,801(corp
+)t_denifnocnu ,1 ,1(corp
+)t_denifnocnu ,0 ,601(corp dtnuom.cpr/nibs/rsu/ dbms/nibs/rsu/ dptfsv/nibs/rsu/
+tnuom/nib/ tp ei crc i nvs s g- l et i idn t su - ye tp ei ed tpsl d ii kg gc w .df r w ohn 6 -h nt n -r g e hn s ds6 tef td i s. owg s pmh h spu t u tg sa- dnu sun yc c ao r seln p //s uu a oli / / rp / hnnmi ap gn n/ n cs/o rp /n s/ic n/ m//i i en inbu sm/n nnb bi b/ i cn nib t i// bi dii/ / b / an bn r/i eb bb/ r r r/n sb // re s s /i s pr/ t// u rb tri u us/ ui crr s o/b sl /u ss/ n e/ / u /c us /uu/ j bi/- / / eb//3 i// lp b /r rsc i sluh / u/ rd /s/ ub /il/
+tt nn uu oo mm u/ /n ni ib b/ /
+eci
+nvs gl ei idt su - ytp need tps d ii wkg gw .df r w ohn 6 -nn -r og e hs ds6 tef ti s. ow hg s pmh h spt u tg sa dnu s cun yc c ar sen p // _s uu a oi / / rp / hnnip gn n/ n cs t/o rp /n s/i pn/ m/ /i i en inb sm/n n nb bi b /i cn nib i/ bbi di i/ / b / abr/i eb b b/ r r r i/n sb // rs s / s p lr/ t/ /u r tri /u us/ u cr rs o/b s r/u s s n e/ / u / sus /u u/ j b ui// / eb/ / i // l/ b /r rs i slu / u/ r /su/
+dwpkhc_xinu/nibs/
+tt nn uu oo mm u/ /n ni ib b/ /
+eci nvs gl ei idt su - ytp need tps d ii wkg gw .df r w on h 6 -nn -r og e hs ds6 tef ti s. ow hg s pmh h spt u tg sa dnu s cun yc c ar sen p // _s uu a oi / / rp / hnnip gn n/ n cs t/o rp /n s/i pn/ m/ /i i en inb sm/n n nb bi b /i cn nib i/ bbi di i/ / b / abr/i eb b b/ r r r i/n sb // rs s / s p lr/ t/ /u r tri /u us/ u cr rs o/b s r/u s s n e/ / u / sus /u u/ j b ui// / eb/ / i // l/ b /r rs i slu / u/ r /su/
+tt nn uu oo mm u/ /n ni ib b/ / eci nvs gl ei idt su - ytp need tps d ii wkg gw .df r w on h 6 -nn -r og e hs ds6 tef ti s. ow hg s pmh h spt u tg sa dnu s cun yc c ar sen p // _s uu a oi / / rp / hnnip gn n/ n cs t/o rp /n s/i pn/ m//i i en inb sm/n nnb bi b /i cn nib i/ bbi dii/ / b / abr/i eb bb/ r r r i/n sb // rs s / s p lr/ t// u r tri /u us/ u crr s o/b s r/u ss n e/ / u / sus /uu/ j b ui// / eb// i /// lb /r rs i slu / u/ r /su/
+tt nn uu oo mm u/ /n ni ib b/ / eci nvs gl ei idt su - ytp need tps d ii wkg gw .df r w on h 6 -nn -r og e hs ds6 tef ti s. ow hg s pmh h spt u tg sa dnu s cun yc c ar sen p // _s uu a oi / / rp / hnnip gn n/ n cs t/o rp /n s/i pn/ m//i i en inb sm/n nnb bi b /i cn nib i/ bbi dii/ / b / abr/i eb bb/ r r r i/n sb // rs s / s p lr/ t// u r tri /u us/ u crr s o/b s r/u ss n e/ / u / sus /uu/ j b ui// / eb// i /// lb /r rs i slu / u/ r /su/
+nwohc_tp/bil/rsu/ )t_cpchd ,201
+,0(corp
+)t_tnuom_denifnocnu
+,911
+,0(corp )t_denifnocnu
+,911
+,0(corp
+)t_dwpkhc_metsys
+,24 ,0(corp
+)t_tnuom_denifnocnu
+,711 ,0(corp )t_denifnocnu
+,711
+,0(corp
+)t_tnuom_denifnocnu ,1 ,0(corp )t_denifnocnu
+,1
+,0(corp
+)t_tnuom_denifnocnu ,0 ,0(corp )t_denifnocnu
+,0
+,0(corp
+Figure10.HostAttackGraphforaRemote
+Attacker to Install a Rootkit (Ubuntu 8.04
+withSELinux)init
+/usr/sbin/sshd /usr/sbin/mysqld /usr/sbin/named
+/usr/sbin/apache2
+proc(0, 0, /usr/sbin/sshd) proc(108, 117, none) proc(109, 118, none)
+/usr/sbin/rpc.mountd
+/bin/mount /bin/mount
+/bin/ping6 /bin/ping6
+/bin/su /bin/su
+/bin/umount /bin/umount
+/sbin/mount.nfs /sbin/mount.nfs
+/usr/bin/arping /usr/bin/arping
+/usr/bin/chfn /usr/bin/chfn
+/usr/bin/chsh /usr/bin/chsh
+/bin/bash /usr/bin/gpasswd /usr/bin/gpasswd
+/usr/bin/mtr /usr/bin/mtr
+/usr/bin/newgrp /usr/bin/newgrp
+/usr/bin/sudo /usr/bin/sudo
+/usr/bin/sudoedit /usr/bin/sudoedit
+/usr/bin/traceroute6.iputils /usr/bin/traceroute6.iputils
+/usr/lib/eject/dmcrypt-get-device /usr/lib/eject/dmcrypt-get-device
+/usr/lib/openssh/ssh-keysign /usr/lib/openssh/ssh-keysign
+/usr/lib/pt_chown /usr/lib/pt_chown
+proc(0, 0, none) proc(0, 117, none) proc(0, 118, none)
+Figure 11. Host Attack Graph for a Remote Attacker to Install a Rootkit (Ubuntu 8.04 with
+AppArmor)
+init
+/sbin/portmap /sbin/rpc.statd/usr/sbin/named /usr/sbin/mysqld /sbin/dhclient
+/usr/sbin/apache2
+/usr/sbin/cupsd
+/usr/sbin/nmbd
+proc(1, 1) /usr/sbin/rpc.mountd proc(106, 0) proc(108, 117) proc(110, 119) proc(101, 102)
+/usr/sbin/smbd
+/usr/sbin/sshd
+/usr/sbin/vsftpd
+/bin/mount
+/bin/mount /bin/mount /bin/mount /bin/mount
+/bin/ping
+/bin/ping /bin/ping /bin/ping /bin/ping
+/bin/ping6
+/bin/ping6 /bin/ping6 /bin/ping6 /bin/ping6
+/bin/su
+/bin/su /bin/su /bin/su /bin/su
+/bin/umount
+/bin/umount /bin/umount /bin/umount /bin/umount
+/lib/dhcp3-client/call-dhclient-script
+/sbin/mount.nfs /sbin/mount.nfs /sbin/mount.nfs /sbin/mount.nfs
+/sbin/mount.nfs
+/usr/bin/arping /usr/bin/arping /usr/bin/arping /usr/bin/arping
+/usr/bin/arping
+/usr/bin/chfn /usr/bin/chfn /usr/bin/chfn /usr/bin/chfn
+/usr/bin/chfn
+/usr/bin/chsh /usr/bin/chsh /usr/bin/chsh /usr/bin/chsh
+/usr/bin/chsh
+/usr/bin/gpasswd /usr/bin/gpasswd /usr/bin/gpasswd /usr/bin/gpasswd
+/usr/bin/gpasswd
+/usr/bin/mtr /usr/bin/mtr /usr/bin/mtr /usr/bin/mtr
+/usr/bin/mtr
+/usr/bin/newgrp /usr/bin/newgrp /usr/bin/newgrp /usr/bin/newgrp
+/usr/bin/newgrp
+/usr/bin/passwd /usr/bin/passwd /usr/bin/passwd /usr/bin/passwd
+/usr/bin/passwd
+/usr/bin/sudo /usr/bin/sudo /usr/bin/sudo /usr/bin/sudo
+/usr/bin/sudo
+/usr/bin/sudoedit /usr/bin/sudoedit /usr/bin/sudoedit /usr/bin/sudoedit
+/usr/bin/sudoedit
+/usr/bin/traceroute6.iputils /usr/bin/traceroute6.iputils /usr/bin/traceroute6.iputils /usr/bin/traceroute6.iputils
+/usr/bin/traceroute6.iputils
+/usr/lib/eject/dmcrypt-get-device /usr/lib/eject/dmcrypt-get-device /usr/lib/eject/dmcrypt-get-device/usr/lib/eject/dmcrypt-get-device
+/usr/lib/eject/dmcrypt-get-device
+/usr/lib/openssh/ssh-keysign /usr/lib/openssh/ssh-keysign /usr/lib/openssh/ssh-keysign /usr/lib/openssh/ssh-keysign
+/usr/lib/openssh/ssh-keysign
+/usr/lib/pt_chown /usr/lib/pt_chown /usr/lib/pt_chown /usr/lib/pt_chown
+/usr/lib/pt_chown
+proc(0, 1) proc(0, 0) proc(0, 117) proc(0, 119) proc(0, 102)
+Figure12.HostAttackGraphforaRemoteAttackertoInstallaRootkit(Ubuntu8.04withDAC
+only)SELinuxcomparedtoAppArmor
+SUID*representsasetofsetuidrootprograms:
+common /usr/sbin/apache2
+/bin/ping6
+/usr/sbin/rpc.mountd
+/bin/su
+/usr/sbin/namedSUID*
+/sbin/mount.nfs
+/usr/sbin/mysqldSUID*
+/usr/bin/arping
+/usr/sbin/sshd
+/usr/bin/chfn
+unique /usr/sbin/nmbd /usr/bin/chsh
+/usr/sbin/smbd /usr/bin/gpasswd
+/usr/sbin/vsftpd /usr/bin/mtr
+/sbin/portmapSUID** /usr/bin/newgrp
+/sbin/rpc.statdSUID** /usr/bin/sudo
+/usr/bin/sudoedit
+/usr/sbin/cupsd/sbin/unix chkpwd /usr/bin/traceroute6.iputils
+/sbin/dhclientSUID** /usr/lib/eject/dmcrypt-get-device
+/sbin/dhclient /lib/dhcp3-client/call- /usr/lib/openssh/ssh-keysign
+dhclient-script /usr/lib/pt chown
+/bin/mount
+/usr/sbin/named/bin/ping /bin/umount
+/usr/sbin/named/usr/bin/passwd
+SUID** includes all programs in SUID* and also
+/usr/sbin/mysqld/bin/ping
+/bin/pingand/usr/bin/passwd
+/usr/sbin/mysqld/usr/bin/passwd
+Figure13.MinimalAttackPathsComparisonforaRemoteAttackertoInstallaRootkit
+attack paths AppArmor has and some additional ones. For example, domain dhcpc t is allowed to load a ker-
+The DAC only case has all the attack paths SELinux nelmodulewhiletheprofile/sbin/dhclientdoesn’tallow
+has, and has one additional minimal attack path. More kernelmoduleloading. (3)Someprograms(namedand
+specifically, AppArmor has 3 length-1 minimal attack mysqld) are not confined either in SELinux or AppAr-
+pathsand34length-2minimalattackpaths. Inaddition mor. However, because they run with unprivileged ac-
+to these, SELinux has 3 more length-1 minimal attack counts(asopposedtotheroot)underDAC,compromis-
+pathsand63morelength-2minimalattackpaths. ingthemdonotenabletheattackertoloadakernelmod-
+ule. ThereareuniqueattackpathsforSELinuxbecause
+Attack paths common to all three cases are mainly
+oftheconfinementofsomesetuidrootprograms. Ping
+duetodaemonprogramsthatruninunconfineddomain
+and passwd are unconfined in SELinux but confined in
+under SELinux (meaning that the program is not con-
+AppArmor, therefore they can be used to further esca-
+strained by SELinux) and are not confined by profiles
+latetheattackers’privilegesaftercompromisingnamed
+under AppArmor. The length-1 paths are due to the
+ormysqld.
+daemonprogramsapache2,rpc.mountdandsshdwhich
+run as root. (Although sshd is running in sshd t under
+Somewhat surprisingly, the DAC only case has only
+SELinux and confined by a profile in AppArmor, the
+one additional (strong) length-1 minimal attack path
+domainandtheprofilebothallowtheprocesstoloada
+comparedtoSELinux. Thepathis/usr/sbin/cupsd. The
+kernelmoduledirectlyorindirectly).Thelength-2paths
+cupsddaemonrunsasrootandisconfinedbythecups t
+are due to unprivileged daemon programs mysqld and
+domain of SELinux. When the attacker exploits cupsd
+named. After compromising one of them, the attacker
+with SELinux enabled, she has to additionally exploit
+needstodoanotherlocalprivilegeescalation.
+the setuid root program /bin/unix chkpwd to gain the
+The minimal attack paths that SELinux has but Ap- privilegetoinstallarootkit.
+pArmordoesn’thaveareduetothreereasons: (1)Some
+programsarerunningintheunconfined tdomainunder Our analysis shows that among the seven network-
+this version of SELinux policy, while AppArmor has facing programs running as root in Ubuntu 8.04 Server
+profiles for them; these include, e.g., nmbd, smbd, vs- Edition, namely apache2, cupsd, nmbd, rpc.mountd,
+ftpd, portmap, and rpc.statd. (2) Some programs are smbd,sshd,andvsftpd,onlyoneofthemisconfinedin
+confinedbySELinuxdomains,buttheconfinementsare anymeaningfulwaybytheSELinuxpolicy. Henceone
+not as tight as corresponding AppArmor profiles. Two canarguethattheadditionalprotectionprovidedbythe
+programs, cupsd and dhclient, fall into this category. SELinux reference policy in Ubuntu 8.04 is quite lim-init
+/usr/sbin/apache2
+/usr/sbin/nmbd
+/usr/sbin/rpc.mountd /sbin/portmap /sbin/rpc.statd /usr/sbin/named /usr/sbin/cupsd /usr/sbin/sshd /usr/sbin/mysqld /sbin/dhclient
+/usr/sbin/smbd
+/usr/sbin/vsftpd
+proc(0, 0, unconfined_t) proc(1, 1, unconfined_t) proc(106, 0, unconfined_t) proc(108, 117, unconfined_t) proc(0, 0, cupsd_t) proc(0, 0, sshd_t) proc(110, 119, unconfined_t) proc(101, 102, dhcpc_t)
+Figure14.HostAttackGraphforaRemoteAttackertoLeaveaWeakTrojan(Ubuntu8.04with
+SELinux)
+ited.
+RemoteAttackertoLeaveaTrojanHorse init
+We consider a scenario in which the attacker is re-
+mote and wants to leave a Trojan horse. We consider proc(1000, 1000, unconfined_t)
+both the strong Trojan horse case and the weak Trojan /bin/fusermount
+horsecase. Weobservethatperformingastrongtrojan /bin/ping
+/bin/ping6
+attackisalwaysnotmoredifficultthaninstallingaker- /bin/su
+/sbin/mount.nfs
+nelmodule. /usr/bin/arping
+/usr/bin/chfn
+ForUbuntu8.04withAppArmor,comparedtoload- /usr/bin/chsh
+/usr/bin/gpasswd
+ing kernel module, there is one extra attack path in /usr/bin/mtr /bin/mount
+/bin/umount
+/usr/bin/newgrp
+strong trojan attack: /usr/sbin/smbd. For Ubuntu 8.04 /usr/bin/passwd
+/usr/bin/sudo
+with SELinux, the host attack graph is the same as the
+/usr/bin/sudoedit
+graphforaremoteattackertoinstallarootkit. /usr/bin/traceroute6.iputils
+/usr/lib/eject/dmcrypt-get-device
+It’s significantly easier to perform weak trojan at- /usr/lib/openssh/ssh-keysign
+/usr/lib/pt_chown
+tacks. Figure 14 shows the host attack graph to leave /usr/sbin/pppd
+aweaktrojaninUbuntu8.04withSELinux. Everynet- proc(0, 1000, unconfined_t) proc(0, 1000, unconfined_mount_t)
+work faced program, if compromised, can be used di-
+rectly to leave a weak Trojan horse. This is so due to
+two reasons. First, both SELinux and AppArmor con- Figure 15. Host Attack Graph for a Local
+fineonlyasubsetoftheknownprogramsandleaveany Attacker to Install a Rootkit (Ubuntu 8.04
+program not explicitly identified as confined. Second, withSELinux)
+as neither SELinux nor AppArmor performs informa-
+tionflowtracking,thesystemcannottellaprogramleft
+byaremoteattackerfromoneoriginallyinthesystem.
+/usr/bin/traceroute6.iputils, /usr/lib/eject/dmcrypt-get-
+ALocalAttackertoInstallaRootkit device, /usr/lib/openssh/ssh-keysign, /usr/lib/pt chown,
+Inthethirdattackscenario,theattackerhasalocalac- /usr/sbin/pppd,/bin/mount,/bin/umount.
+count. Theobjectiveistoinstallarootkit(loadakernel The programs in the common paths are setuid root
+module). Figure15andFigure16showsthehostattack programs. The result shows that the way for a local
+graphs for Ubuntu 8.04 with SELinux and AppArmor, usertoloadakernelmoduleistoexploitoneofthese-
+respectively. tuid root programs. SELinux has 2 unique minimal at-
+Again, AppArmor has a smaller vulnerability tack paths for SELinux: /bin/ping and /usr/bin/passwd.
+surface. All minimal attack paths in AppArmor They are due to the same reason in the first scenario,
+also occur in SELinux, which has some additional that SELinux does not confine ping and passwd while
+attack paths. There are 19 common minimal attack AppArmorconfinesthem.
+paths, they are all of length 1. They are due to 19
+setuid root programs that have sufficient privileges. 5.2 OtherComparisons
+These programs are /bin/fusermount, /bin/ping6,
+/bin/su, /sbin/mount.nfs, /usr/bin/arping, /usr/bin/chfn, In this subsection we compare the QoP offered by
+/usr/bin/chsh, /usr/bin/gpasswd, /usr/bin/mtr, different Linux distributions with a same MAC mech-
+/usr/bin/newgrp, /usr/bin/sudo, /usr/bin/sudoedit, anism. We also discuss why considering MAC policyinit init
+/usr/sbin/sshd /sbin/dhclient
+proc(1000, 1000, none) proc(0, 0, sshd_t) /usr/sbin/rpc.rquotad proc(0, 0, dhcpc_t)
+/bin/fusermount /sbin/ethtool
+/bin/mount /sbin/insmod /sbin/ifconfig
+/b /i bn i/ np /i sn ug6 / /b bi in n/ /b za ss hh /etc/rc.d/init.d/ntpd/s /b si bn i/ nin /msm odo pd r.s ot ba etic /sbi/ ns /b iwin c/i op
+nfig
+/bin/umount /sbin/rmmod /sbin/mii-tool
+/sbin/mount.nfs /sbin/tc
+/usr/bin/arping
+/usr/bin/chfn proc(0, 0, unconfined_t) proc(0, 0, initrc_t) proc(0, 0, insmod_t) proc(0, 0, ifconfig_t)
+/usr/bin/chsh
+/usr/bin/gpasswd
+/usr/bin/mtr
+/usr/bin/newgrp
+/usr/bin/sudo
+Figure17.HostAttackGraphforaRemote
+/usr/bin/sudoedit
+/usr/bin/traceroute6.iputils AttackertoInstallaRootkit(Fedora8with
+/usr/lib/eject/dmcrypt-get-device
+/usr/lib/openssh/ssh-keysign SELinux)
+/usr/lib/pt_chown
+/usr/sbin/pppd
+proc(0, 1000, none)
+tosendmail.Thoseprogramsareconfined,buttheyhave
+privileges to write to the user’s home directory or di-
+Figure 16. Host Attack Graph for a Local
+rectories in the executable search path. Under the as-
+Attacker to Install a Rootkit (Ubuntu 8.04
+sumption that all programs are equal, the vulnerabil-
+withAppArmor)
+ity surface of Fedora 8/SELinux is smaller than that of
+Ubuntu 8.04/SELinux for the remote trojan attack sce-
+nario.
+aloneisnotenough.
+init
+DifferentVersionsofSELinux /usr/sbin/rpc.mountd /usr/sbin/smbd /usr/sbin/sendmail /sbin/dhclient /usr/sbin/sshd
+WehavefoundthattheSELinuxpolicyinFedora8, proc(0, 0, nfsd_t) proc(0, 0, smbd_t) proc(0, 51, sendmail_t) proc(0, 0, dhcpc_t) /usr/sbin/rpc.rquotad proc(0, 0, sshd_t)
+which is the SELinux targeted policy, offers signifi- /usr/bin/procmail /etc/rc.d/init.d/ntpd / /b bi in n/ /b za ss hh
+cantlybetterprotectionthantheSELinuxinUbuntu8.04
+proc(0, 51, procmail_t) proc(0, 0, initrc_t) proc(0, 0, unconfined_t)
+ServerEdition,whichusesaversionoftheSELinuxref-
+erence policy. In addition, the most current version of
+theSELinuxreferencepolicyisalsotighterthanthepol- Figure18.HostAttackGraphforaRemote
+icyshippedwithUbuntu8.04. Attacker to Leave a Strong Trojan (Fedora
+Figure 17 shows the host attack graph for a remote 8withSELinux)
+attacker to install a rootkit in Fedora 8 with SELinux.
+Thevulnerabilitysurfaceisnotdirectlycomparablewith DifferentVersionsofAppArmor
+thatofUbuntu8.04(showninFigure10)becauseeach WehaveanalyzedthevulnerabilitysurfaceofSUSE
+has some unique attack paths. If we assume that all LinuxEnterpriseServer10(SLES10)withAppArmor
+programs are equal, the vulnerability surface of Fe- protection. TokeeptheservicesinSLES10thesameas
+dora 8/SELinux is smaller because there is 1 length- inUbuntu8.04, someservicesthatareupbydefaultin
+1 minimal attack path and 13 length-2 minimal attack SLES10areturnedoff,e.g.,slpdandzmd.
+paths in Fedora 8/SELinux, while there are 6 length- ThevulnerabilitysurfaceofSLES10/AppArmorun-
+1 minimal attack paths and 97 length-2 minimal attack der the scenario that a remote attacker wants to install
+pathsinUbuntu8.04/SELinux. a rootkit (as shown in Figure 19) is not directly com-
+Figure18showsthehostattackgraphforaremoteat- parable with that of Ubuntu 8.04/AppArmor. The two
+tackertoleaveastrongtrojaninFedora8withSELinux. distributionsexposedifferentvulnerabilitysurfaces.
+Compared to the kernel module loading scenario, tro- The common attack paths are through sshd and
+jan attack scenario has three additional minimal attack rpc.mountd(NFSmountdaemon). Theuniquepathsfor
+paths: Ubuntu 8.04 are through apache2, mysqld and named,
+duetothatthoseprogramsarenotconfined. Theunique
+/usr/sbin/rpc.mountd
+pathsforSLES10arethroughcupsdsincecupsdisnot
+/usr/sbin/smbd
+confined. Sshd also contributes to some unique paths
+/usr/sbin/sendmail/usr/bin/procmail
+sincetherearemoreshellsinstalledinSLES10.
+Twopathsarerelatedtofilesharingandtheotherisdue In SLES 10, the host attack graph for a remote at-init
+init
+/usr/sbin/cupsd /usr/sbin/sshd
+proc(4, 7, none) /usr/sbin/rpc.mountd proc(0, 0, /usr/sbin/sshd)
+/bin/eject proc(1000, 100, none)
+/bin/mount
+/bin/ping6
+/bin/b /uin m/s ou unt /bin/eject
+/opt/gnome/lib/libgnomesu/gnomesu-pam-backend /bin/mount
+/opt/gnome/sbin/change-passwd /bin/ping6
+/opt/kd /se b3 i/ nb /i un n/k ixp 2a _c c_ hd kh pc wp_ dhelper /bin/su
+/usr/X11R6/bin/Xorg /bin/umount
+// u/u/ u s/u / suu rss/ r /s rsu /r b/r br/s b i/b / ir nbb ini/ n /in ib / gnn /c/i e p/c /n rcc xoh a/ hha p sa nsft sig tn h r wae yb d /usr/lib/news/bin/inews /sb/ // /b ibb b ni ii in /nn n n/ // /b ota zca ls ss osh hhh gin /opt/gnom / /o oe/ p pl t ti / /b g k/ /n dl / ui so eb sb3m rg i // nn Xbe /o i/ u 1nsm n 1b /k i Re i xn ps 62/u ac /_c/ bhg c_ ia hn ndn ko /h Xg pm ce w op-e r_p ds ghau es- sp lpwa em d r-backend
+/u/ su rs /br/ ib ni /n m/g ap ng db /usr/bin/at
+/usr/bin/newgrp /usr/bin/chage
+/us /r u/b sri /n b/ io np /i oe pp ia es ss uwd /usr/bin/chfn
+/u/ /su urs s/r rb/ /ib bni i/n nr/ /lr roc sg hp in /u/ su rs /r b/ ib ni /n c/ rc oh ns th ab /usr/lib/news/bin/inews
+/usr/bin/sudo /usr/bin/expiry
+/usr/lib/pt_chown /usr/bin/gpasswd
+/usr/sbin/suexec2 /usr/bin/gpg
+proc(0, 7, none) proc(4, 13, none) proc(0, 0, none) /usr/bin/mandb
+/usr/bin/newgrp
+/usr/lib/news/bin/inndstart /usr/bin/opiepasswd
+/usr/lib/news/bin/startinnfeed /usr/bin/opiesu
+/usr/bin/rcp
+proc(0, 13, none) /usr/bin/rlogin
+/usr/bin/rsh
+/usr/bin/sudo
+/usr/lib/pt_chown
+Figure19.HostAttackGraphforaRemote /usr/sbin/suexec2
+Attacker to Install a Rootkit (SUSE Linux proc(0, 100, none) proc(1000, 13, none)
+EnterpriseServer10withAppArmor)
+/usr/lib/news/bin/inndstart
+/usr/lib/news/bin/startinnfeed
+proc(0, 13, none)
+tacker to plant a strong Trojan horse is the same as the
+graphforaremoteattackertoinstallarootkit. Foralo-
+Figure 20. Host Attack Graph for a Local
+calattackertoinstallarootkit,thehostattackgraphfor
+Attacker to Install a Rootkit (SUSE Linux
+SLES10isshowninFigure20. Thereare10common
+EnterpriseServer10withAppArmor)
+attack paths due to unconfined set uid root programs.
+Thereare9uniqueattackpathsforUbuntu8.04and20
+uniqueattackpathsforSLES10.
+TheNeedtoConsiderDACPolicy
+init
+Our approach considers both the MAC policy and
+theDACpolicy. IfweonlyconsiderMACpolicy, e.g., /sbin/portmap
+SELinux policy, the result may not be accurate. Fig- /sbin/rpc.statd
+/usr/sbin/apache2
+ure21showsthehostattackgraphforaremoteattacker /usr/sbin/mysqld
+toinstallarootkit,whenweonlyconsiderSELinuxpol- /usr/sbin/named /usr/sbin/cupsd /usr/sbin/sshd /sbin/dhclient
+/usr/sbin/nmbd
+icy but not DAC policy. Compared to the host attack /usr/sbin/rpc.mountd
+graphthatconsidersbothDACandMACpolicy(shown /usr/sbin/smbd
+/usr/sbin/vsftpd
+in Figure 10), we observe that without considering
+DAC policies, there are following extra length-1 attack unconfined_t cupsd_t sshd_t dhcpc_t
+paths: /sbin/portmap, /sbin/rpc.statd, /usr/sbin/mysqld,
+/usr/sbin/named, /sbin/dhclient. They are not accurate. /sbin/unix_chkpwd
+For example, mysqld is running with uid 110 and un-
+system_chkpwd_t
+confined t. By compromising mysqld the attacker can
+control unconfined t, but she still cannot load a kernel
+modulebecausetheuidisunprivileged. Tocontrolroot
+uidtheattackerneedstodoanotherexploit,e.g.,byex- Figure21.HostAttackGraphforaRemote
+ploitingasetuidrootprogram. Attacker to Install a Rootkit (Ubuntu 8.04
+with SELinux – only Considering SELinux
+Policy)
+5.3 Performance
+In our experiments, the targeted operating systems
+(Ubuntu, Fedora and SUSE Linux) are installed in vir-tual machines using VMWare. The host attack graph References
+generation and attack path analysis are performed on a
+laptop with Intel(R) Pentium(R) M processor 1.80GHz [1] Apparmor application security for linux.
+and 1G memory. The Prolog engine is swi-prolog http://www.novell.com/linux/security/apparmor/.
+5.6.14.
+[2] Apparmor development.
+Therunningtimeforthefactcollectorislessthan10
+http://developer.novell.com/wiki/index.php/Apparmor.
+minutes for every test case. The running time for the
+hostattackgraphgenerationandanalysisislessthan10
+[3] Selinux for distributions.
+minutesforeverytestcase.
+http://selinux.sourceforge.net.
+[4] D. E. Bell and L. J. LaPadula. Secure computer
+6 Conclusions systems: Unified exposition and Multics interpre-
+tation. Technical Report ESD-TR-75-306, Mitre
+Corporation,Mar.1976.
+In this paper, we introduce the notion of vulnerabil-
+ity surfaces under attack scenarios as the measurement [5] C. Cowan, S. Beattie, G. Kroah-Hartman, C. Pu,
+of the QoP offered by Mandatory Access Control sys- P. Wagle, and V. D. Gligor. Subdomain: Parsi-
+temsforLinux. Avulnerabilitysurfaceconsiststheset monious server security. In Proceedings of the
+ofminimalattackpathsthatarenecessaryandsufficient 14thConferenceonSystemsAdministration(LISA
+for an attack scenario to be realized. The surface de- 2000),pages355–368,Dec.2000.
+pends on the MAC mechanism, the specific MAC pol-
+[6] T.Fraser. LOMAC:Lowwater-markintegritypro-
+icy, the DAC policy settings, and the system configu-
+tection for COTS environments. In Proc. IEEE
+ration information. We have implemented a tool called
+SymposiumonSecurityandPrivacy,May2000.
+VulSAN for computing such vulnerability surfaces for
+Linux systems with SELinux or AppArmor. VulSAN
+[7] T. Fraser. LOMAC: MAC you can live with. In
+generates the host attack graph for a given attack sce-
+ProceedingsoftheFREENIXTrack: USENIXAn-
+narioandcomputethevulnerabilitysurfacefromanat-
+nualTechnicalConference,June2001.
+tack graph. VulSAN can be used to compare the QoP
+of different Linux distributions. It can also be used as [8] J.D.Guttman, A.L.Herzog, J.D.Ramsdell, and
+a system hardening tool, enabling the system admin- C.W.Skorupka. Verifyinginformationflowgoals
+istrator to analyze the vulnerability surface of the sys- in security-enhanced linux. Journal of Computer
+temandtweakthepolicytoreduceit. BecauseVulSAN Security,13(1):115–134,2005.
+canhandlebothSELinuxandAppArmor,whicharethe
+two MAC systems used by major Linux distributions, [9] B.Hicks,S.Rueda,L.S.Clair,T.Jaeger,andP.D.
+it can be used for most enterprise Linux distributions McDaniel. Alogicalspecificationandanalysisfor
+andhomeuserdistributions.WehaveevaluatedVulSAN selinux mls policy. In SACMAT, pages 91–100,
+byanalyzingandcomparingSELinuxandAppArmorin 2007.
+severalrecentLinuxdistributions,andshowedthatthere
+[10] S.HinrichsandP.Naldurg. Attack-baseddomain
+areopportunitiestotightenthepolicysettingsinseveral
+transition analysis. In Annual Security Enhanced
+popularLinuxdistributions.
+LinuxSymposium,2006.
+[11] M. Howard. Mitigate security risks by minimiz-
+Acknowledgements
+ingthecodeyouexposetountrustedusers. MSDN
+Magazine,November2004.
+ThisworkissupportedbyNSFCNS-0448204(CA- [12] M.Howard,J.Pincus,andJ.M.Wing. Measuring
+REER:AccessControlPolicyVerificationThroughSe- relative attack surfaces. In Proceedings of Work-
+curityAnalysisAndInsiderThreatAssessment),andby shop on Advanced Developments in Software and
+sponsors of CERIAS. We thank the NDSS anonymous SystemsSecurity,December2003.
+reviewersfortheirhelpfulcomments. Weareparticular
+indebted to the shepherd of our paper Crispin Cowan, [13] T. Jaeger, R. Sailer, and X. Zhang. Analyzing in-
+who pointed to us the potential of using VulSAN as a tegrity protection in the SELinux example policy.
+systemhardeningtoolandprovidedmanyothervaluable InProceedingsofthe12thUSENIXSecuritySym-
+suggestionsforimprovingthepaper. posium,pages59–74,August2003.[14] T.Jaeger,X.Zhang,andF.Cacheda. Policyman-
+agementusingaccesscontrolspaces. ACMTrans.
+Inf.Syst.Secur.,6(3):327–364,2003.
+[15] A.Leitner.Novellandredhatsecurityexpertsface
+off on apparmor and selinux counterpoint. Linux
+Magazine,(69),2006.
+[16] N. Li, Z. Mao, and H. Chen. Usable manda-
+toryintegrityprotectionforoperatingsystems. In
+Proc. IEEE Symposium on Security and Privacy,
+May2007.
+[17] P.K.Manadhata,K.M.C.Tan,R.A.Maxion,and
+J.M.Wing. Anapproachtomeasuringasystem’s
+attacksurface.TechnicalReportCMU-CS-07-146,
+CMU,August2007.
+[18] P. Naldurg, S. Schwoon, S. K. Rajamani, and
+J.Lambert. NETRA:: seeingthroughaccesscon-
+trol. InFMSE,pages55–66,2006.
+[19] NSA. Security enhanced linux.
+http://www.nsa.gov/selinux/.
+[20] X. Ou, W. F. Boyer, and M. A. McQueen. A
+scalable approach to attack graph generation. In
+Proceedingsofthe13thACMconferenceonCom-
+puter and communications security, pages 336–
+345,NewYork,NY,USA,2006.ACM.
+[21] B.Sarna-StarostaandS.D.Stoller.Policyanalysis
+forsecurity-enhancedlinux. InProceedingsofthe
+2004WorkshoponIssuesintheTheoryofSecurity
+(WITS),pages1–12,April2004.
+[22] O. Sheyner, J. Haines, S. Jha, R. Lippmann, and
+J.M.Wing. Automatedgenerationandanalysisof
+attack graphs. In Proceedings of the 2002 IEEE
+Symposium on Security and Privacy, page 273,
+Washington,DC,USA,2002.IEEEComputerSo-
+ciety.
+[23] S. Smalley, C. Vance, and W. Salamon. Im-
+plementing SELinux as a Linux security module.
+Technical Report 01-043, NAI Labs, December
+2001.
+[24] Tresys technology, setools - policy anal-
+ysis tools for selinux. Available at
+http://oss.tresys.com/projects/setools.
+[25] G. Zanin and L. V. Mancini. Towards a formal
+model for security policies specification and vali-
+dationintheselinuxsystem.InProc.ACMSympo-
+sium on Access Control Models and Technologies
+(SACMAT),pages136–145,2004.

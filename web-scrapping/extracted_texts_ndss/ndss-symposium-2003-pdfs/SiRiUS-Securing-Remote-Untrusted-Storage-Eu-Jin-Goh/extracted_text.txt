@@ -1,0 +1,1208 @@
+SiRiUS: Securing Remote Untrusted Storage
+Eu-JinGoh (cid:0) ,HovavShacham (cid:1) , NagendraModadugu,DanBoneh (cid:2)
+StanfordUniversity
+(cid:3) eujin,hovav,nagendra,dabo
+(cid:4)
+@cs.stanford.edu
+Abstract
+This paper presents SiRiUS, a secure file system de-
+signed to be layered over insecure network and P2P file
+systems such as NFS, CIFS, OceanStore, and Yahoo!
+Briefcase. SiRiUS assumes the network storage is un-
+trustedandprovidesitsownread-writecryptographicac-
+cess control for file level sharing. Key management and
+revocationis simplewithminimalout-of-bandcommuni-
+cation. Filesystemfreshnessguaranteesaresupportedby
+SiRiUSusinghashtreeconstructions. SiRiUScontainsa
+novelmethodofperformingfilerandomaccessinacryp-
+tographicfilesystemwithouttheuseofablockserver. Ex-
+tensionsto SiRiUSincludelarge scalegroup sharingus-
+ingtheNNLkeyrevocationconstruction. Ourimplemen-
+tationof SiRiUSperformswell relativeto the underlying
+filesystemdespiteusingcryptographicoperations.
+1. Introduction
+Remotefilestorageiscommoninmanydifferentenvi-
+ronments: inlargeorganizations,usingprotocolssuchas
+NFS [32, 5] and CIFS [22]; in P2P networks, using sys-
+temssuchasOceanStore[27],Farsite[23],andIvy[25];
+ontheweb,usingservicessuchasYahoo! Briefcase[34].
+Inalltheseenvironments,theend-useroftenhasnocon-
+trol over the remote file system. Many of these storage
+systems rely on the untrusted remote server for data in-
+tegrityandaccesscontrol. However,theremoteserverof-
+tendoesnotguaranteedataintegrityandonlyimplements
+weakaccesscontrol.
+Inthispaper,wedesignandimplementasecuritymech-
+anismthat improvesthe securityofa networkedfilesys-
+temwithoutmakinganychangestothefilesystemornet-
+work server. Our motivationfor insisting on no changes
+totheunderlyingfilesystemistwofold.
+First,wewantasystemthatiseasyforend-userstoin-
+stallanduse. Sinceend-usersoftenhavenocontrolofthe
+(cid:5) SupportedbyNSFGrantNo.CCR-0205733.
+(cid:6) SupportedbyNSFGrantNo.0121481.
+(cid:7)
+remote server, they cannot install a security system that
+requires changingtheremotefileserver. Similarly,orga-
+nizationswhohaveinvestedinlargeNASdeviceshaveno
+controlovertheinnerimplementationofthedevice.These
+organizations can only add security mechanisms that do
+notrequirechangingtheNASserver. Hence,insistingon
+nochangestothefileserverenablesustoenhancethese-
+curityoflegacynetworkfilesystemswithoutchangingthe
+existinginfrastructure.
+Second,wewantasecuritymechanismthatcanbelay-
+eredontopofanynetworkfilesystem; NFS,CIFS,P2P,
+HTTP, etc. By insisting on no changes to the underly-
+ingfilesystems,SiRiUSbecomesagnosticofthenetwork
+storage system. The result is a uniform mechanism for
+securingmanydifferenttypesofnetworkstorage.
+Our insistence on making no changes to the remote
+servercomesatacost. We cannotdefendagainstcertain
+attackssuchasdenialofservice—anattackercapableof
+compromising the remote server can delete files. How-
+ever,theattackerwillnotbeabletovieworundetectably
+alterfiles. Othersecurityimplicationsofthisdesignprin-
+ciplearediscussedinSection5. Forthisreasonweview
+theSiRiUSsystemasastop-gapmeasuredesignedtoadd
+security to legacy systems. The importance of securing
+legacysystemsstemsfrompeople’sreluctancetoupgrade.
+Thisisnicelycapturedinthefollowingquotefromthede-
+signers of NFSv3 [4, p. 61] four years after NFSv3 was
+introduced:
+Although NFS version 2 has been superseded
+in recent years by NFS version 3, system ad-
+ministrators are slow to upgrade the operating
+systemsoftheirclientsandservers,soNFSver-
+sion 2 is not only widespread, it is still by far
+themostpopularversionofNFS.
+SiRiUSisdesignedtobeeasytoinstallandisintendedto
+beuseduntilanewnetworkfilesystemisdeployedwith
+adequateaccesscontrolanddataintegrityabilities.
+SiRiUS is designed to handle multi-user file systems
+where users frequently share files. It supports granting
+read only or read-write access to files. This flexibility
+SupportedbyNSFGrantNo.CCR-0205733. is unusual in cryptographic file systems (e.g., CFS [2])where possession of a key usually enables both reading
+andwritingtoafile. SiRiUSalsodefendsagainstversion
+rollback attacks as described in Section 3.3 and 6.4. We
+reducenetworktrafficbyprovidingrandomaccesswithin
+fileswhilestillensuringdataintegrity.SiRiUSisbuiltus-
+ingtheSFStoolkit[17].
+ThenextsectiondescribesthedesigngoalsoftheSiR-
+iUS system. Sections 3 and 4 describe the inner work-
+ingsofthesystemandimplementationdetails.Ourexper-
+iments with SiRiUS show reasonable performance. For
+readoperations, wegeta slowdownfactorof
+(cid:0)
+onatrustedauthenticationmechanismresidingonthefile
+server, which precludes their use in settings where users
+havenoadministrativecontrolovertheserver.
+MinimalClientSoftware. ASiRiUSusershouldneed
+to runonly auser-leveldaemon. Usersshould notbe re-
+quiredtoupgradeorpatchtheclientOSkernel.
+Performance. SiRiUS should not perform unreason-
+ablyworsethanitsunderlyingfilesystem.
+whenus-
+ingSiRiUSlayeredoverNFS,versusplainNFS.Detailed
+experimental results are given in Section 4.8. We dis- EfficientRandomAccessandLowBandwidth. Reads
+cuss related work in Section 7. We note that the issue and writes to anylocation in a file should take compara-
+ofbuildinganeasy-to-deploysecurefilesystemthatinter- ble amounts of time. Efficient random access is hard to
+operateswithlegacyinfrastructureseemstohavereceived achieveinacryptographicfilesystemthatdoesnotoper-
+littleattentionsofar. ate at the file block level. Random access allows partial
+filereadsorwriteswhichtakeuplessnetworkbandwidth.
+2. DesignCriteria
+2.2.SecurityConsiderations
+Inthissection,wedescribethecriteriausedindesigning
+Confidentiality and Integrity. File data must be pro-
+SiRiUS.Webeginwiththegeneralsystemsrequirements
+tected from users that are not granted access. Even the
+andproceedtothesecurityrequirements.
+superuseradministeringtheremotefileservershouldnot
+beabletoreadfilesunlessexplicitlygivenpermissionby
+2.1.SystemConsiderations
+the file owner. Furthermore, unauthorized modifications
+NochangestoFileServer. SiRiUSmustaddsecurityto tofiledatamustbedetectedbySiRiUS.
+existingnetworkfile systemswith nochange tothe soft- It is desirableto protect filenamessince theymayleak
+wareorhardwareoftheservers.Thisconsiderationisful- information about the contents of a file. However, other
+filled by layering SiRiUS over existing network file sys- piecesofmetadatainformationsuchasdatablockpoint-
+tems. Existingsecurefilesystems(suchasSUNDR[19]) ersandmodificationtimesshouldnotbeprotectedtopro-
+that work at the file system block levelrequire extensive vide better crash recovery. For example, if data block
+modificationtothefileserver. Therefore,SiRiUSshould pointers are encrypted, the file system cannot piece to-
+workatahigherlevel,usingfilesasitsatomicunit. getherapartiallywrittenfile.
+Fulfillingthisrequirementmakesitpossibleforusersto
+install SiRiUS without the support of the file server ad-
+Untrusted File Server. A serious problem with legacy
+ministrator. Similarly,itmakesitpossibletouseSiRiUS
+network file systems is that their access control mech-
+tosecuredifferenttypesofnetworkstoragesystems(NFS,
+anisms are insecure and easily defeated. For example,
+CIFS,P2P,Web). Infact,SiRiUScanalsobeusedtose-
+themostpopularauthenticationmechanismusedbyNFS
+cure removablestoragedevices such as USB hard drives
+trusts the user and group ID of incoming file requests.
+andcompactflashdevices. Requiringzerochangestothe
+These IDs are easily spoofed by an attacker to gain full
+fileserverlimitsthesecuritywecanprovide,asdiscussed
+accesstoauser’sfiles. Hence,SiRiUScannotdependon
+inSection5.1. Forexample,wecannotpreventa“sledge-
+anyaccesscontrolenforcementbythefileserver.
+hammer” denial-of-service attack, in which an adminis-
+SiRiUS must store all access control information (en-
+tratordeletesallfiles.
+crypted and signed) together with the file data. Storing
+all access control data together with the file data has the
+File Sharing. The ability to share files amongst users added benefit of making files readily available even af-
+is essential in a network file system. SiRiUS users must terbackups,mirroringandreplicationofthenetworkfile
+be able to share a file easily with other users of the sys- server. Furthermore,italsoallowsfilesharingwithmini-
+tem. Existingcryptographicfilesystems[2,35,1,7,13] malout-of-bandcommunicationwithotherusers.
+limit their own usefulness because they either provide All file data is encrypted and signed on the client be-
+verycoarsesharingatthedirectoryorfilesystemlevelor fore being stored on the file server (providing end-to-
+failtodistinguishbetweenreadandwriteaccess.Filesys- endsecurity). Performingallcryptographicoperationson
+temsthatdoprovideper-filesharing[24,19,29,18]rely the client has the benefit of offloading the cryptographicworkload from the file server onto lightly loaded client 3. FileSystem Design
+machines. It also obviates the need for channel security
+whentransmittingfilesoveranetwork. Inthissection,wedescribetheSiRiUSfilesystemdata
+structuresandalgorithms.
+FileAccessControls. SiRiUSmustsupporttwofileac-
+3.1.Overview
+cess modes; read only and read-write. Support for write
+onlymodeispreferablebutnotarequirementasitisun- Existing securefile systemswhichsupport filesharing
+common. Accesscontrolshouldbeenforcedonaperfile only consider the problem of securing and sharing files
+basis. The access control mechanism in SiRiUS should on a trusted file server. Furthermore, many of these de-
+notlimittheflexibilityoffilesharingprovidedbytheun- signsrequirecustomfileservers.ThegoalofSiRiUSisto
+derlyingfilesystemwhilestillprovidingsecurity.SiRiUS secure data placed on anyuntrusted and unmodified net-
+should also be able to enforce access control even when workfileserverwhilemaintainingperformanceandstan-
+the underlying file system does not support file sharing. dardfilesystemsemantics. Wenextgiveabriefoverview
+Thisiseasilyachievedwhenallusersofafilemasquerade ofSiRiUS.
+asoneuser(fromtheserver’spointofview). FromtheSiRiUSuser’spointofview,SiRiUSappears
+Basedonusagepatternsinourdepartmentfileservers, as a local filesystem with the standardhierarchicalview
+weobservethatmostfilesaresharedonlyamongasmall offilesanddirectories. ASiRiUSclientontheuser’sma-
+numberof users. Thus, it is reasonableto optimize SiR- chine intercepts all operations to the SiRiUS file system
+iUSsharingforsmallgroups. and processes the requests before transmission to the re-
+motefileserver. Thetypeofnetworkfilesystemexported
+Key Management. The proliferation of keys used by bytheremotefileserverishiddenfromtheuser. Allcryp-
+differentapplicationscreatesamanagementandusability tographicoperationsincludingencryptionandsigningare
+nightmare. To avoid compounding this problem, a SiR- donebytheclientbeforetheresultsareplacedonthefile
+iUS user must not be required to keep more than a few server.
+keysforfilesystemaccess.Thesekeysmustalsobecom- AllSiRiUSusersmaintainonekeyforasymmetricen-
+patiblewithsimultaneoususeinotherapplications. cryption and another for signatures. We call these the
+user’s master encryption key (MEK) and master signing
+key(MSK).
+Key Distribution and Revocation. Many crypto-
+Filesstoredonthefileserverarekeptintwoparts.One
+graphicfilesystemsdiscounttheproblemofkeydistribu-
+partcontainsthefilemetadataandtheotherthefiledata.
+tionandrevocationbyassumingtimelyandefficientout-
+We will refer to the meta data file as md-file and the en-
+of-bandcommunicationbetweenusers. Wefeelthatsuch
+crypteddatafileasd-file. Thefilemetadatacontainsthe
+assumptionsareunrealisticandweaddresssuchproblems
+accesscontrolinformationwhilethefiledatacontainsthe
+directlyinSiRiUS.
+encryptedandsignedcontents. Thefiledataisencrypted
+All out-of-band communication for obtaining other
+withasymmetriccipherusingauniquekeyforeachfile.
+users’keysshouldbeminimized.Ideally,SiRiUScanuse
+Wecallthisencryptionkeythefileencryptionkey(FEK).
+existingkeydistributioninfrastructuresuchasPGPpublic
+The data is also signed using a signature scheme with a
+key servers or even Identity Based Encryption (IBE) [3]
+uniquekeyforthatfile. Thesigningkeyiscalledthefile
+masterkeyservers.
+signaturekey(FSK).
+In SiRiUS, user access revocation must not use online
+The FEK and FSK are used to differentiate between
+orout-of-bandinteractionbetweenusers. Theuseraccess
+readandwriteaccess. Possessionofonlythe FEK gives
+revocationmechanism for the file system should be sim-
+read only access to the file while possession of both the
+ple and effective. When read or write access to a file is
+FEK andFSKallowsreadandwriteaccess.Forexample,
+revoked,therevokedusershouldimmediatelyloseaccess
+auserwithonlytheFEKcannotcreateavalidfilebecause
+tothatfilewithoutneedforcommunication.
+hecannotproduceavalidfilesignature.
+A key distribution mechanism (such as a PKI) maybe
+FreshnessGuarantees. SiRiUSmustguaranteethefre- requiredforSiRiUSdependingontheencryptionandsig-
+shnessofmetadatacontainingtheaccesscontrolinforma- nature scheme used. Organizations that are concerned
+tion.Thisfreshnessguaranteeallowstimelyrevocationof about security tend to have such infrastructure already
+access controls and also preventsaccess control rollback in place. Identity Based Encryption [3] and Signature
+attacks. Thefreshnessoffiledatashouldalsobeguaran- schemes tend to require less infrastructure than a tradi-
+teedtoensurethatusersalwaysreadthelatestversionof tional PKI and are well suited for individual and small-
+theirfiles. scaleuse.SiRiUScanmakeuseofanyexistingkeydistri-Acronym Definition
+Encrypted(cid:13) Encrypted(cid:13) Encrypted(cid:13) File(cid:13)
+Key Block(cid:13) Key Block(cid:13) Key Block(cid:13) Signature(cid:13)
+(Owner) (User 1) (User n) Public Key(cid:13)
+(FSK) FEK FileEncryptionKey
+FSK FileSignatureKey
+MEK Owner’sMasterEncryptionKey
+MSK Owner’sMasterSignatureKey
+d-file DataFile
+md-file MetaDataFile
+mdf-file MetaDataFreshnessFile
+Table1.Glossary.
+bution mechanisms that already exist for PGP, S/MIME,
+IBE,etc.
+There isa metadatafreshnessfile(mdf-file)locatedin
+everydirectoryof a user’sfile system. This file contains
+therootofahashtree[21]builtfromallthemd-filesinthe
+directoryanditssubdirectories. Forexample,themdf-file
+attherootofauser’shomedirectorycontainstherootof
+the hash tree constructed from the user’s md-files in the
+directoryandmdf-filesunderimmediatesubdirectories.A
+user’sSiRiUSclientwillperiodicallytimestamptheroot
+mdf-fileandsignitusinghisMSK.Theupdateintervalcan
+besetbytheuser.
+Inthesubsequentsections,wedescribethefileformats
+and how basic file operations—create, read, write and
+sharing—arecarriedout. Aglossaryisprovidedforref-
+erence in Table 1. For clarity, assume that SiRiUS uses
+RSA for asymmetric encryption, AES for symmetric en-
+cryption,SHA-1forhashingandDSAforsigning.
+3.2.FileStructure
+Wefirstdescribethestructureofthemd-file.Themd-file
+contains access control information and its format is de-
+pictedinFigure1. Eachencryptedkeyblockcorresponds
+toauserwithsomeaccessrightstothed-file. Encrypted
+keyblockscontaintheFEK encryptedundertheMEK of
+each user with read access. If a user also has write ac-
+cess,thentheFSK isincludedintheuser’sencryptedkey
+block. Figure 2 shows examples of key blocks for two
+users,onewithread-writeaccessandtheotherwithonly
+readaccess. Eachencryptedkeyblockistaggedwiththe
+usernameorkeyIDcorrespondingtothepublickeyused
+toencrypttheblock.
+Themd-filealsocontainsthepublicportionoftheFSK
+in the clear so that readerscan verify the integrityof the
+d-file. The timestamp is updated by the owner when the
+meta data file is modified. The md-file also contains the
+relativefilename(asopposedtoabsolutepathname)ofthe
+file.1 Finally,themd-fileissignedusingtheowner’sMSK.
+1Thefilenameisincludedinthemd-filetopreventfileswappingat-
+tacks.WeprovidemoredetailinSection3.3.
+(cid:0)(cid:1) (cid:0)(cid:1) (cid:0)
+Metadata(cid:13) Owner’s(cid:13)
+Last(cid:13) Filename Signature(cid:13)
+Modified(cid:13) [Hash of(cid:13)
+Timestamp Metadata]
+Assuming n users with read or write permissions.
+Figure1.MetaDatafileformat.
+Username(cid:13)
+(or KeyID) plain text
+File(cid:13)
+Username(cid:13) Encryption(cid:13) encrypted(cid:13) (or KeyID) plain text
+Key (FEK) with public (cid:13)
+key for(cid:13) encrypted(cid:13)
+File(cid:13) username File(cid:13) with public (cid:13)
+Signature(cid:13) Encryption(cid:13) key for(cid:13) Key (FSK) Key (FEK) username
+Figure2.EncryptedKeyBlockformat.
+Notethatthemd-fileissignedbythefileowner’sMSKand
+hence can be updated only by the owner. Also note that
+thefirstencryptedkeyblockisalwaysencryptedunderthe
+fileowner’sMEK.
+Thed-filecontainsthefiledataandisshowninFigure3.
+FiledataisencryptedusingtheFEKcontainedinthecor-
+responding md-file. A hash of the data is computed and
+signedusing theFSK also containedin the md-file. This
+signatureisappendedtotheendofthefile.
+3.3.FreshnessGuarantees
+SiRiUSenablesausertoguaranteethefreshnessofthe
+md-files that he owns. Freshness guaranteesare required
+inordertopreventrollbackattacks. Arollbackattackin-
+volvesmisleadingusersintoaccessingstaledata. Forex-
+ample,supposeBobrevokesAlice’spermissiontowriteto
+afilenamedfoo. Alicedoesarollbackattackbyreplac-
+ing the newmd-file with an older versionthat she saved.
+Theolderversionofthemd-filehasavalidsignatureand
+willhenceverifycorrectly.Alicehasnowsuccessfullyre-
+storedherownwritepermissionstothefile.Checkingthe
+metadataforfreshnesswouldstopsuchanattack.
+SiRiUS uses a hash tree [21] to guarantee freshness.
+The SiRiUS client for a user generates a hash tree con-
+sisting of all his md-files. Everydirectorycontains a file
+withthehashofthemd-filesinthatdirectoryanditssub-
+directories. This fileisknownas thedirectorymetadata
+freshnessfileormdf-file. Thedirectorymdf-fileisanop-
+Signature(cid:13) (cid:13)
+Encrypted File Data (encrypted with FEK)(cid:13)
+[Hash of Data](cid:13)
+(cid:13)
+(signed with FSK)(cid:13)
+(cid:13)
+(cid:13)
+Figure3.Datafileformat.timizationforreducingthecostofupdatingandverifying Updating the Root mdf-file. The root mdf-file is peri-
+thehashtree.Asimilarsystemfortamperdetectioninun- odicallyupdatedwithanewtimestampandsignedbythe
+trusteddatabasesisdescribedbyMaheshwarietal.[16]. ownerusingafreshnessdaemon.Forefficiency,theowner
+should keep a local cached copyof the currentroot mdf-
+Generatingthemdf-file. Wenextdescribehowauser’s file.Sinceonlyonesignatureisrequiredtoupdatetheroot
+SiRiUSclientgeneratesthehashtreeforhisfilesanddi- mdf-file,theupdateoperationischeap. Hence,theupdate
+rectories. Without loss of generality, we assume that all timeintervalcanbeontheorderofminutesorseconds.
+filesandsub-directories(andtheircontents)containedin Ifanymetadatafileischangedbytheowner,thehash
+auser’shomedirectorybelongtotheowner. Wefirstde- treeneedstobeupdated.Notethatchangestoametadata
+scribehowthehashtreeisgeneratedforadirectory. fileonlyaffectthehashcalculationsofthedirectorycon-
+tainingthefileandtheparentsofthatdirectory.Hence,we
+1. Apply a SHA-1 hash to each meta data file in any onlyneedtorecomputethehashtreeforthosedirectories.
+order and keep track of the hashes. Also verify the Thesameverificationprocedureisusedtoregeneratethe
+signatureoneachmetadatafileduringthisprocess. rootmdf-fileonanupdate. Thedifferencesarethattheex-
+2. Concatenate the hashes of each meta data file, to- istingdirectorymdf-filesarereplacedwiththerecalculated
+gether with the mdf-files of each sub-directory (if versionswhiletraversingupthetree. Also,therootmdf-
+any) in lexicographical order and apply a SHA-1 fileisupdatedwiththecurrenttimestampandre-signed.
+hashtotheconcatenation.
+3. Thefinalhashandthedirectorynameisplacedinthe
+IncludingFilenamesinmd-files. Acertainclassofat-
+mdf-file.
+tackscannotbepreventedbycheckingjustthemetadata
+Generating the mdf-file for a user’s root directory is freshness.Amd-filehastobetightlylinkedtoitsfilename
+slightlydifferentfromtheproceduredescribedabove.The topreventafileswappingattack.
+differenceisthatthecurrenttimestampisappendedtothe Weprovideanexampleofafileswappingattack. Sup-
+concatenationofthehashesinthesecondstepwhenthefi- poseuserAliceownsfilefooandfilebar,whichreside
+nalhashiscalculated.Thefinalhashisconcatenatedwith in the same directory. User Bob wants to read bar but
+the timestamp and placed in the root mdf-file. The root has no read or write access to bar. However, Bob has
+mdf-fileissignedwiththeuser’sMSK. read access to foo. Bob can trick Alice into writing to
+thewrongfileinthefollowingmanner:Bobrenamesbar
+VerifyingMetaDataFreshness. Wenextdescribehow tofooandviceversa,alongwiththeirmd-files. Bobcan
+Bob’s SiRiUS client uses the root mdf-file to check the nowreadthefilenamedbar(whichwasoriginallyfoo)
+metadatafreshnessofafilenamedfooownedbyAlice. but not the file named foo (which was originally bar).
+At some point, Alice writes her nuclear launch codes to
+1. Regeneratethemdf-fileforthedirectorywherefoo what she thinks is bar withoutchecking the contents of
+resides (follow the first two steps of the generation
+the file. Bob notices the update, reads the launch codes
+procedure). Comparetheresultwiththecurrentmdf-
+andlaunchessomenuclearmissiles.
+file. Ifitdoesnotmatch,thenverificationhasfailed.
+Ifthefilenamewerenotincludedinthemd-file,thisat-
+2. If foo is in the root directory, check the mdf-file
+tackwouldsucceedbecauseAlicecannoteasilyverifythat
+timestamptoensureithasbeenupdatedrecentlyand
+sheiswritingtotherightfile. Observethatthefreshness
+verifytheowner’ssignature.
+hashtreewouldstillverify. Topreventthisattack,wein-
+Otherwise,recursivelywalkupthedirectorytreeand
+cludethefilenameinthemd-file. We alsoincludethedi-
+ateachstep,generatethemdf-fileandcarryoutStep1 rectorynameinthemdf-filetopreventdirectoryswapping
+tilltherootdirectoryisreached.
+attacks.Notethatweonlyneedtoincludetherelativefile-
+nameinthemd-fileandmdf-filebecausethepositionofthe
+The verification process guarantees that the meta data
+fileinthefreshnesshashtreegivessufficientinformation
+filesinthecurrentdirectoryarefreshuptothetimestamp
+aboutthepathofthefile.
+ontherootmdf-file.Notethatitissufficienttojustregen-
+eratehashesforthesubtreecontainingfoo.
+3.4.CreatingaFile
+The directory mdf-files greatly reduces the cost of re-
+generating the hash tree because it removes the need to
+A file is created by the SiRiUS client for a user in the
+descendintosubdirectoriesthatarenotinthepathtothe
+followingsteps.
+root. The verification procedure can be accelerated by
+caching the hashes of directories contents when they are 1. GeneratearandomDSAFileSigningKey(FSK)and
+first obtained. The cached values can be used as long as arandomAESFileEncryptionKey(FEK).
+contentsofmd-filesremainunchanged. 2. Encrypt the FSK and FEK using RSA with theowner’sMEKandtagtheciphertextwiththeowner’s key server3 and verify the signature on the md-file.
+usernametoformtheencryptedkeyblock. Alsoverifythefreshnessofthemd-file.
+3. ApplySHA-1totheencryptedkeyblock,publickey 2. Locatetheencryptedkeyblockwiththewriter’suser
+of the FSK, a timestamp (of the current time), and nameinthemd-fileanddecryptthekeyblocktoob-
+filename. Sign the hash with DSA using the user’s taintheFEK andFSK.
+MSK. 3. Obtain the d-file and verify the signature using the
+4. Create the md-file by concatenating the owner’sen- publickeyoftheFSK.
+cryptedkeyblock,publickeyoftheFSK,thetimes- 4. DecrypttheencryptedfiledatawiththeFEK.Carry
+tamp,thefilename,andthesignature. outthefilewriteontheplaintextfiledata. Ifthefile
+5. EncryptthefiledatawithAESusingtheFEK.Apply istobereplaced,thenthisdecryptionstepisunnec-
+SHA-1 to the encrypted file data and sign the hash essary.
+withDSAusingtheprivatekeyoftheFSK.Concate- 5. EncryptthemodifiedfiledatawiththeFEK.Evaluate
+nate the cipher text with the signature to create the the SHA-1 hash of the encrypted file data and sign
+d-file. the hash with the FSK. Append the signature to the
+6. Updatetherootmdf-file. newlygeneratedcipher textto createthe newd-file.
+Replacetheoldd-filewiththenewversion.
+3.5.FileSharing
+Observethatthefreshnesshashtreeisnotupdatedona
+Recallthatonlythefileownercanpermitotherusersto filewrite.
+gainaccesstothefile. SiRiUSsetsaccesspermissionsby
+addingencryptedkeyblocksinthemd-filefortheusersthe 3.7.ReadingaFile
+ownerwishestogiveaccessto. Thefollowingprocedure
+The SiRiUS client takes the following steps to read a
+iscarriedoutbySiRiUStoshareafileownedbyAlicefor
+file.
+auserwiththeusernameBob.
+1. ThisstepisidenticaltoStep1forfilewriting.
+1. Alice obtains the md-file and verifies the signature
+2. Locatetheencryptedkeyblockwiththereader’suser
+withherMSK.
+nameinthemd-fileanddecryptthekeyblocktoob-
+2. AliceobtainsthepublickeyforBobthroughapub-
+taintheFEK.
+lic key server.2 If Bob is only granted read access,
+3. Obtain the d-file and verify the signature using the
+AliceencryptsonlytheFEK usingRSAwithBob’s
+publickeyoftheFSK.
+publicMEK.IfBobisalsograntedwriteaccess,Al-
+4. DecrypttheencryptedfiledatawiththeFEK toob-
+iceencryptsboththeFEK andFSK.Theciphertext,
+tainthefilecontents.
+together with Bob’s user name is the encrypted key
+blocktobeaddedtothemd-file. 3.8.RenamingFilesandDirectories
+3. AliceaddsBob’sencryptedkeyblocktothemd-file
+and updates the timestamp to the current time. She A file rename requires changing the filename stored
+appliesSHA-1tothemodifiedmd-fileandsignsthe in the md-file for that file. A directory rename requires
+hashusingDSAwithherMSK.Shereplacesthesig- changingthedirectorynamestoredinthemdf-fileforthat
+natureonthemd-file. directory. Both types of renames require updating the
+4. Alicesimultaneouslyverifiesthefreshnessoftheold freshnesshashtree. Asaresult,onlythefileordirectory
+md-fileandcalculatesthenewrootmdf-file. Iffresh- owner can perform renames. This file system semantic
+nessisverified,sheupdatestherootmdf-fileandre- causes some problems with traditional applications that
+placestheoldmd-filewiththenewversion. use a rename paradigm to guarantee atomic file updates.
+WepresentasolutiontothisprobleminSection6.4.
+3.6.WritingtoaFile Onafilerename,ifthedestinationfilenameexists,then
+thedestinationfileisoverwrittenwiththesourcefile. The
+TheSiRiUSclienttakesthefollowingstepstowriteto destinationfileacquiresthepermissionsofthesourcefile.
+afile. The source file is deleted and the freshness hash tree is
+updatedtoreflectthesechanges.
+1. Obtainthemd-fileandidentifythefileownerbyex- Onadirectoryrename,themdf-fileforthatdirectoryis
+tracting the user name tag from the first encrypted updated with the newdirectory name followed by a nor-
+key block. Obtain the owner’s MSK using a public malfreshnesshashtreeupdate.
+2NotethatifBoneh-FranklinIBE[3]isusedforasymmetricencryp- 3If an Identity Based signature scheme is used, verifying the file
+tion,Bob’spublickeycanbeobtainedwithoutcontactingakeyserver. owner’ssignaturecanbedonewithoutapublickeyserver.3.9.FileLinks 4.1.Overview
+SiRiUS supports symbolic links if they are also sup- We implemented a SiRiUS client on Linux that layers
+ported by the underlying file system. Symbolic links on SiRiUS over NFS version 3 using the SFS toolkit [17]
+Unix file systems are typically implemented as normal andOpenSSL[28]. TheSFStoolkitprovidessupportfor
+files with the file data containing the path of the link. buildinguser-levelNFSloopbackserversandclients. The
+Inthiscase,whentheSiRiUSclientaccessesasymbolic SiRiUS client contains a user-levelNFS loopback server
+link, it decrypts the contents and obtains the file pointed tocommunicatewiththeclientmachineandaNFSclient
+tobythelink. tocommunicatewiththeremoteNFSfileserver. Usinga
+One file can have two hard links with different names user-levelNFSloopbackservertointerfacewiththeclient
+referencing the file. Therefore, SiRiUS cannot support machine ensures portability because most modern client
+hard links because each md-file only contains one file- operatingsystemshavekernel-levelNFSclients.
+name. Note that SiRiUS’ NFS client can be replaced with a
+clientthatsupportsadifferentprotocol. Forexample,one
+3.10.KeyManagement
+can retain the NFS loopback server and replace the NFS
+Key management in SiRiUS is very simple because client with a Yahoo! Briefcase (HTTP) client. This will
+each file keeps track of its own file keys for access con- allowYahoo! BriefcasetolooklikeanNFSservertothe
+trol. All users only need to keep track of two keys; the user.
+MSK andtheMEK.Thereisnoout-of-bandcommunica-
+tion if Identity Based encryption and signature schemes
+SiRiUS Client
+areused. Otherwise,asmallamountofout-of-bandcom-
+municationisrequiredinordertoobtainpublickeys. Application NFS Client NFS Server
+Network
+NFS Server
+3.11.KeyRevocation
+user
+File Server
+KeyrevocationinSiRiUSissimpleanddoesnotrequire kernel
+NFS Client
+out-of-band communication. For read access revocation,
+theownergeneratesanewFEK.Usingthiskey,thed-file
+Client Machine
+is updated by encrypting the file data with the new key
+and then signed(using the old FSK).The revokeduser’s
+Figure 4. Architecture of SiRiUS layered
+encrypted key block is removed from the md-file and all
+overNFSusingtheSFStoolkit.
+theremainingkeyblocksareupdatedwiththenewFEK.
+Finally, the md-file is signed with the owner’s MSK and
+therootmdf-fileisupdated.
+TheSiRiUSclientinterceptsNFSrequestsontheNFS-
+Write access revocation is the same as read access re-
+mountedfilesystemandprocessestherequests.Theclient
+vocation except that a new FSK is also generated. The
+thensendsthemodifiedrequeststotheremoteNFSserver.
+encryptedkeyblocksareupdatedwiththisnewFSK and
+SeeFigure4foranoverviewofthesystemarchitecture.
+the d-file is signed with this new key. Note that revok-
+ing write access also involves creating a new FEK and 4.2.MultiplexingNFSCalls
+re-encryptingthedatabecausewriteaccessimplicitlypro-
+Many SiRiUS operations require the SiRiUS client to
+videsreadaccess.
+transform a single NFS request from the client machine
+3.12.Backups into multiple requests to the server. First, SiRiUS needs
+toreadandwritethemd-fileaswellasthed-file. Second,
+A system administrator can backup the remote file
+many SiRiUS file operations verify the meta data fresh-
+server by using the standard backup tools such as dump
+ness,whichnecessitatessendinganumberofNFScallsto
+ortar. Notethattheadministratordoesnotneedtouse
+walkthedirectorystructureandreadmdf-files.
+SiRiUS to perform the backup. Furthermore, the admin-
+The SFS toolkit’sability to perform asynchronousRe-
+istratorgainsnoaccesstothefiledata.SiRiUSusersonly
+mote Procedure Calls (RPC) [33] proved a great help in
+needtobackuptheirMSKandMEK.Theycanaccessany
+multiplexing NFS calls from the client machine. When
+backupoftheirfileswithjustthesetwokeys.
+theSiRiUSclientreceivesanNFScallfromitsloopback
+server, it asynchronously sends out a series of NFS calls
+4. Implementationand Performance
+to the remote server to process the incoming call. We
+Inthissection,wedescribeaninstantiationoftheSiR- illustrate this with an example of an NFS CREATE call.
+iUSfilesystemlayeredoverNFS. WhentheSiRiUSclientreceivesaCREATEcallforafilenamedfoo,itfirstcreatesthemd-file. TheSiRiUSclient call for a file foo. It uses the file handle for foo given
+prepends.x-md-x. tofoo,obtaining.x-md-x.foo intheREADargumenttoobtain(fromthefilehandlehash
+asthenameofthemd-file.4 ItthensendsaCREATEcallto table)thedirectoryhandleforthedirectoryinwhichfoo
+theremoteserverforthemd-file.Whenthiscompletes,the resides. Using this directory handle, the SiRiUS client
+SiRiUSclientgeneratesandstoresthecontentsofthemd- determinesthemd-filefilehandle(fromthedirectoryfile
+file using a WRITE call. Followingthis, the root mdf-file handlehashtable)usingthedirectoryhandleandthemd-
+is updated. It finally sends the original CREATE request filename. TheSiRiUSclientissuesaNFSREADforthe
+totheremoteserverandreturnstheresultofthatrequest md-file using this md-file handle. In the meantime, the
+tothelocalclientmachine. originalNFSREADcallforfooisalsosent.
+4.3.FileSystemView 4.5.ChangingAccessControls
+The SiRiUS client implementation hides the presence At present, we have implemented all of SiRiUS de-
+of the md-files and mdf-files from the SiRiUS user’s file scribedinSection3. Thehooksfor addingandrevoking
+systemview.Forexample,anlsinvocationdoesnotdis- permissionstoafilearepresentintheSiRiUSclient,but,
+play these meta data files. This view is implemented by sinceSiRiUSpermissionsaremoreexpressivethanUnix
+processingtheNFSREADDIRandREADDIRPLUSresults permissions,thereisnonaturalwaytoinvokethesehooks
+from the remote server to removeentries for files whose directlyusingthechmodsystemcall.
+namesbeginwiththemetadatafileextensions. Thecode Thisproblemcanbesolvedbyauser-levelpermissions
+infrastructureaddedtohandlethesetwoNFScallsiseas- tool that interacts with the SiRiUS client over a dedi-
+ilyextendedtohandleencryptedfilenames. catedRPCchannel. Alternately,theRPCchannelcanbe
+avoidedifthepermissionstoolcallschmodwithmodified
+4.4.NFSFileHandleCache arguments. Weillustratetheoperationofthepermissions
+toolwithanexample. SupposeBobwishestograntAlice
+InNFS,allfilesystemobjectsareidentifiedbyaunique
+permission to read filefoo. Bob invokesthe command-
+NFSfilehandlegeneratedbytheremoteserver. TheSiR-
+linetool,whichcreatesadummyfilewithaspecialname.
+iUSclientmustcorrelatethehandlesofd-fileswiththose
+The tool then performs a chmod onthe file, causingthe
+ofmd-files. Forexample,NFS READandWRITEopera-
+kernel NFS client to send the NFS SETATTR(set file at-
+tions refer to the target file by its NFS file handle. With
+tributes) request to the SiRiUS client. The dummy file-
+justthisfilehandle,wehavenowayofobtainingthefile
+name starts with a special flag andcontains the filename
+handlefortheassociatedmd-file.
+foo and user name Alice. The SiRiUS client parses the
+Fortunately, the NFS LOOKUP operation is always
+filename, obtains the public key for Alice and performs
+called on an unknown object to obtain its file handle
+theappropriatesetofNFScallstochangethepermissions
+before other operations can be performed. The NFS
+forfilefoo.
+LOOKUP call for an object contains the NFS file handle
+foritsdirectory,andthenameoftheobjectinthatdirec- 4.6.RandomAccessandLowBandwidth
+tory. The LOOKUP call expects a NFS file handle to the
+specifiedtargetinthereturnresult. Bycachingtheargu- Weoriginallydidnotplanonimplementingrandomac-
+mentsandtheresultsofLOOKUPcalls,wecanmaintain cess. While building the SiRiUS client, we realized that
+enoughstatetorelated-fileandmd-filefilehandles. whole-filereadandwriteoperationsprovideunacceptable
+For each file system object, the SiRiUS client caches: performanceforlargefiles. RandomaccessfromtheSiR-
+itsfilehandle; thefilehandleofthedirectoryinwhichit iUSclienttotheremoteserveriscriticalwhentheSiRiUS
+resides;anditsnameinthatdirectory.Thiscacheiscross- clientmusthandlepartialreadandwriterequestsfromthe
+referencedin twohashtables, onekeyedbytheNFSfile localin-kernelclient,asinNFS.
+handlesofobjects,andtheotherbyacombinationofthe The insight is that NFS READ and WRITE calls oper-
+directoryfilehandleanddirectoryentry name. TheSiR- ate on chunks of 8192 bytes.5 Hence, reading (or writ-
+iUS client monitors all NFS operations (e.g., RENAME ing) a file larger than 8192 bytes involves multiple NFS
+and REMOVE) that might change NFS file handle state operations. IfSiRiUSdoesnothaverandomaccess,each
+foranobjectandupdatesbothhashtables. READ(respectively,WRITE)requestinvolvesfetchingthe
+Wegiveanexampletoillustratehowfilehandlecaching entirefiletodecryptandverify(respectively,encryptand
+works.SupposetheSiRiUSclientreceivesanNFSREAD sign). We implemented random access as described in
+Section6.1.
+4Theprefix.x-md-x.ischosenarbitrarily. SiRiUSusesitonlyto
+locatemd-filesontheremoteserver.Nospecialstepsareneededtodeal 5ThechunksizedependsontheNFSimplementationandmostim-
+withfileswiththesamenameastheprefix. plementationsoptimizefor8192-byteblocks.Test FileSize KernelNFS DumbFS SiRiUS
+FileCreation 0 0.4 3.4 14.5
+FileDeletion 0 0.3 0.4 1.1
+SequentialRead 8KB 0.9 1.4 18.0
+SequentialWrite 8KB 1.1 2.0 21.9
+SequentialRead 1MB 96.7 97.8 223.8
+SequentialWrite 1MB 100.0 102.7 632.9
+Table2.BenchmarkTimingsforBasicOperations. Numbersgivenareinmilliseconds.
+4.7.Caching
+Our implementation avoids unnecessary operations by
+aggressivelycachingmetadataandintegrityinformation.
+Allthecachingcodeisimplementedoverthethefilehan-
+dle cacheinfrastructure. Themd-file doesnothaveto be
+fetched and verified repeatedly on a read unless we en-
+counteranintegrityordecryptionfailure.Wecanperform
+thesameoptimizationforwritesbythefileowner. Inad-
+dition,forareadoperationonblock (cid:0) offilefoo,weonly
+needtocomparethehashofblock (cid:0) tothecachedfilehash
+blockoffoo. Ifthehashesarethesame,wedonotneed
+tofetchthehashblockandverifyitssignatureagain. Un-
+fortunately, writes update the hash block and so we are
+forcedtoperformasignatureforeverywrite. Similarop-
+timizationsareimplementedforfreshnessverification.
+4.8.Performance
+WeperformedthetestslistedinTable2tocomparethe
+performanceofSiRiUSlayeredoverNFS,theLinuxker-
+nel(2.4.19)NFSClientandDumbFS(aNFSpass-through
+proxy built using the SFS toolkit). Each test was per-
+formed on a hundred different files and the results were
+averaged.OurimplementationusesAES-128astheblock
+cipher,RSA-1024asthepublickeyencryptionalgorithm,
+and DSA-512 as the signature scheme. The NFS server
+wasrunonaPentiumIII1.13GHzmachineandthethree
+clientswererunonaPentiumIII-M866MHzmachine.
+TheDumbFSbenchmarksshowthelowoverheadofus-
+ing a user-level loopback server. File creation is much
+slower in SiRiUS because it requires key and signature
+generation. DeletionsareslightlyslowerbecauseSiRiUS
+has to unlink two files compared to just one for regular
+NFSclients. Forsmallfiles,readsandwritesareabout20
+times slower than the kernel NFS client. For writes, the
+slowdownis due to the overheadof encrypting data (de-
+cryptingforreads),verifyingthreesignatures(twoforfile
+integrity and one for freshness), and generating a signa-
+ture(nosignaturegenerationforreads).
+For larger files, our aggressive caching and optimiza-
+tions starttopayoff. SiRiUS isable toreada 1 MBfile
+with only a
+(cid:0)(cid:2) (cid:1)(cid:3)(cid:5) (cid:4)
+slowdown, as compared with the ker-
+nelNFS.SiRiUSwritesa1MBfilewith
+(cid:6)(cid:7) (cid:1)(cid:3)(cid:5) (cid:4)
+in comparison with the kernel NFS. Keeping in mind
+the extensive cryptographic operations involved in reads
+and writes, these benchmarks represent excellent perfor-
+mance. Readsareabout
+slowdown
+(cid:3)(cid:8) (cid:4)
+asfastaswritesbecauseev-
+erywritehastosignthemodifiedhashblock. Sequential
+writes on a large file can be sped up if we can cache all
+the changes to the file hash block before performing the
+signature. Unfortunately, NFSv3 does not provide a file
+CLOSEcallwhichwouldallowthisoptimization.6
+Thefirstread(orwrite)ofarandom8KBblockwithin
+alargefilewilltakethesameamountoftimeasasequen-
+tialread(orwrite)ofan8KBfile.Subsequent8KBblock
+operationsonthesamefilewillseedramaticperformance
+improvements (similar to those observed for large files)
+becauseofthecachingandverificationoptimizationsde-
+scribedintheprevioussection.
+Aprofileofthecurrentimplementationshowsthat63%
+of the time spent during a 1 MB file read is on AES de-
+crypt. Signaturegenerationtakeupabout40%ofthetime
+on a1 MBfile write. We canimprovereadperformance
+byswitchingtoafasterblockcipher.Thecostofsignature
+generation for writescanbealleviatedif expensivecom-
+putations are performed out-of-line, as with on-line/off-
+line signature schemes [11]. For example, DSA signa-
+ture generation is computationally expensive because it
+requiresanexponentiationtoarandomnumber. Thisex-
+ponentiation is independent of the message to be signed
+andcanthereforebeprecomputedbythesignerbeforehe
+receivesthemessage.TheSiRiUSclientcanreducewrite
+timesbyprecomputingtheserandomexponentiationsdur-
+ing idle cycles and using these precomputed values for
+signaturegenerationwhenwriterequestsarereceived.
+5. Weaknesses
+The design constraints to SiRiUS—in particular, the
+prohibition onmodificationsto theserver—limit the se-
+curity we can provide. We list some of these limitations
+here.
+6NFSv4supportsaCLOSEcall.5.1.DeletingFileSystemContents toachievesuchpropertiesinfilesystemsthatoperateata
+higherlevel.Themaindifficultyisinupdatingandverify-
+There are some inherent difficultiesin securing legacy
+ingfileintegrityinformationwithoutaccessingtheentire
+network file systems without modifying the file server.
+file.
+Forexample,sincethefileservercannotbetrustedtoper-
+Basic SiRiUS is easily modified to addrandom access
+form any access controls, an attacker can break into the
+andlowbandwidth. Wefirstgiveanoverviewoftheran-
+serverandperforma denial-of-serviceattack bydeleting
+domaccessschemeinSiRiUS.Thekeyinsightisthatwe
+all the files. SiRiUS can do very little to prevent these
+canrepresenteachfileasaseriesofblocks,eachwithits
+sortsofattacks.Withoutassuminganythingabouttheun-
+ownintegrityinformation.Eachfileblockisencryptedus-
+derlyingfilesystem,thebestthatSiRiUScandoistopro-
+ingablockcipherincountermode[10]andeachblockis
+videtamper-detectionmechanisms. Therealsolutionisto
+alsohashedforintegrity.However,topreventblockswap-
+layerSiRiUSoveraByzantinestoragesystem[6].
+pingattacks,theintegrityofeachblockneedstoberelated
+totheintegrityoftheentirefile. Ahashtreeconstruction,
+5.2.SeizingFileSystemControl
+similar to that used for SiRiUS meta data freshness, can
+A malicious user can replace an existing file (and its beusedtorelateblockintegritytofileintegrity.
+meta data) and then update the root mdf-file and sign it Figure 5 shows the d-file format required for random
+himself.Inthiscase,unlessthefilereaderknowswhothe access. The symbol
+trueownerissupposedtobe,fileverificationwillsucceed.
+Theentirefilesystemcanbeseizedbyperformingthisat-
+tackonallthefiles.However,thisattackisoflittlesignif-
+icancesincethefilesystemownerwillquicklydetectthe
+attack when carrying out the periodic update to the root
+mdf-file.Anothersolutiontothisproblemistopublishthe
+rootmdf-file(whichissmall)onasecureserversothatthe
+freshnesshashtreecanbeindependentlyverified.
+5.3.d-fileRollback
+ThefreshnessguaranteesinbasicSiRiUSonlyapplyto
+the md-files. Hence, a rollback attack that replaces the
+newest version of the d-file with an older version suc-
+ceedsinbasicSiRiUS.Becausetheolderversionisstilla
+legitimately-createdfile,thisattackisnotasdevastatingas
+thatagainstmd-files(describedinSection3.3),wherere-
+vokedpermissionsarerestored. However,d-filerollbacks
+areaproblemandshouldbefixed.
+We cannotcounterthisattackwiththeschemeformd-
+file freshness applied to d-files because each d-file can
+have multiple writers whereas each md-file has only one
+writer. The best solution to the d-file rollback problem
+is theone describedin Section6.4for maintainingtradi-
+tionalfilesystemsemanticsusingunionmounts.
+6. Extensions
+SiRiUS extensions are non-essential capabilities that
+improvetheperformanceorsecurityofbasicSiRiUS.We
+have implemented the random access extension (for per-
+formancereasons).
+6.1.RandomAccessandLowBandwidth
+Currently, only cryptographic file systems that operate
+at the block level are able to support random access and
+low bandwidth. As mentioned in Section 2.1, it is hard
+(cid:0)
+denotes concatenation. The last
+block of the d-file contains all the block hashes (H
+(cid:1)
+to
+H
+(cid:2)
+)andthesignature(usingtheFSK)oftheblockhashes.
+Notethatthelastblockisofvariablesizebutisgenerally
+small.
+Data(cid:13)
+Block 1(cid:13)
+(DB1)
+(cid:3)(cid:4) (cid:3)(cid:5) (cid:3)
+Data(cid:13) H[DB1](cid:13)
+Block n(cid:13)(cid:13) (H1)
+(DBn)
+Assuming n blocks.
+(cid:3)(cid:5) (cid:3)(cid:4) (cid:3)
+H[DBn](cid:13)
+(Hn) Sig[H[H1 || ... || Hn]]
+Fits on the final n+1 block.
+Figure5.Datafileformatforrandomaccess.
+We describe how random access works in SiRiUS by
+elaboratingontheproceduresfortheupdateandtheveri-
+ficationoffiledata. Weassumethattheblockcipherused
+isAESincountermode, thehashfunctionisSHA-1and
+thesignatureschemeisDSA.
+We first describe how a block within the d-file is up-
+dated. Assume that the md-file has been verified and we
+havetheFEKandFSK.Alsoassumethatweareupdating
+blocknumber (cid:0) .
+1. Encrypt the data using AES in counter mode with
+theFEK and (cid:0) asthecounter.7
+2. Hash encrypted block (cid:0) and replace the hash value
+forblock (cid:0) inthefinalhashblock. Re-applySHA-1
+totheconcatenationofblockhashestoobtainanew
+filehash,andsignthatwiththeFSK.
+Observethatweneedtofetchonlytwoblockstoupdate
+onedatablock.Forupdatesthatspanmultipledatablocks,
+theprocedureisappliedtoeachaffectedblock.
+Verifying a single file block
+(cid:6)
+is equally easy. Fetch
+both the file block
+(cid:6)
+and the final hash block. Hash file
+7Wecanusethesameinitialvalueforthecounterforeachfilebe-
+causeeachfilehasauniqueFEK.block
+(cid:6)
+and recompute the file hash using the hashes of
+theotherblocksinthehashblock; theactualdatablocks
+neednotberetrieved.Then,verifythatthesignaturefrom
+thehashblockcorrespondstothecomputedfilehash.
+6.2.EncryptedPathnames
+AddingfilenameencryptiontoSiRiUSissimple.When
+creating the file, use the FEK to encrypt the filename.
+Any change in the FEK requires the filename to be re-
+encrypted. When listing the contents of a directory, the
+SiRiUS client iterates over all the md-files in the direc-
+tory toobtain theFEK of eachfiletowhichtheuser has
+access.WithanFEK,filenamescanbedecryptedanddis-
+played. Filestowhichtheuserhasnoaccessarenotdis-
+played. Thislistoperationispotentiallyexpensive,since
+twopublic-keyoperationsarerequiredfordecryptionand
+verificationoftheencryptedkeyblock. Wecanspeedup
+this operation by caching the file keys on the client ma-
+chine.
+In basic SiRiUS, directories in the file system do not
+have an associated md-file. If directory entries are en-
+crypted,theneachdirectoryneedsanassociatedmd-file.
+filenamecollisionsareapotentialproblembecauseeach
+filenameisencryptedwithadifferentkey.Weprovidean
+exampleoftheproblem. SupposethatAlicewishestore-
+name a file foo to bar, and that, in the same directory,
+there are other files to which she does not have read ac-
+cess. There might already be another file called bar of
+whichsheisunaware.
+ThefilenamecollisionproblemissolvedinSiRiUSby
+prependingahashoftheunencryptedfilenametotheen-
+crypted filename. Before a file is created or renamed,
+thedirectorycanbecheckedforcollisions. Thissolution
+comesattheexpenseofreducingthemaximumfilename
+lengthbythesizeofthehash.
+6.3.Large-ScaleGroupSharingusingNNL
+BasicSiRiUSisoptimizedforsmallgroupsharingand
+doesnotscalewellwhenlargegroupsofuserssharefiles.
+For example, when Bob revokesAlice’s read access to a
+file,BobmustgenerateanewFEK andupdatealltheen-
+cryptedkeyblocksinthemd-filewiththenewFEK.Thus,
+Bobmustperform
+(cid:0)
+publickeyencryptionsifthereare
+(cid:0)
+broadcastencryptionandtraitortracing. Abroadcasten-
+cryptionscheme[12]isconcernedwithefficienttransmis-
+sionofamessagetoagroupofreceiverswhosemember-
+ship is not fixed: for example, from a satellite television
+providertoitssubscribers.Atraitor-tracingscheme[8]al-
+lowstherecovery,fromaboxcapableofdecodingbroad-
+cast transmissions, of the identity of (one of) the users
+whocolludedinthebox’screation.
+BroadcastencryptionprovidesanaturalmodelforSiR-
+iUS’ key-distribution requirements. The owner of a file
+will want to distribute that file’s encryption key FEK to
+some set of users and its signing key FSK to some other
+set,anddosoasspace-efficientlyaspossible. Changesin
+permissionsareequivalenttochangesinthemembership
+ofoneorbothsetsofusers.
+InNNL’ssubset-sumframework,thesetofpotentialre-
+cipientsispartitionedintosubsets,eachassociatedwitha
+long-livedkey.Eachrecipientbelongstoanumberofsets,
+andpossessesonlythekeysofthosesets.Thebroadcaster
+choosesasubsetcover,i.e., asetofsubsetswhoseunion
+includes exactly those users whom he wishes to receive
+thetransmission. Heencryptsthetransmissionkeyunder
+eachincludedsubset’skey.
+BasicSiRiUSisaspecialcaseofthisframework. Each
+user belongs to one subset; that subset’s long-lived key
+is the user’s key. If there are
+userssharingthefile.
+Forlarge-scalesharing, wecanusetheNNLconstruc-
+tion [26] for key revocation. NNL works well when the
+group is close to the size of the entire user set. We call
+this extension SiRiUS-NNL. We provide an overviewof
+NNL’sproperties;wethendescribethenewmd-fileformat
+andtheprocessoffilecreation,sharing,andrevocation.
+NNL Overview. NNL [26], or Naor-Naor-Lotspiech,
+introduces the subset-sum framework of schemes for
+(cid:1)
+users in the system, of
+whom (cid:0) should be able to decrypt (or, alternately,
+(cid:1)(cid:6) (cid:5)
+(cid:0)
+(cid:2)(cid:4) (cid:3)
+arerevoked),thentransmissionsizeis (cid:7)(cid:9) (cid:8)(cid:10) (cid:0)(cid:12) (cid:11) ,each
+receiverstores (cid:7)(cid:9) (cid:8)(cid:14) (cid:13)(cid:15) (cid:11) keys.
+Naor et al. provide two more sophisticated instantia-
+tionsofthesubset-coverframework.Thesearebothmore
+efficient than the basic approach when (cid:0) is large (alter-
+nately, (cid:2) issmall). Bothconstructionsarecombinatorial,
+andmakeuseofabinarytree;eachuserisassignedaleaf
+node.
+In the complete-subtree instantiation, each subset is a
+complete subtree rooted at some node in the tree. A
+user is given the keys corresponding to those subtrees
+rooted at nodes along the path from her leaf to the root.
+Inthecomplete-subtreeinstantiation,transmissionsizeis
+(cid:7)(cid:9) (cid:8)(cid:10) (cid:2)(cid:17) (cid:16)(cid:19)(cid:18)(cid:20) (cid:8)
+(cid:1)(cid:22) (cid:21)
+(cid:2)(cid:23) (cid:11)(cid:24) (cid:11)
+andeachreceiverstores
+(cid:7)(cid:9) (cid:8)(cid:25) (cid:16)(cid:26)(cid:18)
+(cid:1)
+(cid:11)
+keys.
+Inthesubset-differenceinstantiation,asubsetisdefined
+by two nodes
+(cid:27)(cid:29) (cid:28)
+and
+(cid:27)(cid:31) (cid:30)
+such that
+(cid:27)(cid:31) (cid:30)
+is in the subtree
+whose root is
+(cid:27) (cid:28)
+; the set contains all those nodes in
+(cid:27)(cid:29) (cid:28)
+’s
+subtree but not in
+(cid:27)! (cid:30)
+’s subtree. A user is given the keys
+corresponding to those subsets that include her. In this
+instantiation, transmissionsizeis
+(cid:7)(cid:9) (cid:8)(cid:25) (cid:2)(cid:23) (cid:11)
+andeachreceiver
+stores
+(cid:7)(cid:9) (cid:8)(cid:10) (cid:16)(cid:19)(cid:18)# "
+(cid:1)
+(cid:11)
+keys.
+HaleviandShamir[14]provideamoreefficientinstan-
+tiationofthesubset-coverframeworkthathasatransmis-
+sionsizeof (cid:7)(cid:9) (cid:8)(cid:25) (cid:2)(cid:23) (cid:11) ,andrequiresonly (cid:7)(cid:9) (cid:8)(cid:10) (cid:16)(cid:19)(cid:18) (cid:14) (cid:1) $& % (cid:8) (cid:1) (cid:11)’ (cid:11) keys.SiRiUS-NNL md-file Format. In SiRiUS-NNL, each nameparadigmtoguaranteeatomicfileupdates.9 Appli-
+md-filerequirestwoseparateNNLtrees. Thekeysinone cationssuchasCVSwillnotworkflawlesslyinbasicSiR-
+NNLtreeareusedtoencryptafilekeyblock(inthemd- iUSbecausenon-ownerusersneedtocreatenewfilesina
+file) which contains the FEK and FSK. Call this file key repository.
+block the FKB-write. The keys in the other NNL tree
+areusedtoencryptanotherfilekeyblockwhichcontains
+UnionMounts. SiRiUScanbeextendedtosupporttra-
+onlytheFEK.CallthisblocktheFKB-read.8 Withthese
+ditional file system semantics through the use of union
+twofilekeyblocks, wecanstillseparatereadfromread-
+mounts[30,20]. Weuseageneralizedunion-mountsys-
+write access, since a user with only read access will not
+tem to merge SiRiUS file systems belonging to differ-
+havekeystotheNNLtreeforFKB-write. TheFKB-write
+ent users together to obtain a single view of the merged
+andFKB-readareencryptedusingtheappropriatechoice
+file systems. We refer to a SiRiUS extension with union
+of keys calculated using the Subset-Cover revocation al-
+mountsasSiRiUS-U.
+gorithms (describedin the NNL paper [26]) on the NNL
+TheBSDunionmountsystemallowsastackoffilesys-
+trees.
+tems
+Auser’sencryptedkeyblockinthemd-filecontainsthe
+symmetric encryption keys that constitute a path from a
+leaf to the root of one of the two NNL trees. Since this
+pathneverchanges,theencryptedkeyblocksarenotup-
+datedonarevocation,removingtheneedforapublic-key
+encryptiononrevocation. Sincetheencryptedkeyblocks
+arelargerandthereareadditionalkeyblocks,wearetrad-
+ing space for time in SiRiUS-NNL. This tradeoff is ac-
+ceptablesincediskspaceischeapandplentiful.
+File Creation, Access, and Revocation. On file cre-
+ation, all the symmetric keys for two NNL trees for that
+file are created and stored in the owner’s encrypted key
+block. Enoughkeysarecreatedsothatmoreuserscanbe
+addedinthefuture.
+Whenauserisgivenreadaccesstoafile,thefileowner
+obtainsasetofkeysfromtheNNLtreeforFKB-readand
+creates the encrypted key block for that user with these
+keys. Asimilarprocedureisusedforwriteaccess.
+When a user’s read access to revoked, the owner re-
+generates the FEK and re-encrypts the d-file. She also
+calculates the new choice of keys for the FKB-read and
+encryptstheFKB-readwiththisnewset.Asimilarproce-
+dureisusedforwrite-accessrevocation.
+6.4. Maintaining Traditional File System Seman-
+tics
+InbasicSiRiUS,eachuserownsaseparatefilesystem
+on the remote server. Since there is noconcept of direc-
+torypermissionsinSiRiUS,onlytheownerofafilesys-
+tem can create or rename files on her file system. These
+semanticspresenta problemwithsometraditional appli-
+cationssuchaseditors. Forexample,Emacscreatestem-
+porary files in the working directory duringediting, and,
+on a save, replaces the original file with the temporary
+copy through a rename. Many applications use this re-
+8ThesefilekeyblocksarenotpresentinbasicSiRiUS.
+(cid:0) (cid:1)(cid:2) (cid:1) (cid:1) (cid:1) (cid:1) (cid:1) (cid:0)(cid:4) (cid:3)
+tofunctionlogicallyasasinglefilesys-
+tem.
+For each file read attempt, the stacked file systemsare
+searched,from
+(cid:0)(cid:5) (cid:3)
+downto
+(cid:0) (cid:1)
+;thetopmostonethatcon-
+tainsaversionofthefileisusedtoanswertheattempt.
+Any changes to a file actually modify the copy in the
+topmost,read-writefilesystem
+(cid:0)(cid:5) (cid:3)
+. Filedeletionsarehan-
+dled by placing a “whiteout” entry in
+(cid:0) (cid:3)
+that hides the
+lower-levelfile.
+Unionmountsareuseful,forexample,whencompiling
+sourcesfromaCD-ROM:adirectorytreeunder/tmpcan
+be stacked over the (read-only) source tree; object files
+andexecutablesarecreatedin/tmp,butappearside-by-
+sidewiththesources.
+When a SiRiUS-U client mounts a user’s file system,
+theclientcarriesoutaunionmountofallotherusers’cor-
+respondingfilesystemsontheremotefileserver. Allthe
+freshnessfilesandmd-filesforallusersarevisibletothe
+SiRiUS-U client so that it can locate and verify files to
+whichithasaccess.
+To handle name-spacecollisions, SiRiUS-U requires a
+logical ordering of the union-mounted stack of SiRiUS
+file systemsthat is different fromthat in previousunion-
+mountimplementations. Thelogicalorderingrequiredis
+temporal: The most recent versionof a file is ordered at
+thetopofthesearchstack.Weillustratethisorderingwith
+anexample. SupposeBobistheowneroffilefoo,Alice
+alone has write access to the file, and Carol has read ac-
+cess. SupposeAliceperformedthelastwriteonfooand
+Caroltriestoreadfoosometimelater. Carol’sSiRiUS-
+Uclientcheckstheunion-mountedfilesystemandlocates
+bothBob’sandAlice’sversionsoffoo.SinceAlice’sver-
+sionismorerecent,theSiRiUSclientdisplaysherversion
+toCarol.
+If Alice is not allowed to write to foo, then Carol’s
+client shouldnot consultAlice’sversionregardlessofits
+temporal ordering. Bob’s meta data files must therefore
+specify which users are allowed to modify a given file,
+9Emacsis intelligentenough to createtemporary filesin the local
+/tmpdirectoryiftheuserhasnowriteaccesstotheworkingdirectory.andonly these users’ directorytrees shouldbe consulted FileSystem(TCFS)[7]isanotherextensionofCFS.Each
+inaccessingafile. user in TCFS possesses a master key which is used to
+UsingunionmountsallowsSiRiUStomaintainthefile protect unique file keys. TCFS has a group threshold
+systemsemanticsdiscussedearlier.Furthermore,SiRiUS- sharing scheme that require a certain number of active
+U retains the security of the original scheme. In fact, group members before group shared files become acces-
+SiRiUS-Ucanalsoguaranteethefreshnessofd-files. sible. Apart from this scheme, no other form of sharing
+is supported. In contrast, SiRiUS provides per file read-
+FreshnessGuaranteesUsingUnionMounts. Ifunion writesharinganddoesnotrelyonaccesscontrolservers.
+mountsareused,themd-filefreshnessschemecanbeex- SecureNetworkAttachedDisks(SNAD)[24]isablock
+tended to d-files to solve the d-file rollback attack men- storage system providing end-to-end encryption and in-
+tionedinSection5.3. tegrityoffiledataandmetadata. Filesareprotectedwith
+EachSiRiUSuseralsocomputesahashtreeforthehash unique symmetric keys, in turn protectedwith the asym-
+blocksofallthed-filesthathehaswriteaccessandcreates metric key of each user given access to the file. How-
+adatafreshnessfileordf-file.Theproceduresforgenerat- ever, access permissions are stored and enforced by the
+ingthedf-filesaresimilartothoseforgeneratingmdf-files. remotefileserver. Thismodelrequiresstrongauthentica-
+Therootdf-fileisperiodicallytime-stampedandsignedby tionofusersalongwithusertrustintheservertoenforce
+theuser. access control. The Secure Untrusted Data Repository
+The union mount of all user file systems ensures that (SUNDR) [19] usesblock serverstostore blocksofdata
+alldf-filesforeachuserarevisibletoeveryone. Thesedf- thatclientsinterpretasafilesystem. Thefilesystemim-
+filesareusedverifythefreshnessoffiledata.Forexample, plementationresidesentirelyontheclient. SUNDRpro-
+supposethatfilefoohastwowriters,BobandCarol,and vides end-to-end encryption using per-file keys. File in-
+thatAlicewantstoreadthefile. Theunionmountshows tegrityisimplementedusinghashtrees.SUNDRrelieson
+that the latest version of foo was last modified by Bob, the server’s enforcing access control. Both SUNDR and
+soAliceverifiesthed-filefreshnessusingBob’sdf-files. SNAD require newstorageservers. In comparison, SiR-
+iUS does not require new infrastructure and also allows
+7. RelatedWork eachuser tomanage hisownaccesspermissionswithout
+havingtotrustthefileserver.
+The Self-Certifying File System [18] (SFS) provides
+Plutus [15] provides end-to-end security, along with
+authenticationand channel security for accessing remote
+a novel cryptographic group sharing system with lazy
+file systems. Access control in SFS relies on all file re-
+revocation. CryptosFS [29] explores the use of public
+quests’passingthroughthetrustedSFSserver.Theuseof
+key cryptography to replace access control mechanisms.
+a trusted server in SFS removes the need for end-to-end
+CryptoFS relies on the file server correctly to verify ac-
+security. In contrast, SiRiUS isdesigned onthe assump-
+cess by users. Furthermore, obtaining the asymmetric
+tionofanuntrustedfileserverandthereforeprovidesend-
+keys only grants access to the enciphered file; files are
+to-endsecuritywithcryptographicaccesscontrols.
+alsoencryptedusingasymmetrickeythatusersmustob-
+The Cryptographic File System (CFS) [2] associates a
+tain (through some out-of-band channel) to decrypt and
+single symmetric key with each file system. The path-
+encrypt the file contents. In contrast, SiRiUS has a sim-
+names anddata of the file system contentsare encrypted
+pler key management scheme with user-managed access
+beforebeingwrittentodisk.Accesscontrolisdetermined
+control.TheSwallowdistributedfilesystem[31]enforces
+bypossessionofthe filesystem key. Hence, CFS allows
+accesscontrolthroughclientsidecryptography. Swallow
+onlycoarsesharingwithnoread-writeseparationorper-
+clients encrypt their files before storing them on the re-
+filesharing. Incontrast,SiRiUSallowsfinegrainedshar-
+mote file servers. However, Swallow does not provide
+ingonaper-filebasis.
+finegrainedfilesharing. Iftheownerofafileallowsread
+CryptFS [35] is similar to CFS except that symmetric
+access to another user, that user can also modify the file
+keys are associated with groups of files. These group
+undetectably.
+file keys permit group sharing but no read-write ac-
+Zero-Interaction Authentication (ZIA) [9] aims to se-
+cess controls. The Extended Cryptographic File System
+cure mobile devices even against physical attacks. ZIA
+(ECFS) [1] extends CFS to provide file integrity. The
+implementsfileaccesscontrolviaacryptographicfilesys-
+CryptographicStorageFileSystem(CSFS)[13]issimilar
+temthatcommunicateswithaphysicalauthenticationto-
+to CFS but also supports file integrity and group sharing
+ken. Public key cryptography is used to authenticate a
+of files. However,CSFS does not provideread-write ac-
+physicaltokentothemobiledevice.Filesharingisimple-
+cesscontrols. CSFSalsoreliesonahighlytrustedgroup
+mentedusingsymmetricciphers. SiRiUScanuseZIAto
+database server that determines group membership (and
+securethemasterkeysontheclientmachine.
+hence access control). The Transparent Cryptographic8. Summaryand Conclusion [11] S. Even, O. Goldreich, and S. Micali. On-line/off-line
+digital signatures. In G. Brassard, editor, Proceedings
+The use of SiRiUS is compelling in situations where
+of Crypto 1989, volume 435 of LNCS, pages 263–277.
+usershavenocontroloverthefileserver(suchasYahoo!
+Springer-Verlag,August1989.
+BriefcaseortheP2PfilestorageprovidedbyFarsite). We
+[12] A.FiatandM.Naor.Broadcastencryption.InD.Stinson,
+believethatSiRiUSisthemostthatcanbedonetosecure editor,ProceedingsofCrypto1993,volume773ofLNCS,
+anexistingnetworkfilesystem withoutchangingthefile pages480–91.Springer-Verlag,August1993.
+serverorfilesystemprotocol. [13] K.Fu. Groupsharingandrandomaccessincryptographic
+storagefilesystems. Master’sthesis,MassachusettsInsti-
+Acknowledgments tuteofTechnology,June1999.
+[14] D.HaleviandA.Shamir. TheLSDbroadcastencryption
+The authors thank Monica Lam, Ben Pfaff, Mendel scheme. InM.Yung,editor,ProceedingsofCrypto2002,
+Rosenblum, and the other members of the Stanford Col- volume2442ofLNCS,pages47–60.Springer-Verlag,Au-
+lective Group for their helpful discussions. The authors gust2002.
+also thank Kevin Fu and the anonymous reviewers for [15] M.Kallahalla,E.Riedel,R.Swaminathan,Q.Wang,and
+theircomments. SpecialthankstoConstantineSapuntza- K.Fu. Plutus—scalablesecurefilesharingonuntrusted
+kisforcommentsonmaintainingstandardfilesystemse- storage. In Proceedings of the Second USENIX Confer-
+mantics, and Robert McGrew for pointing out an attack enceonFileandStorageTechnologies(FAST).USENIX,
+March2003.
+(now fixed). The authors are grateful to Mendel Rosen-
+[16] U. Maheshwari, R. Vingralek, and W. Shapiro. How to
+blum and VMware for providing us with their software
+build a trusted database system on untrusted storage. In
+fordevelopmentwork.
+ProceedingsoftheFourthSymposiumonOperatingSys-
+temsDesignandImplementation(OSDI).USENIX,Octo-
+References
+ber2000.
+[17] D. Mazie`res. A toolkit for user-level file systems. In
+[1] D. Bindel, M. Chew, and C. Wells. Extended crypto-
+ProceedingsoftheUSENIXTechnicalConference, pages
+graphicfilesystem. Unpublishedmanuscript, December
+261–274.USENIX,June2001.
+1999.
+[2] M.Blaze. AcryptographicfilesystemforUnix. InPro- [18] D. Mazie`res, M. Kaminsky, M. F. Kaashoek, and
+ceedingsoftheFirstACMConferenceon Computerand E.Witchel. Separatingkeymanagementfromfilesystem
+CommunicationsSecurity, pages9–16.ACM,November security. InProceedingsoftheSeventeenthACMSympo-
+1993. siumonOperatingSystemsPrinciples(SOSP),pages124–
+[3] D. Boneh and M. Franklin. Identity based encryption 139.ACM,1999.
+from the Weil pairing. In J. Kilian, editor, Proceedings [19] D.Mazie`res andD.Shasha. Don’t trustyourfileserver.
+of Crypto 2001, volume 2139 of LNCS, pages 213–229. InProceedingsoftheEighthWorkshoponHotTopicsin
+Springer-Verlag,August2001. OperatingSystems,pages113–118,May2001.
+[4] B.Callaghan. NFSIllustrated. Addison-Wesley,Decem- [20] M.K.McKusick,K.Bostic,M.Karels,andJ.Quarterman.
+ber1999. TheDesignandImplementationofthe4.4BSDOperating
+[5] B.Callaghan,B.Pawlowski,andP.Staubach.NFSversion System. Addison-Wesley,1996.
+3protocolspecification. RFC1813,June1995.
+[21] R. Merkle. A digital signature based on a conventional
+[6] M.CastroandB.Liskov. PracticalByzantinefaulttoler-
+encryption function. In C. Pomerance, editor, Proceed-
+ance. InProceedingsoftheThirdSymposiumonOperat-
+ingsofCrypto1987,volume293ofLNCS,pages369–378.
+ingSystemsDesignandImplementation(OSDI.USENIX,
+Springer-Verlag,August1987.
+Febuary1999.
+[22] Microsoft. Commoninternetfilesystem(CIFS). Located
+[7] G.Cattaneo, L.Catuogno, A.D.Sorbo, andP.Persiano.
+athttp://www.ubiqx.org/cifs/.
+The design and implementation of a transparent crypto-
+[23] Microsoft. Federated, available, and reliable storage for
+graphicfilesystemforUNIX. InProceedingsofUSENIX
+anincompletelytrustedenvironment(Farsite). Locatedat
+Technical Conference, FREENIX Track. USENIX, June
+http://research.microsoft.com/sn/Farsit
+2001.
+e/.
+[8] B. Chor, A. Fiat, and M. Naor. Tracing traitors. In
+Y. Desmedt, editor, Proceedings of Crypto 1994, vol- [24] E. Miller, D. Long, W. Freeman, and B. Reed. Strong
+ume839ofLNCS,pages257–70.Springer-Verlag,August security for distributed file systems. In Proceedings of
+1994. the Twentieth IEEE International Performance, Comput-
+[9] M.CornerandB.Noble. Zero-interactionauthentication. ing,andCommunicationsConference,pages34–40,April
+InProceedingsoftheEighthInternationalconferenceon 2001.
+Mobile Computing and Networking (MOBICOM), pages [25] A.Muthitacharoen,R.Morris,T.Gil,andB.Chen.Ivy:A
+1–11.ACM,2002. read/writepeer-to-peerfilesystem. InProceedingsofthe
+[10] M.Dworkin. Recommendationforblockciphermodesof Fifth USENIX Symposium on Operating Systems Design
+operation. SpecialPublication800-38A,NIST,2001. andImplementation(OSDI).USENIX,December2002.[26] D.Naor,M.Naor,andJ.Lotspiech. Revocationandtrac- storagesystemforalocalnetwork. InA.WestandP.Jan-
+ing schemes for stateless receivers. In J. Kilian, editor, son, editors, Local Networks for Computer Communica-
+ProceedingsofCrypto2001,volume2139ofLNCS,pages tions,pages355–373.North-Holland,1981.
+41–62.Springer-Verlag,August2001. [32] R. Sandberg, D. Goldberg, S. Kleiman, D. Walsh, and
+[27] OceanStoreProject. Locatedat B.Lyon. DesignandimplementationoftheSUNnetwork
+http://oceanstore.cs.berkeley.edu/. filesystem. InProceedingsoftheSummerUSENIXCon-
+[28] OpenSSLProject. Locatedat ference,pages119–130.USENIX,1985.
+http://www.openssl.org/. [33] R.Srinivasan. RemoteProcedureCallProtocolversion2.
+[29] D.P.O’Shanahan. CryptosFS:Fastcryptographicsecure RFC1813,August1995.
+NFS. Master’sthesis,UniversityofDublin,2000. [34] Yahoo!Briefcase. Locatedat
+[30] J.-S. Pendry and M. K. McKusick. Union mounts in http://briefcase.yahoo.com/.
+4.4BSD-Lite. InProceedingsofUSENIXTechnicalCon- [35] E.Zadok,I.Badulescu,andA.Shender. Cryptfs:Astack-
+ference,pages25–33.USENIX,January1995. ablevnodelevelencryptionfilesystem. TechnicalReport
+[31] D.ReedandL.Svobodova. Swallow:Adistributeddata CUCS-021-98,ColumbiaUniversity,1998.

@@ -1,0 +1,213 @@
+NDSS 97
+Distributed Authentication in Kerberos
+Using Public Key Cryptography
+Marvin A. Sirbu John Chung-I Chuang
+Carnegie Mellon University
+Symposium on Network and Distributed System Security
+February 10-11 1997
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+Outline
+• Public Key Cryptography for Kerberos
+• Alternative Approaches
+• The PKDA Protocol
+• Migration to PKDA
+• Implementation and Progress
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+Why Public Key in Kerberos
+• Reduce/eliminate sensitive information at
+KDC
+• Distribute functions of TGS for scalability
+– on-line banking with millions of consumers in a
+single trust domain
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+PKDA
+• Public-key based Kerberos for Distributed
+Authentication
+• Public-key cryptography built upon
+certificate infrastructure
+• Mutual authentication and key exchange
+• Data integrity and privacy protection
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+PKDA
+• Extension to Kerberos V5 Authentication
+Framework (RFC 1510)
+• Builds upon X.509, PKCS standards
+• Supports Rights Delegation
+• Enhancement to User Privacy Protection
+over Kerberos V5
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+Alternative Approaches
+• Secure Socket Layer (SSL 3.0)
+• Public Key Cryptography for Initial
+Authentication in Kerberos (pk-init)
+• PKDA
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+SSL 3.0
+• Supports TCP but not UDP
+• Client and server exchange certificates
+• Both parties cache session key and
+session_id locally
+• Reuse session key by resending session_id
+• Choice of cryptographic algorithms
+• Certificate revocation checking unspecified
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+pk-init
+• Supports both TCP and UDP
+• No client keys at KDC; server keys still
+stored
+• TGS interaction required for every session
+ticket
+• Session tickets reusable during lifetime
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+PKDA
+• Supports both TCP and UDP
+• Client and server exchange certificates
+• Session ticket and key exchanged directly -
+no TGS involved
+• Ticket reusable for subsequent interactions
+• Certificate revocation checking unspecified
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+PKDA vs. SSL 3.0
+• Protocol layer
+• End-to-end message encryption
+• Ticket reusability/session caching
+• Rights delegation in PKDA
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+PKDA vs. pk-init
+• PKDA is fully distributed; no centralized
+KDC/TGS
+• PKDA enhances privacy of principals
+• PKDA requires code modifications to
+clients and servers; pk-init requires code
+modifications for clients and KDC
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+Notation
+C Client
+S Server
+K random one-time symmetric key
+r
+K symmetric key shared by C and S
+c,s
+{M}K message encrypted using key K
+c,s c,s
+{M}P message encrypted using public key of S
+s
+{M}P -1 message signed using private key of C
+c
+Ts# time-stamps
+T Initial Authentication Time
+auth
+T Ticket for session between S and C
+c,s
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+Traditional Kerberos
+Key Distribution Center (KDC) 1. AS_REQ: C, TGS, Ts1
+2. AS_REP: {K ,TGS,Ts1}K , T
+c,tgs c c,tgs
+AS TGS
+3. TGS_REQ: C, S, Ts2, T , {auth}K
+c,tgs c,tgs
+4. TGS_REP: C, {K ,S,Ts2}K , T
+3 c,s c,tgs c,s
+5. AP_REQ: T , {C,Ts3}K
+1 2 4 c,s c,s
+5
+C S where
+T = TGS,{K ,C,T }K
+c,tgs c,tgs auth tgs
+is the ticket granting ticket (TGT);
+T = S,{K ,C,T }K
+c,s c,s auth s,tgs
+is the service ticket.
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+PKDA Protocol
+1. SCERT_REQ: S
+2. SCERT_REP: s-cert
+(1)
+3. PKTGS_REQ:
+(2)
+S, {C,c-cert,{S, P , K ,T }P -1}P
+s r auth c s
+3
+4. PKTGS_REP: {C,S,K ,T }K , T
+C S c,s auth r c,s
+4
+5. AP_REQ: T , {C,Ts1}K
+c,s c,s
+5
+where ticket
+T = S,{K ,C,T }K
+c,s c,s auth s
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+Rights Delegation
+1. SCERT_REQ: S
+2. SCERT_REP: s-cert
+3. PKTGS_REQ:
+G
+S, {C,c-cert,{S, P , K ,T }P -1 }P
+s r auth c s
+with ‘PROXIABLE’ flag set
+5
+4. PKTGS_REP: {C,S,K ,T }K , T
+6 c,s auth r c,s
+5. KRB_CRED: {T , {C,Ts1}K ,K }K
+c,s c,s proxy c,g
+6. AP_REQ: T , {C,Ts1}K
+1,3 c,s c,s
+C S
+2,4
+where ticket is proxiable:
+T = S,{K ,C,T }K
+c,s c,s auth s
+and K is previously established symmetric key between C
+c,g
+and G.
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+Accomodating Conventional
+Application Servers
+If Server does not understand PKDA:
+• Obtain conventional TGT from PKDA-
+enabled TGS
+• Use TGT to request a service ticket for
+server S
+• Capture all benefits of pk-init without need
+for server code change
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+Obtaining Session Tickets from a
+PDKA-Enabled TGS
+0. SCERT_REQ: TGS
+0. SCERT_REP: tgs-cert
+1. PKTGS_REQ:
+TGS
+TGS, {C,ccert,{TGS, P tgs, T auth,K r}P
+c
+-1}P
+tgs
+2. PKTGS_REP: {C,TGS,K ,T }K , T
+c,tgs auth r c,tgs
+3. TGS_REQ: C, S, Ts1, T , {auth}K
+1,3 2,4 c,tgs c,tgs
+4. TGS_REP: C, {K ,S,Ts1}K , T
+cs c,tgs c,s
+5. AP_REQ: T , {C,Ts2}K
+c,s c,s
+5
+C S where
+T = TGS,{K ,C,T }K
+c,tgs c,tgs auth tgs
+is the ticket granting ticket;
+T = S,{K ,C,T }K
+c,s c,s auth s,tgs
+is the service ticket.
+Copyright 1997 John Chuang Carnegie Mellon UniversityNDSS 97
+Implementation of PKDA
+• Protocol Verification
+• Working Implementation for CMU’s
+NetBill electronic payment system
+– Use DCE RPCs: enhancements to IDL
+compiler automatically adds PKDA RPCs to
+interfaces
+• Protocol Specification in Internet Draft
+– ftp://ietf.org/internet-drafts/draft-sirbu-kerb-
+ext-00.txt
+Copyright 1997 John Chuang Carnegie Mellon University

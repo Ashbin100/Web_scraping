@@ -1,0 +1,338 @@
+Ramblr
+Making Reassembly Great Again
+Ruoyu “Fish” Wang, Yan Shoshitaishvili, Antonio Bianchi,
+Aravind Machiry, John Grosen, Paul Grosen,
+Christopher Kruegel, Giovanni VignaMotivationAvailable Solutions
+Pure
+Static
+Static +
+Dynamic
+DynamicWhat is Binary Reassembly?.text
+400100 mov [6000a0], eax
+400105 jmp 0x40020d
+...
+Disassembl
+40020d mov [6000a4], 1
+e
+.data
+6000a0 .long 0xc0deb4be
+6000a4 .long 0x0.text
+mov [data_0], eax
+jmp target
+...
+Disassembl
+target mov [data_1], 1
+e
+.data
+data_0 .long 0xc0deb4be
+data_1 .long 0x0.text
+400100 mov [6000a0], eax
+400105 jmp 40020d
+40020d ... CRASH!
+DisaPsastecmh b&l
+4400002200df mov [6000a4], 1
+Ases emble
+.data
+66000000aa00 .“lcoantg\ x00x0c”0 deb4be
+66000000aa44 .long 0x0
+6000a8
+Non-relocatable Assembly..tteexxtt
+mmoovv [[ddaattaa__00]],, eeaaxx
+jjmmpp ttaarrggeett
+......
+DisaPsastecmh b&l
+mov [dCaRtAaS_H1!] , 1
+Ases emble
+target mov [data_1], 1
+.data
+data_0 ..dlaotnag 0xc0deb4be
+datan_e1w “.claotn\gx 000x”0
+data_0 .long 0xc0deb4be
+data_1 .long 0x0
+Relocatable Assembly0x80486f0
+.text
+Code regions
+0x804d000
+.rodata
+0x804d200
+.data Data regions
+0x804e000
+.bss0x80486f0
+.text:
+.text
+80488e3: push ebp
+80488e4: mov ebp, esp
+80488e6: sub esp, 00xx4488
+0x804d000
+80488e9: mov DWORD PTR [ebp-0x10], 00xx00
+.rodata
+80488f0: mov DWORD PTR [ebp-0xc], 00xx00
+80488f7: mov DWORD PTR [ebp-0xc], 00xx8800554400aa00
+0x804d200 80488fe: mov eax, 00xxffbb77
+.data
+8048903: mov WORD PTR [ebp-0x10], ax
+8048907: mov eax, ds:00xx880055bbee6600
+0x804e000
+804890c: test eax, eax
+.bss
+804890e: jne 00xx880044889955bb
+8048910: mov eax, ds:00xx880055bbee55cc
+...
+.data:
+Uroboros
+804d538: e0cx 880e4 80e4e c0 8
+804d53c: 005x 880f4 80f40 50 8
+USENIX Sec ‘15
+804d540: 10ex 880f4 80f41 e0 8ProblemsFalse Positives False Negatives
+Thanks xkcd :-)False Positives
+Problem: Value Collisions
+8060080 .db 3d
+8060081 .db ec
+8060082 .db 04
+8060083 .db 08
+/* stored at 0x8060080 */ Byte Representation
+static float a = 4e-34;
+A Floating-point Variable a
+8060080 label_804ec3d
+Interpreted as a PointerFalse Negatives
+Problem: Compiler Optimization
+iinntt ccttrrss[[22]] == {{00}};;
+iinntt mmaaiinn(())
+{{
+iinntt iinnppuutt == ggeettcchhaarr(());;
+sswwiittcchh ((iinnppuutt –– ''AA''))
+{{
+ccaassee 00::
+ccttrrss[[iinnppuutt –– ''AA'']]++++;;
+bbrreeaakk;;
+......
+}}
+}}
+A code snippet allows constant foldingFalse Negatives
+Problem: Compiler Optimization
+int ctrs[2] = {0}; ; Assuming ctrs is stored at 0x804a034
+; eax holds the input character
+int main() ; ctrs[input – 'A']++;
+{ add 0x8049f30[eax * 4], 1
+int input = getchar(); ...
+switch (input – 'A')
+{ .bss
+0x804a034 – ‘A’ * sizeof(int) = 0x8049f30
+case 0: 804a034: ctrs[0]
+ctrs[input – 'A']++; 804a038: ctrs[1]
+break;
+... 0x8049f30 does not
+} belong to any
+} section
+A code snippet allows constant folding Compiled in Clang with –O1Our ApproachNaïve Strategy
+False Positives
+False Negatives
+HeuristicsRamblr
+Heuristics
+False Positives
+False Negatives
+Program AnalysisPipeline
+0x804850b Pointer
+push offset label_34
+0xa Integer
+push offset label_35
+0xdc5 Integer cmp eax, ecx
+jne label_42
+63 61 74 00 String
+0x80484a2 Pointer .label_42:
+mov eax, 0x12fa9e5
+0x804840b Pointer
+...
+0xa0000 Integer
+Symbolization
+CFG Content Classification &
+Recovery ReassemblyPipeline
+0x804850b Pointer
+push offset label_34
+0xa Integer
+push offset label_35
+0xdc5 Integer cmp eax, ecx
+jne label_42
+63 61 74 00 String
+0x80484a2 Pointer .label_42:
+mov eax, 0x12fa9e5
+0x804840b Pointer
+...
+0xa0000 Integer
+Symbolization
+CFG Content Classification &
+Recovery ReassemblyCFG Recovery
+31 ed 5e 89
+e1 83 e4 f0 0x80486f0:
+50 54 52 68 xor ebp, ebp
+00 25 05 08 pop esi
+mov ecx, esp
+and esp, 0xfffffff0
+push eax
+push esp
+push edx
+...
+Recursive Disassembly Iterative RefinementContent Classification
+((value * 42) ^ 5) / 3
+*((int*)0x8045010)
+value * 42 5
+.text 3
+*ptr xor
+.rodata
+.data /
+.bss
+result
+A Typical Pointer A Typical ValueContent Classification
+Type Category Examples
+Primitive types Pointers, shorts, DWORDs, QWORDs,
+Floating-point values, etc.
+Strings Null-terminated ASCII strings, Null-
+terminated UTF-16 strings
+Jump tables A list of jump targets
+Arrays of primitive An array of pointers, a sequence of
+types integers
+Data Types that Ramblr RecognizesContent Classification
+MOVe Scalar Double-precision
+floating-point value
+Two floating-points
+movsd xmm0, ds:0x804d750 804d750 Floating point integer
+movsd xmm1, ds:0x804d758
+804d758 Floating point integer
+Recognizing Types during CFG RecoveryContent Classification
+chr = _getch();
+switch (i)
+switch (i)
+{
+{
+case 1:
+case 1:
+...
+a += 2; break;
+case 2:
+case 2:
+Slicing ...
+b += 4; break;
+case 3:
+case 3:
+...
+c += 6; break;
+default:
+default:
+...
+a = 0; break;
+}
+}
+Recognizing Types with Slicing & VSAContent Classification
+if(i >
+3) i = [0, 2] with a stride of 1
+A jump table of 3 entries
+VSA
+table[0] Pointer, jump target
+jmp table[i * 4]
+table[1] Pointer, jump target
+table[2] Pointer, jump target
+Quit switch
+Recognizing Types with Slicing & VSAFalse Negatives
+Base Pointer Reattribution
+int ctrs[2] = {0}; ; Assuming ctrs is stored at 0x804a034
+; eax holds the input character
+int main() ; ctrs[input – 'A']++;
+{ add 0x8049f30[eax * 4], 1
+int input = getchar(); ...
+switch (input – 'A')
+{ .bss
+case 0: 804a034: ctrs[0]
+ctrs[input – 'A']++; 804a038: ctrs[1]
+break;
+... 0x8049f30 does not
+} belong to any
+} section
+A code snippet allows constant folding Compiled in Clang with –O1False Negatives
+Base Pointer Reattribution
+; Assuming ctrs is stored at 0x804a034
+Belongs to .bss
+; eax holds the input character
+; ctrs[input – 'A']++;
+add 0x8049f30[eax * 4], 1
+0x8049f30 ‘A’ * 4
+...
+.bss
+add
+Constant un-folding
+804a034: ctrs[0]
+804a038: ctrs[1]
+0x804a034 0x8049f30 does not
+belong to any
+section
+The Slicing Result Compiled in Clang with –O1Safety Heuristics: Data Consumer Check
+DWORD PTR [0x8045000] DWORD PTR [0x8045f08]
+xor
+*(the_result)
+I GIVE UP
+Unusual Behaviors Triggering the Opt-out RuleSymbolization & Reassembly
+0x400010 label_34 push offset label_34
+push offset label_35
+0x400020 label_35
+cmp eax, ecx
+jne label_42
+0x400a14 label_42
+... .label_42:
+mov eax, 0x12fa9e5
+0x406000 data_3
+...
+Symbolization Assembly GenerationEvaluationData sets
+Coreutils 8.25.55 Binaries from CGC
+Programs 106 143
+Compiler CGC 5 Clang 4.4
+Optimization levels O0/O1/O2/O3/Os/Ofast
+Architectures X86/AMD64 X86
+Test cases Yes Yes
+Total binaries 1272 725Brief Results: Success Rate
+100
+90
+80
+70
+60
+50
+40
+30
+20
+10
+0
+Coreu&ls O0 Coreu&ls O1 CGC O0 CGC O1 CGC O2 CGC O3
+Uroboros Ramblr Ramblr FastRamblr is the foundation of ...
+• Patching Vulnerabilities
+• Obfuscating Control Flows
+• Optimizing Binaries
+• Hardening BinariesConclusionConclusion
+• Identified challenges in reassembling
+• Proposed a novel composition of static analysis techniques
+• Developed a systematic approach to reassemble stripped binaries
+ü Ramblr is open-sourced
+ü Extra data-sets and usable tools will be released soonTools
+Patching support
+Ramblr IDA Plugin Patcherex
+in
+angr ManagementThanks xkcd :-)Limitations
+• The infeasibility of static content classification
+• The lack of guarantee of our approaches
+• The “80% versus 20%” problem
+Backup slidesBrief Results: Success Rate (cont.)
+• Emphasis
+We reproduced Uroboros’ results on Coreutils 8.15 compiled
+with GCC 4.6 on Ubuntu 12.04
+• Changes in Coreutils > 8.15 makes it harder for Uroboros
+• Optimizations in GCC 5 yields new challenges for Uroboros
+Backup slides- Autonomous vulnerability
+discovery
+- Autonomous exploitation
+- Autonomous patching
+Backup slides- Autonomous vulnerability
+discovery
+- Autonomous exploitation
+- Autonomous patching
+Requires
+a low memory overhead
+and
+an EXTREMELY low execution overhead
+Backup slides

@@ -1,0 +1,895 @@
+Protocol-Independent Adaptive Replay of Application Dialog
+Weidong Cui†,Vern Paxson‡,Nicholas C.Weaver‡,Randy H.Katz†
+†UniversityofCalifornia,Berkeley,CA
+‡InternationalComputerScienceInstitute,Berkeley,CA
+Abstract Windowsfile-accesssession)priortofinallyexposingtheir
+uniquemaliciousintent. Thus, to coaxfromthese sources
+Formanyapplications—includingrecognizingmalware theirfinalintentrequiresengagingtheminaninitialdialog,
+variants, determiningthe rangeofsystem versionsvulner- either by implementing protocol-specific application-level
+abletoagivenattack,testingdefensemechanisms,andfil- responders[15,16]orbydeployinghigh-interactionhoney-
+tering multi-step attacks—it can be highly useful to mimic potsystems[6, 19] thatrunthe actualvulnerableservices.
+anexistingsystemwhileinteractingwithalivehostonthe Bothapproachesareexpensiveintermsofdevelopmentor
+network. WepresentRolePlayer,asystemwhich,givenex- managementoverhead.
+amplesofanapplicationsession,canmimicboththeclient On the other hand, much of the dialog required to en-
+sideandtheserversideofthesessionforawidevarietyof gage with the remote source follows the same “script” as
+applicationprotocols. AkeypropertyofRolePlayeristhat seen in the past, with only very minor variants (different
+itoperatesinanapplication-independentfashion: thesys- hostnames, IP addresses, port numbers, command strings,
+temdoesnotrequireanyspecificsabouttheparticularap- orsessioncookies).Ifwecouldcheaplyreproduceoneside
+plication it mimics. It instead uses byte-stream alignment ofthedialog,wecoulddirectlyteaseouttheremotesource’s
+algorithms to compare different instances of a session to intentbyefficientlydrivingitthroughtheroutinepartofthe
+determinewhichfieldsitmustchangetosuccessfullyreplay dialoguntilitreachesthepointwhere,ifitisindeedsome-
+one side of the session. Drawing only on knowledge of a thingnew,itwillrevealitsdistinguishingnaturebyparting
+few low-level syntactic conventions (such as representing fromthescript.
+IP addressesusing “dotted quads”), and contextualinfor-
+Another example comes from trying to determine the
+mationsuchasthedomainnamesoftheparticipatinghosts,
+equivalent for malware of a “toxicology spread” for a bi-
+RolePlayercanheuristicallydetectandadjustnetworkad-
+ologicalpathogen.Thatis,givenonlyanobservedinstance
+dresses, ports, cookies, and length fields embedded within
+ofasuccessfulattackagainstagiventypeofserver(i.e.,par-
+the session, includingsessions thatspan multiple, concur-
+ticularOSversionandserverpatchlevel),howcanwede-
+rentconnectionsondynamicallyassignedports.
+terminewhatotherserver/OSversionsarealsosusceptible?
+WehavesuccessfullyusedRolePlayertoreplayboththe
+If we have instances of other possible versions available,
+clientandserversidesforavarietyofnetworkapplications,
+thenwecouldtesttheirvulnerabilitybyreplayingtheorig-
+includingNFS, FTP, and CIFS/SMB file transfers, as well
+inal attack against them, providing the replay again takes
+as the multi-stage infection processes of the Blaster and
+into account the natural session variants such as differing
+W32.Randex.Dworms.
+hostnames, IP addresses, session cookies, etc. Similarly,
+we could use replayto feedpossible attacks into moreso-
+phisticatedanalysisengines(e.g.,[14]).
+1 Introduction
+We can also use lightweight replay to facilitate testing
+ofnetworksystems. Forexample,whendevelopingorcon-
+In a number of different situations it would be highly figuring a new security mechanism it can be very helpful
+useful if we could cheaply “replay” one side of an appli- if we can easily repeat attacks against the system to eval-
+cation session in a slightly different context. For exam- uate its response. Historically, this can require a complex
+ple,considertheproblemofreceivingprobesfromaremote testbed to repeatedly run a piece of malware in a safe, re-
+hostandattemptingtodeterminewhethertheprobesreflect strictedfashion. Armedwithareplaysystem,however,we
+a new type of malware or an already known attack. Dif- could capture a single instance of an attack and then re-
+ferentattacksthatexploitthesamevulnerabilityoftencon- playitagainstrefinementsofthesecuritymechanismwith-
+ductthesame applicationdialog(e.g.,the manystepsofa outhavingtoreestablishanenvironmentforthemalwaretoexecutewithin. operate correctly without requiring any manualinter-
+Wecangeneralizesuchrepeatedreplaytotasksofstress- vention.
+testing, evaluating servers, or conducting large-scale mea-
+Insomecases,replayingistrivialtoimplement. Forex-
+surements.Areplaysystemcouldworkasalow-costclient
+ample,eachattackbytheCodeRedwormsendsexactlythe
+byreplayingapplicationdialogswithalteredparametersin
+same byte stream over the network to a target. However,
+partof the dialog. Forexample, by dynamicallyreplacing
+successfully replaying an application dialog can be much
+thereceiver’semailaddressinaSMTPdialog,wecoulduse
+more complicated than simply parrotingthe stream. Con-
+replaytocreatenumerousSMTPclientsthatsendthesame
+siderforexampletheBlasterwormofAugust,2003,which
+emailtodifferentaddresses.Wecouldusesuchacapability
+exploited a DCOM RPC vulnerability in Windows by at-
+forbothdebuggingandperformancetesting,withoutneed-
+tacking port 135/tcp. For Blaster, if a compromised host
+ingtoeithercreatespecializedclientsorinvokerepeatedin-
+(A) finds a new vulnerable host (V) via its random scan-
+stancesofacomputationallyexpensivepieceofclientsoft-
+ning,thenthefollowinginfectionprocessoccurs.
+ware.
+A final, powerful example concerns the use of replay 1. Aopensaconnectionto135/tcponV andsendsthree
+to construct proxies. Suppose in the first example above
+packetswithpayloadsizesof72,1460,and244bytes.
+that not only do we wish to determine whether an incom- ThesepacketscompromiseV andopena shelllisten-
+ingprobereflectsanewtypeofattackoraknowntype,but
+ingon4444/tcp.
+we also want to filter the attack if it is a known type but
+allowitthroughifitisanewtype. Wecouldusereplayto 2. A opens a connection to 4444/tcp and issues “tftp -i
+efficiently do so in two steps. First, we would replay the xx.xx.xx.xxGETmsblast.exe”where“xx.xx.xx.xx”
+targetedserver’sbehaviorin responsetotheprobe’sinitial isA’sIPaddress.
+activity (e.g., setting up a Windows SMB RPC call) until
+3. V sends a request back to 69/udp on A to download
+we reach a pointwhere a newattack variant will manifest
+msblast.exeviaTFTP.
+itself(e.g.,bymakinganewtypeofSMBcallorbysend-
+ingoverapreviouslyunseenpayloadforanexistingtypeof 4. Aissuescommandsvia4444/tcptostartmsblast.exe
+call). Iftheremotehostatthispointprovestolacknovelty onhostV.
+(we see the same final step in its activity as we have seen
+Thisexampleillustratesanumberofchallengesforim-
+before),thenwedroptheconnection.However,ifitreveals
+plementingreplay.
+anovelnextstep, thenatthispointwewouldlikeittoen-
+gageahigh-interactionhoneypotserversowecanexamine
+1. An application session can involve multiple connec-
+thenewattack. Todoso,though,wemustbringtheserver
+tions, with the initiatorandresponderswitchingroles
+“uptospeed”withrespecttotheapplicationdialoginwhich
+as both client and server, which means RolePlayer
+theremotehostisalreadyengaged. Wecandosobyusing
+mustbeabletorunasclientandserversimultaneously.
+replayagain,thistimereplayingtheremotehost’sprevious
+actions to the new server so that the two systems become 2. While replaying an application dialog we sometimes
+synchronized,afterwhichwe canallowtheremotehostto cannot coalesce data. For example, if the replayer
+proceedwithitsprobing. Ifweperformsuchproxyingcor- attempts to send the first Blaster data unit as a sin-
+rectly,theremotewillneverknowthatitwasswitchedfrom gle packet, we observe two packets with sizes of
+one type of responder(ourinitial replayer)to another(the 1460and316bytesduetoEthernetframing. Forrea-
+high-interactionhoneypot). sons we have been unable to determine, these pack-
+Inthispaperwedevelopasystem,RolePlayer,toprovide ets do notcompromisevulnerablehosts. Thus, Role-
+suchreplayfunctionality.Weaimforthesystemtoachieve Player must consider both application data units and
+severalimportantgoals: networkframing. (It appearsthatthere is a race con-
+ditioninBlaster’sexploitationprocess—Aconnectsto
+• Protocolindependence. Thesystemshouldnotneed 4444/tcpbeforetheportisopenedonV. Ifwedonot
+anyapplication-specificcustomization,sothatitworks consider the network framing, it increases the likeli-
+transparentlyfora largeclass of applications, includ- hoodoftheracecondition.Accommodatingsuchtim-
+ingbothasaclientandasaserver. ingissuesinreplayremainsforfuturework.)
+• Minimal training. The system should be able to 3. EndpointaddressessuchasIPaddresses,portnumbers
+mimic a previously seen type of application dialog andhostnamesmayappearinapplicationdata.Forex-
+givenonlyasmallnumberofexamples.
+ample,theIPaddressofAappearsintheTFTPdown-
+load command. This requires RolePlayer to find and
+• Automation.Givensuchexamples,thesystemshould updateendpointaddressesdynamically.4. Endpointaddresses (especially names but also IP ad- session and another. In this regard, our approach is simi-
+dresses, depending on formatting) can have variable lartotherecentProtocolInformaticsproject[2],whichat-
+lengths, and thus the data size of a packet or appli- temptstoidentifyprotocolfieldsinunknownorpoorlydoc-
+cationdata unitcan differbetween dialogs. Thiscre- umentednetworkprotocolsby comparinga series of sam-
+atestworequirementsforRolePlayer:decidingifare- plesusingsequencealignmentalgorithms.
+ceived application data unit is complete, particularly Comparedtothepreviouswork,RolePlayermakesfour
+when its size is smaller than expected; and changing contributions:
+the value of such length fields when replaying them
+withdifferentendpointaddresses. 1. Itdoesnotrequireknowledgeofapplication-levelpro-
+tocolsemantics.
+5. Some applications use “cookie” fields to record ses-
+sion state. For example, the process ID of the client 2. Itautomaticallygeneratesitsdialog“script”frompre-
+programisacookiefieldfortheWindowsCIFSproto- viouslyrecordedtraffic.
+col, while the file handle is one in the NFS protocol.
+3. Itcanreplayagainstlivepeersasbothinitiatorandre-
+Therefore, RolePlayer must locate and update these
+sponderbecauseitcanadapttodynamicchangessuch
+fieldsduringreplay.
+assessionidentifiersanddifferinghostnames.
+6. Weobservethatnon-zeropaddingupto3bytesmaybe
+4. Itrequiresatmosttwosamplestoreplayasinglepar-
+inserted into an applicationdata unit, which we must
+ticularapplicationsession.
+accommodatewithoutconfusionduringreplay.
+We organizetheremainderofthepaperasfollows. We 3 Terminology anddesign assumptions
+compare RolePlayer with previous work and highlight its
+contributions in Section 2. After presenting terminology
+Wewillusethetermapplicationsessiontomeanafixed
+and our design assumptions in Section 3, we describe the
+series of interactionsbetweentwo hoststhataccomplishes
+designofRolePlayerindetailinSection4. Wediscussour
+a specific task (e.g., uploading a particular file into a par-
+evaluationmethodologyandresultsinSection5,andsum-
+ticular location). The term application dialog refers to a
+marizeinSection6.
+recorded instance of a particular application session. The
+hostthatstartsa session is theinitiator. Theinitiatorcon-
+2 Relatedwork
+tacts the responder. (We avoid “client” and “server” here
+because for some applications the two endpoints assume
+The programming and operating systems communities both roles at different times.) We want RolePlayer to be
+havestudiedthenotionofreplayingprogramexecutionfor able to correctly mimic both initiators and responders. In
+a numberof years[1, 5, 7, 9, 17, 18]. However,we know doingso,itactsasthereplayer,usingpreviousdialog(s)as
+of little literature discussing generalreplay of networkac- aguideincommunicatingwiththeremotelivepeer.
+tivity at the application level. The existing work has in- An application session consists of a set of TCP and/or
+steadfocusedonincorporatingapplication-specificseman- UDP connections, where a UDP “connection” is a pair of
+tics[15,16]. unidirectionalUDP flows. In a connection,an application
+Libes’expecttoolincludesthesamenotionasourwork dataunit(ADU)isaconsecutivechunkofapplication-level
+ofautomaticallyfollowinga“script”ofexpectedinteractive datasentinonedirection,whichspansoneormorepackets.
+dialogs[10].Asignificantdifferenceofourwork,however, RolePlayeronlycaresaboutapplication-leveldata,ignoring
+isthatwefocusongeneratingthescriptautomaticallyfrom bothnetworkandtransport-layerheaderswhenreplayinga
+previouscommunications,andwehavenotyetincorporated session.
+thepossibilityofthescriptincludingbranch-pointsthatlead WithinanADU,afieldisabytesequencewithsemantic
+toalternativesinthedialog. meaning.Adynamicfieldisafieldthatpotentiallychanges
+A number of commercial security products address re- betweendifferentdialogs. We classify dynamicfieldsinto
+playing network traffic [4, 12]. These products however fivetypes: host-specificendpoint-address(e.g.,hostnames,
+appear limited to replay at the network or transport layer, IP addresses, transportportnumbers),length(1or2bytes
+similar to the Monkey and Tcpreplay tools [3, 20]. The reflectingthelengthofeithertheADUorasubsequentdy-
+Flowreplay tool uses application-specific plug-ins to sup- namic field), cookie (session-specific opaque data that ap-
+portapplication-levelreplay[21]. pearsinADUsfrombothsidesofthedialog,suchastrans-
+Our work leverages the Needleman-Wunsch algorithm actionIDs),argument(fieldsthatcustomizethemeaningof
+[13],widelyusedinbioinformaticsresearch,tolocatefields a session, such as thedestinationdirectoryfora file trans-
+that have changed between one example of an application fer,orthedomainnameina DNSlookup),anddon’t-care(opaque fields that appear in only one side of the dialog). During replay, it first searches for new values of dynamic
+Argumentfields are only relevantforreplay if we want to fieldsbycomparingreceivedADUswiththecorresponding
+specificallyalterthem; fordon’t-carefields, we ignorethe onesintheprimarydialog,thenupdatesthemwiththenew
+differenceifthevalueforthemwereceivefromalivepeer values.Inthissection,wedescribebothstagesindetail.
+differsfromtheoriginal,andwesendthemverbatimifcom- Beforeproceeding,wenotethataparticularlyimportant
+municatingthemtoalivepeer. issue concerns dynamic ports. RolePlayer needs to deter-
+To replaya session, we needatleastonesampledialog mine when to initiate or accept new connections, and in
+to use as a reference, the primary application dialog. We particular must recognize additional ports that an applica-
+may also need an additional secondary dialog for discov- tion protocoldynamically specifies. To do so, RolePlayer
+eringdynamicfields,particularlylengthfields. Finally,we detectsstand-aloneportsandhostname/portpairsduringits
+refertothedialoggeneratedduringreplayasthereplaydi- searchprocess,andmatchesthesewithsubsequentconnec-
+alog. tionrequests.Thisenablesthesystemtoaccommodatefea-
+Given this terminology, we can frame our design as- turessuchasFTP’suseofdynamicportsfordatatransfers,
+sumptionsasfollows. andportmappingasusedbySunRPC.
+1. We have available primary and (when needed) sec-
+4.1 Thepreparationstage
+ondary dialogs that differ enough to disclose the dy-
+namic fields, but are otherwise the same in terms of
+In thepreparationstage, RolePlayerneedsto parse net-
+theapplicationsemantics.
+work traces of the application dialogs and search for the
+2. We assume that the live peer is configured suitably dynamicfieldswithin. Foritsprocessingwemayalsoneed
+similartoitscounterpartinthedialogs. toinformRolePlayerofthehostnamesofbothsidesofthe
+dialog, and any application argumentsof interest, as these
+3. Weassumesomestandardnetworkprotocolrepresen-
+cannotbeinferredfromthedialog.
+tations, such as embedded IP addresses being repre-
+sented either as a four-byte integer or in dotted or
+comma-separatedformatandembeddedtransportport 4.1.1 Parsingapplicationdialogs
+numbersastwo-byteintegers. (Wecurrentlyconsider
+RolePlayer organizes dialogs in terms of both ADUs and
+networkbyteorderonly,butitisaneasyextensionto
+data packets. It uses data packets as the unit for sending
+accommodateeither-endian.) Notethatwedonot as-
+and receiving data and ADUs as the unit for manipulat-
+sumetheuseofasingleformat,butinsteadencodeinto
+ing dynamic fields. Note that data packets may interleave
+RolePlayereachofthepossibleformats.
+with ADUs. For example, FTP sessions use two concur-
+4. We assume the domain names of the participating rentconnections,onefordatatransferandoneforcontrol.
+hosts in sample dialogs can be provided by the user RolePlayerneedstohonortheorderingbetweentheseasre-
+ifrequiredforsuccessfulreplay. vealedbythepacketsequencingonthewire,suchasensur-
+ingthatafiletransferonthedatachannelcompletesbefore
+5. We assume that the application session does not in-
+sending the “226 Transfer complete” on the control chan-
+cludetime-relatedbehavior(e.g.,wait30secondsbe-
+nel. Accordingly,weusetheSYN,FINandRSTbitsinthe
+fore sending the next message) and does not require
+TCP headerto delimitthe beginningand endof eachcon-
+encryptionorcryptographicauthentication.
+nection, so we know the correct temporal ordering of the
+connectionswithinasession.
+4 RolePlayerdesign
+4.1.2 Searchingfordynamicfields
+The basic idea of RolePlayer is straightforward: given
+anexampleortwoofanapplicationsession,locatethedy- RolePlayernextsearchesfordynamicfieldsintheprimary
+namicfieldsintheADUsandadjustthemasnecessarybe- dialog,andalsobycomparingitwiththesecondarydialog
+foresendingthe ADUs outfromthe replayer. Since some (ifavailable). Thesearchingprocesscontainsa numberof
+dynamic fields, such as length fields, can only be found subtle steps and considerations. We illustrate these using
+by comparingtwo existingsample applicationdialogs, we replay of a fictitious toy protocol, SPD (Service Port Dis-
+split the work of RolePlayer into two stages: preparation covery;see AppendixA)asarunningexample. SPD con-
+and replay. During preparation, RolePlayer first searches sistsofasingleclientrequestcarryingtheclient’shostname
+for endpoint-address and argument fields in each sample anda service name, to which the serverreplieswith an IP
+dialog, then searches for length fields and possible cookie addressandportnumberexpressedinthecomma-separated
+fields by comparing the primary and secondary dialogs. syntaxusedbyFTP.Wenotethatthisprotocolissufficiently19 1 1314 6 h o s t 0 1 7 p r i n t e r 18 2 131413 1 0 , 2 , 3 , 4 , 2 , 5 5
+16 1 0300 7 h o s t t w o 3 m a p 19 2 030014 1 0 , 4 , 5 , 6 , 2 , 1 4 2
+Figure 1. The captured primary and secondary dialogs for requests (left) and responses (right)
+using thetoy SPD protocol. RolePlayer first discovers endpoint-address(bold italic) and argument
+(italic) fields, then breaks the ADUs into segments (indicated by gaps), and discovers length (gray
+background)andpossiblecookie(bold)fields.
+simplethatsomeoftheoperationsweillustrateappeartriv- currence of the address in the reply. (If the server’s
+ial. However,thekeypointisthatthesameoperationsalso address was something different, then we would not
+workformuchmorecomplexprotocols(suchasWindows replace“10,2,3,4”inthereplayeddialog.)
+SMB/CIFS).
+Figure 1 shows two SPD dialogs, each consisting of 2. If we havea secondarydialog, then RolePlayersplits
+a request (left) and response (right). For RolePlayer to each ADU into segments based on the endpoint-
+process these, we must inform it of the embedded host- addressandargumentfieldsfoundinthepreviousstep.
+names(“host01”,“hosttwo”)andarguments(“printer”, Itispossiblethatendpoint-addressandargumentfields
+“map”), though we do not need to specify their locations do not match due to some bogus matches of the pre-
+in the protocol. If we did not specify the arguments, they sentationsfoundindon’t-carefields. Weremovethese
+wouldinsteadbeidentifiedandtreatedasdon’t-carefields. bogusfieldsbeforesplittingeachADU.
+WedonotneedtoinformRolePlayerofthehostnameofa
+live peerbecauseRolePlayercan automaticallyfind it if it 3. Finally, RolePlayer searches for length, cookie, and
+appearsinanADUfromthelivepeer. don’t-carefieldsbyaligningandcomparingeachpair
+In addition, we do not inform RolePlayer of the em- of data segments. By “alignment” here we mean ap-
+beddedtransactionidentifiers(1314,0300),lengthfields, plication of the Needleman-Wunsch algorithm [13],
+IP addresses (10.2.3.4, 10.4.5.6), or port numbers(567 = which efficiently finds the minimal set of difference
+2·256+55,654=2·256+142). between two byte sequences subject to constraints;
+Thenaivewaytosearchfordynamicfieldswouldbeto see Section 4.3.1belowfordiscussion. An important
+align the byte sequences of the corresponding ADUs and point is that at this stage we do not distinguish be-
+lookforsubsequencesthatdiffer.However,weneedtotreat tweencookiefieldsanddon’t-carefields. Onlyduring
+endpoint-addressandargumentfieldsasawhole;forexam- theactualsubsequentlivesessionwillweseewhether
+ple, we do not wantto decide thatone differencebetween thesefieldsareusedinamannerconsistentwithcook-
+theprimaryandsecondarydialogsischanging“01”in the ies (whichneed to be altered duringreplay)ordon’t-
+firstto“two”inthesecond(thetailendofthehostnames). care’s(whichshouldn’t). SeeSection4.2forthepro-
+Similarly,wewanttodetectthat13and14intherepliesare cessbywhichwemakethisdecision.
+lengthfieldsandnotelementsoftheembeddedIPaddresses
+thatchanged.Todoso,weproceedasfollows: In the SPD example, aligning and comparing the five-
+byteinitialsegmentsintheprimaryandsecondaryrequests
+1. Search for endpoint-address and argument fields in
+resultsinthediscoveryoftwopairsoflengthfields(19vs.
+both dialogs by finding matches of presentations of
+16, and 6 vs. 7) and one cookie field (1314 vs. 0300).
+their known values. For example, we will find
+To find these, RolePlayerfirst checksif a pair of differing
+“host01”asanendpoint-addressfieldand“printer”as
+bytes (or differing pairs of bytes) are consistent with be-
+anargumentfieldintheprimary’srequest.
+ing length fields, i.e., their numeric values differ by one
+We consider seven possible presentations and their of: (1) the length difference of the whole ADU, (2) the
+Unicode [22] equivalentsfor endpointaddresses, and lengthdifferenceofanendpoint-addressorargumentfields
+one presentationand its Unicodeequivalentfor argu- that comes right after the length fields, or (3) the double-
+ments. For example, for the primary’s reply we may bytelengthdifferenceofthese,ifthesubsequentfieldisin
+know from the packet headers in the primary trace Unicodeformat. Forexample,RolePlayerfinds19and16
+that the server’sIP addressis 10.2.3.4, in which case aslengthfieldsbecausetheirdifferencematchesthelength
+we search for: the binary equivalent (0x0A020304); differenceoftherequestmessages,whilethedifferencebe-
+ASCIIdotted-quadnotation(“10.2.3.4”);andcomma- tween 6 and 7 matches the length difference of the client
+separatedoctets(“10,2,3,4”).Thelatterlocatestheoc- hostnames.(Notethat,toaccommodateUnicode,wemerge19 1 1314 6 h o s t 0 1 7 p r i n t e r
+18 1 1314 4 n e w h 8 s c h e d u l e
+(a)Thescripted(primary)dialog(top)andRolePlayer’sgenerateddialog(bottom)foranSPDrequestforwhichwehave
+instructedittouseadifferenthostnameandservice. Thefieldsinblackbackgroundreflectthoseupdatedtoaccountfor
+themodifiedrequestandtheautomaticallyupdatedlengthfields.
+19 1 1314 6 h o s t 0 1 7 p r i n t e r 18 2 131413 1 0 , 2 , 3 , 4 , 2 , 5 5
+18 1 1616 5 h o s t 4 7 p r i n t e r 19 2 161614 1 0 , 2 1 , 8 , 5 , 2 , 5 5
+(b)ThesameforconstructinganSPD replytoalivepeerthatsendsadifferenttransactionIDintheirrequest,andfor
+whichthereplayerisrunningonadifferentIPaddress.Notethattheportinthereplystaysconstant.
+Figure2.Initiator-basedandresponder-basedSPDreplaydialogs.
+Start Replay
+No
+Next Packet? Finish Replay
+Yes
+Send Recv
+Send or Recv?
+No Recv Packet
+Send Packet First Packet?
+Yes No
+Last Packet?
+Update Dynamic
+Fields in ADU Yes
+Find Dynamic
+Fields in ADU
+Figure3.Stepsinthereplayprocess.
+anytwoconsecutivedifferingbytesequencesifthereisonly 4.2.1 Decidingpacketdirection
+onesinglezerobytebetweenthem.)
+Wereadthenextdatapacketfromthescripttoseewhether
+wenowexpecttoreceiveapacketfromthelivepeerorsend
+oneout.
+4.2 Thereplaystage
+4.2.2 Receivingdata
+Ifweexpecttoreceiveapacket,wereaddatafromthespe-
+Withthepreparationcomplete,RolePlayercancommu- cific connection. Doing so requires deciding whether the
+nicate with a live peer. To do so, it uses the primary ap- receiveddataiscomplete(i.e.,equivalenttothecorrespond-
+plication dialog plus the discovered dynamic fields as its ing data in the script). To do so, we use the alignmental-
+“script,” allowing it to replay either the initiator or the re- gorithm (Section 4.3.1) with the constraint that the match
+sponder.Figures2(a)and2(b)giveexamplesofcreatingan should be weighted to begin at the same point (i.e., at the
+initialrequestandrespondingtoarequestfromalivepeerin beginningofthereceiveddata).Ifityieldsamatchwithno
+SPD,respectively.Toconstructtheserequiresseveralsteps, trailing“gap”(i.e.,itdidnotneedtopadthereceiveddata
+asshowninFigure3. toconstructa goodmatch),thenwe considerthatwe havereceived the expected data. Otherwise, we wait for more some Windows applications use non-zero-byte padding;
+datatoarrive. sometimesa single, longfield becomessplitintomultiple,
+AfterreceivingacompleteADU,wecompareitwiththe shortcookiefieldsduetopartialmatcheswithinit;andmes-
+corresponding one in the script to locate dynamic fields. sagessuchasFTPservergreetingscancontaininconsistent
+This additional search is necessary for two reasons. First, (varying)data.
+RolePlayer may need to find new values of endpoint ad- Thus, another major challenge is to robustly determine
+dresses or arguments. Second, cookie fields found in the whichcookiematchesweshouldactuallyupdate. Westud-
+replaystagemaydifferfromthosefoundinthepreparation ied several popular protocols and found that cookie fields
+stageduetoaccidentalagreementbetweentheprimaryand usuallyappearinthesamecontext.Also,theprobabilityof
+secondarydialogs. a false match to a N-byte cookie field is very small when
+We can apply the techniques used in the preparation N islarge(e.g.,whenN ≥ 4). Hence,todetermineifwe
+stage to find dynamicfields, butwith the majoradditional should update a cookie match, we check four conditions,
+challenge that now for the live dialog we do not have ac- requiringatleasttwotohold.
+cess to the endpoint addresses and application arguments.
+1. Is the byte sequence ≥ 4 bytes? This condition cap-
+While the script provides us with guidance as to the ex-
+turesthefactthatpaddingfieldsareusually< 4bytes
+istence of these fields, they are often not in easily located
+in lengthbecause they are used to align an ADU at a
+positionsbutinstead surroundedby don’t-carefields. The
+32-bitboundary.
+difficulttaskistopinpointthefieldsthatneedtochangein
+themidstofthosethatdonotmatter.Ifbymistakethispro-
+2. Doesthebytesequenceoverlapapotentialcookiefield
+cessoverlapsanendpoint-addressorargumentfieldwitha
+found in the preparation stage? (If there is no sec-
+don’t-carefield,thenthiswilllikelysubstituteincorrecttext
+ondarydialog,thisconditionwillalwaysbefalse, be-
+forthereplay.However,wecanovercomethesedifficulties
+causeweonlyfindcookiefieldsduringpreparationby
+by applying the alignment algorithm (Section 4.3.1) with
+comparing the primary dialog with the secondary di-
+pairwiseconstraints.Doingso,wefindthatRolePlayercor-
+alog.) The intuition here is that the matched byte se-
+rectlyidentifiesthefieldswithhighreliability.
+quenceismorelikelytobeacorrectonesinceitispart
+After findingthe endpoint-addressand argumentfields,
+ofapotentialcookiefield.
+wethenusethesameapproachasforthepreparationstage
+to find length, cookie and don’t-care fields. We save the 3. Is the prefix of the byte sequence consistent with that
+datacorrespondingtonewlyfoundendpoint-address,argu- ofthematchedcookiefield? Theprefixisthebytese-
+ment,andcookiefieldsforfutureuseinupdatingdynamic quencebetweenthematchedcookiefieldandthepre-
+fields. cedingnon-cookiedynamicfield (orthebeginningof
+the ADU). For prefixes exceeding 4 bytes, we con-
+sideronlythelastfourbytes(nexttothetargetedbyte
+4.2.3 Sendingdata
+sequence). For empty prefixes, if the non-cookiedy-
+namic fields are the same type (or it is the beginning
+Whenthescriptcallsforustosendadatapacket,wecheck
+oftheADU)thentheconditionholds. Thiscondition
+whetheritisthefirstoneinanADU.Ifso, weupdateany
+matchescookiefieldswiththesameleadingcontext.
+dynamic fields in it and packetize it. The updated values
+come from three sources: (1) analysis of previous ADUs;
+4. Isthesuffixconsistent? Thesameastheprefixcondi-
+(2) the IP address and transport port numbers on the re-
+tionbutforthetrailingcontext.
+player; (3) user-specified (for argument fields). After up-
+datingallotherfields,wethenadjustlengthfields.
+4.3 Designissues
+This still leaves the cookie fields for updating. Role-
+Player only updates cookie fields passively, i.e., to reflect
+4.3.1 Sequencealignment
+changesfirst introducedbythe livepeer. So, forexample,
+in Figure 2(a) we do not change the transaction ID when The cornerstone of our approach is to compare two byte
+sending out the request, but we do change it in the reply streams (either a primary dialog and a secondary dialog,
+showninFigure2(b). or a script and the ADUs we receive from a live peer) to
+To update cookie values altered by the live peer, we find the best description of their differences. The whole
+searchthe ADUwe arecurrentlyconstructingformatches trickhereiswhatconstitutes“best.” Becausewestrivefor
+tocookiefieldswepreviouslyfoundbycomparingreceived anapplication-independentapproach,wecannotusethese-
+ADUs with the script. However, some of these identified mantics of the underlying protocol to guide the matching
+cookie fields may in fact not be true cookies (and thus process.Insteadweturntogenericalgorithmsthatcompare
+shouldnotbereflectedinournewADU),forthreereasons: twobytestreamsusingcustomizable,byte-levelweightingsfordeterminingthesignificanceofdifferencesbetweenthe wesetmtothelengthdifferenceofthetwosequences.The
+two. notionhereisthatif thelast characterofthereceiveddata
+Thetermusedfortheapplicationofthesealgorithmsis matchesthelastoneintheADUfromthescript,thenmis
+“alignment,” since the goal is to find which subsequences large enough to offset the gap penalty caused by aligning
+within two byte streams should be considered as counter- thecharacterstogether. However,ifthereceiveddataisin-
+parts. The Needleman-Wunsch algorithm [13] we use is deedincomplete,itsbettermatchtoonlythefirstpartofthe
+parameterized in terms of weights reflecting the value as- ADU will still win out. Using the semi-global alignment
+sociatedwithidenticalcharacters,differingcharacters,and exampleabove,wewillsetm = 2(duetothelengthofab
+missing characters (“gaps”). The algorithm then uses dy- vs.abcb),andhencestillfindthebestalignmentwithabcb
+namicprogrammingtofindanalignmentbetweentwobyte tobeab--ratherthana--b.
+streams(i.e.,wheretointroduce,remove,ortransformchar- Finally, we make a powerfulrefinementto Needleman-
+acters)withmaximalweight. Wunsch forpinpointingendpoint-addressand/orargument
+We use two different forms of sequence alignment, fieldsinareceivedADU:wemodifythealgorithmtowork
+globalandsemi-global.Globalreferstomatchingtwobyte with a pairwise constraint matrix. The matrix specifies
+streams against one another in their entirety, and is done whether the ith element of the first sequence can or can-
+using the standard Needleman-Wunsch algorithm. Semi- notbealignedwiththejthelementofthesecondsequence.
+globalreflectsmatchingonebytestreamasaprefixorsuf- Wedynamicallygeneratethismatrixbasedonthestructure
+fix of the other, for which we use a modified Needleman- ofthedatafromtheprimarydialog.Forexample,ifthedata
+Wunsch algorithm. (Due to space limitations we do not includesanendpoint-addressfield representedas adotted-
+presentalgorithmicdetailshere.) quadIPaddress,thenweaddentriesinthematrixprohibit-
+Whenconsideringpossiblealignments,thealgorithmas- ingthosedigitsfrombeingmatchedwith non-digitsinthe
+signs differentweightingsforeach aligned pair of charac- seconddatastream,andprohibitingtheembedded“.”sfrom
+ters depending on whether the characters agree, disagree, being matchedto anythingotherthan “.”s. This modifica-
+or one is a gap. Let the weight be m if they agree, n if tionsignificantlyimprovestheefficacyofthealignmental-
+they disagree, and g if one is a gap. The total score for gorithminthepresenceofdon’t-carefields.
+a possible alignmentis then the sum of the corresponding
+weights. Forexample,givenabcdf andacef, withweights
+4.3.2 Removingoverlap
+m=2,n=−1,g =−2,theoptimalalignment(whichthe
+algorithm is guaranteedto find) is abcdf with a-cef, with WhensearchingfordynamicfieldsinanADU,sometimes
+scorem+g+m+n+m=3,where-indicatesagap. we find fields that overlap with one another. We remove
+To compute semi-global alignments of matching one these using a greedy algorithm. For each overlappingdy-
+bytestreamasprefixoftheother,wemodifythealgorithm namicfield,wesetthepenaltyforremovingitasthenum-
+to ignore trailing gap penalties. For example, given two ber of bytes we would lose from the union set of all dy-
+strings ab and abcb, we obtain the same globalalignment namicfields. (So,forexample,adynamicfieldthatisfully
+scoreof2m+2gforthealignmentsab--withabcb,versus embeddedwithinanotherdynamicfieldhasapenaltyof0.)
+a--bwith abcb. But forsemi-globalalignment,the simi- We thenselecttheoverlappingfield withthe leastpenalty,
+larityscoreis2mforthefirstand2m+2g forthesecond, removeit,andrepeattheprocessuntilthereisnooverlap.
+sowepreferthefirstsincegtakesanegativevalue.
+Thequalityofsequencealignmentdependscriticallyon
+4.3.3 HandlinglargeADUs
+theparticularparameters(weightings)weuse. Forouruse,
+the major concern is deciding how many gaps to allow in ADUscanbeverylarge,suchaswhentransferringalarge
+orderto gain a match. For example, when globally align- dataitemusingasingleWindowsCIFS,NFSorFTPmes-
+ingab with bc, two possiblealignmentresultsare ab with sage. RolePlayercannotignorethese ADUs when search-
+bc(scoren+n)orab-with-bc(scoreg+m+g). The ing for dynamic fields because there may exist dynamic
+three parameters will have a combined linear relationship fields embedded within them—generally at the beginning.
+(sinceweaddcombinationsofthemlinearlytoobtainato- Forexample,anNFS“READReply”responsecomeswith
+tal score), so we proceed by fixing n and g (to 0 and -1, both the read status and the corresponding file data, and
+respectively),andadjustingmfordifferentsituations. includes a cookie field containing a transaction identifier.
+For global alignment—which we use to align two However,thecomplexityofsequencealignmentisO(MN)
+sequences before comparing them and locating length, for sequences of lengths M and N, making its applica-
+cookie,anddon’t-carefields—wesetm=1toavoidalign- tionintractableforlargesequences. RolePlayeravoidsthis
+mentslikeab-with-bc.Forsemi-globalalignment—used problem by considering only fixed-size byte sequences at
+duringreplaytodecidewhetherreceiveddataiscomplete— thebeginningoflargeADUs.Protocol InitiatorProgram ResponderProgram #Connections #ADUs #InitiatorFields #ResponderFields
+received sent received sent
+SMTP manual Sendmail 1 13 22 3 3 3
+DNS nslookup BIND 1 2 8 0 0 1
+HTTP wget Apache 1 2 10 0 0 0
+TFTP W32.Blaster WindowsXP 3 34 5 1 1 1
+FTP wget ProFTPD 2 18 12 0 0 2
+NFS mount LinuxFedoraNFS 9 36 34 12 46 23
+CIFS W32.Randex.D WindowsXP 6 86 101 65 80 63
+Table 1. Summary of evaluated applications and the number of dynamic fields in data received or
+sentbyRolePlayerduringeitherinitiatororresponderreplay.
+5 RolePlayerevaluation For DNS, RolePlayer correctly located the transaction
+ID embedded within requests, updating it when replaying
+WeimplementedRolePlayerin4,300linesofCcodeun- the responder (DNS server). The HTTP dialog was simi-
+derLinux,usinglibpcap[11]tocapturetrafficandthestan- larlysimple,beinglimitedtoasinglerequestandresponse.
+dardsocketAPItogeneratetraffic. Thus,RolePlayeronly Since the request did not contain a cookie field, replaying
+needsrootaccessifitneedstosendtrafficfromaprivileged triviallyconsistedofpurelyresendingthesamedataasseen
+port. Wetestedthesystemonavarietyofprotocolswidely
+originally(thoughRolePlayerfoundsomedon’t-carefields
+usedinmaliciousattacksandnetworkapplications.Table1 intheHTTPheaderoftheresponsemessage).
+summarizesourtest suite. RolePlayercansuccessfullyre-
+5.3 Blaster(TFTP)
+play both the initiator and responder sides of all of these
+dialogs.
+Asdiscussedintheintroduction,Blaster[24]attacksits
+victim usinga DCOM RPC vulnerability. Afterattacking,
+5.1 Testenvironment
+it causes the victim to initiate a TFTP transferback to the
+attackertodownloadanexecutable,whichittheninstructs
+Weconductedourevaluationinanisolatedtestbedcon-
+thevictimtorun. ABlasterattacksessiondoesnotcontain
+sisting of a set of nodes running on VMWare Worksta-
+anylengthfieldsorhostnames,sowecanreplayitwithout
+tion[23]interconnectedusingsoftwarebasedonClick[8].
+needinga secondaryapplicationdialogorhostnameinfor-
+WeusedVMWareWorkstation’ssupportformultipleguest
+mation.
+operating systems and private networks between VM in-
+RolePlayercanreplaybothsidesofthedialog.Asanini-
+stancestoconstructdifferent,containedtestconfigurations,
+tiator, wesuccessfullyinfecteda remotehostwithBlaster.
+withtheClicksystemredirectingmalwarescanstoourcho-
+Asafakevictim,wetrickedalivecopyofBlasterintogo-
+sen target systems. We gave each running VM instance a
+ingthroughthefullsetofinfectionstepswhenitprobeda
+distinct IP address and hostname, and used non-persistent
+newsystem.
+virtualdiskstoallowrecoveryfrominfection. Forthetests
+When replayingthe initiator, RolePlayerfoundfive dy-
+weusedbothWindowsXPProfessionalandFedoraCore3
+namic fields in received ADUs. Of these, it correctly
+images, to verifythat replay works forboth Windowsand
+deemed four as don’t-care fields. These were each part
+Linuxservices. RolePlayeritselfranontheLinuxhostsys-
+ofa confirmationmessage, specifyinginformationsuchas
+temratherthanwithinavirtualmachine,enablingittocom-
+datatransfersize,time,andspeed.Thesingledynamicfield
+municatewithanyvirtualmachineonthesystem.
+foundandupdatedwastheIPaddressoftheinitiator,nec-
+essaryforcorrectoperationoftheinjectedTFTPcommand.
+5.2 Simpleprotocols
+Whenreplayingtheresponder,RolePlayerfoundonlya
+single dynamic field, the worm’s IP address, again neces-
+OursimplesttestswereforSMTP,DNS,andHTTPre- sarytocorrectlycreatetheTFTPchannel.
+play. Fortesting SMTP, we replayedan email dialogwith
+RolePlayerchangingthe recipient’semailaddress(an “ar- 5.4 FTP
+gument”dynamicfield). Inoneinstance,RolePlayeritself
+made this change as the session initiator; in the other, it TotestFTPreplay,weusedthewgetutilityastheclient
+playedtheroleoftheresponder(SMTPserver). programtoconnectto twoliveFTP servers,fedora.bu.eduandmirrors.xmission.com. Wecollectedtwosampleappli- callIDs.
+cation dialogs using the command wget ftp://ftp-server- RolePlayer successfully replayed both the initiator side
+name/fedora/core/3/i386/os/Fedora/RPMS/crontabs- (receivingthe directorylisting and then the requestedfile)
+1.10-7.noarch.rpm. Inbothcases,wgetusedpassiveFTP, andtheresponderside(sendingthesetoaliveclient,which
+which uses dynamically created ports on the server side. correctlydisplayedthelistingandcopiedthefile).
+Whenactingastheinitiator,wereplayedthefedora.bu.edu
+dialog over a live session to mirrors.xmission.com, and 5.6 Randex(CIFS/SMB)
+vice versa. There were no length fields, so we did not
+need a secondary dialog (nor hostnames). In both cases,
+To test RolePlayer’s ability to handle a complex pro-
+RolePlayersuccessfullydownloadedthefile.
+tocol while interacting with live malware, we used the
+Thesystem found12dynamicfieldsinthe ADUsitre-
+W32.Randex.D worm [25]. This worm scans the network
+ceived. Among them, the only two meaningfulones were
+forSMB/CIFS shares with weak administratorpasswords.
+endpoint-addressfields: theserver’sIPaddressandtheport
+To do so, it makes numerous SMB RPC calls (see Fig-
+of the FTP data-transfer channel. The rest arose due to
+ure 5 in AppendixB). When it findsan openshare, it up-
+differencesinthegreetingmessagesandauthenticationre-
+loadsamaliciousexecutablemsmgri32.exe. Inourexper-
+sponses. RolePlayer recognized these as don’t-care’s and
+iments,weconfiguredthetargetedWindowsVMtoaccept
+didnotupdatethem.
+blankpasswords,andturnedoffitsfirewallsoitwouldac-
+Whenreplayingtheresponder,wgetsuccessfullydown-
+cepttrafficonports135/tcp,139/tcp,445/tcp,137/udp,and
+loadedthefilefromafakeRolePlayerserverpretendingto
+138/udp.
+be either fedora.bu.edu or mirrors.xmission.com, with the
+To collect sample application dialogs, we manually
+sametwoendpoint-addressfieldsupdatedinADUssentby
+launchedamalwareexecutablefromanotherWindowsVM,
+thereplayer.
+redirectingitsscanstothetargetedWindowsVM,recording
+We testedsupportforargumentfieldsbyspecifyingthe
+thetrafficusingtcpdump. Wecapturedtwoattacksbecause
+filename crontabs-1.10-7.noarch.rpm as an argument.
+replaying CIFS requires a secondary application dialog to
+Whenreplayingtheinitiator,wereplacedthiswithpyorbit-
+locatethenumerouslengthfields.
+devel-2.0.1-1.i386.rpm, another file in the same direc-
+There are six connectionin W32.Randex.D’sattack, all
+tory.RolePlayersuccessfullydownloadedthenewfilefrom
+started by the initiator. Of these, two are connections to
+fedora.bu.eduusing the script from mirrors.xmission.com.
+139/tcpwhichareresetbytheinitiatorimmediatelyafterit
+Since the two files are completely different, the system
+receivesaSYN-ACKfromtheresponder. Oneconnectsto
+found many don’t-care fields. None of these affected the
+80/tcp (HTTP), reset by the responder because the victim
+replaybecausetheydidnotmeetthe conditionsforupdat-
+did notrunan HTTP server. The remainingthree connec-
+ing cookie fields. We also confirmed that RolePlayer can
+tionswereallto445/tcp.Thewormusesthefirstoftheseto
+replaynon-passiveFTPdialogssuccessfully.
+detectapossiblevictim;itdoesnottransmitanyapplication
+dataonthisconnection. Thewormusesthesecondtoenu-
+5.5 NFS
+meratetheuseraccountlistontheresponderviatheSAMR
+namedpipe.Thefinalconnectionuploadsthemaliciousex-
+WetestedtheNFSprotocolrunningoverSunRPCusing ecutable to \Admin$\system32\msmsgri32.exevia the
+twodifferentNFSservers.Weusedtheseriesofcommands Adminnamedpipe.(MoredetailsareinAppendixB.)
+mount, ls, cp, umount to mountan NFS directory, copy When replayingtheinitiator, RolePlayerfound101dy-
+afilefromittoalocaldirectory,andunmountit. Weused namicfieldsinreceivedADUs,andchanged65fieldsinthe
+oneNFSserverforcollectingtheprimaryapplicationdialog ADUs it sent. When replaying the responder, it found 80
+and a second as the target for replaying the initiator. The dynamicfieldsinreceivedADUs,andchanged63fieldsin
+NFSsession consistedofnineTCP connections,including the ADUs it sent. (The difference in the numberof fields
+interactionswiththreedaemonsrunningontheNSFserver: isbecausesomedynamicfieldsremainthesamewhenthey
+portmap, nfs, and mountd. The first two ran on 111/tcp come from the replayer rather than the worm. For exam-
+and 2049/tcp, while mountd used a dynamicservice port. ple,theresponderchoosesthecontexthandleoftheSAMR
+AsisusuallythecasewithNFSaccess,inthesessionboth namedpipe;whenreplayingtheresponder,thereplayerjust
+ofthelattertwoportswerefoundviaRPCstoportmap. usesthesamecontexthandleasintheprimaryapplication
+When replaying the initiator, RolePlayer found 34 dy- dialog.) Considering ADUs in both directions, there were
+namicfieldsinreceivedADUs,andchanged12fieldsinthe 21endpoint-addressfields, 76lengthfields, and32cookie
+ADUs it sent. When replaying the responder, RolePlayer fields.Thecookiefieldsreflectsuchinformationasthecon-
+found46dynamicfieldsinreceivedADUs,andchanged23 texthandlesin SAMR named pipesand the client process
+fieldsintheADUsitsent.ThecookiefieldsconcernedRPC IDs.AswithourBlasterexperiment,RolePlayersuccessfully application protocols. We can potentially use such replay
+infecteda liveWindowssystemwithW32.Randex.Dwhen forrecognizingmalwarevariants,determiningtherangeof
+replaying the initiator side, and, when replaying the re- system versions vulnerable to a given attack, testing de-
+sponder,successfullydrovealive,attackinginstanceofthe fense mechanisms, and filtering multi-step attacks. How-
+wormthroughitsfullsetofinfectionsteps. ever, while for some application protocols replay can be
+essentially trivial—just resend the same bytes as recorded
+5.7 Discussion for previously seen examples of the session—for other
+protocols replay can require correctly altering numerous
+From the experiments we can see that it is necessary fieldsembeddedwithintheexamples,suchasIPaddresses,
+tolocateandupdatealldynamicfields—endpoint-address, hostnames, port numbers, transaction identifiers and other
+cookie,andlengthfields—forreplayingprotocolssuccess- opaquecookies,aswellaslengthfieldsthatchangeasthese
+fully, while argument fields are important for extending valueschange.
+RolePlayer’s functionality. TFTP, FTP, and NFS require We might therefore conclude that replay inevitably re-
+correctmanipulationofendpoint-addressfields.DNS,NFS, quiresbuildinginto thereplayerspecificknowledgeofthe
+andCIFSalsorelyoncorrectidentificationofcookiefiles. applications it can mimic. However, one of the key prop-
+CIFShasnumerouslengthfieldswithinasingleapplication erties of RolePlayer is that it operates in an application-
+dialog.Leveragingargumentfields,RolePlayercanworkas independent fashion: the system does not require any
+alow-costclientforSMTP,FTP,orDNS. specifics about the particular application it mimics. It in-
+WhileRolePlayercanreplayawideclassofapplication stead uses extensionsof byte-streamalignmentalgorithms
+protocols, its coverage is not universal. In particular, it frombioinformaticstocomparedifferentinstancesofases-
+cannot accommodate protocols with time-dependentstate, sion to determine which fields it must change to success-
+northosethatusecryptographicauthenticationorencrypted fullyreplayonesideofthesession. Todoso,itneedsonly
+traffic,althoughwecanenvisiondealingwith thelatterby twoexamplesoftheparticularsession;insomecases,asin-
+introducingapplication-specificextensionstoprovideRole- gleexamplesuffices.
+Playerwithaccesstoasession’sclear-textdialog. Another RolePlayer’sunderstandingofnetworkprotocolsisvery
+restriction is that the live peer with which RolePlayer en- limited—just knowledgeof a few low-levelsyntactic con-
+gagesmustbehaveinafashionconsistentwiththe“script” ventions, such as common representationsof IP addresses
+usedtoconfigureRolePlayer. Thisrequirementismorere- andtheuseoflengthfieldstospecifythesizeofsubsequent
+strictivethan simplythatthe live peerfollowsthe applica- variable-length fields. (The only other information Role-
+tionprotocol:itmustalsofollowtheparticularpathpresent Playerrequires—dependingontheapplicationprotocol—is
+inthescript. contextfortheexamplesessions,suchasthedomainnames
+SinceRolePlayerkeepssomedynamicfieldsunchanged oftheparticipatinghostsandspecificargumentsinrequests
+as in the primary dialog, it is possible for an adversary to or responses if we wish to change these when replaying.)
+detect the existence of a running RolePlayer by checking ThisinformationsufficesforRolePlayertoheuristicallyde-
+if certain dynamicfields are changedamongdifferentses- tectandadjustnetworkaddresses,ports,cookies,andlength
+sions. Forexample,RolePlayerwillalwaysopenthesame fields embeddedwithin the session, including forsessions
+port for the data channelwhen replaying the responderof thatspanmultiple,concurrentconnections.
+an FTP dialog, and it will use the same context handles
+WehavesuccessfullyusedRolePlayertoreplayboththe
+in SAMR named pipes when replayingthe responderof a
+initiator and responder sides for a variety of network ap-
+CIFS dialog. Another possible way to detect RolePlayer
+plications, including: SMTP, DNS, HTTP; NFS, FTP and
+istodiscoverinconsistenciesbetweentheoperatingsystem
+CIFS/SMBfiletransfers;andthemulti-stageinfectionpro-
+the application should be running on versus the operating
+cessesoftheBlasterandW32.Randex.Dworms. Thelat-
+system RolePlayer is running on, by fingerprintingpacket
+ter require correctly engaging in connections that, within
+headers[26]. Inthefuture,we plantoaddressthese prob-
+a single session, encompass multiple protocols and both
+lemsbyrandomizingcertaindynamicfieldsandbymanip-
+client and server roles. An important item of future work
+ulatingpacketheaderstomatchtheexpectedoperatingsys-
+is to identify and test additional, complexapplicationpro-
+tem.
+tocols, to gain a deeperunderstandingof the generalityof
+ourapproach.
+6 Summary
+OurnextstepistodeployRolePlayerinalargehoneypot
+installation,forpurposesofbothfilteringoutknownattacks
+We havepresentedRolePlayer, a system that, givenex- (by replaying enough server-side responses to the attack-
+amplesofanapplicationsession,canmimicboththeinitia- erstocheckwhethertheirbehaviormatchesaknownattack
+torandrespondersidesofthesessionforawidevarietyof session)andreplayingsuccessfulattacksagainstotherpos-sible victim configurations. Thislatter hasthe potentialto [14] J. Newsome and D. Song. Dynamic taint analysis for au-
+enableusto automaticallydeterminethe fullrangeof sys- tomaticdetection,analysis,andsignaturegenerationofex-
+temsvulnerabletopreviouslyunseen“zeroday”exploitsas ploitson commodity software. InProceedings of the12th
+soonastheyexploitourhoneypotsystem. Annual Network and Distributed System Security Sympo-
+sium,February2005.
+[15] R.Pang,V.Yegneswaran,P.Barford,V.Paxson,andL.Pe-
+Acknowledgments
+terson. CharacteristicsofInternetbackgroundradiation. In
+ProceedingsofInternetMeasurement Conference, October
+We would like to thank Martin Casado, Christian 2004.
+Kreibich, Sridhar Machiraju, and Scott Shenker for their [16] N.Provos. Avirtualhoneypot framework. InProceedings
+helpfulcommentson a draftof this paper. We would also of the 13th USENIX Security Symposium, San Diego, CA,
+August2004.
+like to thank Ruoming Pang and Vinod Yegneswaran for
+[17] M. Russinovich and B. Cogswell. Replay for concurrent
+theirhelpinearlydiscussionsandprovidingnetworktraces,
+non-deterministicshared-memoryapplications. InProceed-
+Carey Nachenberg and Vincent Weafer for technical as-
+ingsofthe1996ConferenceonProgrammingLanguageDe-
+sistance, and the anonymous reviewers for their insight-
+signandImplementation,pages258–266,May1996.
+ful comments. This work was supported by the National [18] S.Srinivasan,S.Kandula,C.Andrews,andY.Zhou. Flash-
+Science Foundation under grants NSF-0433702 and STI- back: Alight-weight rollbackand deterministicreplayex-
+0334088,forwhichwearegrateful. tensionforsoftwaredebugging. InProceedingsofthe2004
+USENIXAnnualTechnicalConference,June2004.
+[19] Synmantec. Decoy server product sheet.
+References
+http://www.symantec.com/.
+[20] Tcpreplay: Pcap editing and replay tools for *NIX.
+[1] D. F. Bacon and S. C. Goldstein. Hardware-assisted re- http://tcpreplay.sourceforge.net.
+play of multiprocessor programs. In Proceedings of the [21] A. Turner. Flowreplay design notes.
+ACM/ONR Workshop on Parallel and Distributed Debug- http://www.synfin.net/papers/flowreplay.pdf.
+ging,May1991. [22] Unicode. http://www.unicode.org/.
+[2] M. Beddoe. The protocol informatics project. [23] VMWareInc. http://www.vmware.com/.
+http://www.baselineresearch.net/PI/. [24] W32.Blaster.Worm. http://securityresponse.symantec.com
+[3] Y.-C. Cheng, U. Holzle, N. Cardwell, S. Savage, and /avcenter/venc/data/w32.blaster.worm.html.
+G.Voelker. Monkeysee,monkeydo: Atoolfortcptracing [25] W32.Randex.D. http://securityresponse.symantec.com
+andreplaying. InProceedingsofthe2004USENIXAnnual /avcenter/venc/data/w32.randex.d.html.
+TechnicalConference,June2004. [26] M. Zalewski. P0f: A passive OS fingerprinting tool.
+[4] Cybertrace. http://www.cybertrace.com/ctids.html. http://lcamtuf.coredump.cx/p0f.shtml.
+[5] G. W. Dunlap, S. T. King, S. Cinar, M. Basrai, and P. M.
+Chen. Revirt: Enablingintrusionanalysisthrough virtual-
+A The Toy Service PortDiscoveryProtocol
+machine logging and replay. In Proceedings of the 2002
+SymposiumonOperatingSystemsDesignandImplementa-
+tion(OSDI),pages211–224,December2002.
+[6] Honeynet. Thehoneynetproject.http://www.honeynet.org/.
+Request LEN−0 TYPE SID LEN−1 HOSTNAME LEN−2 SERVICE
+[7] S.T.King,G.W.Dunlap,andP.M.Chen. Debuggingoper-
+atingsystemswithtime-travelingvirtualmachines. InPro-
+Response LEN−0 TYPE SID LEN−1 IP−PORT
+ceedingsofthe2005USENIXAnnualTechnicalConference,
+April2005.
+Figure 4. Message format for the toy Service
+[8] E. Kohler, R. Morris, B. Chen, J. Jannotti, and M. F.
+PortDiscoveryprotocol.
+Kaashoek. The Click modular router. ACM Transactions
+onComputerSystems,18(3):263–297,August2000.
+[9] T.J.LeBlancandJ.M.Mellor-Crummey. Debuggingpar-
+allel programs with instant replay. pages 471–482, April
+1987. We define the toy Service Port Discovery(SPD) proto-
+[10] D.Libes. expect: Curingthoseuncontrollablefitsofinter- colforillustratingthealgorithmsinRolePlayer. InSPD,a
+action. InProceedingsoftheSummer1990USENIXCon- clientsendsarequestmessagetoaservertoaskfortheport
+ference,pages183–192,June1990. numberofaservice. Theserver’sresponsecontainstheIP
+[11] libpcap. http://www.tcpdump.org/.
+addressandtheportnumberoftherequestedservice.
+[12] McAfee Inc. McAfee Security Forensics.
+ThesetwomessageshavetheformatsshowninFigure4.
+http://networkassociates.com/us/products/mcafee/forensics
+Requestshave7fields: LEN-0(1byte)holdsthelengthof
+/security forensics.htm.
+[13] S.B.NeedlemanandC.D.Wunsch. Ageneralmethodap- the message. TYPE (1 byte) indicates the message type,
+plicabletothesearchforsimilaritiesintheaminoacidse- withavalueof1indicatingarequestand2aresponsemes-
+quenceoftwoproteins. 48:443–453,1970. sage. SID (2 bytes)is session/transactionidentifier, whichtheservermustechoinitsresponse. LEN-1(1byte)stores changebetweendialogs(e.g., themiddleportionwascon-
+thelengthoftheclienthostname,HOSTNAME,whichthe stantinallthedialogs).
+serverlogs. LEN-2(1byte)storesthelengthoftheservice
+name,SERVICE.
+Responses have 5 fields. LEN-0, TYPE and SID
+have the same meanings as in requests. LEN-1 (1 byte)
+stores the length of the IP-PORT field, which holds the
+IP address and port number of the requested service, in
+a comma-separated format. For example, 1.2.3.4:567 is
+expressed as “0x31 0x2c 0x32 0x2c 0x33 0x2c
+0x34 0x2c 0x32 0x2c 0x35 0x35”.
+B W32.Randex.D
+We show the application-level conversations of the
+W32.Randex.D worm on port 445/tcp in Figure 5 (repro-
+ducedwithpermissionfrom[15]).
+To demonstrate the function of RolePlayer, we se-
+lect six consecutive messages from the conversation of
+W32.Randex.D(shownin bold-italicinFigure5), consist-
+ing of SAMR Connect4 request/response, SAMR Enum-
+Domainsrequest/response,andSAMRLookupDomainre-
+quest/response. We show the content of these messages
+from the primary, secondary, initiator-based replay, and
+responder-basedreplaydialogsinFigure6.Tofiteachmes-
+sagemorecompactly,wepresenttheminthefollowingfor-
+mat:
+1. Wespliteachmessagebasedondynamicfields.
+2. XY means we skipped Y bytes from protocol X (N
+forNetBIOS,SforSMB,RforDCE-RPC,MforSe-
+curity Account Manager), since they do not change
+between different dialogs. These represent the fixed
+fieldsaspartofthedialog.
+3. We present endpoint-address fields such as IP ad-
+dressesandhostnamesinASCIIformatinbold-italic.
+Three hostnames appear in the messages: “hone”,
+“host02”,and“hostpeer”.
+4. We show length fields in decimal, with a gray back-
+ground. Forexample,“180”and“96”inthefirstmes-
+sageoftheprimarydialogarelengthfields.
+5. Weshowcookiefieldsanddon’t-carefields,including
+theclientprocessIDsandtheSAMRcontexthandles,
+inoctets. Forexample,“0388”inthefirstmessageof
+the primary dialog is a client process ID. For conve-
+nience,wehighlightinboldthecookiesintheprimary
+and secondary dialog which require dynamic updates
+duringthereplayprocess.
+NotethatRolePlayerlocatedtwocookiefieldsfromthe
+SAMRcontexthandlesbecausepartofthehandlesdoesnot-> SMB Negotiate Protocol Request
+<- SMB Negotiate Protocol Response
+-> SMB Session Setup AndX Request
+<- SMB Session Setup AndX Response
+-> SMB Tree Connect AndX Request,
+Path: \\XX.128.18.16\IPC$
+<- SMB Tree Connect AndX Response
+-> SMB NT Create AndX Request, Path: \samr
+<- SMB NT Create AndX Response
+-> DCERPC Bind: call_id: 1 UUID: SAMR
+<- DCERPC Bind_ack:
+-> SAMR Connect4 request
+<- SAMR Connect4 reply
+-> SAMR EnumDomains request
+<- SAMR EnumDomains reply
+-> SAMR LookupDomain request
+<- SAMR LookupDomain reply
+-> SAMR OpenDomain request
+<- SAMR OpenDomain reply
+-> SAMR EnumDomainUsers request
+Now start another session, connect to the
+SRVSVC pipe and issue NetRemoteTOD
+(get remote Time of Day) request
+-> SMB Negotiate Protocol Request
+<- SMB Negotiate Protocol Response
+-> SMB Session Setup AndX Request
+<- SMB Session Setup AndX Response
+-> SMB Tree Connect AndX Request,
+Path: \ \XX.128.18.16\IPC$
+<- SMB Tree Connect AndX Response
+-> SMB NT Create AndX Request, Path: \srvsvc
+<- SMB NT Create AndX Response
+-> DCERPC Bind: call_id: 1 UUID: SRVSVC
+<- DCERPC Bind_ack: call_id: 1
+-> SRVSVC NetrRemoteTOD request
+<- SRVSVC NetrRemoteTOD reply
+-> SMB Close request
+<- SMB Close Response
+Now connect to the ADMIN share and write the file
+-> SMB Tree Connect AndX Request, Path: \\XX.128.18.16\ADMIN$
+<- SMB Tree Connect AndX Response
+-> SMB NT Create AndX Request,
+Path:\system32\msmsgri32.exe <<<===
+<- SMB NT Create AndX Response, FID: 0x74ca
+-> SMB Transaction2 Request SET_FILE_INFORMATION
+<- SMB Transaction2 Response SET_FILE_INFORMATION
+-> SMB Transaction2 Request QUERY_FS_INFORMATION
+<- SMB Transaction2 Response QUERY_FS_INFORMATION
+-> SMB Write Request
+....
+Figure5.Theapplication-levelconversationofW32.Randex.D.A->V N1|180|S26|0388|S7|96|S20|96|S8|113|S16|R8|96|R6|72|R4|0014CCB8|18|M4|18|M4
+|144.165.114.119|M20
+A<-V N4|S26|0388|S28|R24|M16|0000000092F3E82470FDD91195F8000C295763F7|M4
+A->V N4|S26|0388|S56|R24|0000000092F3E82470FDD91195F8000C295763F7|M8
+A<-V N1|180|S26|0388|S7|124|S8|124|S6|125|S1|R8|124|DECRPC-6|100|R4|M4|000B0BB0
+|M4|000B27A0|M8|8|10|000B8D18|M8|000BC610|5|M4|4|hone|M36
+A->V N1|156|S26|0388|S7|72|S20|72|S8|89|S16|R8|72|R6|48|R4|M4
+|0000000092F3E82470FDD91195F8000C295763F7|8|10|001503F8|5|M4|4|hone
+A<-V N4|S26|0388|S28|R24|000B27A0|M32
+(a)PrimaryDialog
+A->V N1|172|S26|0474|S7|88|S20|88|S8|105|S16|R8|88|R6|64|R4|0014CCB8|14|M4|14|M4
+|48.196.8.48|M20
+A<-V N4|S26|0474|S28|R24|M16|000000006093917586FDD91195F8000C294A478F|M4
+A->V N4|S26|0474|S56|R24|000000006093917586FDD91195F8000C294A478F|M8
+A<-V N1|184|S26|0474|S7|128|S8|128|S6|129|S1|R8|128|DECRPC-6|104|R4|M4|000B0BB0
+|M4|000B6380|M8|12|14|000B76C0|M8|000C9FA8|7|M4|6|host02|M36
+A->V N1|160|S26|0474|S7|76|S20|76|S8|89|S16|R8|76|R6|52|R4|M4
+|000000006093917586FDD91195F8000C294A478F|12|14|001503F8|7|M4|6|host02
+A<-V N4|S26|0474|S28|R24|000B27A0|M32
+(b)SecondaryDialog
+A->V N1|176|S26|0388|S7|92|S20|92|S8|109|S16|R8|92|R6|68|R4|0014CCB8|16|M4|16|M4
+|192.168.170.3|M20
+A<-V N4|S26|0388|S28|R24|M16|0000000018B30AD10BFDD91195F8000C293573E4|M4
+A->V N4|S26|0388|S56|R24|0000000018B30AD10BFDD91195F8000C293573E4|M8
+A<-V N1|188|S26|0388|S7|132|S8|132|S6|133|S1|R8|132|DECRPC-6|108|R4|M4|000B0BB0
+|M4|000B9358|M8|16|18|000BEF40|M8|000B6BA0|9|M4|8|hostpeer|M36
+A->V N1|164|S26|0388|S7|80|S20|80|S8|89|S16|R8|80|R6|56|R4|M4
+|0000000018B30AD10BFDD91195F8000C293573E4|16|18|001503F8|9|M4|8|hostpeer
+A<-V N4|S26|0388|S28|R24|000BEF40|M32
+(c)Initiator-basedReplayDialog
+A->V N1|176|S26|0608|S7|92|S20|92|S8|109|S16|R8|92|R6|68|R4|0014CCB8|16|M4|16|M4
+|169.91.250.93|M20
+A<-V N4|S26|0608|S28|R24|M16|0000000092F3E82470FDD91195F8000C295763F7|M4
+A->V N4|S26|0608|S56|R24|0000000092F3E82470FDD91195F8000C295763F7|M8
+A<-V N1|180|S26|0608|S7|124|S8|124|S6|125|S1|R8|124|DECRPC-6|100|R4|M4|000B0BB0
+|M4|000B27A0|M8|8|10|000B8D18|M8|000BC610|5|M4|4|hone|M36
+A->V N1|156|S26|0608|S7|72|S20|72|S8|89|S16|R8|72|R6|48|R4|M4
+|0000000092F3E82470FDD91195F8000C295763F7|8|10|00150A88|5|M4|4|hone
+A<-V N4|S26|0608|S28|R24|000B27A0|M32
+(d)Responder-basedReplayDialog
+Figure 6. A portion of the application-level conversation of W32.Randex.D. Endpoint-address fields
+areinbold-italic,cookiefieldsareinbold,andlengthfieldsarein graybackground. Intheinitiator-
+basedandresponder-basedreplaydialogs,updatedfieldsareinblackbackground.

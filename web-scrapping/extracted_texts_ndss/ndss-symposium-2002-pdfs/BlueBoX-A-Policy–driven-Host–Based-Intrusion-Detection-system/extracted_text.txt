@@ -1,0 +1,817 @@
+BlueBoX: A Policy–driven, Host–Based Intrusion Detection system
+SureshN.Chari Pau–ChenCheng
+IBMThomasJ.WatsonResearch Center
+YorktownHeights,NY10598,U.S.A.
+schari,pau @watson.ibm.com
+Abstract tion. Also, there are well–known ways to evade network
+IDSs[PN98]. Thus,increasingly,intrusiondetectionmust
+movetothehostserverwherethecontentisvisibleinthe
+In this paper we describe our experiences with build- clearandthese evasiontechniquesdonotwork. Oursys-
+ingBlueBox,ahostbasedintrusiondetectionsystem. Our tem,BlueBox,issuchahostbasedreal–timeintrusionde-
+approachcan be viewed as creating an infrastructure for tection system and it can also be configured for blocking
+definingandenforcingveryfinegrainedprocesscapabili- intrusions.
+tiesinthekernel. Thesecapabilitiesarespecifiedasaset To contrast our approach we first look at mechanisms
+ofrules(policies)forregulatingaccesstosystemresources usedincurrentlydeployedhostbasedIDSs. Theyarepri-
+onaperexecutablebasis.Thelanguageforexpressingthe marilybasedononeofthefollowing[DDW99,Jac99]:
+rules is intuitive and sufficiently expressive to effectively
+Anomaly detection : Defined by a statistical pro-
+capturesecurityboundaries.
+file of “normal” behavior [JV94, ALJ 93, FHSL96,
+WehaveprototypedourapproachonLinux2.2.14kernel,
+DDNW98]. Apatternthatdeviatessignificantlyfrom
+and have built rule templates for popular daemons such
+thenormalprofileisconsideredanattack.
+asApache2.0andwu-ftpd. We are validatingourdesign
+bytestingagainstacomprehensivedatabaseofknownat-
+Misusedetection:Definedbycollectionsofsignatures
+tacks.Oursystemhasbeendesignedtominimizethekernel
+ofknownattacks[Jac99,Pax98,RLS 97,CDE 96].
+changes and performance impact and thus can be ported
+Activities matching such patterns are considered at-
+easily to new kernels. We will discuss the motivationand
+tacks.
+rationale behind BlueBox, its design, implementation on
+Linux,andrelatedwork. Conceptually, misuse detection is based on knowledge
+ofbadbehaviors(attacks)andanomalydetectionisbased
+1 Introduction on knowledge of good (normal) behaviors. If both tech-
+niqueswereperfect,theneachwouldexactlycomplement
+The two mechanisms predominantlyused to secure ap- the other: i.e. what is not bad is good and vice versa.
+plication servers today are firewalls and network intru- In reality, neither technique is perfect. Misuse detection
+sion detection systems. One of the attractive features of can never know all possible attacks and it usually classi-
+thesemechanismsisthattheyareindependentoftheserver fies some good behaviors as attacks. Likewise, anomaly
+and thus, easily deployed. Firewalls controls the flow of detection can not cover all good behaviors and will mis-
+throughcommunicationandnetworkIDSsdetectpossible takesomeattacksforgoodbehaviors.Also,anentity’sbe-
+attacksbymonitoringthecommunication.Whilefirewalls, haviorprofilewillchangeasitsusagepatternchanges. So
+when properly configured, serve their intended purpose, anomalydetectionhastoadaptitsprofiletothesechanges.
+currentnetworkIDSssufferfromanumberoflimitations. This opens the possibility for an attacker to gradually in-
+NetworkIDSstypicallyanalyzetrafficonthenetworkand creaseitslevelofmaliciousactivitiesuntiltheseactivities
+eitherscanforpatternscontainingknownattacksordetect areconsiderednormal.
+statistically abnormal patterns. With the advent of traf- Our policy–driventechnique, like the concept of sand-
+ficencryptionprotocolssuchasSSL[FKK96,DA97]and boxing,triestodefinetheboundarybetweenthegoodand
+IPSEC[Atk95],asignificantportionoftrafficontheInter- the badas a set ofrules. Theserules specifywhat an ex-
+netis encryptedandthereforeis unavailableforexamina- ecutable program or script is allowed to do and attemptsto violate them are consideredintrusions. The rules gov- changesimpact the rules very minimally. Evenwith
+erning a process define precisely which system resources major version changes, large chunks of the rule sets
+aprocesscanaccess andinwhatway. Section3givesan canbereused.
+overviewofwhatthescopeoftherulesare. Therulesare
+In Memoryattacks: Since the checks onprocess be-
+definedthroughpreciseunderstandingoftheexpectedbe-
+havioraremadeonlywhentheprocessmakesasys-
+havioroftheprogram. Theycanbedefinedusingexisting
+tem call, attacks which are ’in memory’ can not be
+templates,audittrails,configurationand,ifnecessary,pro-
+detected.
+gramsemantics. Therulesarespecifiedoff–line,compiled
+into a machine readable binary which is associated with
+Therestofthepaperisorganizedasfollows: Section2
+theprogramandloadedintothekernelwhentheprogram
+surveysrelatedworkandcomparesthemwithoursystem.
+isexecuted. Ruleenforcementhappenswhentheprogram
+Section 3 gives an overviewof the specification and gen-
+isexecutedinthecontextofaprocess: thebehaviorofthe
+erationofrules. Section4presentsthetechnicaldetailsof
+processischeckedandconstrainedaccordingtotherules.
+ourdesignandimplementation,theprecisescopeofrules
+The enforcementis done in the kernel duringinvocations
+andthe system architecture. Section 5 presentsa few ex-
+ofsystem calls. The conceptof sandboxinghas appeared
+amplesofhowBlueBoxthwartsseveralwellknownattacks
+innumerouscontextsincludingIDSandwediscussthisin
+andalsodetailsexperiencesonspecifyingrules. Section6
+Section2.
+discussestheperformanceimpactoftheIDSandwecon-
+We believe that the policy–based approach of Blue-
+cludeinSection7.
+Box andlike systems offersa numberof advantagesover
+thetraditionalattack–signature–basedorprofile–basedap-
+2 Related Work
+proaches.Theyinclude:
+Restricting programbehaviorbased on externallyspec-
+Thesecurityboundaryismuchmorepreciselydefined
+ified rules has a very long history dating back to the ref-
+in terms of the intended use of the sensitive system
+erencemonitorsofoperatingsystemsseveraldecadesago.
+resources. Rules are based on understanding a pro-
+Inthis section,wehighlightmorerecentmechanismsand
+gram’sbehaviorandnotonattacksignaturesortime–
+comparethemwithourwork.Someofthesystemsarevery
+variant,incompletestatisticalprofilesof“normal”be-
+differentfromBlueBoxwhileothersareverysimilar.
+havior.Thishastwoadvantages:(1)unknownattacks
+canbe detected,(2)previouslyunseenbutlegitimate
+2.1 LanguageBasedmechanisms
+behaviorswould notbe mistaken forattacks. There-
+forethefalsepositiveand(hopefully)thefalsenega- Therearealargenumberoflanguagebasedmechanisms
+tiverateswillbelower. to restrict programbehaviorbased on policy. They range
+from the theoretical program correctness methodologyof
+AnotherpotentialwinisthemanageabilityoftheIDS
+using asserts, to the popular type based mechanisms en-
+especially as compared to statistical profiling based
+forced by the loader such as the famed Java Virtual Ma-
+techniques. There is no need to constantly maintain
+chine[JVM01].Whilethesecurityguaranteespromisedby
+andupdateattack–signaturedatabaseorstatisticpro-
+these mechanisms are stronger than ours, they make very
+files. Sincetherulesarepreciselydefinedintermsof
+strong and in some cases, unrealistic, assumptions about
+systemresourcesandnotbyattacks,therewillbevery
+the trusted computing base (TCB). Some classes of such
+fewupdates,ifany,ofrulesforanapplicationrunning
+systemsincludethefollowing:
+onaparticularplatform.
+Perhaps the most important advantage of BlueBox’s 2.1.1 ProgramCorrectnessBasedMechanisms
+policy–based approach is that detection is done in
+This method has been the subject of extensive research
+real–time. therefore there is the option to block an
+spanningdecades. Recently,thesemechanismshavebeen
+unauthorizedaccessoract.
+proposed as effective mechanisms to mitigate exposures
+[UES00]. Whiletheoreticallyelegant,theyarelargelyre-
+Ontheotherhand,sincetherulesaredefinedonaccess
+strictedtochecksintheuserspace.Hence,theTCBneeded
+tosystemresourcestherearedisadvantagesascomparedto
+forthesemechanismstobeeffectiveisunrealisticsinceall
+otherIDSs.Someofthemare:
+the checks inserted in to the user space program must be
+VersionMigration: Since differentversionsofappli- executed. This is rarelyrealized in commercialoperating
+cations may access different resources every version systems: Anattackermountingabufferoverflowattackis
+will require modified sets of rules. However, in our in no way restricted by any of the checks inserted in the
+experiencewiththeApachehttpserver,minorversion originalprogram.2.1.2 Typebasedmechanisms tems.Theirapproachistomodelprocesseswithastatedi-
+agram describingits functionalityand then enforcingthis
+The celebrated Java Virtual Machine is a classic example
+state diagram in the kernel during system call invocation.
+of a system which enforces strong checks on interpreted
+Theyachievestrongsecurityguaranteessincethestatedi-
+bytecode. Forthismechanismtoworkonehastoextend
+agramcaptures exact process semantics. The main draw-
+the TCB to include the interpreter and loader. In several
+back of this system is the difficulty in generating the re-
+controlledenvironmentsthis is possible, howeveritis not
+quiredstatediagramsforanewprocess. Also,weconjec-
+realistic,forreasonsofperformance,tohavedaemonssuch
+turebasedonourexperienceinincorporatingstate,thatthe
+asthehttpserverruninthisenvironment.
+performancepenaltyinenforcingtherulescouldbesome-
+whathigh.
+2.2 Systemcallpatternbasedsystems
+These systems identify intrusions by an initial training
+2.3.3 Genericsoftwarewrappers
+phase where exhaustive testing is used to identify the ac-
+cepted set of patterns in system call sequences, and then Genericsoftwarewrappers[KFBK00,FBF99]areamecha-
+flagginganintrusionifthereareerroneouspatternsinsys- nismtoenforcevariousaccesscontrolandintrusiondetec-
+tem calls made by daemons in an actual run. Some ex- tion checks triggeredby events during process execution.
+amples are discussed in [FHSL96, DDNW98]. The main The infrastructure will register various scripts to be run
+advantageofthesesystemsistheminimizedimpactonthe basedonevents,monitorprocessexecutionfortheseevents
+kerneli.e. oneneedstomakefewchangestothekernelto tooccur,andexecuteregisteredscriptswhentheeventsoc-
+implement them. However, they can not offer strong se- cur. This is a powerfulinfrastructurewhich can integrate
+curity guarantees: Firstly, their efficacy requires exhaus- numerousapproachestosystemsecurityunderoneunify-
+tive training to identify normal patterns and if not done ing framework. The main drawbacks of this approach is
+correctly, can result in a large number of false positives. thecomplexityofwritingscriptsandtheperformanceim-
+Secondly they are very sensitive to the exact version of pactinsuchacomplexframework.Webelievethatourap-
+themonitoredsoftware: smallchangesinsourcecodecan proachismuchmoreintuitiveandhassubstantiallybetter
+yieldverydifferentsystemcallpatterns. Forexample,the performance.
+Apache http daemon can be configured to run using pro-
+cessesorthreads,andthesystemcallpatternsareconsider- 2.3.4 OtherSandboxingSystems
+ablydifferent.SinceBlueBoxtriestocapturetheresources
+The system that comes closest to our system is the work
+thedaemonuses, there are veryfew changesbetweenthe
+ofBernaschietal[BGM00]. Theirsystemarchitectureis
+twoversions.
+verysimilartooursandthemaindifferencesareinthesyn-
+2.3 KernelBasedreferencemonitors taxandsemanticsoftherulesthemselves. Theplacements
+of differentparts of the system within the kernel are also
+In the last few years there has been a renewed interest
+verydifferent. Ourplacementaimstominimizeimpacton
+in sandboxing by intercepting system calls made by pro-
+thekernelcodebyplacingawrapperaroundkernelsystem
+cesses. Wedescribesomesystemsandhighlightthesimi-
+call handlerswhile their placementtries to minimize per-
+laritiesanddifferences.
+formanceimpact. Our system is extensible to newer ver-
+sions of the kernel since by and large the same wrapper
+2.3.1 LIDS shouldworkfornewerkernels.
+TheDomain–and–Type–Enforcement(DTE)basedsys-
+TheLinuxIntrusionDetectionsystem(LIDS)[XB01]aims
+tembyWalkeretal[WSB 96]groupsfilesystemobjects
+to extend the concept of capabilities present in the basic
+into sets called types and puts a subject (an executable)
+Linuxsystembydefiningfinegrainedfile accesscapabil-
+into a domain which has specific access rights to types.
+itiesforeachprocess. BlueBox’srulesforfilesystemob-
+It does not provide protection on non–file–system–object
+jectsisverysimilartothis. ThecompleterulesetofBlue-
+resourcesand seems to incur morecomplexitywhen pro-
+Box is a strict superset of the LIDS system. Among the
+vidingfine–granularitycontrolthanBlueBox.
+severaladditionalfeaturesofBlueBoxisthestateinforma-
+tionwhichisusefulinthwartingsomeattacksasdescribed 2.4 Userspacesystemcallintrospection
+inSection5.
+AvalidcriticismofsystemssuchasBlueBoxisthemod-
+ificationstothekernelrequiredtoinstalltheinfrastructure
+2.3.2 AProgramasaFiniteStateMachine
+to install and enforce process behavior rules. To circum-
+Sekaretal [SU99]presenta system whichcombineslan- ventthis,oneapproachistouseexistingmonitoringinfras-
+guagebasedsystemswithsystemcallinterceptbasedsys- tructureinkernelssuchasptracetohavemonitorswhichresideinuser–space[Wag99,JS00]. Themonitorsitsina Based onourexperience,fora givenprogramthereare
+separate process and intercepts system calls made by the several mechanisms and tools one could use to build and
+monitoredprocess using ptrace; the monitor process can specifytherules.
+thenenforcetherulesbyexaminingtheinterceptedsystem
+IntendedSemantics: Themostcomprehensivewayto
+calls andtheir parametersand possiblymodifyingthe pa-
+generatethecorrectrulesforaprogramisbylooking
+rameters or terminating the calls. As pointed out by the
+throughtheintendedsemanticsoftheprogram.While
+authors[JS00],thisapproachhasafewdrawbacks. Firstly,
+this can be dauntingfor big servers such as Apache,
+sincerulesareenforcedinthecontextofthemonitorpro-
+wehavefoundthatforseveralcgi–binscripts,thisis
+cess,thereissomeoverheadduetocontextswitchingand
+theeasiestwaytocapturerulessincethesescriptstyp-
+copying data from one process’s context to the other’s.
+icallyaccessfewresources.
+Also, there are cases when the monitored process is not
+entirelyunderthecontrolofthemonitorduetotheimple-
+Configuration:ForserverssuchasApachewhichcan
+mentationsofptrace.
+be configuredto run in differentways, configuration
+files need to be used (either manually or automated)
+3 BlueBox Policy Specification and Genera-
+tocreaterules.
+tion
+Audit Trails: A very straightforward mechanism to
+Sinceanattackonasystemmustaccesssensitivesystem
+generatelargechunksoftherulesistoinspectsystem
+resourcesinunintendedwaystobesuccessful,aBlueBox
+call audit trails. For a numberof servers and scripts
+policydefinesandenforcesrulescontrollingaprocess’sac-
+wehavefoundthistobethesimplestmethod.
+cesstosystemresources,thusthwartingunintendedaccess.
+Wecategorizesystemresourcesandthetypesofaccessto Existing Templates: For large and popular servers
+theminTable1. such as the Apache httpd, we envision existing rule
+Featuresofourcurrentrulespecificationincludes: templates which can automatically be customized to
+newinstallations. OurreferenceserveristheApache
+Accesspermissionstofilesystemobjects.
+httpd for which we have developed a template. We
+Accesstothefilesystem,e.g.,mount,unmount. arecurrentlyinvestigatingruletemplatesforlargerap-
+plication servers and hope to include rule templates
+Permitteduidandgidtransitions.
+for the most common configurations of application
+signalswhichcanbesent,received,blocked,ignored serverssuchastheIBMWebSphere[WEB01].
+&handled.
+While these mechanisms sound daunting for nontrivial
+Process characteristics such as scheduling priorities programs, as we discuss in section 5, we believe that the
+whichcanbemodified. amountofextraworkismanageable. Forourprototypical
+application of web servers, most of the rules need to be
+Elementarycontrols for other system resources such
+doneonce,withlittlecustomizationfornewservers.
+asIPCobjects,socketsandioctlcalls. Thisisanarea
+requiresmorestudyformorecomprehensiverules.
+4 Technical details
+Tomakethepolicyspecificationexpressive,weprovide
+Inthis sectionwewill firstdiscusstheBlueBoxsystem
+an allowed system calls list as a coarser level of control
+architecturetoshowhowapolicyisdefinedandenforced,
+that is effective in thwarting a number of attacks. Since
+thenwediscusspolicyspecificationindetailsandconclude
+system resources must be accessed through system calls,
+withadiscussionofBlueBox’simpactonthekernel.
+disallowinginvocationsofasystemcalldisallowsaccessto
+resources. Forinstance, mostserverprocessesdon’tneed
+4.1 SystemArchitecture
+tomountorunmountfilesystems,somountandunmount
+arenotintheirallowedlistsandaninvocationofeitherwill
+The BlueBox system architectureis shownin Figure 1.
+be considered an intrusion regardless of the invocation’s
+Thearchitectureincludestwoparts:
+parameters. We have identified72 harmless system calls;
+eachofwhicheitherhasnosecurityimplicationsorisnot PolicySpecificationandParsing A BlueBox policy for
+supportedbytheLinux2.2.14kernel.Thesecallsarelisted an executable program is specified in a human–
+inAppendix A. readableformusingatexteditorandthenparsedinto
+Thepolicyforaprogramcanalsobemarkedinheritable: a binary file by a parser program. This part is done
+thisisusefulforascriptwhereeachprogramexecutedby off–lineand beforethe programis executed. Details
+thescriptcansharethescript’spolicy. areinSection4.2.resources typesofaccess
+Filesystemobjects create,open,read,write,execute,removal,
+link–to,changeofaccesspermissions,
+changeofownership
+Filesystems mount,unmount,typesofmount
+Identities acquire,release,inherit
+Processes(addressspaces,signals, ) read,write,deliver
+CPUcycles,processschedulingpriority raise
+Systemclock set,read
+System/kernelmemory read,write
+IPCobjects: pipes,semaphores, create,open(attach),read,write
+messagequeues,sharedmemory,
+Devices,network create/attach,open,read,write,io–control,
+removal,link–to,changeofaccesspermissions,
+changeofownership
+Privileges acquire,release,raise,lower
+Table1.typesofresourcesandaccess
+PolicyLoadingandEnforcement Since BlueBox poli- hold its private BlueBox state which can change as
+cies are meant to control access to system resources the process executes. More discussion on BlueBox
+whichcanonlybeaccessedthroughsystemcalls,the processstateisgiveninSection4.3. Whenaprocess
+naturalplaceforruleenforcementisatthekernelsys- forks,thechildprocesssharestheparent’spolicybut
+tem call entry point. Our prototypeon Linux 2.2.14 willbegivenacopyoftheparent’sBlueBoxstate. A
+places an enforcer module at the kernel system call process’sBlueBoxstatewillberesetwhenitexecves
+entrypointtoenforcerules. Theenforcerhasbuilt–in aprogram.
+knowledgeof what categories of resources each call
+may access so it can check the parameters of the in- 4.2 RulesforDifferentTypesofResources
+vokedsystemcallagainsttherules.
+Inthissectionwewilldiscussrulesforthreetypesofre-
+Since it is impractical to write policies for all pro- sources, namely file system objects, uid/gid lists and sig-
+cesses on a system, we added a new system call to nals; each has particular syntax and semantics. We be-
+mark a process as being monitored ; this status will lievethesyntaxandsemanticsdiscussedherecanrepresent
+bepassedontoitschildrenandcannotbeunmarked. most,ifnotall,ofBlueBoxrules.
+As a tool, we have a simple wrapperprogramwhich
+marks itself as monitoredand then execves the real
+4.2.1 RulesforFileSystemObjects
+program to pass on the monitored status to the new
+processimage.Whenloadingthenewimagethemod- Rules on file system objects are encoded as a tree which
+ifiedexecvesystemcallhandler1loadstherulesinto mimicsthehierarchyoffilesonaUNIXsystem.Thepolicy
+thekernelandstarts enforcement. Ifnorulesforthe ofaprogramincludesonesuchtreeencodingtheprogram’s
+newimagearefound,thentheprocesswill tryto in- accessrightstofilesystemobjects.Figure2showsapartof
+heritandsharetherulesoftheoldimage;iftheserules thespecificationofrulesonfilesystemobjectsforApache
+arenotinheritableordonotexist,thentheprocesswill 2.0HTTPServer.
+becrippled; i.e., it is onlyallowedtomakeharmless Eachnodein the tree recordsaccess rights to a (set of)
+systemcalls. filesystemobject(s). Therootofatreecorrespondstothe
+rootofthehierarchyoffiles.LikeaUNIXfilesystem,each
+Rules are read–only after being loaded. Each moni-
+node has a name. Unlike a UNIX file system, the name
+toredprocessisallocatedakernelmemorybuffer2 to
+can contain UNIX shell–like wildcard characters ’*’ and
+1TheAPIforexecveisnotchanged. ’?’ with the same interpretationas in a UNIX shell. The
+2Atpresent,thesizeofthebufferisonepageor bytes. onlyexceptionisthataleafnodewiththename“ ”repre-On-Line Off-Line
+Human-readable
+Rules
+Process
+Rule
+Parser
+User
+kernel
+Rule Enforcer Binary Rule
+in Kernel
+Binary Rule
+File
+System Call loaded into the
+Handler kernel when execve
+Figure1.BlueBoxArchitecture
+sentsanentiresubtree;forexample,“ ”matchesany 4.2.2 RulesforIdentities
+fileinthesubtreeunder“ ”.Limitedsupportforchar-
+Rules on identities (uids or gids) are encoded
+acterclasses(e.g., )isalsoprovided3. Anode’sname
+as lists of singular integers and ranges4 such as
+canalsocontainenvironmentvariablesandtheseareeval-
+. The basic opera-
+uatedwhenthepolicyisbeingloadedintothekernel. For
+tiononsuchalististocheckifaspecificintegralvalueis
+example,ifaruleis“ ”
+init.
+andthevalueof is“joe”,thentheprocesswillhave
+Eachprogram’spolicyhasanuidlistandagidlist.These
+read access to all HTML files under .
+listsarethenewidentitiesaprocessrunningtheprogramis
+Whenaprocessmakesasystemcalltoaccessafilesystem
+allowedtoassume. Aprocesshasthreetypesofidentities
+object, the object’s absolute pathnameis matchedagainst
+: real,effectiveandsaved[MBKQ96].Sinceaprocesscan
+thetree.Ifapathinthetreematchestheobject’spathname,
+freelyexchangethevaluesofdifferenttypesofidsorassign
+thentheaccessrightsinthelastnodeofthepathdetermines
+one to the other, the BlueBox enforcer does not make a
+ifthisinvocationofthesystemcallisallowed.
+distinction among the three types of id’s when checking
+Besides the usual read, write, execute,
+therules. Inotherwords,whenasystemcallrequestsnew
+create, append,accessrightstoafilesystemobjects
+uid’sorgid’s,theenforceronlyallowsoneofthefollowing
+also include : delete, hard link to, soft
+twocases:
+link to, shared lock, exclusive lock,
+truncate. There are also rights related to directories 1. the uid’s/gid’s are in the set of uid’s/gid’s which the
+used as file system mount points : (a) mount point : processalreadyhas,or
+a directory can be a mount point, (b) unmount: a file
+2. the uid’s/gid’s are in the process’s uid/gid list and if
+system mounted on a directory can be unmounted; and
+the followingconditionis met: if the process’s
+rightsrelatedtoswappingdevices(c)swapon: adevice
+has gone through the transition “
+canbeaswappingdevice,(d)swapoff: adevicecanbe
+” and asks to
+releasedfrombeingaswappingdevice.
+change its to , then equals . This condi-
+Anodeinthe treemayalsobe associatedwitha list of
+tionismeanttopreventanattackerfromhoppingover
+uid’sandalistofgid’s(seeSection4.2.2). Theselistsare
+differentuid’s.
+theallowednewuserandgroupownershipsforfilesystem
+objectsmatchingthenode. An integer list can also represent rules on system re-
+sources with integral values such as schedulingpriorities,
+etc..
+3Characterranges(e.g., - )andthecharacter’ ’arenotallowed 4Itmaycontainnon–negativeandnegativeintegers; e.g.,uid’scould
+inacharacterclass. benegativeornon–negative.pathname accesspermisions creationmode
+/*r:read,w:write,x:execute,c:create,a:append*/
+/*sharelibraries*/
+/etc/ld.so.* r
+/lib/* r
+/*systemconfigurationfiles*/
+/etc/host.conf r
+/etc/hosts r
+/etc/passwd r
+/etc/group r
+/etc/resolv.conf r
+/*Apachefiles*/
+/usr/local/apache2/conf/* r
+/usr/local/apache2/htdocs/*.html r
+/usr/local/apache2/logs/errorlog rwca 666
+/usr/local/apache2/logs/access log wca 666
+/usr/local/apache2/logs/refererlog wca 666
+/usr/local/apache2/logs/agent log wca 666
+/usr/local/apache2/logs/httpd.pid rwc 644
+/usr/local/apache2/cgi-bin/* rx
+Figure2.Partial rulesforApachefileaccess
+4.2.3 RulesforSignals tainsthe mustbeblockedsubsetforperformancereasons.
+AnarrayofpointerstohandlersfortheCBHsubsetisalso
+Rulesforsignalsareencodedas abit–mask5, whichisan
+maintained;Section4.3givesmoredetailsonthisarray.
+array of unsigned integers used as bit–vectors and repre-
+sents a set of non–negativeintegers whose corresponding
+4.3 Per–ProcessState
+bits are . Bits in a bit mask are numbered sequentially,
+startingfrom the LSB of the first integer, numberedzero, Incorporatingprocessstateintorulescanprotectprocess
+to the MSB of the last integer. Unlike an integer list, set againstamuchlargernumberofpotentialattacks. Several
+operationscanbeeasilyperformedonbit–masks. daemons, especially setuid programs, start out with real
+Forrulesonhandlingreceivedsignals,BlueBoxputssig- uid as root, setting only the effective uid as a user, while
+nalsintofoursubsets:(1)thosecanbeblocked(CBB),(2) retainingthepossibilityofacquiringrootstatetodoprivi-
+thosecanbeignored(CBI),(3)thosecanbedefault(CBD) legedoperations.Ifsuchadaemonissubvertedtheattacker
+: their handlers can be the defaulthandlers, (4) those can can then re–acquireroot privileges. One such example is
+behandled(CBH): theirhandlerscanbeassignedbythe described in the attack on the wu–ftp daemon in Section.
+process. These subsets can intersect in any possible way. 5. Incorporation of state into the system call checks im-
+SinceaUNIX/LINUXsystemdoesnotsupportothertypes pactsperformanceasprocessstateneedstobeupdatedand
+oftreatmentforreceivedsignals,ifasignalisinonlyone checked. We havechosentohaveasmall amountofpro-
+subset, then “can be” becomes “must be”. For example, cessstatesoastominimizetheperformanceimpact. Our
+signalsthatareonlyintheCBBsubsetaresignalsthatmust guidingprincipleistoaddstateonlywhenabsolutelynec-
+be blocked. Besides maintaining four bit–masks for the essary.Partsofthestateswemaintainare:
+four“can be” subsets, BlueBox also computes and main-
+Identitystate: Themainstatecomponentwemaintain
+5Bit–masksarealsousedtoencodetheallowedsystemcallslist. isthecurrentprocessidentitystate.Thestateswenoteare the initial root state, user state and reroot state the semantics of the remainingcodenor dothey interfere
+whentheprocessbecomesrootagain. Foreachstate, withotherpartsofthesystem. Averyvalidconcernisthe
+thereisaseparateeditionoftherulesdictatingwhich portabilityofBlueBoxacrossdifferentversionsoftheker-
+systemcallsareallowedbutallstatessharethesame nel: we believe that the points in the Linux kernel which
+setoffilesystemaccesspermissions. Daemonstypi- wehaveinterceptedareverystableandunlikelytochange
+callyswitchbacktorootstateonlyforashortwhileto in revisionsofthe kernel. On Linux, whereit is easierto
+doa few privilegedoperationsandthis can beeffec- allocate memoryas pages, each process usually needs no
+tivelycontrolledbyjustchangingtheallowedsystem morethan2pages(8K)tostoreallIDSrelatedstructures.
+calls. Ofcourse,weuseonlyasmallersubsetofthisdepending
+onrulesizeetc.Substantialportionsoftherulesareshared
+Systemcall count: Anotherprocessstate component
+byprocessesandanychildthread/processthattheyspawn.
+isthenumberoftimescertainsystemcallsaremade.
+Thiscanbereducedwithelementaryoptimization.
+Currently,thisisenabledforonlytheforkandwaitpid
+systemcalls. Foreachcallwekeepthecurrentcount
+5 Examples
+andmaximumallowed. This componentis useful in
+two situations: First, we can use this to stop DOS In this section we illustrate how our framework can be
+attacks which repeatedly consume system resources effectively used to thwart well-known attacks. They also
+via system calls: e.g. an attacker could repeatedly illustratehowrulesforvariousprocesscanbedefined.
+forkchildprocesses. Thesecondsituationwherethis
+mightbeusefulisincontrollingscriptswhichexecute 5.1 Phfcgi–binwithApache
+arbitraryshellcommands. Sincetheshellscriptforks
+Thephf cgi–binscript was a sample scriptwhich came
+processestoexecutedifferentcommandsthiscancon-
+with the earlier distributions of Apache as an example of
+trolthenumberofcommandstheprocesscanexecute.
+howcgi–binscriptscouldbewritten. Figure5.1showsthe
+While this by itself does not offer more security, it
+relevant parts of the code for phf script. The script first
+doessoincombinationwithotherrules.
+SignalHandlers: AnotherDOSattackis tohavesig-
+nalshandledincorrectlyresultinginerrantprocessbe-
+/* transform http request
+havior.Thiscanbedonebyregisteringa“wrong”sig-
+* into options */
+nalhandler.SincethereisnowayfortheIDStoiden-
+tify the “correct” signal handler, it assumes that the
+/* Remove shell characters
+first handler registered is the right handler and does
+* from options */
+notpermitanychangetothis.
+escape shell command(
+‘‘/sbin/ph options’’);
+Our philosophy to adding state to the rules is that if we
+popen(‘‘/sbin/ph options’’,’r’);
+addstateonlywhenthereissubstantialbenefittobegained
+eitherinstrengtheningsecurityguaranteesorinmakingit
+easiertospecifyrulesforaparticularprocess.Wenotethat
+our process state is substantially smaller than the system
+Figure3.ThePHFcgi–binscript
+proposedbySekaret. al[SU99].
+syntactically transforms the incoming http request into a
+4.4 KernelImpact
+listofoptionsforafictionalprogramph andthenspawns
+A very important design criteria for our system was to (using popen) a shell to execute ph with the created op-
+minimizetheimpactonthekernel.Theplacementoffunc- tions. Theescape shell cmdsubroutineescapesshell
+tionality has been carefully done to reduce impact on the characterswhichmaybepresentintheoptionsstring. The
+kernel. Ourreferenceintrusionavoidanceimplementation fatalbugwasthatitdidnotescapethenewline( n)char-
+onLinuxhasaninterceptatthesystemcallentrypoint,and acter: The attack simply ensured that arbitrary command
+minorhooksinthekernelcodeforprocesscreationandter- wasexecutedbypassingthenewcommandafteranewline
+mination(thefork,execveandexitsystemcalls).Thetotal characterintheoptions.
+impactonthekernelsourcesislimitedtoabout10linesof This is a good example of how straightforward it is to
+assemblyand20linesofCcode. Therestoftheenforce- write effective rules. By design, the script invokes two
+ment process and the code to parse, allocate memory for commands/bin/sh ( while using the popen library call )
+and install rules are in a completelyindependentmodule. andtheprogram/sbin/ph. Thusaverynaturalsetofrules
+The patches to kernel are very simple and do not change istoallowreadandexecutetothesefiles. Besidessharedlibraries, the process accesses no other objects. Marking server. Using the subset of the BlueBox rules described
+theserulesasinheritedensuresthattheprocesswhichexe- above,wecanmitigatethedamageduetothisattack. The
+cutes/bin/shcanonlyexecutethesetwoprogramsandthe only system calls the attacker can execute in the reroot
+attackisthwarted. Notethattheprocesscanexecutethese statearethesocket, bind andsetuidtouser;theattacker
+asmanytimesasitwants. has no potential access to the file system objects i.e. all
+othersensitivesystemcallsaredisallowed.Althoughthere
+5.2 Bufferoverflowinwwwcount is no way in the kernel, to distinguish the normal setting
+uid to root by the ftp daemon from the user state and the
+Thewwwcountprogramisapopularcgiprogramwhich
+attackersettinguidtorootafterthebufferoverflow,thisis
+maintainsa count of the numberof hits on a website and
+thebestprotectiononecanexpect.
+displays this in a graphicalform. This is widely used al-
+Theexamplesthatwehavedescribedinthissectionhigh-
+thoughin nonsensitive websites. Theearlierversionsof
+lightseveralimportantfeaturesofthesemanticsoftherules
+theprogramsufferfromawell knownbufferoverflowat-
+inoursystem. Theyalsoillustratethesecurityguarantees
+tack which can be used to execute arbitrary program on
+the system can provide. For instance, in the case of the
+thewebsite. Itisalmosttrivialtodefinetherulesforthis
+phf–attack,thesystemguaranteesthattheonlyexecutables
+script. From the definition, or from an inspection of the
+are /bin/sh and /sbin/ph. However the attack can make
+system call audit trace for this process we can derive the
+the system endlessly execute these binaries resulting in a
+properfileaccesses: Theseareallrestrictedtoasingledi-
+denial–of–service. In the ftpd example, we are unable to
+rectory based on the initial configurationof the program.
+detect that the buffer overflowed, yet we are able to sub-
+No executable is in the rules; in fact, the execve system
+stantiallymitigatethedamagethattheattackercando.An-
+callisnotintheallowedsystemcalllist.
+otherimportantfeatureisthattherulesforalargenumber
+5.3 wu–ftpdbufferoverflow of programsare veryeasy to write and can potentiallybe
+donewithasingleexaminationoftheaudittrail. Evenin
+Thisexampleillustrateshowtousethestatemaintenance
+themoresophisticatedexampleoftheftpdaemon,webe-
+partofoursystemtoenforcesophisticatedchecks.wu–ftpd
+lieve our approach is substantially simpler than the state
+istheftpdaemondevelopedattheWashingtonUniversity
+diagrambasedapproachadvocatedby[SU99].
+atSt. Louisandisoneofthemorepopularftpdaemonsin
+usetoday.Therehavebeenanumberofattemptstomodel
+6 Performance
+thebehaviorofthedaemontodetectintrusions[SU99].
+At a very high level, the ftp daemon starts running as
+OneofthemaindesignguidelinesforBlueBoxistomin-
+root,waitsforausertologinbyauthenticationandsetsits
+imize the performance impact. Crucial design decisions
+effectiveuidtothatoftheuser. Fortherestofthissession,
+about how much state to incorporate into the rules were
+the daemon has as effective uid that of the authenticated
+drivenprimarilybyhowmuchitimpactstheperformance
+user.Itisthusinanunprivilegedstate,exceptwhenitneeds
+oftheprocessbeingmonitored. Theprototypicalapplica-
+tobindsocketstothewell–knownftpdataport. Sincethis
+tionweusetomeasuretheperformanceistheApache2.0
+isaprivilegedport,thisbindoperationcanonlybedonein
+web server daemon. The results for this daemon are rep-
+privileged state so the daemon becomes root again. The
+resentativeasitexercisesmostofthechecksimplemented
+only system calls made by the daemon in this state are
+forthevarioussystemcalls. Infact,manyofthecompute
+socket, bind and setuid to user. Figure 4 describes this
+intensivesystemcallchecks,suchasopen,readandfcntl,
+statediagramoftheftpdaemon. Fromthisfunctionalde-
+are used substantially. Other processes will typically use
+scriptionwecaneasilyidentifyoneportionoftherulesfor
+fewersuchcallsandhencetheperformanceimpactonthe
+the ftp daemon. In the initial state it starts as root and is
+Apachehttpddaemonwillbeanupperbound.
+permittedtomakemostofthesystemcalls, inthesecond
+stateithasanonzerouidandispermittedamongotherthe
+6.1 Testbed
+setuidsystemcalltobecomerootagain. Inthethirdstate
+the daemon is only allowed to execute the socket, bind OurtestsrantheWebStonebenchmarkofserverperfor-
+and setuid to user system calls. Note that this is only a mance with the following parameters: There is a single
+subsetoftheentirerulesetandillustrateshowthisthwarts clientmachinegeneratingloadandithasbetweenthreeand
+awell–knownattack. Thissubsetoftherulesis shownin eightthreadsgeneratingrequestsfortheserver.Thesewere
+Figure 5. sochosensuchthattheresultingloaddoesnotsaturatethe
+Theearlierversionsof this daemonwere susceptibleto server with or without BlueBox. The load generated by
+anattack where a regularuser authenticatedand overflew theclientsisentirelystaticcontent.Testingunderdynamic
+theprocessheap[WUF]. Then,arbitrarycodecouldbeex- contentwouldresultinalargerpenaltyduetotheoverhead
+ecuted in the reroot state e.g. spawn a root shell on the of loading rules for each script that is invoked. Both theuser authentication reroot for bind
+Initial
+Nonzero Reroot
+Root
+user id State
+State
+after bind
+Figure4.Statediagramofthewu–ftpdaemon
+user authentication reroot for bind
+Initial
+Nonzero Reroot
+Root
+user id State
+State
+after bind
+Only system calls
+Link to libraries.
+Access user files - Bind
+Open sockets
+setuid to root - Socket
+Read /etc/passwd
+etc. - Setuid(back to
+Setuid to user
+user).
+etc.
+Figure5.Subsetofthestate–dependentrulesfortheftpdaemon.
+webstone client and the Apache server were put on a gi- The results shown in Figure 6 were generated entirely
+gabitethernettoensurethatnoeffectduetolargenetwork using static content. Dynamic content requires the server
+latencieswereobservedintheresults. toloadanotherprocessandthusloadtherulesforthisnew
+process which adds to the performancepenalty. This can
+6.2 TestResults besomewhatmitigatedbycachingthedatastructuresrep-
+resentingrulesforfrequentlyusedcgi–binscripts. Weare
+Figure6showstheperformanceoftheApache2.0web-
+intheprocessofimplementingthisintheBlueBoximple-
+serverperformingwith and without BlueBox undervari-
+mentationonLinux.
+ous server load factors. We anticipate a % perfor-
+Using these optimizations, we expect that the perfor-
+mance penalty for the Apache 2.0 server running on the
+mancepenaltyfortheApachedaemonwillbecloseto5%.
+Linux2.2.14kernel.
+We believethat this penaltyis notexcessivegiventhese-
+curityguaranteesonecanobtainusingthissystem.
+6.3 Bottlenecks
+Themainperformancebottlenecksinenforcingthesys- 7 Conclusion
+temcallchecksfortheApacheserverispathnameresolu-
+tion. Foreachrequest,theApacheserveropensafileand WehavepresentedBlueBox,asimplesystemforsand-
+thenusessendfiletosenditoverthesocket. Foreachre- boxingapplicationswhichcansubstantiallymitigatesecu-
+quest,weperformafullnameresolutionoperationtomatch rityexposuresofprocesses. Webelievethatoursystemis
+the right file name with a node on the tree of file system asimpleandcomprehensivewaytoincorporatecheckson
+objectrulestoeliminatesecurityholes. Thiscanbeaddi- theexecutionofprogramsatthetimeofinvocationofsys-
+tionallyoptimizedby cachingandmarkingcertain names tem calls. We have described rules for important servers
+asfullyresolved. Anotherwaytoreducethisoverheadof suchastheApachedaemon,andanumberofpopularcgi–
+nameresolutionis tohavemandatoryaccess controltype binscripts;theserulescanbeusedastemplatesacrossin-
+labels[DoD85,SEL]onfile systemobjectsandmovethe stallationswithnewruleswrittenfortheindividualscripts.
+check entirely to the file system i.e. the file system will Ourrulesyntaxandsemanticsaresimpleandyetquiteef-
+checkthelabelsforpermissionbeforeitopensthefile. fectiveincatchingalargenumberofknownattacks. SincePerformance comparison under WebStone 2.5 load
+1000
+950
+900
+850
+800
+750
+700
+55 60 65 70 75 80 85 90 95
+CPU utilization
+ces/snoitcenooC
+Apache2.0 on Linux 2.2
+Apaceh2.0 on Linux 2.2 + IDS
+Figure6.PerformanceoftheApache2.0withandwithoutsystemcallchecks
+performancehasbeenamotivatingfactorinourdesign,we [Atk95] Randall Atkinson. Security Architecture for
+haveachievedoursecurityguaranteeswithminimalimpact theInternetProtocol.InternetRFC1825,Au-
+ontheperformance. gust1995.
+On a muchlargerscale, we believethat muchmore ef-
+[BGM00] M. Bernaschi, E. Gabrielli, and L. Mancini.
+fective security can be achieved by integrating the attack
+Enhancements to the Linux Kenel for
+signature based systems, statistical profile based systems
+Blocking Buffer Overflow Based Attacks,
+and the sandboxingsystems such as the one described in
+http://www.iac.rm.cnr.it/
+this paper. Depicted in Figure 7, the signature based ap-
+newweb/tecno/papers/bufoverp,
+proachdetectsattacksfromtheoutside,thestatisticalpro-
+August2000.
+file approachdetects anomaly inside, and the sandboxing
+approachstopsattacksontheboundary. [CDE 96] Mark Crosbie, Bryn Dole, Todd Ellis, Ivan
+Krsul, and Eugene Spafford. IDIOT Users
+Guide. Technical Report CSD-TR-96-050,
+8 Acknowledgements
+COAST Laboratory, Dept. of Computer Sci-
+ences,PurdueUniversity,September1996.
+This work has benefited substantially from discussions
+with a large number of people. In particular, we would [DA97] TimDierksandChristopherAllen. TheTLS
+like to acknowledge the contributions of Pankaj Rohatgi, Protocol Version 1.0. IETF draft-ietf-tls-
+JosyulaR.Rao,DavidSaffordandDouglasSchalesofIBM protocol-02.txt ,March1997.
+Research, and Herve´ Debar who was at IBM Zurich Re-
+[DDNW98] Herve´ Debar, Marc Dacier, Mehdi Nassehi,
+searchLab.
+and Andreas Wespi. Fixed vs. Variable–
+LengthPatternsforDetectingSuspiciousPro-
+References cessBehavior,ResearchReport,No.RZ3012,
+IBM Research Division, Zurich Research
+[ALJ 93] Debra Anderson, Teresa F. Lunt, Harold Lab,April1998.
+Javitz, Ann Tamaru, and Alfonso Valdes.
+[DDW99] Herve´ Debar,MarcDacier,andAndreasWe-
+SAFEGUARD FINAL REPORT: Detecting
+spi.Towarsataxonomyofintrusiondetection
+UnusualProgramBehaviorUsingtheNIDES
+systems. ComputerNetworks,31,1999.
+Statistical Component. Technical report,
+Computer Science Laboratory, SRI Interna- [DoD85] US Department of Defense
+tional,MenloPark,California,USA,Decem- Trusted Computer System Evalua-
+ber1993. tion Criteria, DOD 5200.28-STD,Integrated Defense System
+attack signature detection
+sandboxing
+anomaly detection
+Figure7.IntegratedDefense
+http://www.radium.ncsc.mil/ [JV94] Hal Javitz and Alfonso Valdes. The NIDES
+tpep/library/rainbow/ statistical component description and justifi-
+index.html,December1985. cation. Technical report, Computer Science
+Laboratory, SRI International, Menlo Park,
+[FBF99] TimothyFraser,LeeBadger,andMarkFeld-
+California,USA,March1994.
+man. HardeningCOTSsoftwarewithgeneric
+software wrappers. In Proceedings of the [JVM01] The Java Virtual Machine,
+IEEE Symposium on Security and Privacy, http://www.javasoft.com,2001.
+1999.
+[KFBK00] CalvinKo, TimothyFraser, LeeBadger, and
+[FHSL96] Stephanie Forrest, Steven A. Hofmeyr, Anil
+Douglas Kilpatrick. Detecting and Counter-
+Somayaji,andThomasA.Longstaff.ASense
+ingSystemIntrusionsUsingSoftwareWrap-
+ofSelfforUNIXProcesses. InIEEESympo-
+pers. In Proceedingsof the 9th USENIXSe-
+siumonSecurityandPrivacy,1996.
+curitySymposium,August2000.
+[FKK96] Alan O. Freier, Philip Karlton, and Paul C.
+[MBKQ96] Marshall Kirk McKusick, Keith Bostic,
+Kocher. TheSSLProtocolVersion3.0. IETF
+Michael J. Karles, and John S. Quarterman.
+draft-ietf-tls-ssl-version3-00.txt , Novem-
+The Design and Implementation of the 4.4
+ber1996.
+BSDOperatingSystem,pages67,540. Addi-
+[Jac99] Kathleen A. Jackson. INTRUSION DE- sonWesley,NewYorkCity,NewYork,USA,
+TECTION SYSTEM (IDS) Product Review, 1996.
+IBMinternalconfidentialdocument,IBMRe-
+search Division, Zurich Research Lab, April [Pax98] Van Paxson. Bro: A System for Detecting
+1999. Network Intrudersin Real–Time. In the 7th
+USENIXSecuritySymposium,1998.
+[JS00] K.Jain andR. Sekar. User-LevelInfrastruc-
+tureforSystemCallInterposition:APlatform [PN98] Thomas H. Ptacek and Timothy N. New-
+forIntrusionDetectionandConfinement. In sham. Insertion,Evasion,andDenialofSer-
+Proceedings of the Network and Distributed vices: EludingNetwork IntrusionDetection,
+SystemsSecuritySymposium,February2000. http://www.nai.com,January1998.[RLS 97] MarcusJ.Ranum,KentLandfield,MikeSto- Appendix
+larchuk,MarkSienkiewicz,AndrewLameth,
+and Eric Wall. Implementing a Generalized A HarmlessSystemCalls
+Tool for Network Monitoring. In the 11th
+Eachof these system calls eitherhas no securityimpli-
+USENIX Systems Administrator Conference,
+cations or is not supported by the Linux 2.2.14 kernel.
+1997.
+[SEL] Security–EnhancedLinux.Availableonlineat
+http://www.nsa.gov/selinux/.
+afs syscall lstat64
+[SU99] R. Sekar andP. Uppuluri. SynthesizingFast alarm mpx
+IntrusionDetectionSystemsfromHigh-Level break msync
+Specifications. In the 8th USENIX Security brk nanosleep
+Symposium,pages63–78,August1999. capget newselect
+chdir oldfstat
+[UES00] U´lfarErlingssonandFredB.Schneider. IRM fchdir oldlstat
+enforcementofJavastackinspection.InIEEE fdatasync oldolduname
+SymposiumonSecurityandPrivacy,2000. fstat olduname
+fstat64 poll
+[Wag99] DavidA.Wagner.Janus:anapproachforcon- fstatfs prof
+finementofuntrustedapplications. Technical fsync query module
+ReportCSD–99–1056,UniversityofCalifor- ftime readlink
+niaatBerkeley,August1999. get kernel syms sched get priority max
+getcwd sched get priority min
+[WEB01] WebSphere V4.0 Advanced getdents sched getparam
+Edition Handbook. Online at getegid sched getscheduler
+http://www.redbooks.ibm.com/ geteuid sched rr get interval
+redpieces/pdfs/sg246176.pdf, getgid sched yield
+getgroups setitimer
+November2001.
+getitimer sgetmask
+[WSB 96] KennethM.Walker,DanielF.Sterne,M.Lee getpgid stat
+Badger, Michael J. Petkac, David L. Sher- getpgrp stat64
+getpid statfs
+mann, and Karen A. Oostendrop. Confining
+getppid stty
+Root Programs with Domain and Type En-
+getpriority sysfs
+forcement. Inthe6thUSENIXSecuritySym-
+getresgid sysinfo
+posium,July1996.
+getresuid syslog
+getrlimit time
+[WUF] Source code to exploit the heap
+getrusage times
+overflow in wu–ftpd. Online at
+getsid uname
+http://oliver.efri.hr/ crv/
+gettimeofday ustat
+security/bugs/mUNIXes/
+getuid vfork
+wuftpd15.html. gtty vhangup
+lock vm86
+[XB01] Huagang Xie and Philippe Biondi.
+lstat wait4
+The Linux Intrusion Detection Project,
+http://www.lids.org,2001.
+Table2.HarmlessSystemCalls

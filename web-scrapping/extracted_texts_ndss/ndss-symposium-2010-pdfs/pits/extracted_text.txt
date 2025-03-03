@@ -1,0 +1,1098 @@
+Botnet Judo: Fighting Spam with Itself
+∗ ∗ † ∗
+AndreasPitsillidis KirillLevchenko ChristianKreibich ChrisKanich
+∗ † † ∗
+GeoffreyM.Voelker VernPaxson NicholasWeaver StefanSavage
+† ∗
+InternationalComputerScienceInstitute Dept. ofComputerScienceandEngineering
+Berkeley,USA UniversityofCalifornia,SanDiego,USA
+christian@icir.org {apitsill,klevchen,ckanich}@cs.ucsd.edu
+{vern,nweaver}@cs.berkeley.edu {voelker,savage}@cs.ucsd.edu
+Abstract We advocate shrinking this time window by changing
+the vantage point from which we fight spam. In particu-
+We have traditionally viewed spam from the receiver’s lar, itiswidelydocumentedthatallbutasmallfractionof
+pointofview: mailserversassaultedbyabarrageofspam today’sspame-mailistransmittedbyjustahandfulofdis-
+from which we must pick out a handful of legitimate mes- tributed botnets [10, 18], and these, in turn, use template-
+sages.Inthispaperwedescribeasystemforbetterfiltering based macro languages to specify how individual e-mail
+spam by exploiting the vantage point of the spammer. By messages should be generated [14, 27]. Since these tem-
+instantiating and monitoring botnet hosts in a controlled plates describe precisely the range of polymorphism that a
+environment,weareabletomonitornewspamasitiscre- spam campaign is using at a given point in time, a filter
+ated, and consequently infer the underlying template used derived from these templates has the potential to identify
+togeneratepolymorphice-mailmessages. Wedemonstrate suche-mailsperfectly(i.e.,nevergeneratingfalsepositives
+this approach on mail traces from a range of modern bot- orfalsenegatives).
+nets and show that we can automatically filter such spam InthispaperwedescribeJudo,asystemthatrealizesjust
+preciselyandwithvirtuallynofalsepositives. such an approach—quickly producing precise mail filters
+essentiallyequivalenttheverytemplatesbeingusedtocre-
+atethespam. However,whilespamtemplatescanbetaken
+1.Introduction directlyfromtheunderlyingbotnet“commandandcontrol”
+channel, this approach can require significant manual ef-
+Reactive defenses, in virtually any domain, depend on fort to reverse engineer each unique protocol [12, 14]. In-
+thecurrencyoftheirintelligence. Howmuchdoyouknow stead,weuseablack-boxapproach,inwhichindividualbot-
+aboutyouropponent’snextmoveandhowquicklycanyou netinstancesareexecutedinacontrolledenvironmentand
+act on it? Maximizing the time advantage of such infor- the spam messages they attempt to send are analyzed on-
+mation is what drives governments to launch spy satellites line. We show that using only this stream of messages we
+and professional sports teams to employ lip readers. By canquicklyandefficientlyproduceacomprehensiveregu-
+the same token, a broad range of competitors, from com- lar expression that captures all messages generated from a
+moditiestraderstoon-linegamers,allseektoexploitsmall templatewhileavoidingextraneousmatches. Forexample,
+timeadvantagestodeliverlargeoverallgains. AsBenjamin in tests against live botnet spam, we find that by examin-
+Franklinfamouslywrote,“Timeismoney.” ing roughly 1,000 samples from a botnet (under a minute
+Today’sspammersoperatewithinthissameregime. Re- forasingleenergeticbot,andstilllesstimeifmultiplebots
+ceiversinstallfilterstoblockspam. Spammersinturnmod- aremonitored)wecaninferprecisefiltersthatproducezero
+ifytheirmessagestoevadethesefiltersforatime,untilthe falsepositivesagainstnon-spammail,whilematchingvirtu-
+receivercanreacttothechangeandcreateanewfilterrule allyallsubsequentspambasedonthesametemplate.While
+in turn. This pattern, common to spam, anti-virus and in- template inference is by no means foolproof (and accord-
+trusiondetectionalike, dictatesthatthewindowofvulner- ingly we examine the anticipated arms race), we believe
+ability for new spam depends on how quickly it takes the that this approach, like Bayesian filtering, IP blacklisting
+receivertoadapt. andsenderreputationsystems,offersasignificantnewtoolforcombatingspamwhilebeingcheapandpracticaltode- Another class of content-based filtering approaches in-
+ploywithinexistinganti-spaminfrastructure. volves blacklisting the URLs advertised in spam [1, 3, 4,
+In particular, we believe our work offers three contri- 31]. Because URL signatures are simple and require no
+butions: First, we produce a general approach for infer- complex training, they are more easily integrated into a
+ring e-mail generation templates in their entirety, subsum- closed-loopsystem: forexample,inonestudyofspamsent
+ing prior work focused on particular features (e.g., mail by the Storm botnet, domains observed in templates were
+header anomalies, subject lines, URLs). Second, we de- onaveragesubsequentlyfoundonaURLblacklistonly18
+scribeaconcretealgorithmthatcanperformthisinference minutes afterwards [15]. Unfortunately, URL-based sys-
+task in near real-time (only a few seconds to generate an tems also require comprehensive, up-to-date whitelists to
+initial high-quality regular expression, and fractions of a avoid poisoning. They are also generally rigid in block-
+second to update and refine it in response to subsequent ingallappearancesoftheURLregardlessofcontext, and,
+samples),therebymakingthisapproachfeasiblefordeploy- of course, they do nothing for spam not containing a URL
+ment. Finally,wetestthisapproachempiricallyagainstlive (e.g., stock schemes, image-based spam, and some types
+botnetspam,demonstrateitseffectiveness,andidentifythe of phishing). Our system provides a fast, closed-loop re-
+requirementsforpracticaluse. sponse, while generating a more selective signature based
+The remainder of the paper is organized as follows. In ontheURL(ifpresent)andtextofthespaminstances.
+Section2weprovidebackgroundandrelatedworkfollowed
+by a description of our model for spam generation in Sec- Sender-based systems focus on the means by which
+tion3. WedescribetheJudosysteminSection4andthen spam is delivered. The assumption is that any Internet ad-
+evaluateitseffectivenessonlivedatainSection5. Wedis- dressthatsendsunsolicitedmessagesishighlylikelytore-
+cuss our results and further applications in Section 6 fol- peatthisact, andunlikelytosendlegitimate, desiredcom-
+lowedbyouroverallconclusions. munication. Thus, using a range of spam oracles, ranging
+from e-mail honeypots to user complaints, these systems
+track the IP addresses of Internet hosts being used to send
+2.BackgroundandRelatedWork
+spam. Individual mail servers can then validate incoming
+e-mailbyqueryingthedatabase(typicallyviaDNS)tosee
+Since the first reported complaint in 1978, unsolicited
+if the transmitting host is a known spam source [11, 20].
+bulke-mail,orspam,hascauseduntoldgriefamongusers,
+Blacklists dealt very effectively with open e-mail relays
+systemadministrators,andresearchersalike.Asspamgrew,
+andproxies,andforcedspammerstomovetobotnet-based
+sotoodidanti-spamefforts—todaycomprisingacommer-
+spam distribution, in which many thousands of compro-
+cialmarketwithover$1Binannualrevenue. Inthissection
+mised hosts under central control relay or generate spam
+webrieflyreviewexistinganti-spamtechnologyanddiscuss
+onbehalfofasinglespammer[23]. Asthenumberofhosts
+thebotnetworkmostdirectlyrelatedtothispaper.
+grows,thisbothreducesblacklistfreshnessandplacesscal-
+abilityburdensonblacklistoperators.
+2.1.CurrentAnti-spamApproaches
+A related approach is sender reputation filtering, con-
+Broadly speaking, anti-spam technologies deployed to- ceptually related to Internet address blacklisting. These
+day fall into two categories: content-based and sender- schemesattempttoprovidestrongertiesbetweenthenom-
+based.Content-basedapproachesaretheoldestandperhaps inal and true sender of e-mail messages in order to al-
+best known, focusing on filtering unwanted e-mail based low records of individual domains’ communications to be
+onfeaturesofthemessagebodyandheadersthatareeither employed to filter spam based on past behavior. Thus,
+anomalous(e.g.,dateisinthefuture)orconsistentwithun- using authentication systems such as SPF [30] or Do-
+desirablemessages(e.g.,includeswordslikeRolexorVia- mainKeys[16](orheuristicssuchasgreylisting[9]),amap-
+gra). Earlysystemsweresimpleheuristicsconfiguredman- ping can be made between origin e-mail’s domain (e.g.,
+ually, but these evolved into systems based on supervised foo.com)andthemailserversauthorizedtosendonbehalf
+learningapproachesthatuselabeledexamplesofspamand of these addresses. Having bound these together, mail re-
+non-spamtotrainaclassifierusingwell-knowntechniques ceivers can then track the reputation for each sending do-
+suchasBayesianinference[22,25]andSupportVectorMa- main (i.e., how much legitimate mail and how much spam
+chines [6, 32]. These techniques can be highly effective eachsends)andbuildfilteringpoliciesaccordingly[28].
+(seeCormackandLynamforanempiricalcomparison[5])
+but are also subject to adversarial chaff and poisoning at- In practice, these techniques are used in combination,
+tacks[8,17],andrequiregreatcaretoavoidfalsepositives with their precise formulation and mixture tuned to new
+asspammersbecomemoresophisticatedatdisguisingtheir spamtrendsand“outbreaks”(e.g., imagespam). Weview
+mailaslegitimate. oursystemasanewcomponentinthisarsenal.2.2.SpammingBotnets 3.Template-basedSpam
+Spam templates are akin to form letters, consisting of
+Since roughly 2004, bot-based spam distribution has
+textinterspersedwithsubstitutionmacrosthatareinstanti-
+emerged as the platform of choice for large-scale spam
+ateddifferentlyineachgeneratedmessage.Unlikeformlet-
+campaigns. Conceptually,spambotnetsarequitesimple—
+ters,spamtemplatesusemacrosmoreaggressively,notonly
+the spammer generates spam and then arranges to send it
+topersonalizeeachmessagebutalsotoavoidspamfiltering
+throughthousandsofcompromisedhosts,therebylaunder-
+based on message content. Figure 1 shows a typical tem-
+ing any singular origin that could be blacklisted. How-
+platefromtheStormbotnet(circaFeb.2008)togetherwith
+ever, an additional complexity is that spammers also need
+an instance of spam created from the template and a Judo
+to generate content that is sufficiently polymorphic so that
+regularexpressionsignaturegeneratedfrom1,000message
+at least some of it will evade existing content filters. To
+instances(Section4belowdescribesouralgorithmforgen-
+describe this polymorphism, while ensuring that the un-
+erating such signatures). Note that this regular expression
+derlying “messaging” is consistent, spammers have devel-
+was created by observing the messages sent by the botnet,
+oped template-based systems. While original template-
+andwithoutanypriorknowledgeoftheunderlyingtemplate
+based spam generation from such templates was central-
+(weshowthetemplateforreferenceonly).
+ized,modernspammersnowbroadcasttemplatestoindivid-
+Template Elements. We can divide the bulk of macros
+ualbothoststhatinturngenerateandsenddistinctmessage
+used in templates into two types: noise macros that pro-
+instances.
+duceasequenceofrandomcharactersfromaspecifiedchar-
+Wehavepreviouslydescribedthetemplate-basedspam-
+acter alphabet, and dictionary macros that choose a ran-
+mingengineoftheStormbotnet[14],whileSternanalyzed
+domphrasefromalistgiveninaseparate“dictionary”in-
+that of the Srizbi botnet [27] and first observed the oppor-
+cluded with the template. For example, in the Storm tem-
+tunityforfilteringtechniquesthat“exploittheregularityof
+plate shown in Figure 1, the “%ˆP ... ˆ%” macro gener-
+template-generatedmessages.” Ourworkisapracticalreal-
+ates a string of a given length using a given set of charac-
+izationofthisinsight.
+ters,whilethe“%ˆF... ˆ%”macroinsertsastringfroma
+Closest to our own system is the Botlab system of
+list in the specified dictionary. Similar functionality exists
+John et al. [10]. Their system, contemporaneously built,
+in other template languages (e.g., the rndabc and rndsyn
+also executes bots in a virtual machine environment and
+macros in Reactor Mailer [27]). In general, noise macros
+extracts the outbound spam e-mail messages. Indeed, our
+are used to randomize strings for which there are few se-
+workbuildsontheirpreliminarysuccesses(andtheirdata,
+mantic rules (e.g., message-ids), while dictionary macros
+which the authors have also graciously shared), which in-
+areusedforcontentthatmustbesemanticallyappropriatein
+cluded using exact-matching of witnessed URL strings as
+context(e.g.,subjectlines,sendere-mailaddresses,etc). In
+a filter for future botnet spam. Our work is a generaliza-
+additiontothesetwoclasses,therearealsospecialmacros
+tioninthatwedonotassumetheexistenceofanyparticular
+for dates, sender IP addresses, and the like. We deal with
+staticfeature(URLorotherwise),butfocusoninferringthe
+suchmacrosspecially(Section4.2).
+underlyingtemplateusedbyeachbotnetandfromthisgen-
+Thus, to a first approximation, our model assumes that
+eratingcomprehensiveandpreciseregularexpressions.
+a message generated from a template will consist of three
+The system of Go¨bel et al. [7] uses a similar approach. typesofstrings:invarianttext,noisemacrosproducingran-
+Theirsystemgeneratessignaturesbyanalyzingspammes- dom characters as described above, and dictionary macros
+sagescollectedfromcompromisedhostsaswell. However, producingatextfragmentfromafixedlist(thedictionary).
+the Judo template inference algorithm supports key addi- Real-timeFiltering. Thenatureoftemplatesystemsdoc-
+tionalelements,suchasdictionaries,whichmakeitsignifi- umented by our earlier work [14] as well as Stern [27]
+cantlymoreexpressive. suggests that templates can be used to identify—and thus
+The AutoRE system of Xie et al. clusters spam mes- filter—any mail instances generated from a template. It is
+sagesintocampaignsusingheuristicsabouthowembedded relatively straightforward to convert a Storm template, for
+URLsareobfuscated[31]. Thisefforthasalgorithmicsim- example,intoaregularexpressionbyconvertingmacrosto
+ilaritiestoourwork,asittoogeneratesregularexpressions corresponding regular expressions: noise macros become
+over spam strings, but focuses on a single feature of spam repeatedcharacterclasses,anddictionarymacrosbecomea
+e-mail(URLs).Bycontrasttotheseefforts,ourworkisdis- disjunction of the dictionary elements. Such a regular ex-
+tinguished both by its generality (for example, generating pressionsignaturewillthenmatchallspamgeneratedfrom
+signaturesforimagesspamorspamwith“tinyurl”linksfor the template. Unfortunately, obtaining these templates re-
+which URLs are not discriminatory) and by its design for quires reverse-engineering the botnet “command and con-
+on-linereal-timeuse. trol”channel—ahighlytime-consumingtask. Instead, ourReceived: from %ˆC0%ˆP%ˆR2-6ˆ%:qwertyuiopasdfghjklzxcvbnmˆ%.%ˆP%ˆR2-6ˆ%:qwertyuiopasd (cid:46)
+fghjklzxcvbnmˆ%ˆ% ([%ˆC6%ˆIˆ%.%ˆIˆ%.%ˆIˆ%.%ˆIˆ%ˆ%]) by (cid:46)
+%ˆAˆ% with Microsoft SMTPSVC(%ˆFsvcverˆ%); %ˆDˆ%
+Message-ID: <%ˆZˆ%.%ˆR1-9ˆ%0%ˆR0-9ˆ%0%ˆR0-9ˆ%0%ˆR0-9ˆ%@%ˆC1%ˆFdomainsˆ%ˆ%>
+Date: %ˆDˆ%
+From: <%ˆFnamesˆ%@%ˆV1ˆ%>
+User-Agent: Thunderbird %ˆFtrunverˆ%
+MIME-Version: 1.0
+To: %ˆ0ˆ%
+Subject: %ˆFstormlineˆ%
+Content-Type: text/plain; charset=ISO-8859-1; format=flowed
+Content-Transfer-Encoding: 7bit
+%ˆG%ˆFstormlineˆ% http://%ˆFstormlink2ˆ%/ˆ%
+Received: from auz.xwzww ([132.233.197.74]) by dsl-189-188-79-63.prod-infinitum.com.mx (cid:46)
+with Microsoft SMTPSVC(5.0.2195.6713); Wed, 6 Feb 2008 16:33:44 -0800
+Message-ID: <id012345.99066044044@experimentalist.org>
+Date: Wed, 6 Feb 2008 16:33:44 -0800
+From: <katiera@experimentalist.org>
+User-Agent: Thunderbird 2.0.0.14 (Windows/20080421)
+MIME-Version: 1.0
+To: victim@spam-target.com
+Subject: Get Facebook’s FBI Files
+Content-Type: text/plain; charset=ISO-8859-1; format=flowed
+Content-Transfer-Encoding: 7bit
+FBI may strike Facebook http://GoodNewsGames.com/
+From: <.+@.+\..+>
+User-Agent: Thunderbird 2\.0\.0\.14 \(Windows/200(80421\)|70728\))
+MIME-Version: 1\.0
+To: .+@.+\..+
+Subject: (Get Facebook’s FBI Files|...|The F\.B\.I\. has a new way of tracking Facebook)
+Content-Transfer-Encoding: 7bit
+(FBI may strike Facebook|FBI wants instant access to Facebook|...|The F\.B\.I\. (cid:46)
+has a new way of tracking Facebook) http://(GoodNewsGames|...|StockLowNews)\.com/
+Figure1. FragmentofatemplatefromtheStormtemplatecorpus,togetherwithatypicalinstantiation,
+andtheregularexpressionproducedbythetemplateinferencealgorithmfrom1,000instances. The
+subject line and body were captured as dictionaries (complete dictionaries omitted to save space).
+Thissignaturewasgeneratedwithoutanypriorknowledgeoftheunderlyingtemplate.
+templateinferencealgorithm,describedinthenextsection, specimens to a signature generator. The signature genera-
+creates such signatures by observing multiple instances of tormaintainsasetofregularexpressionsignaturesforspam
+thespamfromthesametemplate. sent by each botnet, updating the set in real time if neces-
+sary. Wecanthenimmediatelydisseminatenewsignatures
+Figure 2 shows a diagram of a Judo spam filtering sys- tospamfilters.
+tem.Thesystemconsistsofthreecomponents:a“botfarm”
+runninginstancesofspammingbotnetsinacontainedenvi- System Assumptions. Our proposed spam filtering sys-
+ronment; the signature generator; and the spam filter. The tem operates on a number of assumptions. First and fore-
+system intercepts all spam sent by bots and provides the most,ofcourse,weassumethatbotscomposespamusingamatchingallmessagesseenuptoagivenpointintime.
+4.1.TemplateInference
+Thetemplateinferencealgorithmproducesaregularex-
+pression signature from a set of messages assumed to be
+generated from the same spam template. As described in
+Section 3, a template consists of invariant text and macros
+of two types: noise macros which generate a sequence of
+random characters, and dictionary macros which choose a
+phrase at random from a list (the dictionary). Proceeding
+Figure 2. Automatic template inference
+fromthismodel, thealgorithmidentifiestheseelementsin
+makes it possible to deploy template signa-
+thetextoftheinputmessages,andthengeneratesamatch-
+tures as soon as they appear “in the wild:”
+ingregularexpression. Throughoutthissection,weusethe
+bots ((cid:182)) running in a contained environment
+simpleexampleinFigure3toillustratethestepsofoural-
+generatespamprocessedbytheJudosystem
+gorithm.
+((cid:183));signatures((cid:184))aregeneratedinrealtime
+anddisseminatedtomailfilteringappliances
+((cid:185)). 4.1.1.Anchors
+Thefirststepofthealgorithmistoidentifyinvarianttext
+inatemplate,thatis,fragmentsoftextthatappearinevery
+templatesystemasdescribedabove. Wealsorelyonspam
+message. We call such fragments anchors (because they
+campaigns employing a small number of templates at any
+“anchor” macro-generated portions of a message). Invari-
+pointintime. Thus,wecanusetemplatesinferredfromone
+ant text like “Best prices!” and “http://” in Figure 3 are
+orafewbotinstancestoproducefilterseffectiveatmatch-
+examplesofanchors.
+ingthespambeingsentbyallotherbotinstances. Thisas-
+We start by extracting the longest ordered set of sub-
+sumptionappearstoholdfortheStormbotnet[15];inSec-
+strings having length at least q that are common to every
+tion 5.3 we empirically validate this assumption for other
+message. Parameter q determines the minimum length of
+botnets. Finally, as a simplification, our system assumes
+ananchor. Settingq =1wouldsimplyproducethelongest
+that the first few messages of a new template do not ap-
+commonsubsequenceoftheinputmessages,which,inad-
+pear intermixed with messages from other new templates.
+dition to the anchors, would contain common characters,
+Since we infer template content from spam output, rather
+suchasspaces,whichdonotserveasusefulanchors. Large
+than extracting it directly from botnet command and con-
+minimum anchor lengths, on the other hand, may exclude
+trolmessages,interleavedmessagesfromseveralnewtem-
+someusefulshortanchors. Inourexperimentswithavari-
+plateswillcauseustoinferanamalgamatedtemplate—the
+ety of spamming botnets, we found that q = 6 produces
+productofmultipletemplates—whichisconsequentlyless
+good results, with slightly smaller or larger values also
+precise than ideal. This assumption could be relaxed by
+workingwell.
+more sophisticated spam pre-clustering, but we do not ex-
+We note that finding this ordered set of substrings is
+ploredoingsointhispaper.
+equivalent to computing the longest common subsequence
+(LCS) over the q-gram sequence of the input, i.e., the se-
+4.TheSignatureGenerator quenceofsubstringsobtainedbyslidingalength-qwindow
+overeachmessage. Unfortunately,theclassicdynamicpro-
+InthissectionwedescribetheJudosystem, whichpro- gramming LCS algorithm is quadratic in the length of its
+cessesspamgeneratedbybotsandproducesregularexpres- inputs.
+sionsignatures. Thesystemoperatesinrealtime,updating As an optimization we first identify all substrings of
+the set of signatures immediately in response to new mes- length at least q that are common to all input messages
+sages. We begin with a description of the template infer- (using a suffix tree constructed for these messages). We
+ence algorithm—the heart of Judo—which, given a set of then find longest common subsequence of substrings (i.e.,
+messages, generates a matching regular expression signa- treating each substring as a single “character”) using the
+ture. Wethendescribehowweincorporatedomainknowl- classicdynamicprogrammingalgorithm. Typicalmessages
+edge,suchastheheader-bodystructureofe-mailmessages, thuscollapsefromseveralthousandbytestofewerthanten
+intothebasicalgorithm. Finally,weshowhowweusethe common substrings, resulting in essentially linear-time in-
+templateinferencealgorithmtomaintainasetofsignatures putprocessing.Figure3. Templateinferencealgorithmexampleshowingexcerptsfromtemplate-basedspammes-
+sages, the invariant text and macros inferred from the spam, and the resulting regular expression
+signature.
+4.1.2.Macros stringsinmsamples,andletf betheempiricalprobabil-
+n
+ity of the least-frequent element (i.e., the number of times
+Followinganchoridentification,thenextstepistoclas- itoccursinthesample, dividedbym). Thentheprobabil-
+sify the variant text found between anchors. In the sim- ityofobservingfewerthanndistinctstringsinmsamples
+plestcasethistextcorrespondstoasinglemacro,butitmay drawn from a dictionary containing n + 1 elements is at
+also be the back-to-back concatenation of several macros. most(1−f n/(1+f n))m. ForthebrandstringsinFigure3,
+In general, our algorithm does not distinguish between a thisvalueisatmost(1−0.25/1.25)4 ≈ 0.41. Inpractice,
+singlemacroandtheconcatenationoftwoormoremacros, we use a 99% confidence threshold; for the sake of exam-
+unlessthemacrosarejoinedby“special”characters—non- ple, however, we will assume the confidence threshold is
+alphanumericprintingcharacterssuchas“@”andpunctu- muchlower. Ifthedictionaryrepresentationischosen, we
+ation. We call these special characters micro-anchors and groupthedistinctstringsα 1,...,α n intoadisjunctionreg-
+treatthemasnormalanchors. Ournextstep,then,istode- ular expression (α 1|...|α n) to match the variant text.
+cidewhethertextbetweenapairofanchorsisadictionary Otherwise, we check whether it might be a micro-anchor
+macro, a noise macro, or a micro-anchor expression, itself expression.
+consistingofacombinationofdictionaryandnoisemacros Micro-Anchors. Amicro-anchorisasubstringthatcon-
+separatedbymicro-anchorcharacters. sists of non-alphanumeric printing characters too short to
+DictionaryMacros. Inatemplate, adictionarymacrois be a full anchor. Intuitively, such strings are more likely
+instantiatedbychoosingarandomstringfromalist. InFig- to delimit macros than ordinary alphanumeric characters,
+ure 3, for instance, the brand names “gucci”, “prada”, and andarethusallowedtobemuchshorterthantheminimum
+“chanel” would be generated using such a macro. Given anchor length q. We again usethe LCS algorithmto iden-
+a set of strings found between a pair of anchors, we start tifymicro-anchors,butallowonlynon-alphanumericprint-
+bydeterminingwhetherweshouldrepresenttheseinstances ing characters to match. In Figure 3, the domain names
+usingadictionarymacrooranoisemacro. Formallyspeak- intheURLsaresplitintosmallersubstringsaroundthe“.”
+ing, every macro can be represented as a dictionary, in the micro-anchor.Oncemicro-anchorspartitionthetext,theal-
+sensethatitisasetofstrings. However,ifwehavenotseen gorithm performs the dictionary test on each set of strings
+every possible instance of a dictionary, a dictionary repre- delimited by the micro-anchors. Failing this, we represent
+sentation will be necessarily incomplete, leading to false thesestringsasanoisemacro.
+positives. Thus we would like to determine whether what Noise Macros. If a set of strings between a pair of an-
+wehaveobservedistheentiretyofadictionaryornot. We chorsormicro-anchorsfailsthedictionarytest,weconsider
+formulatetheproblemasahypothesistest: thenullhypoth- thosestringstobegeneratedbyanoisemacro(amacrothat
+esis is that there is an unobserved dictionary element. We generates random characters from some character set). In
+take the probability of such an unobserved element to be Figure3,thehostnamesintheURLsfailthedictionarytest
+at least the empirical probability of the least-frequent ob- andaretreatedasanoisemacro. Thealgorithmchoosesthe
+served element. Formally, let n be the number of distinct smallestcharactersetthatmatchesthedatafromthesetofPOSIXcharacterclasses[:alnum:],[:alpha:],etc., expressionsthatcaptureallinstancesofthemacro.
+oracombinationthereof.Ifallstringshavethesamelength,
+thecharacterclassexpressionrepeatsasmanytimesasthe 4.3.SignatureUpdate
+lengthofthestring,i.e.,theregularexpressionmatcheson
+bothcharacterclassandlength. Otherwise, weallowarbi-
+The Judo system processes e-mail messages generated
+traryrepetitionusingthe“∗”or“+”operators.1
+by a botnet, creating a set of signatures that match those
+When generating each signature, we also add the con-
+messages. Theneedforasignatureset,ratherthanasingle
+straintthatitmustcontainatleastoneanchorordictionary
+signature,arisesbecauseseveraltemplatesmaybeinuseat
+node.Ifthisconstraintisviolated,weconsiderthesignature
+thesametime. Recallthatthetemplateinferencealgorithm
+asunsafeanddiscardit.
+reliesheavilyonanchors(commontext)tolocatemacros.If
+thetemplateinferencealgorithmweregivenmessagesgen-
+4.2.LeveragingDomainKnowledge
+eratedfromdifferenttemplates,onlystringscommontoall
+templateswouldbeidentifiedasanchors,leadingthealgo-
+Asdesigned,thetemplateinferencealgorithmworkson rithm to produce a signature that is too general. Ideally,
+arbitrarytext. Byexploitingthestructureandsemanticsof then,wewouldliketomaintainonesignaturepertemplate.
+e-mailmessages,however,wecan“condition”theinputto Unfortunately,becausewedonotknowwhichtemplate
+greatly improve the performance of the algorithm. We do was used to generate a given message, we cannot simply
+twokindsof“conditioning,”asdescribednext. group messages by template and apply the template infer-
+Header Filtering. The most important pre-processing ence algorithm separately to each. The situation is not as
+element of the Judo system concerns headers. We ig- dire as it seems, however. If we already have a good sig-
+nore all but the following headers: “MIME-Version,” natureforatemplate,wecan,bydefinition,easilyidentify
+“Mail-Followup-To,” “Mail-Reply-To,” “User-Agent,” “X- messagesgeneratedbythetemplate.Thus,ifnewtemplates
+MSMail-Priority,”“X-Priority,”“References,”“Language,” aredeployedincrementally, wecanusethetemplateinfer-
+“Content-Language,” “Content-Transfer-Encoding,” and ence algorithm only on those messages which do not al-
+“Subject.” Wespecificallyexcludeheaderstypicallyadded readymatchanexistingsignature.
+by a mail transfer agent. This is to avoid including ele-
+On receiving a new message, the algorithm first checks
+ments of the spam collection environment, such as the IP
+ifthemessagematchesanyofitsexistingsignaturesforthe
+address of the mail server, in signatures. We also exclude
+botnet in question. If it does, it ignores the message, as
+“To”and“From”headers;ifthebotnetusesalistofe-mail
+there is already a signature for it. Otherwise, it places the
+addresses in alphabetical order to instantiate the “To” and
+message into a training buffer. When the training buffer
+“From”headers, portionsofthee-mailaddressmaybein-
+fillsup,itsendsthemessagetothetemplateinferencealgo-
+correctlyidentifiedasanchors.
+rithm to produce a new signature. The size of the training
+Theresultingheadersarethenprocessedindividuallyby bufferiscontrolledbyaparameterk,whichdeterminesthe
+running the template inference algorithm on each header
+trade-offbetweensignatureselectivityandtrainingtime. If
+separately. A message must match all headers for a sig-
+the training buffer is too small, some dictionaries may be
+naturetobeconsideredamatch.
+incomplete—the template inference algorithm will emit a
+Special Tokens. In addition to dictionary and noise
+noisemacroinstead. Ontheotherhand,averylargetrain-
+macros, bots use a small class of macros for non-random
+ing buffer means waiting longer for a usable signature. A
+variable text. These macros generate dates, IP addresses,
+very large training buffer increases the chances of mixing
+and the like. If the output of a date macro, for example,
+messages from two different templates, decreasing signa-
+wererunthroughthetemplateinferencealgorithm,itwould
+ture accuracy. Thus we would like to use a training buffer
+infer that the year, month, day, and possibly hour are an-
+assmallasnecessarytogenerategoodsignatures.
+chors, and the minutes and seconds are macros. The re-
+Inexperimentingwiththesignaturegenerator,wefound
+sulting signature would, in effect, “expire” shortly after it
+that no single value of k gave satisfactory results. The
+was generated. To cope with this class of macros, we per-
+Stormbotnet,forexample,tendedtouselargedictionaries
+form the following pre- and post-processing steps. On in-
+requiring many message instances to classify, while in the
+put,wereplacecertainwell-knowntokens(currently:dates,
+extremecaseofacompletelyinvarianttemplate(containing
+IP addresses, and multi-part message delimiters) with spe-
+nomacros), signaturegenerationwouldbedelayedunnec-
+cialfixedstringsthatthetemplateinferencealgorithmtreats
+essarily,eventhoughthefirstfewmessagesaresufficientto
+asanchors. Afterthealgorithmproducesaregularexpres-
+produce a perfect signature. We developed two additional
+sion signature, it replaces these fixed strings with regular
+mechanismstohandlesuchextremecasesmoregracefully:
+thesecondchancemechanismandpre-clustering.
+1We also experimented with the alternative of allowing a range of
+lengths,butfoundsuchanapproachtoorestrictiveinpractice. SecondChanceMechanism. Inmanycases,agoodsig-<a href=”http://bluedoes.com”/> <a href=”http://bluedoes.com”/> bluedoes.com
+7 4 .
+1 2 3
+<a href=”http://(talklucid|samefield).com”/> <a href=”http://( . * ).com”/> <a href=”http://(talklucid|samefield|bluedoes).com”/>
+Figure 4. The second chance mechanism allows the updating of signatures: when a new message
+fails to match an existing signature ((cid:182)), it is checked again only against the anchor nodes ((cid:183)); if a
+matchisfound,thesignatureisupdatedaccordingly((cid:184)).
+naturecanbeproducedfromasmallnumberofmessages, for use in a production anti-spam appliance. In effect, the
+eventhoughmanymorearerequiredtofullycapturedictio- pre-clustering mechanism mirrors the basic signature up-
+naries. Furthermore, the dictionary statistical test is rather dateprocedure(withskeletonsignaturesinsteadoffulland
+conservative(toavoidfalsenegatives). Tocombinethead- anchorsignatures).
+vantageoffastsignaturedeploymentwiththeeventualben-
+AsnotedinSection3,oursystemdoesnotcurrentlysup-
+efitsofdictionaries,wedevelopeda“secondchance”mech-
+portacompletemechanismforpre-clusteringmessagesinto
+anism allowing a signature to be updated after it has been
+differentcampaigns. Instead,ourcurrentmechanismrelies
+produced. Whenanewmessagefailstomatchanexisting
+on the earlier assumption that the first few messages of a
+signature, we check if it would match any existing signa-
+newtemplatedonotappearintermixedwithmessagesfrom
+tures consisting of anchors only. Such anchor signatures
+othernewtemplates—henceourdecisiontogrouptogether
+are simply ordinary regular expression signatures (called
+every10newunclassifiedmessagesandtreatthemasanew
+full signatures) with the macro-based portions replaced by
+cluster. Note that it is perfectly acceptable if these first 10
+the“.∗”regularexpression. Ifthematchsucceeds,themes-
+messagesfromanewtemplateareinterleavedwiththemes-
+sageisaddedtothetrainingbufferofthesignatureandthe
+sagesofatemplateforwhichwealreadyhavegenerateda
+signature is updated. This update is performed incremen-
+signature. Inthiscase,themessagesofthelatterwillbefil-
+tally without needing to rerun a new instance of the infer-
+teredoutusingtheexistingregularexpression,andonlythe
+encealgorithm.
+messagesoftheformerwillentertheunclassifiedmessage
+Pre-Clustering. Whereas the second chance mechanism
+buffer. From our experience, this choice has provided us
+helps mitigate the effects of a small training buffer, pre-
+withverygoodresults,althoughamoresophisticatedclus-
+clustering helps mitigate the effects of a large training
+teringmethodcouldbeapossiblefuturedirection.
+buffer. Specifically, a large training buffer may intermix
+messagesfromdifferenttemplates, resultinginanamalga-
+matedsignature.Withpre-clustering,unclassifiedmessages
+are clustered using skeleton signatures. A skeleton signa- 4.4.ExecutionTime
+tureisakintoananchorsignatureusedinthesecondchance
+mechanism,butisbuiltwithalargerminimumanchorsize
+q, andassuchismorepermissive. Inourexperiments, we
+setq =6foranchorsignaturesandq =14forskeletonsig- Currently the execution time of the template inference
+natures. Further evaluation indicated that slight variations algorithmobservedempiricallyislinearinthesizeofthein-
+of these values only have a minimal impact on the overall put.Basedonourexperience,thelengthofmessagesgener-
+performance. atedbydifferentbotnetsvariessignificantly.Thelargestav-
+The pre-clustering mechanism works as follows. Each eragelengthwehaveobservedamongallbotnetswasclose
+skeletonsignaturehasanassociatedtrainingbuffer. When to6,000characters. Theselectedtrainingbuffersizek (in-
+a message fails to match a full signature or an anchor sig- troduced in Section 4.3), along with the average length of
+nature (per the second chance mechanism), we attempt to e-mails, determine the total size of the input. Under this
+assign it to a training buffer using a skeleton signature. worst-case scenario, the algorithm requires 2 seconds for
+Failing that, it is added to the unclassified message buffer. k = 50and10secondsfork = 500, onamodestdesktop
+When this buffer has sufficient samples (we use 10), we system. Signatureupdatesexecutemuchfaster,astheyare
+generate a skeleton regular expression from them and as- performed incrementally. The execution time in this case
+signthemtotheskeleton’strainingbuffer. Whenatraining dependsonawiderangeoffactors,butanaverageestimate
+bufferreacheskmessages(k =100workswell),afullsig- isbetween50−100ms. Thefocusofourimplementation
+nature is generated. The signature and its training buffer has always been accuracy rather than execution time, thus
+are moved to the signature set, and the signature is ready weexpectseveraloptimizationstobepossible.Corpus Messages tomessageslabellednon-spam[29],20activemailinglists
+fromlists.gnu.orgspanningAugust2000toApril2009[2],
+SpamAssassin2003[19] 4,150
+andtheEnroncorpus[13].
+TREC2007[29](non-spamonly) 25,220
+Age bias. Recall that Judo signatures consist of regular
+lists.gnu.org[2](20activelists) 479,413
+expressionsforamessage’sheaderaswellasthebody. To
+Enron[13] 517,431
+avoid potential age bias, we tested our signatures with all
+butthesubjectandbodyregularexpressionsremoved. This
+Table 1. Legitimate mail corpora used to as-
+is to safeguard against age-sensitive headers like “User-
+sesssignaturesafetythroughouttheevalua-
+Agent” causing matches to fail on the older corpora. It is
+tion.
+worth noting that using only subject and body is a signifi-
+canthandicapbecausetheremainingheaderscanactasad-
+5.Evaluation ditionalhighlydiscriminatingfeatures.
+Theprincipalrequirementsofaspamfilteringsystemare 5.2.SingleTemplateInference
+thatitshouldbebothsafeandeffective,meaningthatitdoes
+notclassifylegitimatemailasspam,anditcorrectlyrecog- The template inference algorithm is the heart of the
+nizesthetargetedclassofspam. Ourgoalistoexperimen- Judo system. We begin by evaluating this component in
+tallydemonstratethatJudoisindeedsafeandeffectivefor a straightforward experiment, running the template infer-
+filteringbotnet-originatedspam. encealgorithmdirectlyontrainingsetsgeneratedfromsin-
+Ourevaluationconsistsofthreesetsofexperiments. In gle templates. By varying the size of the training set, we
+thefirst,weestablishtheeffectivenessofthetemplateinfer- canempiricallydetermine howmuchspamisnecessary to
+encealgorithmonspamgeneratedsyntheticallyfromactual achieveadesiredlevelofsignatureeffectiveness. Ourmet-
+templatesusedbytheStormbotnet. Next,weruntheJudo ric of effectiveness is the false negative rate with respect
+systemonactualspamsentbyfourdifferentbots,measur- toinstancesofspamgeneratedfromthesametemplate. In
+ing its effectiveness against spam generated by the same otherwords,thefalsenegativerateistheproportionofspam
+bot.Inourlastsetofexperiments,weexecutearealdeploy- testmessagesthatdonotmatchthesignature. Becausethe
+mentscenario,trainingandtestingondifferentinstancesof templateisknown,wecanalso(informally)compareitwith
+thesamebot. Inallcases,Judowasabletogenerateeffec- thegeneratedsignature. Figure1fromSection3showsan
+tivesignatures. example.
+In each set of experiments, we also assess the safety of
+the Judo system. Because Judo signatures are so specific, 5.2.1.Methodology
+theyare,bydesign,extremelysafe;signaturesgeneratedin
+most of our experiments generated no false positives. We
+We generated spam from real templates and dictionar-
+start by describing our methodology for evaluating signa-
+ies, collected during our 2008 study of Storm botnet cam-
+turesafety.
+paign orchestration [15]. The templates covered three
+campaigns: a self-propagation campaign from August 1–
+5.1.SignatureSafetyTestingMethodology 2, 2008 (4,210 templates, 1,018 unique), a pharmaceuti-
+cal campaign from the same time period (4,994 templates,
+Bytheirnature, Judosignaturesarehighlyspecific, tar- 1,271unique),andseverallow-pricedstockcampaignsbe-
+geting a single observed campaign. As such, we expect tweenJuneandAugust2008(1,472templates,allunique).
+them to be extremely safe: Judo signatures should never Eachoneofthesetemplateshaditsownuniquesetofdic-
+match legitimate mail. We consider this to be Judo’s most tionaryfiles. Boththeself-propagationandpharmaceutical
+compellingfeature. templates contained URLs; the stock campaign templates
+The accepted metric for safety is the false positive rate didnot.2
+of a signature with respect to a corpus of legitimate (non- For convenience, we generated Storm spam directly
+spam) mail, i.e., the proportion of legitimate messages in- from these templates (rather than having to operate actual
+correctlyidentifiedasspam. Throughouttheevaluationwe Stormbots)byimplementingaStormtemplateinstantiation
+report the false positive rate of the generated signatures; tool based on our earlier reverse-engineering work on this
+Section5.5presentsamoredetailedanalysis. botnet[14]. Foreachofthe10,676templates,wegenerated
+Corpora. We used four corpora of legitimate mail, to-
+gether totaling over a million messages, summarized in
+2AlthoughlesscommonintermsofStorm’soverallspamvolume[15],
+weincludednon-URLspamtodeterminehowmuchofoursystem’seffec-
+Table 1: the SpamAssassin “ham” corpus dated February
+tivenessstemsfromlearningthedomainsofURLsappearinginthespam,
+2003 [19], the 2007 TREC Public Spam Corpus restricted comparedtootherfeatures.FalseNegativeRate FalseNegativeRate
+k 95% 99% Max Avg k s 95% 99% Max Avg
+1000 0% 0% 0% 0% 1000 99.8% 0% 0.22% 100% 0.21%
+500 0% 0% 2.53% <0.01% 500 81.8% 100% 100% 100% 18.21%
+100 0% 0% 0% 0% 100 55.0% 100% 100% 100% 45.04%
+50 0% 0% 19.15% 0.06% 50 42.9% 100% 100% 100% 57.25%
+10 45.45% 58.77% 81.03% 14.16% 10 40.9% 100% 100% 100% 62.13%
+(a)Self-propagationandpharmaceuticalspam. (b)Stockspam.
+Table2.FalsenegativeratesforspamgeneratedfromStormtemplatesasafunctionofthetraining
+buffersizek. Rowsreportstatisticsovertemplates. Thestockspamtablealsoshowsthenumberof
+templatessforwhichasignaturewasgenerated(forself-propagationandpharmaceuticaltemplates,
+asignaturewasgeneratedforeverytemplate);incaseswhereasignaturewasnotgenerated,every
+instance in the test set was counted as a false negative. At k = 1000, the false positive rate for all
+signatureswaszero.
+1,000 training instances and an additional 4,000 instances messages from a URL-based campaign template, the sig-
+fortesting. nature yielded a false negative rate of 45.45% or less on
+We ran the template inference algorithm on the 1,000 95%ofsuchtemplates,andafalsenegativerateof81.03%
+trainingmessagesandassessedthefalsenegativerateofthe forthetemplatethatproducedtheworstfalsenegativerate.
+resulting signature using the 4,000-message test set.3 To Such high false negative rates arenot surprising given just
+better understand the performance of the Judo system, we 10traininginstances;withjust50trainingmessages,itex-
+thenpushedittothe“breakingpoint”byusingsmallerand hibitsnofalsenegativesfor99%ofsuchStormtemplates.4
+smaller training sets to generate a signature. We use k to
+Column s in Table 2b also shows the number of tem-
+denotethetrainingsetsize.
+plates for which a signature was generated (all templates
+resultedinasignatureforself-propagationandpharmaceu-
+5.2.2.Results
+ticalspam). RecallfromSection4thatwediscardasigna-
+ture if it is found to be unsafe. This was the only case in
+Asexpected,thetemplateinferencealgorithmgenerated ourevaluationwherethisoccurred. Forsuchtemplatesfor
+effectivesignatures. Bothself-propagationandpharmaceu- whichwedonotgenerateasignature,wecalculatea100%
+ticalcampaignswerecapturedperfectly,withnofalseneg- false negative rate. For this test, our input was stock tem-
+atives. Forthestockcampaign,99%ofthetemplateshada plates which did not contain URLs. These messages were
+falsenegativerateof0.22%orlower. alsoveryshortandconsistedentirelyoflargedictionaries:
+Table 2 also shows Judo’s performance as we decrease characteristics that make messages particularly difficult to
+the number of training instances k. In effect, k is a mea- characterizeautomaticallyfromasmallnumberofsamples.
+sure of how “hard” a template is. We separate results for
+Signaturesfromtheself-propagationandpharmaceutical
+templates with URLs (self-propagation and pharmaceuti-
+templates produced no false positives in three of the four
+cal) and without (stock) to establish that our algorithm is
+legitimatemailcorpora,regardlessofthevalueofk.Forthe
+effective for both types of spam. Rows correspond to dif-
+stocktemplates,theresultwasagainzerofork =1000.We
+ferentnumbersoftrainingmessages, andcolumnstosum-
+presentadetailedbreakdownoftheseresultsinSection5.5.
+marystatisticsoftherangeofthefalsenegativerates. For
+example,whentrainingaregularexpressiononjustk =10
+3Wechoose1,000asthetrainingsetsizeinpartbecauseStormgen-
+erated roughly 1,000 messages for each requested work unit. We note 4OnepeculiarityinTable2ameritsdiscussion: the2.53%maximum
+that1,000messagesrepresentsaverysmalltrainingsetcomparedwith falsenegativeratefork = 500arisesduetoasingletemplateoutofthe
+theamountofspamgeneratedbybotsfromagiventemplate:inour2008 9,204total;everyothertemplatehadafalsenegativerateof0%. Forthis
+studyofspamconversionrates[12]weobservedalmost350millionspam template,whentransitioningfromk =100tok =500trainingsamples
+messagesforonespamcampaigngeneratedfromjust9templates. Thus, thealgorithmconvertedthe“Subject”headerfromacharacterclasstoa
+wecangeneratepotentsignaturesnearlyimmediatelyafteranewtemplate dictionary. Themismatchesallcomeaboutfromasingledictionaryentry
+isdeployed,andusethatsignatureforthedurationofalargespamcam- missingfromthesignaturebecauseitdidnotappearinthe500training
+paign. messages.CumulativeFalseNegativeRate
+(cid:72)
+(cid:72) d
+Botnet (cid:72) 0 50 100 500 Sigs
+k (cid:72) (cid:72)
+Mega-D 50 0.11% 0.09% 0.07% 0.05% 5
+100 0.16% 0.13% 0.12% 0.08% 5
+500 0.54% 0.52% 0.50% 0.34% 5
+Pushdo 50 0.17% 0.13% 0.10% 0.05% 8
+100 0.23% 0.20% 0.17% 0.08% 6
+500 0.72% 0.69% 0.66% 0.45% 6
+Rustock 50 0.19% 0.12% 0.06% 0.05% 9
+100 0.28% 0.22% 0.15% 0.08% 9
+500 1.01% 0.95% 0.88% 0.40% 9
+Srizbi 50 0.22% 0.11% 0% 0% 11
+100 0.33% 0.22% 0.11% 0% 11
+500 1.21% 1.10% 1.05% 0.79% 11
+Table3. Cumulativefalsenegativerateasafunctionoftrainingbuffersizekandclassificationdelay
+dforspamgeneratedbyasinglebotinstance. The“Sigs”columnshowsthenumberofsignatures
+generated during the experiment (500,000 training and 500,000 testing messages). All signatures
+producedzerofalsepositiveswiththeonlyexceptionbeingthesignaturesforRustock.
+5.3.MultipleTemplateInference ters: either holding up messages for a short period to wait
+forthegenerationofupdatedfilters,orbyretroactivelytest-
+In the previous section we examined the case of spam ingmessagesalreadyaccepted,butnotyetpresentedtothe
+generated using a single template. In practice, a bot may receivinguser,againstanyfilterupdates. Tosimulatesuch
+beswitchingbetweenmultipletemplateswithoutanyindi- ascenario,webufferedtestingmessagesinaclassification
+cation. In this part of the evaluation we test the algorithm buffer, allowing us to delay classification. We denote the
+on a “live” stream of messages generated by a single bot, lengthoftheclassificationbufferbyd. Thecased=0cor-
+classifyingeachmessageasitisproduced. respondstonomessagebuffering;inotherwords,messages
+must be classified immediately upon being received. We
+5.3.1.Methodology alsoevaluatedsignatureperformancewiththeclassification
+delaydsetto50,100and500. Inareal-worlddeployment,
+Our spam corpus consists of bot-generated spam col- wecanthinkofthisbufferasaveryshortdelayintroduced
+lected by the Botlab [10] project from the University of by e-mail providers before delivering incoming e-mails to
+Washington. One instance each of the Mega-D, Pushdo, inboxes.
+Rustock,andSrizbibotswasexecutedandtheiroutputcol-
+lected. Wesplitthefirst1millionmessagesfromeachbot 5.3.2.Results
+intoatrainingandtestingsetbysequentiallyassigningmes-
+sagestoeachsetinalternation. TheJudosystemwasthen OurresultsconfirmtheeffectivenessoftheJudosystem
+used to create signatures from the training data. In paral- inthis“live”settingaswell. Table3showsthecumulative
+lelwithrunningtheJudosystem, weprocessedthetesting resultsforeachcombinationofkandd,aswellasthenum-
+corpusinchronologicalorder,classifyingeachmessageus- berofsignaturesgeneratedforeachbotnetduringtheexper-
+ing signatures generated up to that point. In other words, iment. Twotrendsareevident. First,thefalsenegativerate
+we consider a test message matched (a true positive) if it decreasesastheclassificationdelaydincreases. Thisisnot
+matches some signature generated chronologically before surprising,sincethedelaygivesJudotimetobuildasigna-
+thetestmessage;otherwisewecountitasafalsenegative. ture. Thesecondtrend,anincreasingfalsenegativerateas
+Ourmeasureofeffectivenessisthefalsenegativerateover k increases,mayseemcounterintuitivebecauseinourpre-
+thetestingmessageset. viousexperiment,increasingkledtoadecreaseinthefalse
+It is important to note that in practice one could em- negativerate. Thisincreaseoccursbecauseallspaminthe
+ploy some delay when matching messages against the fil- testing set generated before Judo produces the signature is(a)Mega-D (b)Rustock
+(c)Pushdo (d)Srizbi
+Figure5. ClassificationeffectivenessonMega-D,Rustock,Pushdo,andSrizbispamgeneratedbya
+single bot, as a function of the testing message sequence. Experiment parameters: k = 100, d = 0
+(thatis,100trainingmessagestogenerateeachnewsignature,andimmediateclassificationoftest
+messagesratherthanpostfacto).
+countedasa falsenegative. Classification delay helps, but here,though,isaresultofusingthesecondchancemecha-
+even with d = 500, a new signature is not produced until nism. Forexample,missingentriesfromadictionarynode
+wecollect500messagesthatmatchnoothersignature. cancausesomefalsenegativehitstooccuruntileventually
+Dynamic Behavior. We can better understand Judo by thesignaturegetsupdated.Thisisdoneincrementallywith-
+looking at its dynamic behavior. Figure 5 shows the av- outtheneedtodeployanewsignature,hencetheabsenceof
+erage and cumulative false negative rate as a function of adashedverticallineinthegraph. Thesecondobservation
+the testing messages. Dashed vertical lines indicate when issimilarandrelatestothecreationofnewsignatureswith-
+Judo generated a new signature. Looking at the Mega-D outanypeaksappearinginthegraphindicatingtheneedfor
+plot (Figure 5a), we see that Judo is generating signatures performingsuchanaction. Inthiscase,weneedtoremem-
+duringthefirst20,000messagesinthetestingset. Afterthe berthatthetrainingandtestingtrackoperateindependently
+initialflurryofsignaturegeneration,thefalsenegativerate ofeachother. Thusitissometimesthecasethatthetrain-
+hoversjustunder0.5%.After100,000testingmessages,the ingtrackobservesanewtemplateslightlybeforethetesting
+falsenegativeratedropstonearlyzeroasthesignaturesare track,andofcourseimmediatelygeneratesanewsignature.
+refined. Inthisway,falsenegativehitsareeliminatedsincethesig-
+There are also two interesting observations here. First, natureisalreadyavailableforusewhenmessagesfromthe
+peakssometimesdisappearfromthegraphswithoutthecre- newtemplateappearonthetestingtrack.
+ation of a new signature. Normally we would expect that We also observe that Pushdo exhibits different behav-
+mismatcheswouldbeeliminatedbyinferringanew,previ- ior in terms of the number of generated signatures. One
+ously missed underlying template. The effect in question wouldexpectthatthenumberofsuchsignaturesshouldbeBots Training Testing As in the previous experiment, we “played back” both
+messagestreamschronologically,usingthetrainingdatato
+Xarvester 184,948 178,944
+generate a set of signatures incrementally as described in
+Mega-D 174,772 171,877
+Section4.3. Again, ourmetricofeffectivenessisthefalse
+Gheg 48,415 207,207
+negative rate on the testing set. To maintain the accuracy
+Rustock 252,474 680,000
+oftheresultswepreservedthechronologicalorderofmes-
+Table4. Numberoftrainingandtestingmes- sagesinthetestingtrack.Thisorderingwasaconsideration
+sages used in the real-world deployment ex- forbothRustockandGhegwherewemergedtheoutputof
+periment. multiplebots,asdescribedearlier.
+the same regardless of the parameters used. Although this 5.4.2.Results
+holdsfortheotherbotnets,itdoesnotforPushdoduetothe
+dictionarystatisticaltest. RecallfromSection4thatwede- OurresultsshowJudoperformedextremelywellinthis
+claresomethingasadictionaryonlyifJudobelievesthatit experiment,achievingfalsenegativeratesunder1%inmost
+hasseeneveryentryofit. Thisdecisionisbasedontheoc- cases and generating no false positives. Table 5 shows the
+currencesoftheleast-frequentlyobservedelementintheset cumulativeresultsforeachcombinationofkandd,aswell
+under question. Hence, in the cases where we observe the asthenumberofsignaturesgeneratedforeachbotnetdur-
+same elements repeated over an extended number of mes- ingtheexperiment. Althoughinallcasesthetrainingtrack
+sages, we can sometimes mis-conclude that we have seen wasselectedarbitrarily,inthecaseofGhegweexecutedthe
+the dictionary in its entirety. The use of a high threshold experimentsixtimes. Eachtimeweusedadifferentbotas
+ensuresthatwekeepsuchcasestoaminimum. Whilepro- thetrainingtrackandtheresultsshowtheworstfalsenega-
+cessingPushdo,thealgorithmmistakenlyclassifiedanode tiverateoverthesesixchoices.
+as a dictionary before capturing all of its entries. As a re- Figure 6 shows the dynamic behavior of the Xarvester
+sult,Judoeventuallygeneratedmultipleregularexpressions andRustockbotsinthisexperiment.Despitethefactofnow
+forthesameunderlyingtemplate, witheachoneincluding using independent bots as the training and testing tracks,
+adifferentsubsetoftheunderlyingdictionaries. weseethatthebehaviorisquitesimilartothepreviousex-
+periment, where only one bot was used. However, we ob-
+5.4.Real-worldDeployment serveslightlyhigherfalsenegativeratesinthecaseswhere
+thetrainingtrackconsistsofmultiplebots. Thereasonfor
+Thepreviousexperimentstestedregularexpressionspro- thishigherrateisthatthebotsarenotcompletely“synchro-
+duced by the template inference system against spam pro- nized”,i.e.,theydonotswitchtoanewtemplateordictio-
+duced by a single bot instance. Doing so illuminates how nary at the exact same time. What is important to note is
+quicklyandhowwellthesystemlearnsanewtemplate,but thatinallcases,evenafteraslightdelay,suchaswitchdoes
+does not fully match how we would operationally deploy indeedoccuracrossallhosts.Ghegexhibitedsimilarbehav-
+suchfiltering. Wefinishourevaluationwithanassessment iorwhenweransixdifferentinstancesofthebotnet. Recall
+using multiple bot instances, one to generate the training thatforourevaluation,weruntheexperimentsixtimesand
+dataandtheotherstogeneratethetestdata. Thisconfigura- evaluatedeachoneofthebotsasbeingtheproviderofthe
+tion tells us the degree to which signatures built using one trainingset.Evenwhentakingintoconsiderationtheresults
+bot’sspamareusefulinfilteringspamfrommultipleother fromtheworstrun,aspresentedinTable5,wecanstillsee
+instances. It also tests to a certain degree our assumption that monitoring just a single bot suffices for capturing the
+regarding the small number of templates actively used by output of multiple other spamming hosts. Ultimately, the
+botnets. onlyreasonforthedifferencesintheseexecutionswasthe
+precise ordering of the messages, and how early Judo was
+5.4.1.Methodology able to deploy a new signature each time. Our real-world
+experienceverifiestoacertainextentouroriginalassump-
+We ran two instances of Xarvester and two of Mega-D tionthatspamcampaignsuseonlyasmallnumberoftem-
+inacontainedenvironmentakintoBotlab[10]. Oneofthe plates at any point in time in current practice. Of course,
+bots was arbitrarily selected to provide the training corpus spammerscouldmodifytheirbehaviorinresponse;wedis-
+andtheotherthetestingcorpus. Wealsoranfourinstances cussthisissuefurtherinSection6.
+of Rustock and six instances of Gheg. In a similar man-
+ner, one of the bots was arbitrarily selected to provide the 5.5 FalsePositives
+trainingmessageset,andtheremainingbots,combined,the
+testing set. Table 4 shows the number of messages gener- One of the most important features of Judo is the un-
+atedbyeachbot. usualsafetythatthegeneratedsignaturesoffer. Whendeal-CumulativeFalseNegativeRate
+(cid:72)
+(cid:72) d
+Botnet (cid:72) 0 50 100 500 Sig
+k (cid:72) (cid:72)
+Xarvester 50 0.07% 0.04% 0.02% 0% 6
+100 0.13% 0.06% 0.03% 0% 6
+500 1.00% 0.89% 0.78% 0.02% 6
+Mega-D 50 0.09% 0.06% 0.03% 0% 1
+100 0.13% 0.10% 0.07% 0% 1
+500 0.92% 0.90% 0.87% 0.64% 1
+Gheg 50 0.88% 0.86% 0.84% 0.64% 3
+100 1.13% 1.11% 1.08% 0.89% 3
+500 3.56% 3.54% 3.51% 3.33% 3
+Rustock 50 0.99% 0.97% 0.95% 0.75% 6
+100 1.03% 1.01% 0.98% 0.78% 6
+500 1.49% 1.47% 1.44% 1.20% 6
+Table5. Cumulativefalsenegativerateasafunctionoftrainingbuffersizekandclassificationdelay
+dforspamgeneratedbyamultiplebotinstances,onegeneratingthetrainingspamandtheothersthe
+testingspam. The“Sig”columnshowsthenumberofsignaturesgeneratedduringtheexperiment.
+Signaturesgeneratedinthisexperimentproducednofalsepositivesonourcorpora.
+(a)Xarvester (b)Rustock
+Figure 6. Classification effectiveness on Xarvester and Rustock spam with multiple bots: one bot
+was used to generate training data for the Judo system and the remaining bots to generate the
+testing data (1 other for Xarvester, 3 others for Rustock). Experiment parameters: k = 100, d = 0
+(thatis,100trainingmessagestogenerateeachnewsignature,andimmediateclassificationoftest
+messagesratherthanpostfacto).
+ingwithspamfiltering,thebiggestconcernhasalwaysbeen body of the messages. In contrast to more naive methods
+falselyidentifyinglegitimatemessagesasspam. Messages ofsimplyusingURLsorsubjectlinesforidentifyingspam
+that fall under this category are known as false positives. e-mails, we use the additional information for minimizing
+Inthissection,wetrytoverifyourclaimsandvalidatethe the possibility of accidental matches. For the purpose of
+safetyofthesignatures. the current evaluation though, every header besides “Sub-
+ject”wasremovedfromthesignatures.Wemadethischoice
+There are two main factors that affect the false positive fortworeasons. First, wewanttoexaminethesystemun-
+rate of our system. The first is the fact that the generated deraworst-casescenario, sinceitisstraightforwardtosee
+signaturesincludeinformationforboththeheadersandthethat the presence of additional headers can only improve confirmedthatallmismatchesaroseduetothecorrespond-
+our false positive rates. Second, we want to remove any ingheaderregularexpressionsfailingtomatch,andnotdue
+possibletemporalbiasthatwouldpolluteourresults. Such tobiasofourspecificdataset.
+biasmightbetheresultofage-sensitiveheaderslike“User The Botlab workload (Section 5.3) produced zero
+Agent”. matches against all corpora for the MegaD, Pushdo and
+The second factor which contributes to the system’s Srizbibotnets. Theonlyexceptionwasthesignaturesgen-
+strong false positive results is the existence of anchor and eratedforRustock. WehadzeromatchesagainsttheTREC
+dictionarynodes. Recallthatdictionarynodesareonlycre- 2007 corpus. When testing against the remaining corpora,
+ated when Judo estimatesthat it has observed every single signaturesforthisbotnetproducedanaveragefalsepositive
+dictionaryentry. AsdescribedinSection4,thesenodesim- ratebetween0.00021%to0.01%. The99thpercentilefalse
+posestronglimitationsastowhatmessagesasignaturecan positiveratewasatmost0.24%and95thpercentileatmost
+match. Henceweaddtheconstraintthatallfinalsignatures 0.04%. When looking into this issue further we identified
+mustcontainatleastoneanchorordictionarynode. Ifthis the source of the problem as the inability of these signa-
+constraintisviolated,weconsiderthesignatureunsafeand tures to produce all possible dictionaries. One reason was
+discardit. Althoughthisheuristiccanpotentiallyhinderthe theveryhighthresholdusedforallowingtheconversionofa
+false negative rates, it also makes sure that false positives characterclasstoadictionarynode. Wearecurrentlylook-
+remainverysmall. Weconfirmedthatallsignaturesusedin ing into this particular problem for further improvement.
+our evaluation were safe. There was only one case where Once again, though, we note that incorporating additional
+it became necessary to discard signatures, as described in headersgivesaworst-casefalsepositiverateof1in12,500
+Section5.2. duetosignaturemismatchesandnotbecauseoftheabsence
+oftheseheadersinourcorpora.
+We first look at the Storm templates. Based on our
+datasetdescriptioninSection5.2,wesplitthisanalysisinto For all other signatures generated from messages cap-
+URL and non-URL (stock) templates. For the former cat- turedinoursandboxenvironment,theresultwaszerofalse
+egory,whichincludedsignaturesfromtheself-propagation positivematchesacrossallcorporaforallbotnets.Notethat
+andpharmaceuticaltemplates,wehadnofalsepositivesin these results correspond to our real-world deployment ex-
+threeofthefourlegitimatemailcorpora.Inthelists.gnu.org periment,withsignaturesbeinggeneratedfortheverylatest
+corpus, signatures produced from 100 or fewer training spam messages sent by the botnets. The structure of these
+messages resulted in a false positive rate of 1 in 50,000. messages allowed for the creation of very precise regular
+Thisratearosefromasmallnumberofcasesinwhichdic- expressions, suchastheexamplepresentedinFigure7for
+tionaries were not constructed until k = 500. For the re- theMegaDbotnet.
+mainingvaluesofktheresultwasagainzeromatches.
+Storm templates that did not contain a URL proved to 5.6 ResponseTime
+beaharderworkloadforoursystem,andtheonlyscenario
+whereunsafesignaturesweregeneratedanddiscarded. Al- OnereasonableconcerncanbethetimeJudorequiresfor
+thoughURLsarenotarequirementforproducinggoodsig- generatinganewsignature.Sinceweaimtoshrinkthewin-
+natures, the problem was amplified in this case due to the dow between the time a new campaign starts and the time
+verysmalllengthofmessagesgeneratedbytheStormbot- wedeployafilter,beingabletoquicklyinfertheunderlying
+net. Henceitissometimesthecasethatthesystemcannot template is crucial. As already shown in Section 4.4, exe-
+obtainenoughinformationforsmallernumbersoftraining cutiontimeisnotaconcernforthesystem,asittakesunder
+messages. This issue, though, is eliminated when moving 10 seconds in almost all cases to run the algorithm. Thus
+tohighervaluesofk. theonlyquestionlefttoanswerishowlongittakestobuild
+Forthesestocktemplates, the99thpercentilefalsepos- uptherequiredtrainingsets.
+itive rate for k ≤ 100 was under 0.1% across all tem- Obviouslysuchametricisdependentonthespamming
+plates, and with a maximum false positive rate of 0.4% at rateofbotnets. Itisalsopossiblethatmessagesfrommul-
+k = 10. For k ≥ 500, the maximum false positive rate tiple campaigns might be interleaved in a corpus, further
+was 1 in 50,000 on the Enron corpus, and zero for the re- complicating the exact time it takes to create the training
+maining three corpora. We emphasize again that we are setforeachone. Despitethis, knowingthespammingrate
+usingstrippeddownversionsofthesignatures(subjectand at which bots operate can give us a good high-level esti-
+bodypatternsonly);includingadditionalheaders(“MIME- mateofthetimerequirementsimposedbyJudo. Focusing
+Version” and “Content-Transfer-Encoding”) eliminated all onthedatasetsusedinourreal-worlddeploymentscenario,
+falsepositives.Wefurthervalidatedthesenumbersbymak- weidentifiedthatthesixGhegbotstooklessthan6hoursto
+ingsurethattheseadditionalheaderswereindeedincluded sendall255,622e-mails. Thistranslatestoabout118mes-
+in the messages of our legitimate mail corpora. Hence we sages per minute, for each bot. In a similar way, the fourSubject ˆ(RE: Message|new mail|Return mail|Return Mail|Re: Order status|no-reply| (cid:46)
+Your order|Delivery Status Notification|Delivery Status Notification \(Failure\))$
+ˆ<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML><HEAD>
+<META http-equiv=Content-Type content="text/html; charset=(us-ascii|iso-8859-2| (cid:46)
+iso-8859-1|windows-1250|Windows-1252)">
+</HEAD>
+<BODY><a href="http://(talklucid|samefield|famousfall|bluedoes|meekclaim).com/" (cid:46)
+target="_blank">
+<img src="http://(talklucid|samefield|famousfall|bluedoes|meekclaim).com/dyuwqlk.jpg" (cid:46)
+border="0" alt="Show picture and go to site now!"></a></BODY></HTML>$
+Figure 7. Fragment of a template generated for the Mega-D botnet on August 26, 2009. Only the
+subject and body are displayed with full dictionaries, exactly as they were captured. Recall that
+templates are inferred from only the output of bots, without any access to the C&C channel and
+withoutanyinformationregardingtheunderlyingmechanismsused.
+Rustock bots we had deployed required only 20 hours to experiment used a subject-line dictionary containing “RE:
+send932,474messages,whichgivesusaspammingrateof Message,” “Re: Order status,”, “Return mail,” and so on,
+194 messages per minute, for each bot. Considering that and can be seen in Figure 7. Such a template cannot be
+formodernbotnets,Judoshowedexcellentperformancefor effectivelycharacterizedusingthemessagesubjectalone.
+anyvaluesofk ≤500,weconcludethatthesystemrequires URL Domain Blacklisting. URL domain blacklists
+onlyafewminutesforthedeploymentofanewsignature. (e.g. [3, 4]) are lists of domains appearing in spammed
+Infact, thetimeittakestodosodirectlyaffectsallresults URLs. Inourexperience,domainnamesappearinginspam
+ofourevaluationinSection5.3andSection5.4. Recallthat do indeed provide a strong signal. However, there are at
+while the system is creating the required training set for a least two cases where domain names alone are not suffi-
+campaign, any mismatches on the testing tracks are regis- cient.Thefirstcase,spamnotcontainingURLs(stockspam
+tered as false negatives. Despite this fact, we can see that forexample),simplycannotbefilteredusingURLdomain
+Judo is still able to maintain excellent performance, hence signatures. (Section5.2showsthatJudoiseffectiveagainst
+satisfyingourinitialgoalofafastresponsetime. thistypeofspam).
+Thesecondtypeofspamuses“laundered”domains,that
+5.7.OtherContent-BasedApproaches
+is, reputable services which are used to redirect to the ad-
+vertisedsite. Mostrecently,forexample,spamsentbythe
+The efficacy of Judo rests on two essential characteris- Gheg botnet was using groups.yahoo.com and google.com
+tics: its unique vantage point at the source of the spam, domains in URLs. We suspect this trend will continue as
+andthetemplateinferencealgorithmforcreatingsignatures URLdomainblacklistingbecomesmorewidelyadopted.
+fromthisspam. Regardingthelatter,onemaynaturallyask “Focused”BayesianSignatures. Anintriguingpossibil-
+if a simpler mechanism suffices. In short, we believe the ity is using a Bayesian classifier to train on a single cam-
+answer is “No.” To our knowledge two such simple ap- paignoreventheoutputofasinglebot,ratherthanalarge
+proacheshavebeenadvanced: subject-lineblacklistingand universal corpus of spam as is conventional. Our cursory
+URLdomainblacklisting. Weconsidertheseinturn. evaluation using SpamAssassin’s [26] Bayesian classifier
+Subject-line Blacklisting. Filtering based on message showed promise; however, in addition to a formal evalua-
+subject is one of the earliest spam filtering mechanisms tion,anumberoftechnicalissuesstillneedtobeaddressed
+in deployment. Most recently, it was used by the Botlab (thelargersizeofBayesiansignatures,forexample).
+project [10] to attribute spam to specific botnets.5 Unfor-
+We also trained SpamAssassin’s Bayesian filter on a
+tunately, it is very easy (and in some cases desirable for
+genericspamcorpusofoveronethousandrecentmessages
+the spammer) to use subject lines appearing in legitimate
+alongwiththeSpamAssassin2003“ham”corpus. Itfared
+mail. One of the Mega-D templates found in our previous
+poorly:fromasampleof5,180messagesfromtheWaledac
+botnet,96%receivedascoreof0(meaning“notspam”)due
+5NotethatJohnetal.donotsuggestthatsubjectlinesaloneshouldbe
+tothecompleteabsenceoftokensseeninthegenericspam
+usedforidentifyingspam,butfor“classifyingspammessagesasbeingsent
+byaparticularbotnet”afterbeingclassifiedasspam. corpus;noneweregivenascoreabove50outof100.Enterprise Spam Filtering Appliances. We ran a sub- subsequentspam. Thecatch, ofcourse, isthateachofour
+set of the spam corpora from the Gheg, MegaD, Rustock, filters is over-constrained to only match the spam arising
+and Waledac botnets through a major spam filtering appli- fromoneparticularbotnetandthustheywillbecompletely
+ance deployed on our university network. Spam from the ineffectiveagainstanyotherspam.
+WaledacandRustockbotnetswascompletelyfilteredbased The hidden benefit of this seeming drawback is that
+upontheURLsappearinginthemessagebodies,andMega- filters arising from template inference are unusually safe.
+Dspamwascorrectlyfilteredviaageneric“pharmaceutical Their high degree of specialization makes them extremely
+spam”rule.However,only7.5%ofthespamfromtheGheg unlikely to match any legitimate mail and thus false posi-
+botnetwascorrectlyidentifiedassuch;thesemessageswere tive rates are typically zero or extremely close thereto. To
+German language pharmaceutical advertisements launder- furthervalidatethishypothesis,weprovidedtheregularex-
+ingURLreputationthroughgoogle.comviaitsRSSreader pressionscorrespondingtothedataforXarvestertoalead-
+application. ingcommercialproviderofenterpriseanti-spamappliances.
+IP Reputation. IP reputation filtering is a widely de- Theyevaluatedthesefiltersagainsttheirown“ham”corpus
+ployedtechniqueforidentifyingincomingspammessages. and found no matches. Given this evidence, together with
+Itisorthogonaltocontent-basedapproaches,suchasJudo; our own results, we argue that template inference can be
+today reputation-based and content-based approaches are safelyusedasapre-filteronanysubsequentanti-spamalgo-
+used in tandem in major spam filtering systems. This is rithmandwillgenerallyonlyimproveitsoverallaccuracy.
+because IP reputation filtering alone does not provide a
+Therearethreeaspectstothe“cost”ofdeployingasys-
+complete spam-filtering solution. In addition to the oper-
+tem such as ours. The first is the complexity of capturing,
+ational overhead of dealing with false positives (e.g., de-
+executingandmonitoringtheoutputofspambots. Asmore
+blacklisting),theyarealsovulnerabletoreputationlaunder-
+botinstancescanbemaintainedinacontainedenvironment,
+ing. By sending spam using webmail accounts, for exam-
+new filters can be generated more quickly. While this is
+ple, spammerscaneffectivelyhidebehindreputable, high-
+by no means trivial, it is routinely done in both academia
+volume sources and increase the deliverability of their e-
+andindustryandthereisabroadbaseoftoolsandtechnol-
+mails. In2008,accordingto[21],around10%ofallspam
+ogy being developed to support this activity. The second
+originated by web-based e-mail and application service
+issueconcernstheefficiencyofthetemplateinferencepro-
+providers.Ourowninformalanalysisatahigh-volumemail
+cess itself. Here we believe the concern is moot since the
+serverindicatedthataround16%ofallmessagesclassified
+algorithm is linear time and our untuned template extrac-
+asspam,originatedfrom“highreputation”mailservers. In
+tionalgorithmisabletogenerateregularexpressionsfrom
+fact,nearly50%ofthoseweresentbyasinglemajorweb-
+1000messagesinunder10seconds,andupdatetheexpres-
+mail provider. This analysis was performed on September
+sion in 50-100 ms. Next, there is the issue of integration
+14, 2009. With IP reputation systems becoming targetted,
+complexity since it is challenging to mandate the creation
+approacheslikeJudocanofferanothervaluabletoolinthe
+ofnewsoftwaresystemsandinterfaces.However,sinceour
+fight against spam. Our system does not rely on IP fea-
+approach generates standard regular expressions—already
+turesforachievinghigheffectivenessandmoreimportantly,
+in common use in virtually all anti-spam systems—the in-
+itcandosobyofferingclosetozerofalsepositives.
+tegrationcostshouldbeminimalinpractice.
+Finally,werecognizethatspamisfundamentallyanad-
+6.Discussion versarialactivity,andsuccessfuldeploymentofoursystem
+wouldforcespammerstoreactinturntoevadeit. Wecon-
+Therearefourquestionsinvariablyaskedaboutanynew siderthelikelypathofsuchevolutionhere. Therearethree
+anti-spam system: how well does it filter spam, how often obvious ways that spammers might attempt to stymie the
+doesitmisclassifygoode-mailinturn,howeasyorexpen- templateinferenceapproach.
+siveisittodeployandhowwillthespammersdefeatit?We First,theycanusetechnicalmeanstocomplicatetheexe-
+discusseachofthesepointsbrieflyhere. cutionofbotswithincontrolledenvironments.Anumberof
+As we have seen, template inference can be highly ef- botsalreadyimplementextensiveanti-analysisactionssuch
+fectiveinproducingfiltersthatpreciselymatchspamfrom as the detection of virtual machine environments and the
+agivenbotnet. Eveninourpreliminaryprototypewehave specializationofbotinstancestoindividualhosts(tocom-
+been able to produce filters that are effectively perfect for plicate the sharing of malware samples). Moreover, some
+individualcampaignsafteronly1,000samples.Toacertain botnets require positive proof of a bot’s ability to send ex-
+extentthisresultisunsurprising: ifourunderlyingassump- ternal spam e-mail before providing spam template data.
+tionshold, thenwewillquicklylearntheregularlanguage While this aspect of the botnet arms race seems likely to
+describing the template. Even in less than ideal circum- continue, it also constitutes the weakest technical strategy
+stances we produce filters that are very good at matching againsttemplateinferencesincethereisnofundamentaltestto distinguish a host whose activity is monitored from one eachdefender.
+whoseisnot. Toputitanotherway,thereceiver-orientedlearningap-
+Amoredauntingcountermeasurewouldbetheadoption proach makes it challenging to automatically share new
+of more complex spam generation languages. For exam- spam intelligence (for reasons of privacy, logistics, scale,
+ple, multi-pass directives (e.g., shuffling word order after etc.). However, given that a small number of botnets
+theinitialbodyisgenerated)couldeasilyconfoundtheal- generate most spam today, this problem can be neatly
+gorithm we have described. While there is no doubt that sidestepped. We have shown that it is practical to gener-
+ourinferenceapproachcouldbeimprovedinturn,forcom- atehigh-qualityspamcontentsignaturessimplybyobserv-
+plex languages the general learning problem is untenable. ingtheoutputofbotinstancesandinferringthelikelycon-
+However, there are drawbacks in pursuing such complex- tent oftheir underlying template. Moreover, this approach
+ity for spammers as well. Template languages emerged is particularly attractive since the resulting regular expres-
+slightlyover5yearsagoasawaytobypassdistributedspam sions are highly specialized and thus produce virtually no
+hashdatabases[24]andtheyhavenotchangedsignificantly false positives. Finally, while we recognize that there are
+over that time. Part of the reason is that they are easy for arangeofcountermeasuresthatanadversarymighttakein
+spammers to use and reason about; a new spam campaign response, wearguethattheyarenottrivialfortheattacker
+doesnotrequiresignificanttestingandanalysis.However,a and thus that the template inference approach is likely to
+moreimportantreasonisthattherearelimitstohowmuch havevalueforatleastamodestperiodoftime.
+polymorphism can be encoded effectively in a spam mes-
+sagewhilestillpreservingtheunderlyinggoal. Tobeeffec- 8.Acknowledgments
+tive,pitchesandsubjectlinesmustberoughlygrammatical,
+URLsmustbeproperlyspecified,andsoon. Randomizing
+We would like to thank John P. John et al. for the
+the letters across such words would defeat template infer-
+Botlab project data. We would also like to acknowl-
+encebutalsowouldlikelyreducetheunderlyingconversion
+edge Brandon Enright and Brian Kantor for their invalu-
+ratesignificantly.
+able assistance. Some of the experiments were conducted
+Finally,spammersmightmanagethedistributionoftem-
+on the UCSD FWGrid cluster, which is funded in part
+plates in a more adversarial fashion. In particular, were
+by National Science Foundation Research Infrastructure
+eachbotinstancegiventemplateswithuniquefeaturesthen
+grant EIA-0303622. This work was supported in part by
+the regular expressions learned from the output of one bot
+National Science Foundation grant awards NSF-0433668,
+would suffer from overtraining; they would be unable to
+NSF-0433702, NSF-0905631, and NSF-6783527, as well
+generalizetospamissuedfromanotherbotinthesamebot-
+asin-kindsupportfromCisco,Microsoft,Google,Yahoo!,
+net. Dependingpreciselyonhowsuchfeaturesweregener-
+ESnet,andUCSD’sCenterforNetworkedSystems. Opin-
+ated,thiscouldaddsignificantcomplexitytotheunderlying
+ions, findings, and conclusions or recommendations are
+inference problem at relatively low cost to spammers, and
+thoseoftheauthorsanddonotnecessarilyreflecttheviews
+without significantly changing the overall “look and feel”
+ofthefundingsources.
+ofsuchmessagestopotentialcustomers.Weleavethechal-
+lenge of joint learning across bot instances to future work
+shouldthespamecosystemevolveinthismanner. References
+7.Conclusion [1] jwSpamSpySpamDomainBlacklist.
+http://www.joewein.net/spam/spam-bl.htm.
+[2] lists.gnu.org. ftp://lists.gnu.org.
+In starting this paper we observed that strong defenses [3] SURBL. http://www.surbl.org.
+benefitfromobtainingcurrentandhighqualityintelligence. [4] URIBL–RealtimeURIBlacklist.
+This point is hardly lost on the anti-spam community and http://www.uribl.com.
+overtimetherehavebeenmanyeffortstoshareinformation [5] G.V.CormackandT.R.Lynam. Onlinesupervisedspam
+among sites, precisely to shrink the window of vulnerabil- filterevaluation. ACMTrans.Inf.Syst.,25(3),July2007.
+itybetweenwhenanewkindofspamappearsandacorre- [6] H.Drucker,D.Wu,andV.N.Vapnik. Supportvector
+machinesforspamcategorization. NeuralNetworks,IEEE
+spondinge-mailfilterisinstalled. Historically,theseefforts
+Transactionson,10(5):1048–1054,1999.
+havebeensuccessfulwhentheinformationgatheringitself
+[7] J.Go¨bel,T.Holz,andP.Trinius. Towardsproactivespam
+can be centralized and have floundered when they require
+filtering. InProceedingsofthe6thConferenceon
+bilateralsharingofmailsamples(eveninastatisticalsense).
+DetectionofIntrusionsandMalware&Vulnerability
+Thus, IP-based blacklists constitute intelligence that, upon Assessment(DIMVA),2009.
+beinglearned,issharedquicklyandwidely,whilecontent- [8] G.Hulten,A.Penta,G.Seshadrinathan,andM.Mishra.
+based filter rules continue to be learned independently by TrendsinSpamProductsandMethods. InProceedingsoftheFirstConferenceonEmailandAnti-Spam(CEAS), [25] M.Sahami,S.Dumais,D.Heckerman,andE.Horvitz. A
+2004. BayesianApproachtoFilteringJunkE-Mail. InLearning
+[9] A.G.K.Janecek,W.N.Gansterer,andK.A.Kumar. forTextCategorization:Papersfromthe1998Workshop,
+Multi-LevelReputation-BasedGreylisting. InAvailability, Madison,Wisconsin,1998.AAAITechnicalReport
+ReliabilityandSecurity(ARES),pages10–17,2008. WS-98-05.
+[10] J.P.John,A.Moshchuk,S.D.Gribble,and [26] M.Sergeant. InternetLevelSpamDetectionand
+A.Krishnamurthy. StudyingSpammingBotnetsUsing SpamAssassin2.50. InMITSpamConference,2003.
+Botlab. InProceedingsofthe6thUSENIXSymposiumon [27] H.Stern. ASurveyofModernSpamTools. InProceedings
+NetworkedSystemsDesignandImplementation(NSDI), ofthe5thConferenceonEmailandAnti-Spam,2008.
+[28] B.Taylor. SenderReputationinaLargeWebmailService.
+2009.
+InProceedingsoftheThirdConferenceonEmailand
+[11] J.JungandE.Sit. Anempiricalstudyofspamtrafficand
+Anti-Spam(CEAS),2006.
+theuseofDNSblacklists. InIMC’04:Proceedingsofthe
+[29] 2007TRECPublicSpamCorpus. http://plg.
+4thACMSIGCOMMconferenceonInternetmeasurement,
+uwaterloo.ca/˜gvcormac/treccorpus07,2007.
+pages370–375,NewYork,NY,USA,2004.ACMPress.
+[30] M.W.Wong. SenderAuthentication:WhatToDo,2004.
+[12] C.Kanich,C.Kreibich,K.Levchenko,B.Enright,G.M.
+[31] Y.Xie,F.Yu,K.Achan,R.Panigrahy,G.Hulten,and
+Voelker,V.Paxson,andS.Savage. Spamalytics:An
+I.Osipkov. SpammingBotnets:Signaturesand
+EmpiricalAnalysisofSpamMarketingConversion. In
+Characteristics. InProceedingsofACMSIGCOMM,pages
+ACMCCS,pages3–14,Alexandria,Virginia,USA,
+171–182,2008.
+October2008.
+[32] L.Zhang,J.Zhu,andT.Yao. Anevaluationofstatistical
+[13] B.KlimtandY.Yang. IntroducingtheEnronCorpus. In spamfilteringtechniques. ACMTransactionsonAsian
+ProceedingsoftheFirstConferenceonEmailand LanguageInformationProcessing(TALIP),3(4):243–269,
+Anti-Spam(CEAS),2004. December2004.
+[14] C.Kreibich,C.Kanich,K.Levchenko,B.Enright,G.M.
+Voelker,V.Paxson,andS.Savage. OntheSpamCampaign
+Trail. InProceedingsofthe1stUSENIXLEETWorkshop,
+2008.
+[15] C.Kreibich,C.Kanich,K.Levchenko,B.Enright,G.M.
+Voelker,V.Paxson,andS.Savage. Spamcraft:AnInside
+LookAtSpamCampaignOrchestration. InProceedingsof
+the2ndUSENIXLEETWorkshop,2009.
+[16] B.LeibaandJ.Fenton. DomainKeysIdentifiedMail
+(DKIM):UsingDigitalSignaturesforDomainVerification.
+InProceedingsoftheFourthConferenceonEmailand
+Anti-Spam(CEAS),2007.
+[17] D.LowdandC.Meek. GoodWordAttacksonStatistical
+SpamFilters. InProceedingsoftheSecondConferenceon
+EmailandAnti-Spam(CEAS),2005.
+[18] Marshal8e6TRACELabs. Marshal8e6securitythreats:
+Emailandwebthreats. http:
+//www.marshal.com/newsimages/trace/
+Marshal8e6_TRACE_Report_Jan2009.pdf,2009.
+[19] J.Mason. SpamAssassinpubliccorpus. http:
+//spamassassin.apache.org/publiccorpus,
+2003.
+[20] R.McMillan. Whatwillstopspam?,December1997.
+[21] MessageLabsIntelligence. 2008annualsecurityreport.
+http://www.messagelabs.com/mlireport/
+MLIReport_Annual_2008_FINAL.pdf,2008.
+[22] T.A.MeyerandB.Whateley. SpamBayes:Effective
+open-source,Bayesianbased,emailclassificationsystem.
+InProceedingsoftheFirstConferenceonEmailand
+Anti-Spam(CEAS),2004.
+[23] A.Ramachandran,D.Dagon,andN.Feamster. Can
+DNSBLsKeepUpwithBots? InProceedingsoftheThird
+ConferenceonEmailandAnti-Spam(CEAS),2006.
+[24] RhyoliteCorporation. Distributedchecksumclearinghouse,
+2000.

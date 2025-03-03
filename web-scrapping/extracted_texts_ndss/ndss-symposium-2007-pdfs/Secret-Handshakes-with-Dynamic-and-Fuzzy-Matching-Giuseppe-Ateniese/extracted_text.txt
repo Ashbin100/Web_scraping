@@ -1,0 +1,1652 @@
+Secret Handshakes with Dynamic and Fuzzy Matching
+GiuseppeAteniese∗ MarinaBlanton†
+DepartmentofComputerScience DepartmentofComputerScience
+TheJohnsHopkinsUniversity PurdueUniversity
+ateniese@cs.jhu.edu mbykova@cs.purdue.edu
+JonathanKirsch
+DepartmentofComputerScience
+TheJohnsHopkinsUniversity
+jak@cs.jhu.edu
+Abstract 1 Introduction
+The need for communication privacy over public net- A secret handshake scheme, introduced by Balfanz et
+worksisofgrowingconcernintoday’ssociety. Asaresult, al. [5], allows two members of the same group to secretly
+privacy-preservingauthenticationandkeyexchangeproto- authenticate to each other and agree on a shared key for
+colshavebecomecriticalprimitivesinbuildingsecuredis- furthercommunication. Suchauthenticationisprivacypre-
+tributedsystems. Secrethandshakesprovidesuchaservice serving,meaningthatiftheparticipantsbelongtothesame
+byallowingtwomembersofthesamegrouptosecretlyand group,theyonlylearnthattheyaremembersofthatgroup
+privatelyauthenticatetoeachotherandagreeonashared (without learning each other’s identities), and learn noth-
+keyforfurthercommunication. ingabouteachotherotherwise. Themostcommonlyused
+exampleofsuchinteractionisthemutualauthenticationof
+This paper presents the first efficient secret handshake
+CIA agents. That is, consider a CIA agent who wants to
+schemes with unlinkable, reusable credentials that do not
+authenticate to another agent but does not want to reveal
+rely on random oracles for their security (solving open
+hiscredentialstoanyoneotherthanCIAagents. Obviously,
+problems from prior literature). In previous work, secret
+twoCIAagentsshouldbeabletosuccessfullycompletethe
+handshakeswereextendedwithroles,sothatagroupmem-
+handshake,andotherpartiesshouldnotbeabletoperform
+ber A can specify the role anothergroup member B must
+orrecognizethehandshake.Suchschemescanalsobeused
+haveinordertosuccessfullycompletetheprotocolwithA.
+by membersof secret societies to identify other members,
+We generalize the traditional and role-based secret hand-
+bythemilitarytodiscoveranduseasecretservice,etc.
+shake in two ways. First, we present a secret handshake
+Anotherimportantapplicationofsecrethandshakesthat
+with dynamic matching, in which each party can specify
+hasnotbeenconsideredinpriorliteratureishandshakesfor
+boththegroupandtheroletheothermusthaveinorderto
+High-bandwidth Digital Content Protection (HDCP) sys-
+completethehandshake.Second,weprovideanovelexten-
+tems, designed to protect video data from unauthorized
+sionofsecrethandshakestoincludeattributes,allowingthe
+copying. Inthe HDCP protocol,two devicesengagein an
+handshaketobebasedonapproximate(orfuzzy)matching.
+identity-basedauthenticationprotocoltoagreeonakeythat
+We demonstrate the practicality and efficiency of our
+issubsequentlyusedtoencryptthedatatransmittedonthe
+protocolsbyevaluatingaprototypeimplementation.Wein-
+DVI bus. The protocolused in HDCP was a custom solu-
+tegrateourdynamicmatchingprotocolintoIPsec, andwe
+tion,designedtomeetefficiencyrequirements;however,it
+detailthe performance tradeoffsassociated with our fuzzy
+wasshownin[15]tobeinsecure.Anefficient,provablyse-
+matchingscheme. Ourexperimentsindicatethatoursolu-
+curehandshakeprotocolcouldhelptofillthisgap,asonly
+tionsofferattractiveperformance.
+deviceswithlegitimatecredentialswouldbeabletoauthen-
+ticatetoeachotherandagreeonakey.
+Another domain where secret handshakes proved to be
+∗SupportedinpartbyNSF. usefulisanonymousroutinginad-hocnetworks. A recent
+†SupportedbyIntelPh.D.fellowship. publication by Li and Ephremides [29] shows that direct
+1usageof secrethandshakesfor anonymousroutingoutper- 42,48]). Despitethis,anefficientsecrethandshakescheme
+formsall existing solutions. Earlier work in that direction withunlinkablereusablecredentialssecurein thestandard
+[47,46]isalsoreminiscentof(andwasinspiredby)secret modelremained to be an open problem. In this paper, we
+handshakeschemes. showthatsolutionstosecrethandshakesexistthatcombine
+An important extension of secret handshakes is to in- efficiencyandunlinkabilityanddonotrelyonrandomora-
+clude roles: users can require that group members’ affili- clesintheirsecurity,eveninournewflexiblemodels,thus
+ationsarerevealedonlytomemberswhoholdspecificroles closingthisgap. OurprotocolsarebuiltusinganIdentity-
+in the group. For example, a vehicle operatorAlice might BasedEncryption(IBE)andarethefirstoftheirkind. Our
+wanttoauthenticateherselftoBobonlyifBobcanauthen- solutiontosecrethandshakeswithfuzzymatchingalsouses
+ticate as a policeman. In this case, Alice specifies what theideasunderlyingtheconstructionoffuzzyIBE[36].
+roleBobmusthavein orderforthe handshaketo succeed, Todemonstratethepracticalityandefficiencyofourpro-
+andBobspecifieswhatroleAlicemusthave. Inthiswork, tocols, we providea prototypeimplementation. Itconsists
+we take the flexibility ofsecret handshakeswith rolesto a of(i)integratingsecrethandshakeswithdynamicmatching
+new level: in addition to being flexible in specifying user into the keymanagementfunctionalityof IPsec, whichre-
+roles, members can now specify the group of the person sultedinonlyasmalloverhead,and(ii)evaluatinganimple-
+withwhomtheywouldliketoperformasecrethandshake. mentationof our fuzzy handshake scheme, which resulted
+Thisdynamicmatching(ratherthanastaticgroupsetting)is inveryreasonableperformance.
+whatdistinguishesourprotocolsfrompriorwork.Thisnew To summarize, our contributions consist of the follow-
+modelwillallowforsuccessfulhandshakesbetween,forin- ing:Weextendsecrethandshakestopermitdynamicmatch-
+stance,membersofsistersocieties,insteadofjustmembers ingandpresentanIBE-basedsolutiontotheproblem. We
+ofthesamesociety. alsointroduceattributesintosecrethandshakesandextend
+themodeltopermitfuzzymatching,whichsignificantlyen-
+Furthermore, we extend the framework of secret hand-
+richesthesetofpoliciesthatsecrethandshakescansupport.
+shakes to support attributes and provide approximate (or
+We provide solutions to both types of unrestricted secret
+fuzzy) attribute-based matching. That is, now each mem-
+handshakes,whicharethefirstschemesthataresimultane-
+berhasanumberofattributes(callitn)associatedwithher
+ously (a) efficient, (b) use unlinkable reusable credentials,
+membership,suchasthegroup,role,seniority,possiblyan
+and (c) secure in the standard model. Our experimental
+alternative group, etc. At the time of a handshake Alice
+results indicate that both of our solutions perform well in
+specifieswhatattributesBobmusthave,andthehandshake
+practice.
+succeeds if Bob’s credentials match d or more of the at-
+The rest of this paper is organized as follows: in Sec-
+tributesspecifiedbyAlice forsomethresholdd ≤ n. The
+tion 2 we give an overview of secret handshake literature.
+sameappliestoBobwhospecifiesattributesforAlice.Such
+Section 3 defines a secret handshakescheme and its secu-
+an extension adds a lot of flexibility and power to the au-
+rity, andSection4 providesbackgroundinformation. Sec-
+thenticationrules of secret handshakes. For instance, now
+tion5givesourconstructionforsecrethandshakeswithdy-
+Alice can require Bob to be a CIA agent and have either
+namic matching, and in Section 6 we show how to build
+topsecretorsecretclearancelevel.Werefertoournewno-
+secrethandshakeswithapproximatematching.InSection7
+tionofsecrethandshakes(inbothoftheabovesettings)as
+we comment on deploymentissues, and Section 8 reports
+unrestrictedsecrethandshakes.
+onimplementationresults. Lastly,Section9concludesthe
+Perhaps the most appealing application of secret hand-
+paper.
+shakes with the new extended capabilities, which already
+can be used today, is social networks such as online dat-
+ing. Thatis, considerAlicewhohasasetpreferencesthat 2 Related Work
+herpotentialpartnermustsatisfy. Thepreferencesshe has
+areprivate,andshedoesnotwanttorevealthemtoothers. In this section we review only existing literature on se-
+Similarly, Bob has a set of requirements that his partner crethandshakesandothercloselyrelatedconstructions.For
+must match. Attribute-based secret handshakesthen natu- other anonymity tools that cannot adequately address the
+rally allow them to checkwhether each of them meets the problemofsecrethandshakessee,forinstance,[5,44].
+expectations of the other without revealing any additional The first solution to the problem of secret handshakes
+informationand, if so, exchange their contact information is due to Balfanz et al. [5]. Their scheme is simple and
+usingthesharedkey. efficientbutrequiressingle-usepseudonymstoachieveun-
+Manyexistingauthenticationandsignatureschemesfall linkability, which means that each user must store a large
+shortofsolvingthisseeminglysimpleauthenticationprob- numberofcredentials.Thesolutionsupportsauthentication
+lem. Thatiswhysecrethandshakesreceivedafairamount ofmemberswithroles, andtheschemeisproventobese-
+of attention in the literature (see, e.g., [5, 44, 13, 40, 39, cureintherandomoraclemodel.
+2Castelluccia, Jarecki, and Tsudik [13] addressed the andparamsasinputandresultsintheuserbecominga
+problemof secret handshakesthroughthe use of so-called memberofthegroupGwithcredentialscred.
+CA-obliviousencryption. Thissolutionisslightlymoreef-
+ficient,butitstilldoesnotsupportreusablecredentials.Itis • Handshakeistheauthenticationprotocolexecutedbe-
+secureintherandomoraclemodel. tween players A and B on public input params and
+TheworkbyXuandYung[44]permitstheuseofmulti-
+privateinputofAcred AandprivateinputofBcred B.
+showcredentials,andthesecurityoftheirconstructiondoes At the end of the protocol, if A’s requirementsfor B
+notrelyonrandomoracles,buttheyachieveonlyalimited
+are matchedbyB’s credentialsandB’s requirements
+notionofanonymity,namely,k-anonymity.Unlinkabilityis
+forAarematchedbyA’scredentials,AandBauthen-
+ticate by sharinga commonkey. Such authentication
+achievedbyallowingeachusertoauthenticateasoneofk
+failsotherwise.
+membersbyselectingk−1publickeysofgroupmembers,
+resultingin O(k) computation(the expensivecomputation
+Intheoriginalsetting,thehandshakeprotocolresultsinac-
+is, however,onlyO(1)). Memberscan reuse theircreden-
+ceptanceifAandB aremembersofthesamegroup,butit
+tialsbecausetheyalwaysauthenticateassomeoneoutofk
+canbeextendedwithrolesandotherattributes.
+users.
+Also, the definition of a secret handshake scheme
+Tsudik and Xu [40, 39] extend the notion of secret
+in certain prior publications includes another algorithm,
+handshakesto a multi-partysetting. Their work combines
+TraceUser, runbythesystemadministrator. Thatis, ifthe
+threebuildingblocks(agroupsignaturescheme,acentral-
+scheme supports tracing, then given a transcript T of in-
+ized group key distribution scheme, and distributed group
+teraction of user U with one or more users, this algorithm
+keyagreement)tocreateaframeworkformulti-userhand-
+outputs the identity of a user whose keys were used by U
+shakes.Unlinkabilityisachievedbyusinggroupsignatures,
+duringtheinteraction. We,however,donotconsidertrace-
+but this solution is not very efficient. Jarecki, Kim, and
+abilityinthiswork.
+Tsudik [23] also provide a solution to multi-party hand-
+Oursecrethandshakeschemesmustprovidethefollow-
+shakes by integrating previous work on secret handshakes
+ingcoresecurityproperties:
+[13]withagroupkeyagreementprotocol. Asin[13],one-
+timecertificatesareused.
+Correctness: honest members satisfying the handshake
+Finally, Vergnaud[42]constructssecrethandshakesus-
+rules (e.g., belonging to the requested group) will al-
+ing RSA; and Zhou, Susilo, and Mu [48] do so by using
+wayssuccessfullycompletethehandshake.
+ElGamalandDSA. Bothpapersrelyonrandomoraclesin
+theirsecurity.
+Impersonatorresistance: an adversary not satisfying the
+The notions of Oblivious Signature-Based Envelope
+rules of the handshake protocol is unable to success-
+(OSBE) [28, 33] and Hidden Credentials[21, 12] are also
+fullyauthenticatetoanhonestmember.
+relatedtosecrethandshakes.Theauthorsof[33]showhow
+toconstructbasicsecrethandshakesbyusingOSBEinboth Detectorresistance: an adversarynot satisfying the rules
+directions. Also,workof[20,22]explorestherelationship ofthehandshakeprotocolcannotdecidewhethersome
+betweenCA-obliviousencryption(introducedin[13]),hid- honestpartysatisfiestherulesornot.
+dencredentials,OSBE,andsecrethandshakes.
+Unlinkability: itisnotfeasibletotellwhethertwoexecu-
+tionsofthehandshakeprotocolwereperformedbythe
+3 Model and Definitions
+samepartyornot,evenifbothofthemweresuccess-
+ful.
+Asecret-handshakeschemeSHSconsistsofthefollow-
+ingalgorithms:
+4 Background and Building Blocks
+• Setup is a trusted algorithmthat, givena securitypa-
+rameter 1κ, outputs public parameters params com- 4.1 Preliminaries
+montoallsubsequentlygeneratedgroups.
+In this section, we describe notation used in the rest of
+• CreateGroup is a key generation algorithm run by a
+thispaperandlistnumber-theoreticpreliminariesandcryp-
+groupadministratorGAwhich,givenparams,outputs
+tographicassumptions. Afunction(cid:15)(κ)isnegligibleif for
+the group’s public information G and group’s secret
+every positive polynomialp(·) and all sufficiently large κ,
+s .
+G (cid:15)(κ)< 1 . ThenotationG= hgimeansthatggenerates
+p(κ)
+• AddMemberisaprotocolbetweentheGAandauser, the group G. Our solutions use groupswith pairings, and
+which takes GA’s secret s and public parametersG wereviewconceptsunderlyingsuchgroupsnext.
+G
+3Definition1(Bilinearmap) Aone-wayfunctione : G × identitiesareviewedasasetofdescriptiveattributes.Auser
+1
+G → G is a bilinear map if the following conditions withthesecretkeyfortheidentitywisabletodecryptaci-
+2 T
+hold: phertextencryptedwiththepublickeyw0 iffw andw0 are
+within a certain distance of each other (accordingto some
+• (Efficient) G , G , and G are groups of the same
+1 2 T metrics). This introduces interesting applications such as
+prime order p, and there exists an efficient algorithm
+usageofbiometricidentitiesandattribute-basedencryption
+forcomputinge.
+(whichcan supersedehierarchicalIBE);see [36] for more
+• (Bilinear) For all g ∈ G , g˜ ∈ G , and a,b ∈ Z , information. Astheapproachthatweusetoachievesecret
+1 2 p
+handshakeswithapproximatematchingborrowstechniques
+e(ga,g˜b)=e(g,g˜)ab.
+from this work, we review the constructionof [36] in Ap-
+• (Non-degenerate) If g generates G and g˜ generates pendixA.
+1
+G ,thene(g,g˜)generatesG .
+2 T
+4.3 Privacy-preservingsetoperations
+Throughout this work, we assume that there is a trusted
+setup algorithm Set that, on input a security parameter
+1κ, outputs the setup for groups G = hgi and G = Ourfuzzyhandshakeschemerequirescomputingsetin-
+1 2
+tersectionoverprivatedatasets,andherewefirstbrieflyre-
+hg˜i of prime order p that have a bilinear map e, and
+e(g,g˜) generates G (which also has order p). That is, viewpriorliteratureonprivatesetintersectionandthengive
+T
+(p,G ,G ,G ,g,g˜,e)←Set(1κ). anoverviewoftheprotocolthatwechosetouse.
+1 2 T
+Ourschemesarebuiltusingsubgroupsofellipticcurves Early solutions to computing secure set operations
+with pairings where the decisional Diffie-Hellman (DDH) involved secure multiparty computation introduced by
+Yao[45],buthaveahighcommunicationcomplexity.Con-
+problem is hard. This setting has been recently used in
+many publications ([38, 9, 6, 3, 4] and others), and, ac- sequently, the problem of set intersection and its variants
+cording to [18], is the most efficient and versatile type of have been considered in many recent publications [14, 2,
+pairings. The use of DDH-hard pairing groups requires 17, 26, 41,27, 30]. Agrawal, Evfimievski,andSrikant[2]
+the Symmetric External Diffie-Hellman (SXDH) assump- proposeamoreefficientsolutiontothetwo-partysetinter-
+section problemin the semi-honestadversarialsetting, us-
+tion [6], and we also rely on the standard Bilinear Diffie-
+Hellman(BDH)assumptioninasymmetricbilineargroups ingacommutativeencryptionfunctionasabuildingblock.
+(firstintroducedin[10]),bothofwhicharegivennext. Freedman, Nissim, and Pinkas [17] address problems re-
+lated to two-party set intersection, or private matching,
+Definition2(SXDHassumption) We say that the SXDH in both the semi-honest and malicious settings, where the
+assumptionholdsif, given values y, y , y , y ∈ G , it is datasetsarerepresentedastherootsofapolynomial. More
+1 2 3 1
+notcomputationallyfeasibletodecideifthereisaninteger recently, Kissner and Song [27] provide a generic multi-
+a ∈Z suchthaty = yaandy = ya,i.e.,G isaDDH- party framework in which to securely and privately com-
+p 1 3 2 1
+hardgroup. ThesamerequirementmustholdforG ,i.e.,it pute operations over multisets, including union, intersec-
+2
+isalsoaDDH-hardgroup. tion,andelementreduction. KiayiasandMitrofanova[26]
+addresstheproblemoftwo-partysetdisjointnessonprivate
+Definition3(BDHassumption) Let g be a generator of datasets,i.e.,computingwhethertheirintersectionisempty
+G 1 and h be a generatorofG 2. We say thatthe BDH as- ornot.
+sumptionholdsif, giveng,ga,gb,gc ∈ G 1 andg˜,g˜a,g˜b ∈ Inthispaperweareinterestedintwoproblems:comput-
+G 2 for random a,b,c ∈ Z p, it is not possible to compute ingthesetintersectionoftwoprivatedatasetsandcomput-
+e(g,g˜)abc withanon-negligibleprobability. ing whether the cardinality of the intersection of two sets
+isaboveacertainthreshold. Amongthesolutionsavailable
+4.2 Identity-basedencryption in the literature, we chose the set intersection protocol of
+Freedman et al. [17], since it does not require the use of
+Our secret handshake scheme with dynamic match- randomoraclesandisrelativelysimple. Notethatthispro-
+ing is built upon the Identity-Based Encryption (IBE) tocol is secure in the semi-honest model (i.e., the players
+scheme. The first practical IBE scheme is due to Boneh followtheprotocolasprescribedbutmighttrytolearnad-
+andFranklin[10],buttheschemeweuseinthisworkwas ditional information about the other party’s data by using
+introduced by Waters [43] and is an improved version of intermediateresults of the computation). In case of secret
+theBoneh-Boyenscheme[8]. An overviewof thescheme handshakes,we assume thatit is in the bestinterestof the
+isgiveninAppendixA. players to authenticate (and deviating from the prescribed
+Fuzzy IBE [36] is a new typeof identity-basedencryp- behaviormightpreventthis),andtheplayersfollowtheset
+tion where instead of using strings to represent identities, intersectionprotocolcorrectly.Ifsecuritybeyondthesemi-
+4honestbehaviorisneeded,othersolutionsfromtheexisting rules.
+literaturecanbeusedwithourschemeinstead.
+Let player Alice with dataset X = {x ,x ,...,x } 5.1 Thescheme
+1 2 k
+and player Bob with dataset Y = {y ,y ,...,y } par-
+1 2 k
+ticipate in the set intersection protocol of [17]. Al- WemodifytheIBEscheme(describedinAppendixA.1)
+ice sets up a semantically-secure homomorphic en- toachievekeyprivacythroughtheuseofasymmetricDDH-
+cryption scheme and publishes the public parameters. hard groups. By key privacy we mean the inability of an
+She constructs a polynomial of degree k with roots adversarytodeterminetheidentitiesoftheprotocolpartic-
+{x 1,...,x k}andsendsBobencryptionsofthecoefficients, ipants. The use of DDH-hard groups to achieve key pri-
+{Enc(α 0),Enc(α 1),...,Enc(α k)}. Bob uses the homo- vacyforWatersIBEschemewasmentionedin[6]and[11].
+morphic properties of the encryption scheme to evaluate Someoftheideasusedin[6]inthecontextofstoragesys-
+Alice’s polynomial at each point y in his dataset, since temsare used in ourscheme aswell. Themain difference
+Enc(P(y)) = Enc( k u=0α uyu). He can also compute between our solution and Waters scheme is that, in order
+Enc(rP(y)+y), with r beingchosenat randomforeach to make it key-private, we force the messages transmitted
+P
+y. If y is a root of the polynomial(i.e., it matches one of duringthe protocolto be in the same group(using Waters
+Alice’s elements), then the ciphertext will equal Enc(y). schemeintheasymmetricsettingleadstohavingvaluesin
+When Alice decrypts the ciphertexts, she therefore com- bothG andG ,disallowingtheschemetobekey-private).
+1 2
+putes the intersection as any x i ∈ X for which there is a Inwhatfollows,||denotesconcatenationoftwostrings.
+corresponding decrypted value. Note that the protocol is Wealsoassumethatallidentitiesaren-bitstrings(i.e.,iden-
+asymmetric, in that only Alice obtains the result. This is titiesshorterthannbitsarepaddedtotherightlength).
+exactlywhatisneededinourhandshakeschemewithfuzzy
+matching. Setup. Given a security parameter 1κ, run (p, G , G ,
+1 2
+WhenAliceandBobengageinourhandshakeprotocol, G , g, g˜, e) ← Set(1κ). Choose h ←R G and α ←R Z
+T 2 p
+they will also need to computethe function(|X 1 ∩Y 1| ≥ and set g = gα. Then choose n + 1 random values
+α
+Xd)∧ an(| dX X2 ∩ aY re2| kn≥ owd n) f toor As lo im cee
+,
+Yfixe ad nt dhr Yesh ao rl ed kd n, ow wh ne tr oe u0,u 1,...,u
+n
+←R Z
+p
+and set G0 = gu0 , G
+1
+= gu1, ...,
+Bo1
+b, and
+|2
+X| denotesthe size of
+se1
+t X.
+N2
+one of the pre-
+G
+n
+= gun, H0 = g˜u0 , H
+1
+= g˜u1, ..., H
+n
+= g˜un. The
+public parametersare params = (p, G , G , G , e, g, h,
+vious solutions (other than circuit evaluation) allow us to 1 2 T
+g ,G0,G ,...,G ).
+computethisfunctiondirectly,andthegeneralcircuiteval- α 1 n
+uationresultsaretooinefficientforthisproblem.Wethere-
+CreateGroup. There is no computation associated with
+foreusethecardinalitythresholdmatchingprotocolof[17],
+creating a new group other than selecting a name for the
+which combines a modified set intersection protocol with
+grouptowhichwerefertoasgroupID. TheGAmustknow
+boolean circuit evaluation. In this modified version, Bob
+h = hα, and the valuesg˜, H0, H ,...,H to be able to
+encodes random values r instead of his true y to obtain α 1 n
+y
+issuegroupmembercredentials.
+Enc(rP(y)+r ), Alice enters rP(y)+r , and Bob en-
+y y
+tersr intothecircuit. Thecircuitthencomputeswhether
+y
+AddMember. Addinga new memberwith role r to group
+thesevaluesmatched,countsthenumberofmatches,com-
+groupID consists of issuing to that member a private key
+paresthatnumbertothethreshold,andoutputsabit. Alice
+correspondingtotheidentitygroupID||r. Letrep (v)∈G
+and Bob run the modified protocol on inputs X 1 and Y 1
+denote representation of an n-bit string v in
+G1
+such
+tha1
+t
+and inputs X and Y as described above, the circuit then 1
+2 2
+rep (v) = G0 G , where V ⊆ {1,...,n} is the set
+computestheANDofthebits,andtheresultofthecompu- 1 i∈V i
+of indices i for which the ith bit of v is equal to 1. Simi-
+tationissenttobothofthem.Booleancircuitsofsmallsize
+larly,letrep (vQ ) = H0 H denotetherepresentation
+areratherefficientandtheyareoneofthebestapproaches 2 i∈V i
+of string v in G .1 Then the private key of the member
+availableforperformingcomparison. 2
+Q
+of groupID with role r is created as cred = (d ,d ) =
+1 2
+5 Secret Handshakes with Dynamic Match- (g˜s,h α(rep 2(groupID||r))s), wheres ←R Z p,andd 1,d 2 ∈
+G .
+ing 2
+Handshake.SupposeAlicewithasecretcred =(dA,dA),
+Dynamic matching means that Alice can specify what A 1 2
+which is a private key on the identity groupID ||r , and
+group and role Bob must have in order for the handshake A A
+Bob with a secret cred = (dB,dB), which is a private
+to succeed, and similarly Bob can specify the group and B 1 2
+key on the identity groupID ||r , engage in a handshake
+rolethatAlicemusthave. Asmentionedearlier,thisexten- B B
+sionallowsformoreflexibleanduser-chosenauthentication 1Notethate(g,rep2(v))=e(rep1(v),g˜).
+5protocol.Theyshouldsuccessfullycompletetheprotocolif 5.2 Security
+the groupand the role specified by Alice forBob matches
+Bob’s credentials and the group and the role specified by
+Bob for Alice matches Alice’s credentials. The protocol To prove the security of the above scheme, we need to
+proceedsasfollows: show that all of the required security properties listed in
+Section3hold. Wefirstdefineeachoftheminmoredetail.
+1. A chooses x ←R Z and sends gx and
+p Ourdefinitionslargelyfollowthedefinitionsoftheoriginal
+(rep (groupID0 ||r0 ))x to B, where r0 (groupID0 )
+1 B B B B secrethandshakespaper[5].
+isthe role(resp.,group)thatB musthavein orderto
+For an adversaryA we define a memberimpersonation
+completethehandshake.
+game, during which A is allowed to corrupt users of her
+2. Similarly, B chooses y ←R Z p and sends gy and choice, then selects a target group G t and target role R t,
+(rep 1(groupID0 A||r A0 ))y toA,wherer A0 (groupID0 A)is andtriestoimpersonateamemberofG t withroleR t dur-
+the role (resp., group) that A must have in order to ing a handshake protocol with an honest user. A wins if
+completethehandshake. sheissuccessfulinimpersonating,whenshehasnevercor-
+rupted any member of G with role R . Then we say that
+t t
+3. Using herknowledgeofx and whatshe justreceived
+asecrethandshakeschemeisimpersonatorresistantifany
+fromB,Acomputesthefollowingkeys:
+polynomial-timeadversary A can win the member imper-
+k =e(g ,h)x and sonationgamewithatmostnegligibleprobability. Amore
+1 α
+detailedandformaldescriptionofthis(aswellasother)se-
+e(gy,dA)
+k = 2 . curitygamesandmoreprecisesecuritydefinitionsarepro-
+2 e((rep 1(groupID0 A||r A0 ))y,dA 1) videdinAppendixB.
+4. UsingyandwhathejustreceivedfromA,Bcomputes Nowconsideramemberdetectiongame,inwhichAcan
+thekeys: corrupt users of her choice, then chooses a target user U t
+(havingaspecificroleR ingroupG ). Intuitively,Acan-
+t t
+e(gx,dB)
+not detect members if her interaction with them yields no
+k = 2
+1 e((rep (groupID0 ||r0 ))x,dB) new information. Thus, A is asked to engage in a hand-
+1 B B 1
+and k 2 =e(g α,h)y. shake protocol with either U t or a random simulator and
+must decide with which entity she is interacting. We say
+If groupID = groupID0 , groupID0 = groupID , r = thatasecrethandshakeschemeisdetectionresistantifany
+A A B B A
+r A0 ,andr
+B
+= r B0 ,thenattheendofthehandshakebothA AwhonevercorruptedanymemberofG twithroleR thas
+and B share the key k = (k ,k ), where k = e(g ,h)x probabilityofwinningthememberimpersonationgameat
+1 2 1 α
+andk =e(g ,h)y. Thatis,forAlicewehave: mostnegligiblylargerthan1/2.
+2 α
+Finally,theunlinkabilitypropertyrequiresthatAisun-
+e(gy,dA)
+k = 2 able to tell whether two executions of the protocol corre-
+2 e((rep (groupID0 ||r0 ))y,dA)
+1 A A 1 spondtothesameuserornot. Thus,inthelinkinggameA
+=
+e(gy,hα(rep 2(groupID A||r A))s) corruptsusers,choosesatargetuserU t,andthenisaskedto
+e((rep 1(groupID A||r A))y,g˜s) engageinasecrethandshakewitheitherU toranotheruser
+e(g,h)yαe(g,rep (groupID ||r ))sy with similar credentials. A winsif she is able to correctly
+= 2 A A
+e(rep (groupID ||r ),g˜)sy guesswith whomshe wasinteractingduringthechallenge
+1 A A
+protocol.Thenwesaythatasecrethandshakeschemeisun-
+= e(g ,h)y.
+α
+linkableifanyAwhonevercorruptedtheuserssheisasked
+tointeractwithwinsthelinkinggamewiththeprobability
+Similarly, for Bob k = e(g ,h)x if the groupsand roles at most negligibly larger than 1/2. As mentioned above,
+1 α
+moreprecisedefinitionscanbefoundinAppendixB.
+matched.
+We also would like to note that it might be possible to Now we are ready to state the security of our scheme.
+proveourschemetobeakey-privateIBEscheme2. Inaddi- The proof of this and other theorems in this paper can be
+tion,otherkey-privateIBEschemescanbeusedtoconstruct foundinAppendixB.
+such a handshake scheme. In particular, a recent anony-
+mousIBE scheme of Boyen and Waters [11] is a good al-
+ternativetoourapproach. Theorem1 Theaboveschemeisasecuresecrethandshake
+schemewithdynamicmatchingassumingthattheBDHand
+2AsinotherIBEschemes,amessageM canbeencryptedbysending
+e(gα,h)xMinadditiontogxand(rep1(recipientID))x. SXDHassumptionshold.
+66 Secret Handshakes withFuzzy Matching 1. A prepares a set of attributes u0 that B must match
+B
+and B prepares a set of attributes u0 that A must
+A
+In this section we extend the notion of secret hand- match. They execute a secure protocol for function
+shakestosupportapproximateattribute-basedmatchingand f =(|u A∩u0 A|≥d)∧(|u B∩u0 B|≥d)asdescribed
+present a scheme that achieves such handshakes. In what inSection4.3.Attheendoftheprotocoleitherbothof
+follows, let each member have credentials consisting of n them learn 0, in which case they abortthe handshake
+descriptive attributes. At the time of a handshake Alice protocol, or both of them learn 1, in which case they
+specifies an n-element set of attributes for Bob, and Bob continue.
+specifiesann-elementsetofattributesforAlice. Thehand-
+2. A andB executesecureprotocolsforset intersection
+shake protocol succeeds if Bob’s credentials matched at
+u ∩u0 and u ∩u0 , at the end of which A learns
+leastdoftheattributesspecifiedbyAlice,andAlice’scre- A A B B
+w = u ∩u0 and B learns w = u ∩u0 (see
+dentialsmatchedatleastdattributesspecifiedbyBob,fora A A A B B B
+Section4.3formoredetail).
+fixedd≤n.
+3. A chooses x ←R Z and sends to B gx and
+6.1 Thescheme p
+Our secret handshake scheme with fuzzy matching is
+{ seT n1 d( su ti o)x A} u gi∈ yu a0
+B
+n. d{S Tim 1(i ula ir )l yy }, uB i∈c uh
+0
+Ao .oses y ←R Z p and
+builtonthefuzzyIBEscheme[36]. Asbefore,wemodify
+4. A computes k = e(g ,h)x and chooses an arbi-
+thesettingtoDDH-hardgroupsandintroduceothermodifi- 1 α
+trary d-element subset S of w . A then computes
+A
+cationstoachievesecrecy. Inparticular,wemakesurethat
+allmessagestransmittedduringtheprotocolareinthesame k = e(gy,D uA i)
+Lui,S(0)
+and sets the
+group,andthisiswhatallowsustoachievekeyprivacy.
+2 ui∈S (cid:18)e(T1(ui)y,dA ui)
+(cid:19)
+sharedkQeytok =(k 1,k 2).
+Setup. Givenasecurityparameter1κ,run(p,G ,G ,G ,
+1 2 T 5. Similarly, B chooses a d-element subset S of w
+g, g˜, e) ← Set(1κ). Choose h ←R G 2 and α ←R Z p, and e(gx,DB) Lui,S(0B )
+s ae nt dg sα et=
+G
+1gα =. T gh te 1n
+,
+.c .h .o ,o Gse n+n 1, d =, an gd tn+t 1 1, ,. H.. 1,t n =+1 g˜t←R
+1,
+.Z .p .,, Tan hd enco Bm cp ou mte ps uk te1 sk= 2Q=u (i g∈ αS
+,h(cid:18)
+)e y(T a1 n( dui s) ex tu , sdi B u ki)
+=(cid:19) (k 1,k
+2).
+.
+H
+n+1
+= g˜tn+1. The public parametersare params = (p,
+G 1, G 2, G T, e, g, h, g α, n, d, G 1,...,G n+1). Also, To see that A’s k 2 is in fact the same as B’s (i.e., k 2 =
+the functions T (x) = gxn n+1GLi,N(x) and T (x) = e(g α,h)y),wederivethekeyasfollows:
+1 i=1 i 2
+g˜xn n i=+ 11H iLi,N(x), where QL i,S = j∈S,j6=i x i−− jj is the e(gy,DA) Lui,S(0)
+LagrangecoefficientforiandsetSandN ={1,...,n+1}, k = ui
+Q Q 2 e(T (u )y,dA)
+arepublic. u Yi∈S(cid:18) 1 i ui (cid:19)
+CreateGroup. Thereisnocomputationexplicittocreation e(gy,hqA(ui)T 2(u i)r iA )
+Lui,S(0)
+=
+o anf da Hgro ,u .p ..o ,Hr a set to of ba ett ar bib lu et te os. isT suh ee mG eA mm beu rs ct rk en do ew ntiα al, sg .˜,
+u Yi∈S
+e(T 1(u i)y,g˜r iA) !
+1 n+1
+e(gy,hqA(ui))e(gy,T 2(u i)r iA )
+Lui,S(0)
+AddMember. Membership credentials for a user with at- =
+tributes u = (u 1,...,u n), where each u
+i
+∈ Z∗ p, are is- u Yi∈S e(T 1(u i)r iA,g˜y) !
+sued similar to the way they are issued in the fuzzy IBE = e(g,h)qA(ui)yLui,S(0)
+scheme describedin Section A.2. The GA choosesat ran-
+u Yi∈S
+dom a d − 1 degree polynomial q such that q(0) = α. = e(g,h)αy =e(g ,h)y
+α
+The user credentials are cred = ({D } ,{d } ),
+ui ui∈u ui ui∈u
+whereD
+ui
+= hq(ui)T 2(u i)ri, d
+ui
+= g˜ri, andr
+i
+←R Z
+p
+for The transition from the third line to the fourth is due to
+all1≤i≤n. the fact that e(g,T 2(x)) = e(T 1(x),g˜). The same deriva-
+tion can be performed for B’s k , which will result in
+1
+Handshake. As before, suppose member A with cre- k =e(g ,h)x.
+1 α
+dentials cred = ({DA} ,{dA} ) for at- Note thatthisprotocolprescribesthe userstostop after
+A ui ui∈uA ui ui∈uA
+tributes u and member B with credentials cred = Step1iftheircredentialsdidnotmatch. Thisgivesoutside
+A B
+({DB} ,{dB} ) for attributes u engage in a observersinformationaboutwhetherthe handshakeproto-
+ui ui∈uB ui ui∈uB B
+handshakeprotocol. Theirinteractionthenproceedsasfol- colsucceededornot,thusviolatingtheindistinguishability
+lows: to eavesdroppers property. To mitigate this problem, we
+7advise the users to proceedwith the protocol, even if they prevent man-in-the-middle attacks or any other active at-
+receive 0 at the end of Step 1. In this case, however, they tacks that affect traditional key agreement protocols. As
+userandomlygeneratedvaluestofinishtheprotocolinstead suggested in [13], a goodstrategy would consist in adopt-
+ofusingtheirtruecredentials. ing well-established techniques devised for Authenticated
+KeyAgreement(AKE)protocols. Signatures,forinstance,
+6.2 Security are usually employed to prevent active attacks. How-
+ever, within the secret handshake framework, credentials
+are secret, so it is not possible to generate non-repudiable
+In secrethandshakeswith attribute-basedmatching,the
+signatures since there is nothing to verify them against.
+notionof the groupis replacedwith attributes. Thus, now
+A possible solution is to create signatures on handshake
+the member impersonation game for an adversary A con-
+transactionsusingpubliccredentials,or“doubleidentities.”
+sists of corrupting users, selecting a target user U , and
+t That is, each user has two types of credentials, one secret
+declaringcredentialsu, an ownerof which she would like
+(e.g.,CIAagent)forsecrethandshakeandonepublic(e.g.,
+to impersonate. User U must have at least d attributes in
+t teacher)fordigitalsignatures.Weelaboratemoreonthisin
+commonwithuandnousercontrolledbyAcanhavedor
+Section8.1.1.
+moreattributesincommonwithu. Thesamemodifications
+Relatedtothis,itshouldbenotedthatsecrethandshake
+applytothememberdetectiongameaswell.
+protocols do not provide certain security guarantees when
+Because we no longer have groups, for the property of
+plainlydeployedwithin a networkedenvironment. Forin-
+detectorresistancewerequirethatanadversaryAwhodoes
+stance,anadversarythatmonitorsnetworktrafficwouldbe
+nothavetherequireddoverlappingattributeswiththe tar-
+able to learn which nodesin the network had a successful
+getuserdoesnotlearnanyinformationaboutU ’sattributes
+t secrethandshake(evenifthetrafficisauthenticatedanden-
+duringa protocolexecution. Note, however,thatthisdoes
+crypted)bymeasuringtheamountoftrafficbetweennodes
+not imply perfect hiding of information about attributes a
+immediately after the handshake. Even though the adver-
+user has, and will be true of any protocol with threshold-
+sary will not learn nodes’ group affiliations or roles, this
+based matching. In particular, the threshold-based nature
+informationcouldbevaluable. Solutionsinthiscaserange
+oftheprotocolallowsforprobingofuserattributes. Inour
+fromgeneratingfake traffic to employingfull-fledgedsys-
+currentprotocol,amaliciousplayerAcantrydifferentval-
+temsthatprovideanonymousanduntraceablecommunica-
+ues for u and u0 in the attempt to learn as much infor-
+A B tion.
+mationaspossibleaboutB’scredentialsfromStep1ofthe
+protocol. Onepossibilityforsolvingthisproblemistoen-
+sure that A uses her true credentials u during Step 1 of 8 Applications andPerformance Evaluation
+A
+the protocol by, for instance, requiring them to be signed
+by the GA. This would not completely mitigate the prob-
+In thissection, we demonstratethe practicalapplicabil-
+ing attacks, but will significantly constrain the attacker in
+ity of our secret handshake protocols in two ways. First,
+its capabilities. As the techniques that could be used for
+wedescribeourexperienceintegratingourdynamicmatch-
+such binding of credentials are inefficient, they were not
+ingprotocolintothekeymanagementfunctionalityofIPsec
+implementedinthiswork,andweleaveamoredetailedin-
+andevaluateitsperformanceinaprototypeimplementation.
+vestigationofthisproblemasadirectionforfuturework.
+Wethenevaluatetheperformanceofanimplementationof
+Thesecurityofoursolutionholdsintheso-calledFuzzy
+ourfuzzyhandshakescheme. Wealsocomparetheperfor-
+Selective-IDmodel[36].Informally,thismeansthatthead-
+manceofourfuzzyschemetothatoftheoriginalfuzzyIBE.
+versarycommitstotheidentityitwouldliketoimpersonate
+prior to system setup. A more detailed description of this
+8.1 IPsecintegration
+settingisgiveninAppendixB.
+Theorem2 The above scheme is a secure fuzzy secret Theoriginalworkonsecrethandshakes[5]showedhow
+handshakeschemeintheFuzzySelective-IDmodelassum- touseasecrethandshaketoauthenticatetheSSL/TLShand-
+ingthattheBDHandSXDHassumptionshold. shake [16]. SSL operatesat the transportlayer of the net-
+workstackandcanbeusedtoprovideapplication-levelau-
+thentication.Inthispaper,weintegrateourdynamicmatch-
+7 Deployment Issues
+ingprotocolatthe IPlevelbyextendingthekeyexchange
+capabilityofIPsec[25].SinceIPsecoperatesatthenetwork
+As remarkedby Castelluccia, Jarecki, and Tsudik [13], level,itisthemostgeneralandflexiblewaytoachievese-
+real-world deployments of secret handshake protocols re- curity. OurintegrationthusallowsanyservicesusingIPto
+quire strengthened security notions. This is in order to benefitfromtheprivateauthenticationguaranteesafforded
+8by the secret handshake paradigm. Our dynamic match- licparametersusedbyourprotocolinaTransformpayload.
+ing protocol is well-suited for integration with IPsec be- Specifically,weincludeagroupidentifierfield,whichrefers
+causeofits flexibilityandefficiency. Communicatingpar- totheparticularsetofpublicparametersusedbythekeying
+tiescanspecifyarbitrarygroupsandrolesduringthehand- daemonsrunningthehandshake. Sincethesemessagesare
+shake, allowing for use across administrative and applica- sentin the clear, we assume a sufficientnumberof groups
+tiondomains.Aswillbeshown,ourprotocolperformswell existssuchthataneavesdroppercannotconnecttheparties
+enoughtobeusefulinpractice. participatinginthehandshaketoagroupjustfromthefact
+thatthemessagesaresent.
+Inthesecondround,thekeyingdaemonsperformakey
+8.1.1 Integrationdescription
+exchange. We embed the credentials sent in our dynamic
+matching protocol in a Key Exchange payload. Upon re-
+IPsec implements services for confidentiality, authentica-
+ceiving a Round 2 message, a daemon generates shared
+tion, and key management. Communicatingentities nego-
+keyingmaterialbyperformingthepairingcomputationsde-
+tiate and establish security associations (SA’s), which de-
+tailedinourprotocol.Itthenderivesencryptionandauthen-
+scribeanddictatethewayinwhichtrafficflowingbetween
+tication keys from the shared keying material in the same
+themisprotected.InestablishinganSA,twonodesrunning
+wayasdefinedbyIKE.
+IPsecuseakeyexchangeprotocoltoagreeonsharedkeying
+When a Diffie-Hellman key exchange is used (as de-
+material,fromwhichencryptionandauthenticationkeysare
+scribed in the standard), the third round of Main Mode is
+derived.Weintegratedourdynamicmatchingprotocolinto
+used to authenticate the exchange. Messages sent in the
+theInternetKeyExchangeprotocol(IKE)[19],whichIPsec
+third round are encryptedusing the shared encryption key
+uses to establish these shared keys. Specifically, we re-
+establishedafterthesecondround,andtheycontainIdentifi-
+placetheauthenticatedDiffie-Hellmanexchangedescribed
+cationandAuthenticationpayloads.Wenote,however,that
+in the standard with our own protocol. Our prototype ex-
+thisnotionofauthenticationisatoddswith theguarantees
+tendsthe functionalityof theopenswan-2.4.5implementa-
+of the secret handshake paradigm: having each party sign
+tionofIPsec [1], whichsupportsIKEv1. We notethatour
+withitssecretgroupcredentialswouldviolatetheprivacy-
+extensionscanbeembeddedintothemessageexchangesof
+preservingproperty. One impactof this is that we cannot,
+the more recent IKEv2 [24] using similar techniques and
+ingeneral,provideintegrityagainstanactiveattackerwho
+arethereforealsoapplicabletothecurrentstandard.
+triesto subvertthe protocolbyflippingbitsor introducing
+IKEv1 is designed within the framework of the Inter-
+noise into the channel. In this case, the handshake will
+net Security Association and Key Management Protocol
+fail, but the attacker cannot be detected, since this is in-
+(ISAKMP)[32]. ISAKMPdefinesthemessage exchanges
+distinguishablefrom the case where one of the partiesdid
+and payload formats that can be used to negotiate the pa-
+notmeettheother’srequirements. Whilenotimplemented,
+rameters of protected channels and establish shared keys.
+one way to overcomethis problemwould be if each party
+Establishing security associations proceeds in two phases.
+hadasetofpublic,non-secretcredentialsinadditiontoits
+In the first phase, two nodes running IPsec (the initiator
+secret credentials, which is likely in environments where
+andtheresponder)setupanISAKMPsecurityassociation,
+handshakes are run between parties with “double identi-
+which is used to protect further traffic between their key-
+ties.” Each party could sign using her non-secret creden-
+ing daemons. In the second phase, the daemons negoti-
+tials in the last roundof the exchangeto achieveintegrity.
+ateandsetupanIPsecsecurityassociation,whichprotects
+Ourcurrentimplementationusesthethirdroundonlytoex-
+traffic between the ends of the SA. We embed our hand-
+changeencryptedIdentificationpayloads,containingtheIP
+shakeprotocolintothePhaseOnekeyexchange. Thestan-
+addressesofeachparty.
+darddefinestwoexchangemodesforPhaseOne(Mainand
+After Main Mode completes, the two nodes run Phase
+Aggressive). We integrated our protocolinto Main Mode,
+Two,orQuickMode,tonegotiateanIPsecSA,detailingthe
+whichistheidentity-protectionmodeofISAKMP,inwhich
+servicestoberunontheprotectedchannel(e.g.,encryption
+key exchange and authentication material are transmitted
+and/or authentication, tunnel mode, etc.). Our prototype
+separately.
+implementationmakesno modificationto Quick Mode, as
+Main Mode consists of three round-trips. In the first
+thekeyingmaterialgeneratedinMainModecanbeusedto
+round, the initiator and the responder agree on several
+quicklysetupIPsecsecurityassociations.
+security parameters, including encryption and hash algo-
+rithms and parameters of the key exchange algorithm to
+be used. These parameters are contained in a Proposal
+8.1.2 Integrationenvironmentandresults
+payload,which containsone or moreTransformpayloads.
+TheProposalpayloadindicatesthatahandshake-basedkey We integrated our dynamic matching protocol into the
+agreementistoberun. We placeadescriptionofthepub- openswan-2.4.5 implementation of IPsec. We configured
+9openswanon two Centaur VIA Nehemiah, 1000Mhz ma- Step 2 due to its simplicity. We note that the protocol is
+chineswith256MBmemoryrunningFedoraLinuxCore4, secure only in the randomoracle model. One could use a
+kernel 2.6.11. Key management is handled by a userland differentset intersection protocol, such as the one in [17],
+daemoncalledpluto,whichweextended. forsecurityinthestandardmodel.
+We implemented our dynamic matching protocol as a The set intersection protocol of [2] uses as a building
+suite of three C++ programs, one for each portion of the block a commutativeencryptionfunction. Our implemen-
+handshake protocol. The Handshake program runs as a tation uses the power function as the encryption function,
+cryptographicserver,withplutoasitsclient. Thetwopro- i.e., f (x) ≡ xe modp, wherep isa safe primeand Dom
+e
+cessesinteractbypassingmessagestoeachother. F isthesetofallquadraticresiduesmodulop. Weusere-
+We use the Miracl [37] cryptographic library for per- peatedhashingtomapattributesintoQ p.
+forming big number operations. Miracl provides efficient
+tools for generating elliptic curve parameters and for the 8.2.1 Evaluationenvironmentandparameters
+pairingoperationsrequiredbyourprotocol.
+Our experiments were performed on a 2.8GHz Pentium 4
+Thedynamicmatchinghandshakeprotocolisrunusing
+machine with HT technology and 1GB of RAM, running
+DDH-hard subgroupsof an MNT elliptic curve with pair-
+FedoraLinuxCore4,kernel2.6.13.
+ings. For simplicity, we used a pre-generated curve pro-
+Asbefore,weusetheMiracl[37]cryptographiclibrary
+videdwiththeMiracllibrary. Thecurvehasanembedding
+degree of k = 6 and the subgroup G has prime order p, for performingbig numberoperations, with the same pre-
+1
+generatedcurveastheonedescribedinSection8.1.2. The
+wherepis157bitslong. Weuseanidentitysizeof64bits,
+setintersectionprotocolruninStep2usesthepowerfunc-
+with32bitseachforthegroupidentifierandrole.
+tionmoduloa random512-bitsafe primeforcommutative
+Toevaluatetheperformanceourhandshakeprotocol,we
+encryption.
+compareditslatencywiththatoftheoriginalopenswanim-
+Eachuserisassociatedwithafilecontainingthelistofn
+plementation, which by default uses the Oakley authenti-
+attributesmakingupheridentity,inadditiontoafilethatde-
+catedDiffie-Hellmanprotocol[34],with1536-bitRSAsig-
+scribesthoseattributestheuserwantstheotherpartytohave
+natures for authentication. We measured the time for the
+when engaging in the handshake protocol. Attributes are
+initiating daemon to complete both phases (i.e., the time
+chosenfromtheuniverseofelements,U,consistingofthose
+to build an IPsec SA). The average time for our dynamic
+contiguouselementsfromZ∗, beginningwith1,forwhich
+matchingprotocol, measuredacross severalrunswith var- p
+a parameter is generated in the Setup phase. The overlap
+iousseeds, was0.78seconds, andtheaveragetimeforthe
+parameter,d,specifiestheminimumsetoverlapneededfor
+Oakleyprotocolwas0.5seconds.Thus,whilemoreexpen-
+asuccessfulhandshake.Wevarytheseparametersintheex-
+sive than a Diffie-Hellman exchange, we believe our pro-
+perimentsbelowtoassesstheirimpactontheperformance
+tocolis efficientenoughto be usefulin practice. The effi-
+oftheprotocol.
+ciencyofourprotocolstemsfromthefactthatitusesonly
+threepairingoperationsperpartyandonlyrequiresopera-
+tionsinG ,whichareconsiderablycheaperthanoperations 8.2.2 Results
+1
+inG .
+2 Setup: TheSetupphasegeneratestheparametersneeded
+intheremainingstages. Weassumeasuitableellipticcurve
+8.2 Fuzzyhandshakeperformance
+hasalreadybeenchosenandmeasurethelatencyforcom-
+puting the remaining parameters. Note that the Miracl li-
+We also implemented the fuzzy handshake scheme of brary can be used to generate fresh pairing-friendlyMNT
+Section 6. We focus on the performance of Steps 2–5 of curvesinseveralsecondsifsodesired.
+the protocol; namely, we assume that Alice and Bob have We measuredthetotallatencyoftheSetupphaseaswe
+alreadyexecutedStep1 (setintersectionandcircuitevalu- scale up the universesize from 10 to 1000attributes. The
+ation)tojointlylearnifthehandshakehasachanceofsuc- Setupphasetakes0.89secondstogenerateparameterswith
+ceeding.TheoverheadofStep1duetosetintersectionpro- a universesize of10, 7.46secondswith a universesize of
+tocolsisthesameaswhatwereportforStep2,andthethe 100, and roughly73 seconds with a universe size of 1000
+performanceofsecuretwo-partycircuitevaluation,accord- attributes. As expected, we observe that the latency scale
+ingtoexistingresults[31], isreasonablyfastandpractical linearlyintheuniversesize,withacostofroughly75mil-
+forsmallcircuits. lisecondsperadditionalattribute.
+In Step 2 of the fuzzy handshakingprotocol, Alice and
+Bobrunasecuresetintersectionprotocoltodeterminethe AddMember:TheAddMemberphaseoftheprotocoltakes
+overlappingattributesin theirrespectivesets. We choseto asinputthegroup’smastersecretandtheuser’sidentityand
+implement the set intersection protocol of [2] for use in generates credentials that the user employs in subsequent
+1025
+20
+15
+10
+5
+0
+10 15 20 25 30 35 40 45 50
+)ces(
+emiT
+10
+Add_Member
+Add_Member, Precomputation
+Handshake
+Handshake, Precomputation 9
+Intersection
+8
+7
+6
+5
+4
+0 10 20 30 40 50
+Identity Size (Attributes)
+Figure1.FuzzyHandshakePerformance
+)ces(
+emiT
+Handshake
+Overlap Size (Attributes)
+Figure2.FuzzyHandshake,OverlapScalability
+handshakes. The user receives two credential elements in used. This increase is attributed to the cost of additional
+G perattributeinheridentity. Generationofthefirstele- evaluationsofT .
+2 1
+ment, d i, involvesone exponentiationin G 2, while gener- For some applications, a user may be likely to use the
+ationofthesecondelement,D i, requiresevaluationofthe samevectorofdesiredattributes(e.g.,u0 forAlice)across
+B
+publicfunctionT 2. multiplehandshakes.Tooptimizeperformance,theT 1eval-
+TomeasurethecostoftheAddMemberphase,wegener- uationscan beprecomputed. Theeffectof thisprecompu-
+atedrandomidentitiesconsistingofbetween10and50at- tation is shown in Figure 1. Since the overlap parameter
+tributes,chosenfromauniversesizeof100.Thetoplinein remainsconstant,theslightincreaseinlatencyreflectsone
+Figure1showsthetotaltimeneededtogeneratetheuser’s additional exponentiation in G per attribute, which costs
+1
+credentials for each identity size. We can see a linear in- about1.6milliseconds.
+crease in the identity size, from roughly 5 seconds at 10
+Finally, we investigated the impact of increasing the
+attributestojustbelow25secondsat50attributes.
+overlap variable, d, which results in more pairing compu-
+To achieve better performance at the cost of additional
+tationsandmultiplicationstocomputethekey. Forthisex-
+storagespace,thegroupauthoritycanprecomputetheresult
+periment,wemaintainedaconstantuniversesizeof100at-
+ofT . AsseeninFigure1,theprecomputationsignificantly
+2 tributes,with50attributesineachuser’scredentials.Figure
+decreasestheamountoftimerequired,from2.9secondsat
+2showstheeffectsofincreasingdfrom5to50attributes.
+10attributesto12.8secondsat50attributes.
+Thedifferenceinlatency,from4.34secondswithd = 5to
+9.36 seconds with d = 50, represents the overhead of the
+Handshake:InStep2ofthefuzzyhandshakeprotocol,two extrapairingsandmultiplications.
+userscomputeasecuresetintersectionontheirappropriate
+vectors. Figure1showsthattheintersectionprotocoladds
+onlyasmallamountoflatencyinrelationtotheoverallcost Remarks: Our measurements show that the fuzzy hand-
+ofthehandshake,rangingfrom0.1secondsat10attributes shake protocol has the ability to perform reasonably well
+to 0.5 seconds at 50 attributes. This cost is mostly due to inpractice. TheSetupphasescaleslinearlyintheuniverse
+the application of the encryption function to both sets of size,whileAddMemberscaleslinearlyintheuser’sidentity
+vectors. size. AsignificantreductioninthelatencyofAddMember
+After computing the set intersection, the users engage canbeachievedviaprecomputation.Asthepriceofstorage
+in the handshake, which uses 2d+ 1 pairings per user to continuestodecrease,itisreasonabletoassumethatagroup
+generate the two keys. Each user also evaluates T on n administratorwillbewillingtotradeofftheadditionalstor-
+1
+attributesaspartoftheexchange. age cost for the performance benefits of precomputation.
+We first investigated the impact of increasing the num- Similarly,precomputationcanreducethecostofthehand-
+berofattributesin the users’ credentialsonthe handshake shakewhenamemberreusesitsvectorofdesiredattributes.
+latency. Theuniversesize andoverlapvariableswerekept Thisbenefitbecomesmorepronouncedastheidentitysize
+constant at 100 and 10 attributes, respectively. We gener- increases, although memory-scarce devices may prefer to
+ated random pairs of overlapping identities for each iden- pay a higher cost in latency for reducedstorage overhead.
+titysize. Figure1showsalinearincreaseinlatencyasthe Whilethepairingcomputationremainscomputationallyex-
+numberofattributesincreases,from2.25secondswhen10 pensive,theprotocolscaleswellinboththeattributesetsize
+attributes are used, to 5.29 secondswhen 50 attributes are andtheoverlapsize.
+118.3 PerformanceofFuzzyIBE 25
+Because Attribute-Based Encryption (ABE), and fuzzy 20
+IBEasaspecificinstanceofABE,wasintroducedonlyre-
+cently,inthissectionwewouldliketocommentontheper- 15
+formance of our solution, which was designed to achieve
+privacy,ascomparedtotheoriginalscheme. Theonlyim- 10
+plementation of fuzzy IBE that we are aware of appeared
+veryrecently[35]andprovides(amongotherperformance 5
+results) performance evaluation of KeyGen, Encrypt, and
+0
+Decrypt algorithms using MNT curves. The goal of this 10 15 20 25 30 35 40 45 50
+section is then to compare the performance of KeyGen
+(whichcorrespondstoAddMember inSHS), Encrypt,and
+DecryptoperationsinourimplementationoffuzzyIBEus-
+ingasymmetricgroupsandthecorrespondingcomputations
+inourmodifiedscheme.
+Before presenting the data we collected, we describe
+howtheexperimentswereconducted.
+FuzzyIBESchemeusingAsymmetricGroups: Thebest
+implementationchoiceofthefuzzyIBEscheme(described
+in Section A.2) using asymmetric groupsG and G is to
+1 2
+set g,g ∈ G and g ∈ G . This gives us that the com-
+1 2 2 1
+putationof the functionT(·) will always be in G , opera-
+1
+tions in which are significantly more efficient than in G .
+2
+Inthis case, a privatekeyforidentityw consists ofvalues
+{D } ∈G and{d } ∈G .
+i i∈w 1 i i∈w 2 Assuggestedin[35],decryptionoptimizationispossible
+bydecryptingthemessageusingtheorderofoperationsas
+in
+E0 e ELi,S(0) ,d i∈S i i
+M =
+e Q D(cid:16)Li,S(0) ,E00 (cid:17)
+i∈S i
+(cid:16) (cid:17)
+insteadof Q
+e(E ,d )
+Li,S(0)
+M =E0 i i
+e(D ,E00) i∈S(cid:18) i (cid:19)
+Y
+Our results indicatethat in this scheme the aboveorderof
+computationresultsinasignificantimprovementofthede-
+cryptiontime. Wealsoaddaslightoptimizationtotheen-
+cryption operation by computing the first term of the en-
+cryptiontupleE0ase(gs,g )insteadofe(g ,g )s.
+2 1 2 1
+Finally,wemeasuretheperformanceofKeyGenandop-
+timized Encrypt algorithms assuming that the evaluations
+offunctionT havebeenprecomputed.
+Our SHS-based Scheme: Recall that for privacy reasons
+the values composing an encryption of a message have to
+be in the same group (in our case, they are in G ). Then
+1
+all parts of the private keys {D } and {d } are in
+i i∈w i i∈w
+G . Also,computationofthefunctionT(·)inbothG and
+2 1
+G is needed. Fortunately, computing T in G is needed
+2 2
+)ces(
+emiT
+SHS
+SHS, Precomputation
+FIBE
+FIBE, Precomputation
+Identity Size (Attributes)
+Figure 3. ComparisonofFuzzyIBE KeyGen and
+ourAddMemberPerformance
+onlyduringtheissuanceofsecretkeys,whichisperformed
+once per user by the (powerful)server, but not during en-
+cryption/decryptionoperations. The need to evaluate T in
+G means that our AddMember algorithm is unavoidably 2
+slowerthanKeyGenintheoriginalscheme.
+Unfortunately, the decryption optimization described
+above does not result in faster performance in our SHS-
+based scheme. In our case, this optimization amounts to
+computing:
+E0 e ELi,S(0) ,d i∈S i i
+M = .
+e QE00, (cid:16) DLi,S(0) (cid:17)
+i∈S i
+(cid:16) (cid:17) Q As canbe seen fromthe equation,thisorderof operations
+requires us to execute additional operations in G (as op- 2
+posedtoG infuzzyIBE),whereoperationsareexpensive,
+1
+mitigating the benefits of the reduced number of pairing
+computations. Theotherkindofoptimization(thoughvery
+minor)isstillpossiblebycomputinge(gx,h). α
+Similar to the previous case, we measure the perfor-
+mance of the regular, optimized, and optimized with pre-
+computationimplementations.
+The executionenvironmentandimplementationparam-
+eters we used here were the same as those described in
+Section8.2. Figure3comparesperformanceoffuzzyIBE
+KeyGenandourAddMemberalgorithmsfordifferentiden-
+titysizes. Figure4providesacomparisonoftheencryption
+operationinfuzzyIBEandthecorrespondingcomputation
+in our scheme. Note that the optimization of the encryp-
+tionoperationresultsinnegligibleadvantage,andforclar-
+ityofthefigurewedonotplotsuchresults. Figure5shows
+theresultsofourexperimentsforthedecryptionoperation.
+As was mentioned above, the optimization technique pro-
+posed in [35] does not offer computational advantage for
+our scheme, and thus such results are not included in the
+figure. Also, since precomputationcannotbe donefor de-
+124
+3
+2
+1
+0
+10 15 20 25 30 35 40 45 50
+)ces(
+emiT
+FIBE
+SHS
+FIBE, Precomputation
+SHS, Precomputation
+Identity Size (Attributes)
+Figure 4. Comparison of Encryption Computa-
+tionsinFuzzyIBEandourSHS-basedScheme
+2
+1.5
+1
+0.5
+0
+10 15 20 25 30 35 40 45 50
+)ces(
+emiT
+6
+5
+4
+3
+2
+1
+0
+5 10 15 20 25 30 35 40 45 50
+FIBE
+SHS
+FIBE, Optimized
+Identity Size (Attributes)
+Figure 5. Comparison of Decryption Computa-
+tionsinFuzzyIBEandourSHS-basedScheme
+cryptionoperations,suchdata is notavailablein this case.
+Similar to the experiments of Section 8.2, we varied the
+identitysizeinFigures3,4,and5from10to50attributes
+withtheuniversesizeof100andtheoverlapsizeof10at-
+tributes.
+Finally,sinceperformanceofthedecryptionoperationis
+determined by the threshold d (minimum overlap size re-
+quired)ratherthanthe numberof attributesin theidentity,
+Figure 6 illustrates the performance of this operation as a
+function of the overlap size. We varied the overlap size
+from 5 to 50 attributes, with the universe size of 100 and
+theidentitysizeof50attributes.
+We can see from Figure 4 that our encryption compu-
+tation achieves very similar (and even slightly faster) per-
+formanceto the fuzzyIBE scheme, both with and without
+precomputation. Figure 5 shows that our decryptioncom-
+putation has the same cost as the unoptimized fuzzy IBE
+scheme, but that the optimization for fuzzy IBE results in
+asignificantspeedup.WhiletheSHS-basedkeygeneration
+anddecryptioncomputationsresultinslowerperformance,
+)ces(
+emiT
+SHS
+FIBE, Optimized
+Overlap Size (Attributes)
+Figure 6. Comparison of Decryption Computa-
+tions,OverlapScalability
+ourschemeachieveskeyprivacy,whichisnotavailablein
+theoriginalfuzzyIBEscheme. Thus,thedifferenceinthe
+performance can be viewed as the cost of privacy in this
+setting.
+9 Conclusions
+Thisworksextendstheoriginaldefinitionofsecrethand-
+shakes where two users engage in a mutualauthentication
+protocolandjointlyagreeonakeyforfurthercommunica-
+tion only if both of them are membersof the same group.
+In this work, we allow each participantto specify the role
+andgroupofthe otherpartyandthusaddflexibilityto the
+authenticationrules. We callsuch authenticationrulesdy-
+namicmatching.Furthermore,weextendsecrethandshakes
+to support arbitrary attributes and define approximate or
+fuzzy matching authentication rules. Additionally, our re-
+sult is the first fully unlinkable and efficient secret hand-
+shakeschemesecureinthestandardmodel.
+We provide an implementation showing the feasibility
+ofourapproach. Ourimplementationofsecrethandshakes
+with dynamic matching was integrated into IPsec by ex-
+tending its key exchange capability, and our implementa-
+tionofsecrethandshakeswithfuzzymatchingshowedthat
+theirperformanceisefficientenoughtobeusedinpractice.
+Additionally,weprovideperformanceoftheoriginalfuzzy
+IBEschemeandcompareittotheperformanceofourmod-
+ifiedapproachwhichachievesuserprivacy.
+Acknowledgments
+We aregratefultoMattGreenforprovidingsamplesof
+codeandfeedbackontheMiracllibraryaswellastheim-
+plementation. We would like to thank Patrick Traynorfor
+suggesting social networks as a compelling application of
+13fuzzysecrethandshakes.Wealsothanktheanonymousref- [16] T.DierksandC.Allen. RFC2246: TheTLSprotocolver-
+ereesfortheirinsightfulcomments. sion1,Jan.1999.
+[17] M. Freedman, K. Nissim, and B. Pinkas. Efficient private
+matchingandsetintersection. InAdvancesinCryptology–
+References
+EUROCRYPT’04,volume3027ofLNCS,pages1–19,2004.
+[18] S.Galbraith,K.Paterson,andN.Smart. Pairingsforcryp-
+[1] Theopenswanproject,http://www.openswan.org/. tographers. Cryptology ePrint Archive, Report 2006/165,
+[2] R. Agrawal, A. Evfimievski, and R. Srikant. Information 2006. http://eprint.iacr.org/.
+sharing across private databases. In ACMSIGMOD Inter- [19] D. Harkins and D. Carrel. RFC 2409: The Internet Key
+nationalConferenceonManagementofData,pages86–97, Exchange(IKE),Nov.1998.
+2003. [20] J.Holt. ReconcilingCA-obliviousencryption, hiddencre-
+[3] G.Ateniese,J.Camenisch,andB.deMedeiros.Untraceable dentials, OSBE and secret handshakes. Cryptology ePrint
+RFID tags via insubvertible encryption. In ACM Confer- Archive Report 2005/215, 2005. http://eprint.
+enceonComputerandCommunicationsSecurity(CCS’05), iacr.org/2005/215.
+pages92–101,Nov.2005. [21] J.Holt,R.Bradshaw,K.Seamons,andH.Orman. Hidden
+[4] G. Ateniese, J. Camenisch, S. Hohenberger, and credentials. InACMWorkshoponPrivacyintheElectronic
+B. de Medeiros. Practical group signatures without Society,pages1–8,2003.
+random oracles. Cryptology ePrint Archive: Report [22] J. Holt and K. Seamons. Reconciling CA-oblivious en-
+2005/385, http://eprint.iacr.org/2005/385, cryption,hiddencredentials,OSBE,andsecrethandshakes.
+2005. TechnicalReport 2006-5(Internet SecurityResearchLab),
+[5] D.Balfanz,G.Durfee,N.Shankar,D.Smetters,J.Staddon, BrighamYoungUniversity,June2006.
+and H. Wong. Secret handshakes from pairing-based key [23] S. Jarecki, J. Kim, and G. Tsudik. Authentication for
+agreements. InIEEESymposiumonSecurityandPrivacy, paranoids: Multi-partysecrethandshakes. InInternational
+pages180–196,2003. ConferenceonAppliedCryptographyandNetworkSecurity
+[6] L. Ballard, M. Green, B. de Medeiros, and F. Monrose. (ACNS’06),June2006.
+Correlation-resistant storage via keyword-searchable en- [24] C. Kaufman. RFC 4306: Internet Key Exchange (IKEv2)
+cryption. Cryptology ePrint Archive: Report 2005/417, Protocol,Dec.2005.
+http://eprint.iacr.org/2005/417,Nov.2005. [25] S.KentandR.Atkinson. RFC2401: Securityarchitecture
+[7] D.BonehandX.Boyen. Efficientselective-idsecureiden- fortheInternetProtocol,Nov.1998.
+titybasedencryptionwithoutrandomoracles. InAdvances [26] A.KiayiasandA.Mitrofanova. Testingdisjointnessofpri-
+in Cryptology – EUROCRYPT’04, volume 3027 of LNCS, vatedatasets. InFinancialCryptographyandDataSecurity
+2004. (FC’05),volume3570ofLNCS,pages109–124,2005.
+[8] D. Boneh and X. Boyen. Secure identity based encryp- [27] L.KissnerandD.Song. Privacy-preservingsetoperations.
+tionwithoutrandomoracles. InAdvancesinCryptology– InAdvancesinCryptology–CRYPTO’05,volume3621of
+CRYPTO’04,volume3152ofLNCS,2004. LNCS,pages241–257,2005.
+[9] D. Boneh, X. Boyen, and H. Shacham. Short group sig- [28] N. Li, W. Du, and D. Boneh. Oblivious signature-based
+natures. In Advances in Cryptology – CRYPTO’04, vol- envelope. InACMSymposium on Principlesof Distibuted
+ume3152ofLNCS,pages41–55,2004. Fullversionavail- Computing(PODC’03),pages182–189,2003.
+able at http://crypto.stanford.edu/˜dabo/ [29] S. Li and A. Ephremides. Anonymous routing: A cross-
+abstracts/groupsigs.pdf. layer coupling between application and network layer. In
+[10] D.BonehandM.Franklin. Identitybasedencryptionfrom ConferenceonInformationSciencesandSystems(CISS’06),
+theWeilpairing. SIAMJournalofComputing, 32(3):586– 2006.
+615,2003. [30] G. Liang and S. Chawathe. Privacy-preserving inter-
+[11] X.BoyenandB.Waters. Anonymoushierarchicalidentity- databaseoperations. InSymposiumonIntelligenceandSe-
+basedencryption(withoutrandomoracles). InAdvancesin curity Informatics (ISI’04), volume 3073 of LNCS, pages
+Cryptology–CRYPTO’06,2006. 66–82,2004.
+[12] R.Brawshaw,J.Holt,andK.Seamons.Concealingcomplex [31] D.Malkhi, N.Nisan, B.Pinkas, andY. Sella. Fairplay—
+policies with hidden credentials. In ACM Conference on asecuretwo-partycomputationsystem. InUsenixSecurity
+ComputerandCommunicationsSecurity(CCS’04),2004. Symposium,pages287–302,2004.
+[13] C. Castelluccia, S. Jarecki, and G. Tsudik. Secret hand- [32] D.Maughan,M.Schertler,M.Schneider,andJ.Turner.RFC
+shakesfromCA-obliviousencryption. InASIACRYPT,vol- 2408: Internet SecurityAssociation and Key Management
+ume3329ofLNCS,pages293–307,2004. Protocol(ISAKMP),Nov.1998.
+[14] C.Clifton,M.Kantarcioglu,J.Vaidya,X.Lin,andM.Zhu. [33] S.NasserianandG.Tsudik. Revisitingoblivioussignature-
+Toolsforprivacypreservingdistributeddatamining. ACM basedenvelopes: Newconstructsandproperties. InFinan-
+SIGKDDExplorationsNewsletter,4(2):28–34,Dec.2002. cialCryptographyandDataSecurity(FC’06),2006.
+[15] S.Crosby,I.Goldberg,R.Johnson,D.Song,andD.Wagner. [34] H.Orman. RFC2412: TheOAKLEYKeyDetermination
+A cryptanalysis of the high-bandwidth digital content pro- Protocol,Nov.1998.
+tectionsystem. InACMWorkshoponSecurityandPrivacy [35] M.Pirretti,P.Traynor,P.McDaniel,andB.Waters. Secure
+in Digital Rights Management (DRM’01), pages 192–200, attribute-basedsystems. InACMConferenceonComputer
+2001. andCommunicationsSecurity(CCS’06),Nov.2006.
+14[36] A.SahaiandB.Waters.Fuzzyidentity-basedencryption.In from G. The public parameters are g, g , g , u0, and U.
+1 2
+Advances in Cryptology – EUROCRYPT’05, volume 3494 Themastersecretisgα.
+2
+ofLNCS,pages457–473,2005.
+[37] M. Scott. MIRACL library. Indigo software, KeyGen. Letvbeann-bitidentityandv denoteitsithbit.
+i
+http://indigo.ie/˜mscott.
+AlsoletV ⊆{1,...,n}bethesetofallindicesiforwhich
+[38] M. Scott. Authenticated ID-based key exchange
+bitv = 1. Aprivatekeyforidentityvisgeneratedbyfirst
+and remote log-in with simple token and PIN num- i
+ber. Cryptology ePrint Archive: Report 2002/164, randomlychoosingr ←R Z pandthensettingtheprivatekey
+http://eprint.iacr.org/2002/164,2002. tod v =(d 1,d 2)=(g 2α(u0 i∈V u i)r,gr).
+[39] G.TsudikandS.Xu.Briefannouncement:Aflexibleframe-
+workforsecrethandshakes. InACMSymposiumonPrinci- Encrypt.AmessageM
+∈QG
+isencryptedforidentityvby
+T
+plesofDistributedComputing(PODC’05),page39,2005. firstchoosingt ←R Z andthenconstructingtheciphertext
+[40] G.TsudikandS.Xu. Flexibleframeworkforsecrethand- p
+asC =(C ,C ,C )=(e(g ,g )tM,gt,(u0 u )t).
+shakes(multi-partyanonymousandun-observableauthenti- 1 2 3 1 2 i∈V i
+cation). CryptologyePrintArchive,Report2005/034,2005.
+Q
+http://eprint.iacr.org/2005/034. Decrypt. Given a valid ciphertext C = (C 1,C 2,C 3) that
+[41] J. Vaidyaand C. Clifton. Secureset intersection cardinal- corresponds to the encryption of M under the identity v,
+itywithapplicationtoassociation rulemining. Journal of decryptC usingkeyd v =(d 1,d 2)as:
+ComputerSecurity,13(4):593–622,2005.
+[42] D. Vergnaud. RSA-based secret handshakes. In Interna-
+C
+e(d 2,C 3)
+= (e(g ,g )tM)
+e(gr,(u0
+i∈V
+u i)t)
+tional Workshop on Coding and Cryptography (WCC’05), 1 e(d ,C ) 1 2 e(gα(u0 u )r,gt)
+1 2 2 Qi∈V i
+volume3969ofLNCS,pages252–274,2006.
+(e(g ,g )tM)e(g,(u0 u )rt)
+[43] B.Waters. Efficientidentity-basedencryptionwithoutran-
+=
+1 2 Qi∈V i
+domoracles.InAdvancesinCryptology–EUROCRYPT’05, e(g 1,g 2)te((u0 i∈VQu i)rt,g)
+volume3494ofLNCS,pages114–127,2005. = M.
+[44] S.XuandM.Yung. k-anonymous secrethandshakes with Q
+reusablecredentials. InACMConferenceonComputerand
+A.2 FuzzyIdentity-BasedEncryption
+CommunicationsSecurity(CCS’04),pages158–167,2004.
+[45] A.Yao.Protocolsforsecurecomputations.InSymposiumon
+Foundations of Computer Science (FOCS’82), pages 160– Fuzzy IBE [36] is a new typeof identity-basedencryp-
+164,1982. tion, whereidentitiesare viewedas a set of descriptiveat-
+[46] Y.Zhang,W.Liu,andW.Lou.Anonymouscommunications tributes.Auserwiththesecretkeyfortheidentitywisable
+inmobileadhocnetworks. InINFOCOM,2005. todecryptaciphertextencryptedwiththepublickeyw0 iff
+[47] Y.Zhang,W.Liu,W.Lou,andY.Fang. Anonymoushand- w and w0 are within a certain distance of each other. We
+shakesinmobileadhocnetworks. InIEEEMilitaryCom-
+brieflyreviewtheconstructionof[36]next.
+municationsConference(MILCOM’04),2004.
+Letidentitiesberepresentedassetsofattributes,andlet
+[48] L. Zhou, W.Susilo, and Y.Mu. Three-round secret hand-
+drepresenttheminimalnumberofthemthatmustoverlap
+shakesbasedonElGamalandDSA. InInternationalCon-
+inorderfordecryptiontosucceed(i.e.,drepresentstheer-
+ference on Information Security Practice and Experience
+ror tolerance). Then the authoritycan create a private key
+(ISPEC’06),volume3903ofLNCS,pages332–342,2006.
+forauserbyassociatingarandom(d−1)-degreepolyno-
+mialq(x)withheridentity.Let(p,G,G ,g,e)←Set(1κ)
+A Background T
+andtheidentitiesbeoflengthnforsomefixedn. TheLa-
+grangecoefficientL fori ∈ Z andasetS ofelements
+i,S p
+A.1 Identity-BasedEncryption inZ isdefinedasL (x)= x−j.Identitieswill
+p i,S j∈S,j6=i i−j
+besetsofnelementsofZ∗.
+p
+TheIBEschemedescribedinthissectionisduetoWa- Q
+ters[43]. Let(p,G,G T,g,e) ← Set(1κ). Asinanyother Setup. Given n and d, choose g
+1
+= gy, g
+2
+∈ G, and
+IBEscheme,identitiesservetheroleofpublickeysandare t ,...,t ←R G.LetN ={1,...,n+1}andletthefunc-
+1 n+1
+representedas bitstringsoflengthn (theycanalso be rep-
+tion T(x) = gxn n+1tLi,N(x) (T can be viewed as the
+resentedasbitsringsofarbitrarylengthandnbetheoutput 2 i=1 i
+function gxn gh(x) for some n-degree polynomial h). The
+length of a collision-resistanthash function). The encryp- 2 Q
+publishedpublickeyisg ,g ,t ,...,t , andtheprivate
+tionschemethenconsistsofthefollowingalgorithms: 1 2 1 n+1
+keyisy.
+Setup. Chooseα ←R Z p,andg
+2
+←R G,whereg
+2
+generates
+KeyGen. Togenerateaprivatekeyforidentityw,a(d−1)-
+G; set g = gα. Also choose u0 ←R G and an n-length degreerandompolynomialq ischosensuchthatq(0) = y.
+1
+vector U = (u ), whose elements are chosen at random Theprivatekeythenconsistsofaset{D } ,whereD =
+i i i∈w i
+15g 2q(i)T(i)ri andr iisarandomelementofZ pdefinedforall thesetofuserswhoaremembersofgroupG tunderroleR t.
+i∈w,andanotherset{d i} i∈w,whered
+i
+=gri. Then the security property of a secret handshake scheme
+regardingmemberimpersonationcanbestatedasfollows:
+Encrypt. To encrypt a message M ∈ G with the pub-
+T
+lic key w0, first choose s ←R Z and then constructthe ci- Definition4(Impersonatorresistance) We say that the
+p
+phertextasE = (w0,E0 = Me(g ,g )s,E00 = gs,{E = secret handshake scheme SHS is impersonator resistant if
+1 2 i
+T(i)s} i∈w0). anadversaryAwhonevercorruptsanymemberofthetar-
+getgroupG withroleR andnevercorruptstheGAhasat
+t t
+Decrypt. Suppose, given a ciphertext E encrypted with a most negligible probability in winning the member imper-
+keyforidentityw0,wewouldliketodecryptitusingakey sonationgameforG tandR t. Thatis,ifU A∩U Gt,Rt =∅,
+foridentitywsuchthat|w∩w0| ≥ d. Todoso,choosean thenAdvimpisnegligibleforallA.
+A
+arbitraryd-elementsubsetS ofw∩w0 andcompute:
+NotethatthisboundmustholdevenifAcorruptsmembers
+M = E0
+e(d i,E i) Li,S(0) ofG toruserswithrolesR t,aslongasacorruptedmember
+e(D ,E00) doesnothavegroupG tandroleR tsimultaneously.
+i Y∈S(cid:18) i (cid:19) For an adversary A we also define a member detection
+e(gri,T(i)s)
+Li,S(0)
+game. Intuitively, A cannot detect members of a certain
+= Me(g 1,g 2)s
+i∈S
+e(g
+2q(i)T(i)ri,gs)!
+g shro aku epi yf ih ee ldr sin nte ora nc et wion inw foit rh ma ag tir oo nup tom te hm eb ae dr vd eu rsri an rg y.ah Man od re-
+Y
+e(gri,T(i)s) Li,S(0) formally, A should not be able to distinguish between in-
+= Me(g ,g )s teractionwithagroupmember(havingaspecificrole)and
+1 2
+i∈S
+e(g 2q(i) ,gs)e(T(i)ri,gs)!
+a random simulator. Thus, the member detection game is
+Y
+1 definedasfollows:Ainteractswithusersofherchoiceand
+= Me(g,g )ys =M.
+2
+i∈S
+e(g,g 2)q(i)sLi,S(0) obtains secrets for some users U A. Then A selects a tar-
+Y getuserU 6∈ U . A randombitb ← {0,1}isflipped. If
+t A
+b = 0, A interacts with U . If b = 1, A interacts with a
+B Security Definitions and Proofs t
+random simulator. Finally, A outputs a guess b0 for b and
+winsifb = b0. ThememberdetectionadvantageAdvdet of
+In thissectionwe first formallydefinethe propertiesof A
+A is defined as the probability of A winning the member
+impersonationresistance,detectionresistance,andunlinka-
+detectiongameminus1/2. Thenthecorrespondingsecurity
+bility;andthenprovidesecurityproofsofbothofourcon-
+definitionis:
+structionswithrespecttothesesecurityproperties.
+Definition5(Detectorresistance) LetG bethegroupto
+t
+B.1 Securitydefinitions
+whichU belongsandR betherolethatshehasinG . We
+t t t
+saythataschemeSHSisdetectorresistantifanadversary
+Considerthefollowingmemberimpersonationgamefor AwhodidnotcorruptanymemberofG withroleR and
+t t
+a (polynomial-time) adversary A: A interacts with users did notcorruptthe GA hasat mostnegligiblememberde-
+ofherchoiceandobtainssecretsforsomeofthem;letU A tectionadvantage.Thatis,ifU A∩U Gt,Rt =∅,thenAdvd Aet
+denote the users that A controls. Then A selects a target isnegligibleforallA.
+group G a member of which she wants to impersonate,
+t
+a target role R under which she wants to impersonate a Thelastsecuritypropertythatweneedtodefinehereisun-
+t
+user, and a target user U such that U 6∈ U with whom linkability of two executions of the secret handshake pro-
+t t A
+shewouldliketocommunicate. Inotherwords,theadver- tocol. Intuitively,inaschemethatsupportunlinkabilityan
+sary will interactwith U trying to impersonate a member adversary who participates in one handshake protocoland
+t
+of groupG with role R . We also require that A did not then engagesin another shouldnot be able to tell whether
+t t
+corrupttheGA. Aengagesinahandshakeinteractionwith she is communicating with the same or a different user.
+U andwinsthegameifU cannotdistinguishbetweenA’s Sincewedonotwanttheadversarytomakethisdistinction
+t t
+messagesandtherealexecutionofthehandshakeprotocol basedontheoutcomeoftheprotocol(i.e.,ifthehandshake
+and at the end of the interaction A can compute the same succeeds in the first executionand fails in the second, she
+keythatU obtains. Followingthe memberimpersonation knowsthattheycorrespondtomembersofdifferentgroups
+t
+gamesemployedin prior literature, we assume that, at the andtheusersmustbedistinct),wewillassumethatifadif-
+endofthegame,Aoutputsthekeyshecomputed. ferentuser is chosen for the second, challenge, handshake
+LetAdvimpdenotetheprobabilitythatadversaryAwins protocol,theprotocolwillresultinthesameoutcomeasthe
+A
+the member impersonationgame. Also, let U denote firstexecution.
+Gt,Rt
+16As before, we consider a polynomial-timeadversaryA in the secret handshake protocol), it is not possible to tell
+who this time participates in a linking game: A interacts whetherv =v .
+1 2
+withusersofherchoiceandobtainssecretsforsomeusers
+U . Then A selects a target user U 6∈ U such that A Lemma1 Under the SXDH assumption, the secret hand-
+A t A
+did not corrupt the GA of U ’s group, and engages in a shake scheme with dynamic matching provides privacy of
+t
+handshake protocols with U . A random bit b ← {0,1} identities.
+t
+is flipped. If b = 0, A engages in a handshake protocol
+Proof Let A be an adversarywho can violate the privacy
+with the same member. If b = 1, A engages in a hand-
+propertyoftheschemewithacertainprobability. We then
+shake protocolwith a differentmemberwhom she did not
+corrupt. Finally, A outputs her guess b0 for b and wins if construct an adversary A0 who uses A as a black box to
+b = b0. ThelinkingadvantageofA,denotedbyAdvlink,is solve an instance of the decisional Diffie-Hellman prob-
+A lem. A0 receives values g,g ,g ,g ∈ G and must de-
+theprobabilitythatAwinsthelinkinggameminus1/2. 1 2 3 1
+termine whether there is an integer a such that g = ga
+1
+Definition6(Unlinkability) WesaythataschemeSHSis and g 3 = g 2a. A0 first sets up the environment for A by
+unlinkableifanadversaryAwhodidnotcorruptthemem- choosing h ∈ G 2 and initializing the rest of the parame-
+berswithwhomitinteractsandtheGA,hasatmostnegli- tersasinthesecrethandshakeschemetoobtainparams =
+giblelinkingadvantage. (p,G 1,G 2,G T,e,g,h,g α,G0,G 1,...,G n). A0 addsusers
+asusual, andA is allowedto communicatewith them and
+In secret handshakes with attribute-based matching, the corruptsomeuserswhoaredenotedbyU .
+A
+abovememberimpersonationandmemberdetectiongames Then A receives two messages of the form
+andthecorrespondingdefinitionsmustbemodifiedtotake (gx,(rep (v))x) and is asked to decide whether they
+1
+intoaccountuserattributes.Thus,inthememberimperson- correspond to the same identity or not. A0 constructs
+ation game for secret handshakes with fuzzy matching, A these messages as follows: she chooses x,y,s,t ←R Z ,
+p
+selects the targetuser U t andthe attributesu, an ownerof then forms the first message as (gsx,gtx) and the second
+1
+whichAwouldliketoimpersonate.WerequirethatU thas message as (gsy,gty). If A replies indicating that they
+at most d attributes in common with u and the users cor- correspondtoth2 esa3 meidentity,A0answerstoitschallenge
+rupted by A do not have d or more attributes in common
+saying that such an integer a exists; and if A says the
+inu. Similarmodificationsapplyto thememberdetection messagescorrespondtodifferentstrings,A0 repliessaying
+game.
+thatnosuchintegeraexists.
+As mentioned earlier, the member impersonation prop-
+ItisclearthatifAwinswithanon-negligibleprobabil-
+ertyofoursecrethandshakeswithfuzzymatchingholdsin ity,sodoesA0,leadingtoacontradictiontoourassumption
+theFuzzySelective-IDmodel[36],whichwedescribenext. of G being DDH-hard. Therefore, the scheme must pro-
+1
+videprivacyofidentities. (cid:3)
+Fuzzy Selective-ID: The adversary A declares the chal-
+lenge identity u. The challengerruns the setup algorithm,
+Note thatif it is difficultto decidewhethersuch messages
+providesAwithpublicparameters,andcreatesusers.Next,
+correspondto the same identityor not, itimplies the diffi-
+Aisallowedtocorruptuserswithidentitiesw byrequest-
+j
+culty of determiningwhether they (or one of them) corre-
+ing their private keys from the challenger, as long as the
+spondtoaspecificidentity.
+numberofattributesthatuandw haveincommonisless
+j
+thand,i.e.,|u∩w |<d. Finally,Aengagesinahandshake
+j Lemma2 UndertheBDHandSXDHassumptions,these-
+protocol with the challenger impersonating the identity u.
+crethandshakeschemewithdynamicmatchingprovidesim-
+AttheendoftheprotocolAoutputsthekeyandwinsifshe
+personatorresistance.
+wasabletocorrectlycomputeit.
+Proof Sketch Let A be an adversary who attacks imper-
+B.2 Securityofthesecrethandshakeschemewith
+sonationresistanceofthesecrethandshakeschemeandcan
+dynamicmatching
+impersonate a member with a certain probability. Then
+we construct A0 who uses A to solve an instance of the
+Beforeweproceedwithshowingthepropertiesrequired BDH problem. A0 is giveng ,ga,gb,gc,g ,ga,gb, where
+1 1 1 1 2 2 2
+of the handshake scheme, we show that the scheme pro- g ∈ G and g ∈ G and the challenge is to compute
+1 1 2 2
+vides privacy of identities. This result will be used to e(g ,g )abc.
+1 2
+showothersecurity propertiesof the scheme. Inmorede- The proofstrategy we employ is similar to that used in
+tail, the privacypropertyrequiresthatgiventwo messages the security proof of Waters IBE scheme [43], which we
+(gx,(rep (v ))x)and(gy,(rep (v ))y)foridentitiesv and adaptto the case of asymmetricgroups. Therefore,we do
+1 1 1 2 1
+v , respectively (which correspond to the data exchanged notprovidethefulldetailsofithere.
+2
+17ThesimulatorA0 setsanintegerm =4q,whereqisthe Impersonatorresistance: ByLemma2.
+upper bound on the number of private key queries that an
+Detectorresistance:Inthememberdetectiongame,thead-
+R
+adversary can make, and chooses k ← {0,n}. She then versaryAselectsan(uncorrupted)userofherchoiceU and
+t
+choosesa randomvectorX = {x }n , whereeachx ←R engagesinahandshakewiththatuser. Thegoalofthead-
+i i=1 i
+{0,m−1}, and also x0 ←R {0,m−1}. Additionally, A0 versaryisto distinguishbetweeninteractionwith thatuser
+choosesa randomvector Y = {y }n , where each y ←R and a random simulator. Since in this scheme during the
+i i=1 i handshake U sends only (gx,(rep (v))x), where v is the
+Z p,andy0 ←R Z p. expectedident tityoftheotherend,th1 ismessagecanbegen-
+Recallthat,foranidentityv, V ⊆ {1,...,n}istheset eratedbyanyone. Therefore,Acannotdeterminewhether
+ofindicesiforwhichtheithbitofvequalsto1.Following itwassentbyU orasimulator.AndbyLemma1Acannot
+t
+Boneh-Boyen[8]andWaters[43], wedefinethefunctions recovervfromthismessagetomakeherdecisionbasedon
+F(v)=(p−mk)+x0+ i∈V x i,J(v)=y0+ i∈V y i, thestringv.
+andK(v)as:
+P P Unlinkability: In the handshake protocol, the participants
+0, ifx0+ ≡0(mod m) do not send any information about their own credentials,
+K(v)= i∈V
+1, otherwise butinsteadtheyonlysendinformationaboutthecredentials
+(cid:26) P theyrequestfromtheotherparty.Thistriviallyimpliesthat
+The simulatorsets g = g , g = ga, g˜ = g , h = gb, an adversarycannottell apartrequestsby the same or dif-
+1 α 1 2 2
+G0 =(g 1b)p−km+x0 g 1y0 ,G
+i
+=(g 1b)xig 1yi,andoutputspublic ferentusers.
+parameters params = (p, G , G , G , e, g, h, g , G0, However, since the credentials that users request from
+1 2 T α
+G ,...,G ). Notice that now rep (v) = G0 G = others and their own credentials are highly correlated, we
+1 n 1 i∈V i
+requirethatitisnotpossiblefortheadversarytodetermine
+gbF(v)+J(v).
+1 Q whethershewasaskedtoprovidethesameordifferentcre-
+When A corrupts users by querying their private keys,
+dentialsinthelinkinggame. Lemma1showsthatanyad-
+A0 can answer those queries as follows. Suppose that the
+versarycannotdothiswithanon-negligibleprobability. (cid:3)
+privatekey foridentityv wasrequested. If K(v) = 0, A0
+abortsandsubmitsarandomguess. Otherwise,A0 chooses
+B.3 Securityofthesecrethandshakeschemewith
+r←R Z pandcomputes: fuzzymatching
+d = (d ,d )
+1 2 Similartothepreviousscheme,wefirstshowthat,given
+= (ga)F− (v1 )gr, (ga)− FJ (( vv )) (gb)F(v)gJ(v) r . messagesdestinedfortworecipients,itisnotfeasibletotell
+2 2 2 2 2
+whether they were constructedusing the same or different
+(cid:16) (cid:16) (cid:17) (cid:17)
+r˜ identities(i.e.,setsofattributes).
+Observethatd =gr˜andd =gab gbF(v)+J(v) ,where
+1 2 2 2 2
+r˜=r− a . (cid:16) (cid:17) Lemma3 Under the SXDH assumption, the fuzzy secret
+F(v)
+OnceAdeclaredthetargetuserU (withcredentialsG handshakeschemeprovidesprivacyofidentities.
+t t
+and R ) whom she would like to impersonate, the sim-
+t Proof The proof is similar to the proof of Lemma 1,
+ulator needs to send to A a message of the form (gx,
+and the reduction proceeds in the same way. That is, as-
+rep (G ||R )x). Let v∗ denote the string G ||R . A0 first
+1 t t t t sume that adversaryA attacks privacyof the scheme. We
+checks whether x0 + x = km. If the equality
+i∈V∗ i construct A0 who is given an instance of the decisional
+does not hold, the simulator aborts and submits a random
+guess. Otherwise,F(vP∗) ≡ 0(mod p)(whichmeansthat Diffie-Hellman problem g,g 1,g 2,g 3 ∈ G 1 and uses A
+rep (v∗) = gJ(v∗)),andA0 sends(gc,(gc)J(v∗))toA. Fi- to make her decision. A0 uses g to set up a fuzzy se-
+1 1 1 1 crethandshakeschemeandpublishesparametersparams=
+nally, A0 submits the key that A outputs as the answer to (p,G ,G ,G ,e,g,h,g ,n,d,G , ..., G ). A0 adds
+1 2 T α 1 n+1
+herchallenge.NotethatifAissuccessfulincomputingthe
+users and lets A to interact with them and corrupt some
+key,A0receivesfromite(g ,g )abc.
+1 2 of them. Then A receives two messages of the form
+A detailedanalysisofthesuccessprobabilityofA0 can (gx,{T (u )x}n )andisaskedtodecidewhethertheycor-
+befoundin[43],andweomitithere. (cid:3) 1 i i=1
+respondtothesameidentityornot.Toconstructthesemes-
+sages, A0 first chooses x,y,s,t ←R Z and T ,...,T ←R
+ProofofTheorem1 p 2 n
+G .Next,A0setsthefirstmessageto(gsx,gtx,Tx,...,Tx)
+1 1 2 n
+Correctness:Iftheparticipantssatisfytherulesofthehand- andthesecondmessageto(gsy,gty,Ty,...,Ty). IfAsays
+2 3 2 n
+shakeprotocol,theywillsuccessfullyshareacommonkey, thattheycorrespondtothesameidentity,A0 repliesto her
+aswasshowninSection5.1. challengesayingthatthereisanintegerasuchthatg =ga
+1
+18and g = ga; if A says they correspondto differentiden- Inthe abovewe havethatq(i) = s , in additionto having
+3 2 i
+tities, A0 replies saying that such an integer does not ex- q(0)=a. Also,thevalueofin+u(i)willbenon-zerofor
+ist. Thus, if A succeedswith a non-negligibleprobability, alli6∈u∗includingalli∈w\X0.
+so does A0, implying that this scheme providesprivacyof If we let r = r0 − a L (i), then we obtain
+identities. (cid:3) i i in+u(i) 0,S
+that D
+i
+= (g 2b)q(i)(cid:16)T(i)ri and d i(cid:17)= g 2ri (see [36] for more
+details). This means that A0 is able to construct a private
+Lemma4 Under the BDH and SXDH assumptions, the
+keyforidentityw.
+fuzzy secret handshake scheme provides impersonator re-
+During the handshake protocol, A0 needs to send to A
+sistanceintheFuzzySelective-IDmodel.
+a message of the form(gx,{T 1(i)x} i∈u∗). A0 formsit by
+sending:
+Proof Let A be an adversary who attacks impersonation
+resistance of the fuzzy secret handshake scheme and can g 1c,{(g 1c)f(i)} i∈u∗ .
+impersonate a member in the Fuzzy Selective-ID model (cid:16) (cid:17)
+withacertainprobability. ThenweconstructA0 whouses Sincein+u(i)= 0foreachi ∈ u∗,(g 1c)f(i) = T 1(i)c for
+A to solve an instance of the BDH problem. A0 is given
+alli∈u∗. Finally,whenA0receivesthekeythatAoutputs,
+g ,ga,gb,gc,g ,ga,gb, where g ∈ G and g ∈ G and shesubmitsthekeyastheanswertoherownchallenge.IfA
+th1 ec1 hall1 eng1 eis2 to2 com2
+putee(g
+,1
+g
+)abc1
+.
+2 2 wasabletoconstructthekeycorrectly,A0 receivesexactly
+1 2 e(g ,g )abc. (cid:3)
+The proof strategy we employ is similar to the one 1 2
+used in the security proof of fuzzy IBE scheme [36] (see
+ProofofTheorem2
+also[7]),whichweadapttothecaseofasymmetricgroups.
+In the beginning of the game A0 receives from A the Correctness: Correctnessoftheprotocolwhenthenumber
+challengeidentityu∗,whichconsistsofnelementsofZ p. of overlapping attributes is d or more was shown in Sec-
+The simulator A0 sets g = g 1, g α = g 1a, g˜ = g 2, and tion6.1.
+h = gb. A0 then chooses a random n-degree polynomial
+2 Impersonatorresistance: ByLemma4.
+f(x)andcomputesanothern-degreepolynomialu(x)such
+that u(x) = −xn for each x ∈ u∗ and u(x) 6= −xn for Detectorresistance: Inthiscasewedealwithanadversary
+otherx. A0 setsG
+i
+=(g 1b)u(i)g 1f(i) andH
+i
+=(g 2b)u(i)g 2f(i) whocorruptsusers,selectsatargetuserU t,engagesinthe
+for1≤i≤n+1. NotethatnowT (i)=(gb)in+u(i)gf(i) handshake protocol with U t and tries to learn whether U t
+1 1 1
+and T (i) = (gb)in+u(i)gf(i), and all of G ’s and H ’s possessesaspecificattributeornot. WhenadversaryAen-
+2 2 2 i i gagesinthehandshakeprotocolwithU withouthavingthe
+are chosen independently at random since f(x) is a ran- t
+requireddattributesincommon,theprotocolwillfailinthe
+dom polynomial. Finally, A0 outputs public parameters
+firststep,whichcouldtriviallybeperformedbyasimulator
+params=(p,G ,G ,G ,e,g,h,g ,G ,...,G ).
+1 2 T α 1 n+1 andAwouldnotbeabletodetectthedifference.
+A now can request private keys of users whose identi-
+But even beyond that point in the protocol, everything
+ties overlap with the challenge identity u∗ by less than d
+sent during its execution does not reveal any information
+attributes. WhenAcorruptsusersbyqueryingtheirprivate
+abouttheattributesused.Thatis,Lemma3showedthatitis
+keys,A0 cananswerthosequeriesasfollows. Supposethat
+impossibleto distinguishwhethertwo differentexecutions
+theprivatekeyforidentityw wasrequested. LetthesetX
+oftheprotocolhaddifferentorthesamecredentials,which
+consistoftheoverlappingelementsX =u∗∩w,thesetX0
+impliesthedifficultyofdiscoveringwhatattributeswerere-
+beanysetsuchthatX ⊆X0 ⊆w,where|X0|=d−1,and
+quested.SincethereductioninLemma3usedonlyasingle
+S =X0∪{0}.
+attributeofthe identityu, thisresultcouldbe obtainedfor
+Foreachi∈X0,thedecryptionkeycomponentsD and
+i anygivenattributeofu,implyingthatnoinformationabout
+d iarecomputedasD
+i
+=(g 2b)siT 2(i)ri andd
+i
+=g 2ri,where
+eachindividualattribute(notonlytheoverallu)canbedis-
+r i,s i ←R Z p.Foreachi∈w\X0,thesevaluesarecomputed covered.
+as:
+Unlinkability: As in the secret handshake scheme with
+D
+i
+= ( (g 2b)sjLj,S(i))× roles,thevaluesexchangedduringtheprotocolcorrespond
+j∈X0 nottothecredentialsofthesenderbuttotheexpectedcre-
+Y
+dentialsof thereceiver. However,becausesuchvaluesare
+× (ga)in− +f u(i () i) (gb)in+u(i)gf(i) r i0 L0,S(i) relatedtothecredentialsthattheplayerspossess,werequire
+2 2 2
+thatitisimpossibletodeterminetheattributesfromtheval-
+(cid:18) (cid:16) (cid:17) (cid:19)
+uesexchangedandeventellwhethertheycorrespondtothe
+and
+same attribute or not. This is exactly what was shown in
+d i = (g 2a)in+− u1 (i)g 2r i0 L0,S(i) . Lemma3. (cid:3)
+(cid:16) (cid:17)
+19

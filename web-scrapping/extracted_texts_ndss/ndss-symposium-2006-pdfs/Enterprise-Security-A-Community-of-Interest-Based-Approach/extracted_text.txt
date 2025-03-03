@@ -1,0 +1,1160 @@
+Enterprise Security: A Community of Interest Based Approach
+PatrickMcDaniel SubhabrataSen OliverSpatscheck
+∗ † †
+mcdaniel@cse.psu.edu sen@research.att.com spatsch@research.att.com
+JacobusVanderMerwe BillAiello Charles Kalmanek
+† ‡ †
+kobus@research.att.com aiello@cs.ubc.ca crk@research.att.com
+Abstract compromised,littlecouldbedonetopreventinfection.The
+perimeter defenses (e.g., firewalls) only marginally aided
+Enterprisenetworkstodaycarryarangeofmissioncrit- thesuppressionofthesewormsbecauseofthedifficultyof
+ical communications. A successful worm attack within an definingandimplementingperimeterdefenses.
+enterprisenetworkcanbesubstantiallymoredevastatingto
+This lack of security is particularly troublesome in the
+mostcompaniesthanattacksonthelargerInternet. Inthis
+contextof corporateenterprisenetworks. While the Inter-
+paper we explore a brownfield approach to hardening an
+netitselfisbecominganincreasinglyimportantpartofto-
+enterprisenetworkagainstactivemalwaresuchasworms.
+day’seconomy,corporateenterprisenetworksstillcarrythe
+The premise of our approach is that if future communica-
+vast majority of mission critical communications. There-
+tion patterns are constrainedto historical “normal” com-
+fore,asuccessfulwormattackwithinanenterprisenetwork
+municationpatterns,thentheabilityofmalwaretoexploit
+will be substantially more devastating to most companies
+vulnerabilities in the enterprise can be severely curtailed.
+thanattacksontheInternet.Furthermore,wormscanspread
+Wepresenttechniquesforautomaticallyderivingindividual
+inenterprisenetworkseveniftheyarecompletelyisolated
+hostprofilesthatcapturehistoricalcommunicationpatterns
+fromtheInternet.Forexample,wormsmightbeintroduced
+(i.e.,communityofinterest(COI))ofendhostswithinanen-
+bylaptopsthatareusedbothoutsideandwithintheenter-
+terprisenetwork. Usingtracesfromalargeenterprisenet-
+prise, or by unauthorizedsoftware installations within the
+work,weinvestigatehowarangeofdifferentsecuritypoli-
+enterprise. Theseattacksareexacerbatedbythesheersize
+ciesbasedontheseprofilesimpactusability(asvalidcom-
+ofenterprisenetworks:enterprisenetworkscanspanmulti-
+municationsmaygetrestricted)andsecurity(howwellthe
+plecontinents,connecttensofthousandsofmachines,and
+policies contain malware). Our evaluations indicate that
+beusedbyhundredsofthousandsofemployees.
+a simple security policy comprised of our Extended COI-
+basedprofile andRelaxedThrottlingDiscipline caneffec- Thegoalofourworkistoimprovetheprotectionagainst
+tivelycontainwormbehaviorwithinanenterprisewithout worms and similar security threats within enterprise net-
+significantlyimpairingnormalnetworkoperation. works. While these networks can be quite large they do
+provide certain properties which make it easier to protect
+them. In particular they typically have a known network
+topology, have knowledgeof all end hosts allowed on the
+1 Introduction
+network, can control the configuration on all routers and
+switcheswithinthenetworkandcaninstallsoftwareonev-
+The outbreak of the witty worm [6], which ironically
+ery host deployed in the enterprise. We denote all hosts
+spread through vulnerabilities in commercial desktop se-
+withintheenterprisenetworkin questionas internalhosts
+curity software, illustrates the importance of multi-facet
+and all other hosts as external hosts. Thestandard roleof
+security countermeasures. This was arguably the first
+firewalls is to protect internal hosts from potentially ma-
+widespreadwormtohaveatrulymaliciouspayload.Italso
+licious external hosts that typically translate into rules for
+appearsthatthereleaseofthewormwascoordinatedacross
+droppingorpassingpacketsoriginatingfromexternalhosts
+manyhosts,makingitnearlyimpossibletoidentifyitsori-
+destined for internal hosts. We acknowledgethat evenin-
+gin. Becausethedesktopsecuritymechanismsweretotally
+ternalnodesmaybecomemaliciouswhentheyarecompro-
+mised. Thus each internal node should also be protected
+∗SIISLaboratory,CSE,PennsylvaniaStateUniversity
+fromotherinternalhosts.Inthesimplestinstantiationofour
+†AT&TLabs–Research
+‡ComputerScience,UniversityofBritishColumbia framework,thistranslatesintoasetofrulesfordroppingorallowingpacketswhereboththeoriginanddestinationare arederived.
+internalhosts.Inthemostgeneralcase,thesetofrulesmay Weshouldmakeabriefnotehereaboutenforcementof
+define an arbitrary subset of the 4-tuple defined by origin ourpolicies. Our internal-to-internalcommunicationpoli-
+anddestinationIPaddresses,protocol,anddestinationport ciescanbeenforcedateithertheoriginorthedestination,
+number where the origin and destination IP addresses are ortheswitch orhubjustupstreamordownstream,respec-
+forinternalhosts. Thedesignspaceforsuchasetofrules tively, and the work presented in this paper is agnostic to
+isdefinedalongthreeprincipleaxes:security,usability,and that decision. However, the motivating perspective of the
+manageability. paper,i.e., ofviewingenterprisehosts as potentiallymali-
+Enterprisepolicies must be manageableto be usable in cious, suggests that enforcementshould be as close to the
+realnetworks. Hence,werestrictourselvestosimplepoli- potentiallymaliciousentityaspossible,i.e.,attheoriginat-
+ciesthroughout.Moreover,forallthepolicies,wedescribe inghostsortheupstreamswitch.Thisisconsistentwiththe
+methodsforautomaticallypopulatingtherulesdefiningthe acceptedsecuritypracticeofdeployingtheenforcementas
+allowed internal-to-internal communication. The primary close to the source as possible. As a specific example of
+focusofthepaperis ananalysisoftheusabilityandsecu- the advantage of such a placement, several fast spreading
+rity, and the tradeoffs between them, of the chosen set of wormssuchasSlammereffectivelyimplementedadenial-
+manageablepolicies. of-serviceon enterprise networks even for uninfected ma-
+chinesasthewormoverwhelmedthecapacityofmanyLAN
+If one envisions designing and deploying an enterprise
+segments.Policyenforcementofout-of-profiletrafficatthe
+network, including all hardware and software, from the
+originmitigatesthistypeofbandwidthDoS.
+groundup, it may be possible to design and enforcequite
+As we shall discuss in depth below, a primary conclu-
+rigid internal-to-internalcommunicationpolicies. But our
+sion of our analysis is that in order for a policy to have
+work does not require such a greenfieldapproach. Rather
+both reasonable security and usability, it must differenti-
+ourworkisaimedatabrownfieldenvironment–anexisting
+atebetweencommunicationsthatusefixedserverportnum-
+large,complexenterprisenetwork.Insuchanenvironment,
+bersandthosethatusesomewhatrandomportnumbersthat
+it is (in our experience)nearly impossible to impose rules
+are defined on the fly (e.g., agreed upon over the fixed-
+after the fact without severely affecting usability. This is
+port communication). We refer to the latter as ephemeral
+due both to the diversity of user requirements and to the
+ports. In principle, given the profile of allowed fixed-port
+complexity of explicit and implicit host communications.
+communication,it ispossibletodynamicallypopulateand
+Moreover,itmaybenearlyimpossibleto“reverseengineer”
+enforcerulesforephemeral-portcommunication. Allsuch
+by handthe implicit, existing enterprise-widepolicy–even
+approaches,however,requireanadditionalprotocoland/or
+withmanyhands.
+modificationstoexistingprotocolsoftware.Whilesuchap-
+Inthispaper,wepresentmethodsforautomaticallygen-
+proachesmayeventuallyallowforfined-grainedcontrolof
+eratingthepoliciesbasedonseveralweeksoftrainingdata.
+ephemeralports,intheinterestofdeployability,inthiswork
+The essential premise of this approach is that if future
+weconsideredonlyarestricteddesignspaceofpoliciesthat
+communicationpatternsareconstrainedtohistorical “nor-
+areenforceableinahostoraswitchwithouttheuseofaddi-
+mal” communicationpatterns, then the ability of malware
+tionalprotocolsorthe modificationofexistingapplication
+(e.g., worms) to exploit vulnerabilities in the enterprise is
+software.
+severely curtailed. Of course, such a history-based ap-
+Theremainderofthepaperisstructuredasfollows.Sec-
+proachmayhinderbothusabilityandsecurity.Forusability,
+tion2presentsrelatedwork. Section3introducesthedata
+thisapproachmayblockaperfectlylegitimatecommunica-
+setweused.InSection4wedescribeourapproachofbuild-
+tionifitdidn’toccurinthetrainingperiod,whichisunde-
+ing end host profiles and describes the different throttling
+sirable. Tohandlesuchpossibilities,ourpolicieshavetwo
+disciplinesthatweinvestigate.Wethenevaluatetheusabil-
+components. The first is a profile. This is a set of rules
+ity and security of ourpolicies in Section 5 andSection 6
+defininginternal-to-internalpacketsthatareallowed. Sev-
+respectively.ThepaperconcludesinSection7.
+eral of the policies we introduceallow for a specified rate
+of out-of-profilecommunication. The rate, and the action
+2 Related Work
+totakewhentherateisexceededisgivenbythethrottling
+discipline (TD), a second componentof our policies. Our
+history-basedapproachmayalsocompromisesecurityifil- AdministratorsintheearlydaysoftheInternetreliedal-
+legitimate communication is part of the training set. We most exclusively on network perimeter defenses. Perime-
+assumethataftercreation,theprofileisscrubbedforillegit- terdefenseswereprimarilyimplementedthroughfirewalls
+imaterulesbasedonthebehaviorofknownworms.Werely that physically govern the traffic entering and leaving the
+onmultipleheuristicsintroducedinourpreviouswork[16] network. Managingtheoftenlow-levelaccess controlson
+toreducetheamountofillegitimaterulesbeforetheprofiles firewallshasshowntobequitcomplexandmultipleefforts
+2have focused to ease this burden on the network operator andthereforehostsareprotectedassoonasthesecuritypol-
+[4,1,2,10,18]. icyisinplace.
+Despitethoseefforts,perimeterdefensesbecamelessef-
+fectiveastheInternetgrew.Enterprisesbegantoemploythe 3 Experimental Data Collection and Prepro-
+myriad of technologies and applications at their disposal, cessing
+e.g., multi-media, B2B applications, remote data. These
+servicesrequiredsignificantlymoreaccesstoresourcesex-
+Toperformtheanalysispresentedinthispaper,wecol-
+ternal to the enterprise. Hence, the perimeter was neces-
+lectedelevenweeksworthofflowrecordsfromasinglesite
+sarily weakened as more channels to these services were
+in a large enterprise environment consisting of more than
+opened.Bellovinaddressedthedissolvingperimeterbyap-
+400 distributed sites connected by a private IP backbone
+plying the firewall policies at each end-point [3, 9]. Cen-
+and serving a user population in excess of 50,000 users.
+tralizedentitiesinhisdistributedfirewallsystemdistribute
+The flow records were collected from a number of LAN
+firewallpoliciestoeachhostinthenetwork.Becauseglobal
+switches using the Gigascope network monitor [5]. The
+policyis enforcedthroughthe aggregatebehaviorof host,
+LAN switches and Gigascope were configured to moni-
+thedissolvingperimeterislessproblematic. Personalfire-
+tor all traffic for more than 300 hosts that included desk-
+walls (e.g., host-level firewalls) are now common features
+topmachines,notebooksandlabservers. A 150hostsub-
+of almost all commercial and open source operating sys-
+setofthese300machinescommunicatedduringtheentire
+tems. Thereareseveraldifferencesbetween[3,9]andthe
+eleven-weekperiod. We refertothis smallerset asthelo-
+work presented in this paper. We also envision enforce-
+calhosts andtheyformthefocalpointofouranalysis. In
+mentofcommunicationpoliciesat,orcloseto,theend-host.
+addition to some communicationamongst themselves, the
+However,ourpoliciestreattheend-hostaspotentiallyhos-
+local hosts mostly communicated with other hosts in the
+tileandseektoprotecttherestoftheenterprisenetworkby
+enterprisenetwork(referredtoasinternalhosts)aswellas
+blockingillegitimatepacketsemanatingfromthatend-host.
+withhostsoutsidetheenterprise(i.e., externalhosts). The
+The perspective of [3, 9] is to protect each end host from
+latter communicationis excludedfrom our analysis. Dur-
+other potentially hostile hosts and is primarily concerned
+ing the eleven-weekperiodwe collectedflow records cor-
+withblockingillegitimatepacketsatthedestination. Inad-
+responding to more than 4.5 TByte of network traffic. In
+dition,weconsidertheissuesofbrownfielddeploymentand
+this study we only considered TCP and UDP traffic. We
+out-of-profilethrottlingdisciplines.
+also removedweekend data from our data set, thus ensur-
+Our work is also related to more recently proposed,
+ingamoreconsistentper-daytrafficmix.Ourmeasurement
+introspective network systems. Early systems such as
+infrastructuregenerated“raw” flow recordsthat were pro-
+GrIDS [15] used models of normalconnectivitygraphs to
+cessedusingthesametechniquesdescribedin[16].Insum-
+detect malicious behavior. These solutions were useful in
+marythisprocessingremovedallunwanted(abnormal)traf-
+detectingscanningattacks.Aswormandvirusbehaviorbe-
+ficfromthedata,dealtwithDHCPissues,andtaggeddata
+gantobebetterunderstood[14,12],previousgraphbased
+withclient/serverdesignationsbasedonwhetherahostwas
+mechanismswerereplacedwithmoresophisticatedbehav-
+initiating communicationor listening on a socket to allow
+ioralmodels. Forexample,Staniford’sCounterMalice[13]
+otherhoststocommunicatewithit.
+usesthenetworkinfrastructuretodetectandcounteractma-
+licious activity. A model of normal activity is gleaned
+4 Securing theEnd Host
+fromhistoricaldatareflectingbothnumberofuniqueIPad-
+dresses to which a connection is attempted and the num-
+ber of failed connection attempts. This model of normal Our approachis to devise an individualpolicyfor each
+behavior is used to detect abnormal behavior that is then end host based on the historical set of other hosts in the
+blocked. This virus throttling [17] can greatly reduce the enterprisewithwhichitinteracts,i.e.,itsCommunityofIn-
+infectionrateofaworm. Ourworkdiffersfromtheseear- terest (COI). We performthis task in two steps. First, we
+lier approaches in a number of ways. First is our use of develop a COI Profile of each end host. The goal of the
+communitiesof interest (COI) to derivethe modelof nor- profile is to capture what communication is normal for a
+malbehavior. ThisbuildsonourearlieranalysisofCOIin particularhost. Duetothecleaningthatweperformonour
+enterprisenetworks[16]andis,toourknowledge,thefirst data, we make the reasonableassumptionthat the data set
+applicationof the COI conceptto data networks. Second, weuse forouranalysiscontainsonlylegitimatetraffic. In
+isthefactthatweusethemodelofnormalbehaviornotto thesecondstepwedefineThrottlingDisciplines(TDs)that
+detectabnormalbehavior,buttocontroltheextenttowhich definewhatshouldhappenifahostattemptstocommuni-
+abnormal communication is allowed. This is a subtle but cate outside of its profile. For each host, the combination
+significantdifferencebecausethereisno“detectionphase” of its profile and TD is used to restrict and control future
+3communication.Wefocusinparticularonpoliciesthatcan IP,serverport,serverIP)tuplesofhistoriccommuni-
+beeasilyimplementedasaccesscontrollists(ACLs)onthe cations for the given set of clients. This profile most
+switchthatconnectsthehosttotherest ofthenetwork. It closelyrepresentspastcommunication.
+should be immediatelyapparent that restricting communi-
+2. Protocol,Client,ServerProfile(PCSP)–ThePCSP
+cationinthiswaywouldhavedesirablesecurityproperties,
+profile contains all the (protocol, client IP, server IP
+becausecommunicationoutsidethe“normal”profilecanbe
+address) tuples for the given set of clients. In other
+restricted. At the same time, however, communication is
+words,inthiscase,ifaparticularclientcommunicated
+neverstaticandthesystemshouldminimizedisruptionsof
+withaparticularserveronanyport,weconsidercom-
+legitimatetrafficthatfallsoutsideofthehistoricalprofiles.
+municationon all ports betweenthe client andserver
+Indeed,this tensionbetweenthe usabilityof ourapproach
+tobepartoftheprofile.
+andits securitybenefits formsthe basis forour evaluation
+inSections5and 6. 3. Protocol,ServerProfile(PSP)–ThePSPprofilecon-
+tains all (protocol, server IP address) tuples for the
+4.1 COIProfiles givensetofclients. Forthisprofile,ifanyclientcom-
+municatedwithaserver,thencommunicationbetween
+Inourapproach,allCOIprofilesareconstructedbyana- all clients and this server (on all ports) is considered
+lyzinghistoricnetworkcommunicationforhostswithinan partoftheprofile.
+enterprise network during a profile training period. The
+goal of a COI profile is twofold. First it captures the his- 4.1.2 ExtendedCOIProfile
+toriccommunicationofasetofendhosts,andsecond,this
+history is used to predict the host’s future communication The observation that historical communication on
+ephemeral ports is not a very good predictor of port
+behavior.
+numbers used for future ephemeral communicationis key
+Profilesdifferintermsofthedomainknowledgeusedto
+to deriving an ExtendedCOI profile. Intuitively there are
+constructthem,i.e.,protocolspecificinformation.Themost
+threepartstoourapproach. First,wepartitionthetraining
+basic of such profiles that we denote as Simple COI Pro-
+data into ephemeral and non-ephemeral communication.
+filesdonotconsideranydomainspecificknowledge,rather
+Second, the non-ephemeral training data is used directly
+it only considers information from the 4-tuple: (protocol,
+clientIP,serverport,serverIP).1NotsurprisinglyaSimple to derive the first part of the Extended COI. Third, for
+the ephemeral training data, we assume that past commu-
+COIProfilethatconsidersportlevelinformationwill have
+nication is a good predictor of the future occurrence of
+greatdifficultypredictingthe host’sfuturecommunication
+ephemeral communication between the hosts in question.
+behaviorinthepresenceofapplicationsthatuseephemeral-
+However, such future communication might not be on
+portcommunicationsuchas FTP andmost streamingpro-
+the observedserver ports, and therefore we derive a more
+tocols. To compensatefor the presence of ephemeral-port
+relaxed(inclusive)profilefortheExtendedCOIprofile.
+communicationweinvestigatetwoalternateapproaches.In
+Acriticalpartofthisapproachistheaccuratepartition-
+thefirstapproachwestillconsideronlySimpleCOIProfiles
+ingofthetrainingdata.Ratherthanrelyingonvariousman-
+but use wild cardsfor someof the fields in the four-tuple.
+ually derived heuristics (e.g., thresholding or application
+Aswewillseethisapproachleadstoprofileswithunaccept-
+heuristics),weoptedtouseanautomateddataclusteringap-
+ablesecurityproperties.Toaddressthiswealsoinvestigate
+proach. Ratherthanattemptingtoidentifyephemeralcom-
+aheuristicthatcompensatesforephemeralcommunication
+municationsdirectly,wegothroughtworoundsofidentify-
+whilestillconsideringtheserverportwithintheprofilethat
+ing (andremovingfromthe trainingdata), non-ephemeral
+wecalltheExtendedCOIProfile.
+communication. Foreachtransportprotocol,i.e.,TCPand
+UDP,thefollowingstepsareexecuted:
+4.1.1 SimpleCOIProfiles
+1. Non-ephemeralGlobal:Inthefirststepthealgorithm
+Foragivensetofclientswedefinepurehistorybasedpro-
+considers the set of server ports and identifies those
+filesatthefollowingthreelevelsofgranularity:
+ports that are heavy hitters in terms of the numberof
+associatedconnectionsthatareusedbylargenumbers
+1. Protocol, Client, Server Port, Server Profile (PC-
+ofservers. Intuitively,this identifies theportsassoci-
+SPP)-ThePCSPPprofilecontainsall(protocol,client
+ated with popularfixed-portservicesthat are running
+1Werefrainfromconsideringclientportfortworeasons. First,client on multiple servers. We modelthis as a multidimen-
+portnumbersarenottypicallymeaningfulandthereforewillhavenobear-
+sionalclusteringproblemwherethe2dimensionsare
+ingontheclientprofile. Second,aswewillshowinSection5,aprofile
+(i)numberofconnectionsperportand(ii)numberof
+thatconsidersserverportsisalreadyoverlyrestrictivethushamperingits
+usability. serversusingthatport.Eachportcanberepresentedas
+4apointinthis2-dimensionalspace.Wethenusethek- server running non-ephemeral communications over
+meansunsupervisedstatisticalclusteringalgorithm[7] that server port. We use the k-means clustering (de-
+to separate the heavy hitter ports from the others. scribed above), with k = 2 for clustering based on
+Givenasetofpointsinann-dimensionalspace,anda numberofconnectionsfromeach(server,serverport)
+desirednumberofpartitionsk,k-meansperformsanit- pair. We select the heavy hitter cluster as the set of
+erativepartitioningwhichminimizesthesum,overall per-serverports. Thetuple(c,s, p, prot)is addedto
+clusters,ofthewithin-clustersumsofpoint-to-cluster- theprofileiftherewasaclientccommunicationwith
+centroid distances. Our inputs to the k-means algo- a servers on serverportp with protocolprot, where
+rithm are all ports that were used as server ports on thepair(s,p)belongstotheheavyhitter(server,server
+multipleservers. Eachportpisrepresentedbythetu- port)set.Foreachservers,wealsocomputethelistof
+ple(n ,s )wheren isthenumberofconnectionson portsP ,whichwillbeusedinthenextstep, thatare
+p p p s
+thatserverportands thenumberofserversthatused eitherintheglobalportlistorintheheavyhitterport
+p
+portp.Wesetkto2toseparatetheheavyhittercluster, list.
+and used squared Euclidean distance as the distance
+measureforclustering. 3. Ephemeral: Thenextstepistoidentify,fromthere-
+mainingcommunicationsthoseclient-serverpairsthat
+Before applying k-means clustering we perform the
+communicate on many ports, i.e., client-server pairs
+followingoperations. (i)Logtransformation: inorder
+engaging in ephemeral communication. We use k-
+to reduce the effect of outliers at the high end of the
+meansclusteringtoclustertheclient-serverpairsinto
+value range, transform the data values for each vari-
+a heavy-hitter and non-heavy-hitter cluster based on
+abletoalogarithmicscale. (ii)ScaleStandardization:
+thenumberofports thesepairscommunicateon. For
+The 2 variables have different scales. We normalize
+the identified heavy user pairs (c, s), we add rules to
+them on a common scale to avoid one variable from
+the profile that would allow communication between
+dominatingtheotherintheclustering.Weselectedthe
+the pair on all ports, except the set of global ports
+widelyusedz-scorenormalization.Z-Scoreisdefined
+or the per-server heavy hitter ports (set P ) for that
+as x = (v mean(v))/stdev(v), where v is the in- s
+− server. Thisexclusionisgearedspecificallytoprotect
+putvariable,andthe transformedscores havea mean
+the ports in P which are running popular fixed-port
+ofzeroandastandarddeviationofone. s
+services.
+Thek-meansalgorithmusesrandomlyselectedinitial
+centroidlocations. Poorlyplacedcentroidsmaydrive 4. Non-EphemeralUnclassified: Inthefinalstepallre-
+the k-means clustering to a local minimum. To ad- mainingcommunicationsthathavenotbeenclassified
+dressthispossibility,werepeatthek-meansclustering through the preceding steps are added to the profile
+100 times, each with a new set of randomly selected as non-ephemeral communication. I.e., if there was
+initial cluster centroid positions, and select the solu- aclientccommunicatingwithaserversonserverport
+tionwiththelowestvalueforthetotalsumofwithin- p with protocol prot, then we add the tuple (c, s, p,
+cluster point-to-centroiddistances. The k-meansstep prot)totheprofile.
+yields2distinctclusteringsofthepoints.Thefirstone
+corresponds to points clustered around low values of
+4.2 ThrottlingDisciplines
+number of connections and number of servers. The
+second cluster consists of points that have high val-
+uesalongthesedimensions. Theportscorresponding WeconsiderthefollowingThrottlingDisciplines(TDs):
+tothesepointsareselectedastheglobalportsforthe (i) n-r-Strict: A n-r-strict TD blocks all out-of-profile
+transport protocol prot being considered. We derive communicationandblocksallcommunicationofaclientif
+the followingprofile for these ports. The tuple (c, s, thenumberofout-of-profileattemptsexceedathresholdn
+p, prot) is addedto the profile if there was a client c withinatimeperiodr. nmightbe0inwhichcaseallcom-
+communicatingwithaserversonglobalserverportp municationisblockedassoonasoneout-of-profilecommu-
+withprotocolprot. nicationisattempted. (ii)n-r-Relaxed: An-r-relaxedTD
+allowsnout-of-profilecommunicationstosucceedwithina
+2. Non-ephemeral Per-Server: We remove from the time periodr. If the numberof out-of-profileinteractions
+training data all the communications associated with exceedathresholdnwithinatimeperiodr,allfuturecom-
+the globalportsidentifiedabove. Inthe nextstep we munication is blocked. For n = 0 this policy is equal to
+aimtoidentifyfromamongtheremainingports,those the0-strictpolicy. (iii)n-r-Open: A n-r-openTDallows
+(server, port) pairs that have significant communica- nout-of-profilecommunicationswithinatimeperiodr. It
+tions. Intuitively, each such pair corresponds to that blocksallout-of-profilecommunicationswhenthenumber
+5ofout-of-profileinteractionsexceedathresholdnwithina COI)werequireonaveragelessthan100rulesperclientto
+timeperiodr,butneverblocksin-profilecommunications. capturetheclientscommunicationpattern.
+Next we considerthe questionof howwell thehistory-
+5 Usability based profiles predict future behavior of clients. Figure 1
+showstheempiricalCDFofconnectionsperclientinweeks
+5to8ofourdatasets. Intherestofthissectionwewilluse
+Inthissectionwediscusstheusabilityoftheprofilesand
+weeks5to8astestweekstovalidatetheprofileswederived
+throttlingdisciplineswe proposed. Inparticularwe evalu-
+fromthedatacollectedinweeks1to4. Therefore,abasic
+atethreeaspectsofusability. Firstwediscussthedifferent
+understanding of the traffic in weeks 5 to 8 is of interest.
+profilesizesthatwillimpactthecomplexityrequiredtoim-
+Firstwecanobservethatweseesimilardistributionsinall
+plementsuch a profile on a network device. Secondly we
+4weeksfortheempiricalCDFofthenumberofclientcon-
+investigatehowwellprofilesbuiltusingthefirstfourweeks
+nections. Thisallowsustoconcludethateachofthe4test
+ofourdatasetmatchcommunicationinthenextfourweeks
+weekshasacomparablemixofclienttraffic.Inadditionwe
+toprovidesomeinsightinhowwellprofilespredictfuture
+observethat morethan 45%of the clients havemore than
+communication. In the last evaluation of this section we
+1000 connections within the enterprise network per work
+simulatethethreeTDs.
+week,areasonablemodelfornormaluserbehavior.
+Usingthesetestweeks, wecountedthenumberofcon-
+5.1 ProfileProperties
+nectionsnotwithinthePCSPPprofile. Figure2depictsthe
+empiricalCDFofsuchconnections.Thenumberofmissed
+Since our profiles need to be specified within the net-
+connectionsisfairlyhigh. Forexample,20%oftheclients
+workdevice(switch/router/firewall)thatenforcesourTDs,
+missatleast100connectionsperweekineachoftheweeks.
+the size of each profile is of particularimportance. Using
+Although this number is not outrageously high, it is still
+theprofileswederivedfromthefirstfourweeks,wecom-
+fairlysignificant. Notethatthemiss countis reallyacon-
+putedthenumberofrulesneededtospecifytheprofile. In
+servativeestimateofthetrueuserimpactanddoesnotac-
+this context a rule has slightly different definitions for the
+countforcollateralimpact. Forexample,the0-r-StrictTD
+differentprofiles. Forsimple historybasedprofiles, a rule
+will blockall the out-of-profileconnections,as well as all
+isdefinedasthen-tuplecoveringthefieldsincludedinthe
+in-profile communications during a blocking event. This
+profile. ThismeansthatthePCSPPrulesaredefinedasthe
+highlightsthe need for a policy that allows forsome level
+following4-tuple(c, s, p, prot). The PCSP rules are a 3-
+of out-of-profilecommunications to accommodatenormal
+tuplecovering(c, s, prot) andthe PSP rules are a 2-tuple
+changesincommunicationpatterns.
+including (s, prot) . In contrast, the Extended COI Pro-
+file has two types of rules. The first type of rules covers
+5.2 UserImpact
+all non-ephemeralcommunicationand is representedby a
+4-tuple identical to the PCSPP rules. The second type of
+Weestimatetheimpactonauserforagivenprofilevia
+rule describes ephemeral communication. These rules are
+simulationofall combinationsofprofiles andpolicies un-
+representedbyatuplerepresentingaclient, aserveranda
+dervariousparametersettings. Thegoalofthesimulatoris
+setofportranges.Wedenotetheserulesasrangerules.
+todeterminehowmanylegalconnectionswouldhavebeen
+AsexpectedtherulecountsforthethreesimpleCOIpro-
+blockedinthesimulatedenvironment. Thesimulatoruses
+files (PSP, PCSP, PCSPP), shown in Table 1, show an in-
+an out-of-profilecounter c that counts the number of out-
+creasingnumberofrulesasmoreIPheaderfieldsareadded
+of-profileconnections.Itiseitherresetafterthetimeperiod
+totheprofile.Theseprofilesshowa4.2to6.3foldincrease
+r specified in the TD or manually by the network opera-
+inrulesgoingfromapurelyserverIPaddressandprotocol
+torfollowinganinvestigationoftheevent. Asourdatahas
+basedrulesettoarulesetbasedonclientIPaddress,server
+beencleaned, inthis sectionweassume thatall eventsare
+IPaddressandprotocol. Interestingly,thefurtherincrease
+caused by “good”traffic that happensto be out-of-profile.
+in profile rules if the server port is added is 59% for TCP
+An eventoccurswhentheout-of-profilecounterc exceeds
+whereasforUDPtheprofilesizeincreases374%. Thisre-
+the threshold n of allowed out-of-profile communications
+sult confirms the intuition that TCP server ports are more
+beforec is beingreset. Therefore,thesimulatorconsiders
+stablethanUDPserverports.
+thefollowingparameters:
+ThenumberofrulesneededtospecifytheExtendedCOI
+Profile: Thederivedprofilesnamely,PSP,PCSP,PC-
+profile is only slightly larger than the number of rules in •
+SPP,andextendedCOI.
+the PCSPP profile. In both the UDP and TCP cases we
+TD: The throttling policies namely, STRICT, RE-
+requiredlessthan400ephemeralrulesforourclientsetof
+•
+LAXED,andOPEN.
+150hosts.Overallwecanconcludethatourprofilesizesare
+quite manageable. Even for the largest profile (Extended n: The allowed out-of-profilethreshold. We investi-
+•
+gatedvaluesof0,1,5,10,15,and20.
+6Algorithm Protocol n-tuplerules rangerules Total
+PSP TCP 705 0 705
+PCSP TCP 3001 0 3001
+PCSPP TCP 4775 0 4775
+ExtendedCOI TCP 4443 338 4781
+PSP UDP 316 0 316
+PCSP UDP 2014 0 2014
+PCSPP UDP 9563 0 9563
+ExtendedCOI UDP 9193 389 9582
+Table1.ProfileSizes
+1
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.1
+0.1 1 10 100 1000 10000100000
+FDC
+1
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+W W5 6 0.2
+W7 0.1
+W8
+0.1 1 10 100 1000 10000
+conn_total
+Figure1.TotalConnectionsperClient
+FDC
+W5 W6
+W7
+W8
+conn_outprof
+Figure2.MissedConnectionsperclientin
+PCSPP
+r: The counter-reset-timer r is the time interval2 in twofigurecoversallthreeTDssincethenumberofeventsis
+•
+whichweresetctozero.Weinvestigated1hourand1 independentofthechosenTD.Thereasonforthisindepen-
+day. denceisthataneventistriggeredwhentheTDthresholdn
+Block Time: The time period it takes an operator to isreached,whichrepresentsthestartofaneventinallthree
+•
+investigateaneventandunblockaclient.Afteraclient TDs. TD-specificblockingactionistakenfortheduration
+isunblockedcissettozero.Weinvestigatedvaluesof oftheblocktime,butdoesnotcomeintoplayifweareonly
+1minute,10minutesand1hour. consideringeventcounts. Theout-of-profilecount,c,isre-
+Test Week: The week for which we performed the seteitherafteraneventoraftertheresettimeexpires. The
+•
+simulation. We used all test weeks which are weeks timesinthiscycledonotdependontheTDused,therefore,
+5-8. theeventcountisindependentoftheTD.
+Thesimulatormeasuresthenumberofblockedconnections
+In Figure 3 the block time was fixed to 10 minutes to
+andblockingevents.
+investigateablockingevent. Asexpectedthegraphsshow
+thatthenumberofeventsdecreasesasn increases. Infact
+5.2.1 SimpleCOIProfileBasedSimulationResults forn=10the50%tilegraphshowsonly1eventper(client,
+week) pair for the most restrictive Simple COI based pro-
+We performed simulations for all Simple COI based pro-
+file. The 90%tile event graph shows that the event count
+files under the various parameter settings. To reduce the
+increasesbymorethananorderofmagnitude.
+parameterspace,wethengroupedallresultsforagivenpro-
+file,TD,n,blocktime,andr setintoasinglerepresenting BlockedConnections: InFigures4,5,and6,weshow
+thenumberofblockedconnectionsper(client,week)tuple. the50and90%tileresultsofthenumberofblockedconnec-
+Sincethetestweekshavesimilarempiricaldistributions,as tionsforOPEN,RELAXEDandSTRICTTDsrespectively.
+showninFigures1and2,webelievethatthiscombination ItisnotsurprisingthattheOPENTDperformsbestinboth
+hasminimalimpactontheresultspresentedwhilesimplify- the50%tileand90%tile.Thisisbecausetheinprofilecom-
+ingthepresentationoftheresultsinthismultidimensional municationisneverblocked.However,aswewillseeinthe
+parameterspace. securityanalysis (Section6) this TD allows all vulnerable
+BlockedEvents: Figure3depictsthenumberofevents in-profile servers to be infected by a spreading worm. In
+forthe50%-tileand90%-tileof(client,week)tuples.These contrasttheRELAXEDandSTRICTTDblockallcommu-
+nicationsafteraneventwhichhas a modestimpactonthe
+2Analternateapproachtoresettingcafterafixedintervalwouldbeto
+50%tile numberof connectionsblockedper (client, week)
+useaslidingwindowofsizer.Wechosetheinterval-basedapproachsince
+itlendsitselftoasimplerimplementation butadramaticimpactonthe90%tilenumberofconnections
+76
+5
+4
+3
+2
+1
+0
+0 5 10 15 20
+klb_tneve
+fo
+.oN
+45
+pcspp,RST =86400
+pcsp,RST =86400 40
+psp,RST =86400
+pcspp,RST =3600 35
+pcsp,RST =3600
+psp,RST =3600 30
+25
+20
+15
+10
+5
+0
+0 5 10 15 20
+N
+(a)50%tile
+klb_tneve
+fo
+.oN
+pcspp,RST =86400
+pcsp,RST =86400
+psp,RST =86400
+pcspp,RST =3600
+pcsp,RST =3600
+psp,RST =3600
+N
+(b)90%tile
+Figure3.NumberofBlockingEventsusing10minuteblocktime
+30
+25
+20
+15
+10
+5
+0
+0 5 10 15 20
+klb_nnoc
+fo
+.oN
+600
+pcspp,RST =86400
+pcsp,RST =86400
+psp,RST =86400 500
+pcspp,RST =3600
+pcsp,RST =3600
+psp,RST =3600 400
+300
+200
+100
+0
+0 5 10 15 20
+N
+(a)50%tile
+klb_nnoc
+fo
+.oN
+pcspp,RST =86400
+pcsp,RST =86400
+psp,RST =86400
+pcspp,RST =3600
+pcsp,RST =3600
+psp,RST =3600
+N
+(b)90%tile
+Figure4.BlockedConnectionsforOPENpolicyusing10minuteblocktime
+blockedper(client,week). Thereasonis forthis is thatif larger than the 1 hour reset time and compensate for the
+abusyclienttriggersanevent,manyinprofilecommunica- increase in events or blocked connections by doubling n.
+tionssuffer. InadditiontheSTRICTTDalwaysblocksout Theresultingoprateistherefore12timessmallerwhilewe
+of profile communicationseven if no event occurs. Com- preserve the same usability characteristics. The oprate is
+paredtotheRELAXEDTD,thisslightlyincreasesthenum- particularlyimportantforslowspreadingwormswhichcan
+berofblockedconnectionsper(client,week)forsmalln(in onlyspreadundetected(withouttriggeringanevent)ifthey
+factthetwoTDsareequalforn=0)butshowsalargerim- initiate out of profile connections with a rate smaller than
+pactforlargen. oprate.
+ItisnotsurprisingthattheSimpleCOIbasedprofilesare BlockedTime: Basedontheresultsofpreviousexperi-
+becomingsubstantially less usable as additionalIP header ments,wechosen=10,r =1dayandtheRELAXEDTD
+fields are considered. For example, for the RELAXED for the remaining evaluations. This choice was motivated
+TD in Figure 5, the number of blocked connection in the bythefactthatforthetestedTDsandparametersettingsa
+90%tilegraphdiffersbythreeordersofmagnitudebetween largernseemstoproducediminishingreturns. Inaddition,
+PSP and PCSPP for n = 1. Althoughthis would indicate as discussed above, choosinga r of 1 day greatly reduces
+that from a usability point of view we should choose one theundetectedprobingaslowspreadingwormcanperform
+ofthelessrestrictiveprofiles,wewillseeinSection6that withoutimpactingthenumberofeventsorblockedconnec-
+thesecuritypropertiesofthePSPandPCSPprofilesarenot tionsper(client, week)substantially. TherelaxedTDwas
+acceptableforalargenumberofenvironments. chosensincetheOPENTD,aswewillseelater,istooper-
+missivefromasecurityperspectivewhiletheSTRICTTD
+Another observation we can make from Figures 3 to 6
+producesahigheruserimpact.
+isthatr,whichwevariedbetween1hour(RST=3600sec-
+onds)and1day(RST=86400seconds),doesseemtoimpact Usingthesesettingswenowinvestigatetheimpactofthe
+theresultssub-linearly. Innearlyallcasesadoublinginn blocktime. This parameteris determinedby how quickly
+improvestheresultsapproximatelythesameamountasthe networkoperatorsreactandis nota parameterthatcanbe
+reductionsoftherfrom1dayto1hour. Sincetheamount chosenfreely. Theresults,showninFigure7,indicatethat
+ofoutofprofilecommunicationwhichis possiblewithout the number of connections blocked per (client, week) in-
+triggeringan event is limited by the rate oprate = n/r it creasessub-linearlywithincreasingblocktime.Weobserve
+seems beneficial to chose a r of 1 day which is 24 times thatablocktimeof10minutes(whichrequiresthenetwork
+8140
+120
+100
+80
+60
+40
+20
+0
+0 5 10 15 20
+klb_nnoc
+fo
+.oN
+6000
+pcspp,RST =86400
+pcsp,RST =86400
+psp,RST =86400 5000
+pcspp,RST =3600
+pcsp,RST =3600
+psp,RST =3600 4000
+3000
+2000
+1000
+0
+0 5 10 15 20
+N
+(a)50%tile
+klb_nnoc
+fo
+.oN
+pcspp,RST =86400
+pcsp,RST =86400
+psp,RST =86400
+pcspp,RST =3600
+pcsp,RST =3600
+psp,RST =3600
+N
+(b)90%tile
+Figure5.BlockedConnectionsforRELAXEDpolicyusing10minuteblocktime
+140
+120
+100
+80
+60
+40
+20
+0
+0 5 10 15 20
+klb_nnoc
+fo
+.oN
+6000
+pcspp,RST =86400
+pcsp,RST =86400
+psp,RST =86400 5000
+pcspp,RST =3600
+pcsp,RST =3600
+psp,RST =3600 4000
+3000
+2000
+1000
+0
+0 5 10 15 20
+N
+(a)50%tile
+klb_nnoc
+fo
+.oN
+pcspp,RST =86400
+pcsp,RST =86400
+psp,RST =86400
+pcspp,RST =3600
+pcsp,RST =3600
+psp,RST =3600
+N
+(b)90%tile
+Figure6.BlockedConnectionsforSTRICTpolicyusing10minuteblocktime
+operatortoreacttoeventswithinthattime)providesaccept- 6 Security
+able results with 7 blocked connectionsper (client, week)
+forthe50%tilePCSPPprofile.
+Thissectiondetailsoursimulation-basedsecurityevalu-
+ationoftheCOIapproach. Weusethedataandmethodol-
+ogyidentifiedintheprecedingsectionstoderiveanetwork
+5.2.2 ImpactofExtendedCOI model and source TD and profiles. The worm simulation
+usedthroughoutmodelspropagationinsimulated(discrete)
+As we have discussed before, a substantial part of the rounds within a modeled enterprise network. The simu-
+out-of-profileconnectionsin the PCSPP profileare due to latedwormcancompromisehoststhroughafixedportover
+ephemeral ports. Our goal with developing the Extended whichthewormispropagated,e.g.,port80/http. Anin-
+COI profile is to attempt to more accurately predict such fectedhostcancompriseexactlyoneotherhostinaround.
+ephemeralcommunication.Wenowinvestigatethebenefits Hence, modulothe mitigationtechniqueused, the number
+intermsofusabilityoftheExtendedCOIprofilebycompar- of worms attempting to compromise other hosts grows at
+ingittothePCSPPprofilewiththeparametersetderivedin each round. In this way, the simulation models the expo-
+theprevioussection. Table2showstheabsolutenumberof nentialbehaviorofwormpropagationwithintheenterprise.
+eventsandblockedconnectionsforthe50,80and90%tile Weusetwometricstoevaluatesecurity.Theinfectedmetric
+(client,week)value.Italsoshowstherelativeimprovement indicatesthenumberofhostsinfectedattheendoftheex-
+oftheeventsandblockedconnectionsforthosepercentiles. periment. Thisreflectsthedegreetowhichthetestedpoli-
+We focused this table on the 50-90% tile range since the cies contain the worm outbreak. The second metric, time
+lower percentiles already produce few events and blocked to completionmeasures the numberofroundstill comple-
+connections. Theresultsshowthat thenumberofblocked tionoftheexperiment.Thismeasureshowquicklyaworm
+connectionsimprovesbetween43%to66%forthe50%tile, is contained or, in the case of saturation, how quickly all
+between30%to39%forthe80thpercentile,andbetween vulnerablehostsarecompromised.
+15% to 33% for the 90th percentile—overalla substantial Each compromised host in the simulation has a fixed
+improvementoverthePCSPPprofile.Thenumberofevents probability s of successfully compromising another simu-
+isalsoreduced,however,itseemsthattheimprovementsare latedhostinaround. Thisparametermodelstheabilityof
+smallerwhichindicatesthatbusierhostsbenefitmore. thewormtoidentifyavulnerablehosttoattempttocompro-
+916
+14
+12
+10
+8
+6
+4
+2
+0
+0 500 1000150020002500300035004000
+klb_nnoc
+fo
+.oN
+3000
+pcspp
+pcsp
+psp 2500
+2000
+1500
+1000
+500
+0
+0 5001000150020002500300035004000
+Block Time (sec)
+(a)50%tile
+klb_nnoc
+fo
+.oN
+pcspp
+pcsp
+psp
+Block Time (sec)
+(b)90%tile
+Figure7.BlockedConnectionsper(client,week)vsBlockduration(RELAXEDpolicy1dayresettime
+andn=10)
+ComparisonType PCSPP Exten. Change% PCSPP Exten. Change% PCSPP Exten. Change%
+50% 80% 90%
+Events 1 1 0 7 5 27 16 14 11
+OpenBC 3 1 66 71 42 39 190 160 15
+RelaxedBC 7 3 57 266 160 39 1632 1090 33
+StrictBC 37 21 43 451 313 30 1782 1340 24
+Table2.ExtendedCOIandSimpleCOIbasedprofileseventsandblockedconnections(BC)
+mise. A hostcanbecompromisedif (a)thehostis reach- samplingperiod.Onfirstglance,thismayappeartounder-
+able by the infecting host according to the tested profile estimatethepossiblespreadoftheworm.However,because
+and TD, and (b) the policy has not restricted communica- unusedportswillnotshowupinanyprofile,theyofferno
+tiontothevictimhost/port,and(c)ifthevictimhostisnot additionalopportunityforcompriseina n-r-STRICT pol-
+alreadycompromised.Ifahostisinfectedduringoneround icy,andonlyuptothethresholdinthen-r-RELAXEDand
+ofthe simulation, thenit will attemptto infect otherhosts n-r-OPENpolicies.Conversely,manywormsareonlyable
+insubsequentrounds. Everyout-of-profilecommunication tocompromisehoststhatarelisteningonaparticularport,
+attemptbyahostisdeemedamiss.AsdefinedinSection4, i.e.,willonlyexploitavulnerabilityintheserverinterface.
+TDdetermineshowthehostisrestrictedonceitreachesthe Our simulation of client ports as also being vulnerable is
+nthresholdofmisses. TorestatetheTDs,then-r-STRICT more conservative, as it would require the compromising
+and n-r-RELAXED will prevent any further compromise oftheclientbasedonclientrequest,e.g.,abufferoverflow
+attemptsbythathostoncethethresholdisreached,andthe in the response to some client drivenrequest. In practice,
+n-r-OPENwillpreventanyout-of-profileattemptsoncethe client-side vulnerabilitiesare less frequentlyobservedand
+thresholdisreached. Foroursimulationweassumedthatr are more difficult to exploit. Hence, the propagation of
+ismuchlargerthenthetimetospreadtheworm.Forbrevity wormsinrealnetworksis likelytobeless successfulthan
+we,therefore,donotconsidertheimpactofr,i.e.,assume thatreported.
+r= .
+∞ Each experimentseeds a single simulated host as com-
+An experiment terminates when all hosts are compro- promised and models infection behavior, round by round,
+mised or there are no hosts that can compromise any re- until the experimentterminates. We repeat the simulation
+maining uninfected hosts. The network is saturated if all for each seeded host with a different seed and show the
+compromisable hosts are compromised (which represents measurementstakenoverallexperiments. Hence,eachex-
+theworst-case,totalinfectionofthenetwork). Conversely, periment is for a TD/profile/parameter is repeated a num-
+awormis containedwhenthewormcannolongerspread ber of times equal to the numberof vulnerablehosts. For
+because of profile and TD restrictions, but there remain ourevaluationwechoseportsforwhichareasonablylarge
+hosts that are vulnerable to compromise. The simulation number of exploits is actively being monitored by a large
+usesthesourcedatausedintheprofilecreationtoseedthe tier 1 ISP e.g., 25, 80, 53, 135, 137, 139, 443, 445. We
+experiments. Weconservativelyassumeallhoststhathave repeatthesimulationoverthethreeTDs (n-r-STRICT,n-
+thetargetportintheirprofile,eitherasaclientoraserver r-RELAXED, and n-r-OPEN) and four profiles (PC-SPP,
+port, are vulnerable. In practice, there may be otherports PCSP, PSP, and Extended COI). Table 3 summarizes the
+vulnerableinthenetworkthatwereunusedoverthe8week numberofinfectablehosts tested ports. Notethat bycon-
+10COIProfiles
+Port PC-SPP PCSP PSP Extended 10000
+25/tcp 40 135 135 40
+80/tcp 91 135 135 91
+53/udp 128 151 151 128 1000
+135/tcp 54 135 135 54
+137/udp 119 151 151 119
+137/tcp 0 135 135 61
+100
+139/tcp 98 135 135 98
+443/tcp 69 135 135 69
+445/tcp 90 135 135 90
+10
+Table3.Vulnerablehostsbyprotocol
+1
+1 10 100 1000 10000 100000
+struction, all hosts will be modeled as vulnerable in the
+PCSP and PSP policies because they do not restrict com-
+municationbasedonport.
+6.1 BaselineInfectionRates
+Figure 8 depicts the analytically developedspread of a
+worminanetworkwithnowormmitigationinplace. This
+representsthe worst-casescenariowhereall hosts are vul-
+nerable and there is no countermeasure in place to detect
+andmitigatethewormbehavior. Cappedat10,000hostin-
+fections, these tests show how the success of the worm in
+finding other victims affects the length of time it takes to
+saturatethe network. Thecurvesdemonstratewhyworms
+are so dangerous—evenfor worms with very small infec-
+tionrates(1in10,000attemptsleadstoaninfection),there
+existsapointofcriticallyatwhichtheoutbreakisgrowing
+at a rate faster than can reasonably be controlled. Highly
+effectiveworms(forexample100%,suchasthosewithhit-
+lists[14])essentiallyinfecttheentirenetworkimmediately,
+whereit takes only14roundsto infectthe entirenetwork.
+Theslopeoftheinfectionsisslightlylesssteepintheworms
+withlowerrate. However,theyare still extremelydanger-
+ous: using Slammer’s average rate of 7 infections a sec-
+ond [11], it would take slightly less than 4 seconds for a
+wormtoinfectanetworkof10,000hosts.
+Studied hereafter,there are two goals of a countermea-
+sureillustratedbythesegraphs. First,obviously,itisdesir-
+abletocompletelycontaintheoutbreak.Stoppinganinfec-
+tionbeforeitsaturatesthelocalnetwork,andpossiblymore
+importantly,beforeitbecomesuncontrollablewithintheIn-
+ternetisessentialtoquashingit. However,asdescribedby
+Stanifordetal.,itisnotalwayspossibletostoptheworm.
+In this case, slowing the rate of infection is the primary
+goal: decreasingthe slopeof infectionis enormouslyuse-
+fulbecauseit allows othercountermeasuresto beenacted.
+Suchothercountermeasuresspanfromsimple(turningoff
+vulnerable hosts) to the exceptionally complex (real-time
+patching[8])countermeasures.
+detcefnI
+stsoH
+No Mitigation
+0.01%
+0.1%
+1%
+5% 10%
+100%
+Round
+Figure8.Unabatedwormpropagation
+6.2 WormContainment
+Aninitialsetofexperimentssoughttomeasuretheeffec-
+tivenessoftheSTRICTandRELAXEDTD.Figure9shows
+aCCDFoftheresultsofteststhatsimulateawormattack-
+ingport137withs=0.01(1%)andn=10underSTRICT
+and RELAXED TDs. This aggressive worm successfully
+compromisesahostoneoutofeveryonehundredtriesbutis
+largelyineffective. Itisquashedinshortorderbecauseany
+infectedhost is shut downbeforeit can domuchdamage:
+thatisaftertenmisses,thehostispreventedfromcommuni-
+catingoverthenetwork.TheSTRICTpoliciesalmostnever
+goesbeyondasinglehost–nooutofprofilecommunication
+is everallowed. However,the RELAXED policyallows a
+smallamountofadditionalspread(byallowingsomeinfec-
+tionstooccurthatareoutofprofile).
+The simulation of worm behaviorunder the OPEN TD
+leadtomorepolarresults.Eitherthewormwaslargelycon-
+tainedasintheprecedingexperiments(infecting<5hosts)
+or all hosts were compromised. Figure 10 illustrates this
+phenomenonforthesameexperimentalsetupasabove,e.g.,
+port137,s = 0.01(1%),andn = 10fortheOPENpolicy.
+Note that the profiletypesbeginto exhibitdifferentlevels
+ofeffectivenessatthispoint. ThePSPpolicyisessentially
+ineffectiveagainst the worm: over98% of the tests ended
+with140ofthe151hostsbeinginfectedandover50%ofthe
+testsendedwithallthehostsbeinginfected.Almostallnet-
+worksprotectedbyaPSPprofilearesaturated,saveavan-
+ishinglysmallnumberofcaseswherethemechanismspre-
+ventinfectionofafewlargelyinactivehosts. Similarly,in
+thePCSPprofile,theworm’sbehaviorwaslargelydivided,
+where47%ofthetestsresultedin3orfewerinfectionsand
+46%ofthetests resulted139ormoreinfections. TheEx-
+tended COI and PCSPP profiles performedessentially the
+same, where the contained/full infection rates occurred at
+around 30%. This similarity is a reflection of the profile
+construction,which,forthisport,isidentical.Notethatthe
+111
+0.1
+0.01
+0.001
+0 0.5 1 1.5 2 2.5 3 3.5 4
+FDCC
+1
+PSP/Strict PCSP/Strict PCSPP/Strict Extended COI/Strict PSP/Relaxed
+PP CC SS PP P/ /R Re el la ax xe ed d 0.8
+Extended COI/Relaxed
+0.6
+0.4
+0.2
+0
+0 20 40 60 80 100 120 140 160
+Infected Hosts
+Figure 9. Worm infections on port 137,
+s=0.01,n=10
+FDCC
+PSP/Open PCSP/Open PCSPP/Open Extended COI/Open
+Infected Hosts
+Figure 10. Worm infections on port 137,
+s=0.01,n=10
+polar results are not surprising. The containment/totalin- Hence, becausethese otherwiseinfectablehostscancount
+fectionsplit essentially places a probabilisticroadblockin asmissesforthoseclients,fewhostssurvivemorethanthe
+wormspread.Basedonthewormaggressivenessandeffec- 10 rounds. Conversely, the PSP profile does not restrict
+tiveness, one can select a profile and TD that simply pre- clientbehavior,andhenceweseemanymoreoutbreaks—
+ventsitfromreachingthepointofcriticality.Moreover,the as expected, around 10% of the hosts compromise one or
+Extended COI and PCSPP policies are significantly more morehostsunderthePSPprofile.
+effectiveinpreventingthespreadoftheworm. The ability of our approach to slow worm propagation
+isillustratedinFigure12. Asintheprecedingsection,the
+6.3 WormModeration OPEN policy leads to polar behavior. Either the worm is
+contained quickly or the network is saturated after a long
+A key question asks how long the worm can continue period. Theinterestingaspectofthisgraphisnotthecon-
+tosurviveinarestrictednetwork. Eachnetworkreachesa tainment, but the saturation. The expectedbaseline infec-
+pointatwhichthewormhascompromisedasmanyhostsas tionratesstatethat,undertheexperimentalparameters,the
+ispossibleundertheenforcedprofilesandTDs.Weusethe worm should saturate the network in 482 rounds for Ex-
+samesetofexperimentstocharacterizethewormlifetime, tended COI and PCSPP, and 506 rounds in the PSP and
+e.g.,port137,s=0.01(1%),andn=10.Awormlifetime PCSPprofiles. Ourexperimentsshowthatthisactualtime
+ismeasuredineithertheamountoftimeitcontinuestoin- tosaturationissignificantlylonger,wherethewormneeds
+fecthosts(wherecontainmentisachieved)orthelengthof uptofourtimeslongertosaturatethenetwork. Depending
+timethatisrequiredtosaturatethenetwork. Interestingly, on the network size and available detection and defensive
+wedesiretoreducethelifetimeintheformercase,e.g.,to apparatus,this mayallowsufficienttimetoenacteffective
+containthe worm as quicklyas possible, andlengthenthe countermeasures.
+lifetimeinthelatter,i.e.,toallowforthewormtoberecog- Weperformedtheexperimentsdetailedinthepreceding
+nizedandothercountermeasuresemployed. sectionsforalltheprotectedports. Summarizedintable4,
+Figure 11 shows the lifetime of the worm in the simu- the results were largely similar to those in the preceding
+latedenvironmentsundertheSTRICTandRELAXEDpoli- experiments. All ports exhibited polar results: either all
+cies. The lifetimes reflect the effective containment illus- hosts were compromised or very few were. For example,
+tratedintheprecedingsection. Almostallexperimentsend theappendixshowsthatthediverseports53(DNS)and80
+in10rounds. The10roundlowerboundoccurswhenthe (HTTP)exhibitthesimilarprotectivecharacteristicsasport
+worm stays alive while it consumes its n = 10 out-of- 137(NETBIOS)intheprecedingsection.
+profilegraceconnections,afterwhichitiscompletelyshut Ourexperimentsshowedhowtheparametersinfluences
+down and thus contained. Note that a compromised host thewormsuccess. Wefoundthathighlyeffective(s > 10)
+will find another host that is infectable by somebody with wormsarelargelyimpossibletostopunderRELAXEDand
+probability 0.1. In the Extended COI, PCSP, and PCSPP OPENTDs. However,evenawormwithperfectaccuracy
+profile,justbecausethehostisinfectabledoesnotmeanthat (e.g., a flash worm) is only able to infect one third of the
+thehostisinfectablebytheclientattemptingtheinfection. hostsinaPSPprofile,andessentiallynohostsusingtheEx-
+12Port Policy s(%) n PSP PCSP PCSPP Intelligent
+135/tcp strict 1 10 0.768% 0.741% 1.852% 1.852%
+135/tcp strict 5 10 0.872% 0.741% 1.852% 1.852%
+135/tcp strict 5 100 14.044% 0.785% 1.852% 1.852%
+135/tcp strict 10 100 31.048% 0.818% 1.852% 1.852%
+135/tcp strict 25 1000 33.421% 10.126% 1.852% 1.852%
+135/tcp strict 100 1000 33.421% 12.617% 1.852% 1.852%
+135/tcp relaxed 1 10 0.842% 0.793% 2.143% 2.109%
+135/tcp relaxed 5 10 1.383% 1.495% 3.841% 3.738%
+135/tcp relaxed 5 100 98.938% 98.996% 99.280% 99.331%
+135/tcp relaxed 10 100 99.997% 99.995% 100.000% 100.000%
+135/tcp relaxed 25 1000 100.000% 100.000% 100.000% 100.000%
+135/tcp relaxed 100 1000 100.000% 100.000% 100.000% 100.000%
+135/tcp open 1 10 92.060% 61.871% 1.989% 1.972%
+135/tcp open 5 10 95.734% 50.209% 16.907% 10.065%
+135/tcp open 5 10 98.621% 98.886% 99.949% 99.074%
+135/tcp open 10 100 100.000% 100.000% 99.983% 100.000%
+135/tcp open 25 1000 100.000% 100.000% 100.000% 100.000%
+135/tcp open 100 1000 100.000% 100.000% 100.000% 100.000%
+53/udp strict 1 10 0.673% 0.662% 0.781% 0.781%
+53/udp strict 10 10 0.969% 0.667% 0.781% 0.781%
+53/udp relaxed 1 10 0.739% 0.732% 0.861% 0.854%
+53/udp relaxed 10 10 6.125% 6.456% 6.796% 6.110%
+53/udp open 1 10 98.719% 46.456% 0.897% 0.858%
+53/udp open 10 10 99.737% 75.157% 54.831% 55.530%
+80/tcp strict 1 10 0.763% 0.741% 1.099% 1.099%
+80/tcp strict 10 10 1.152% 0.752% 1.099% 1.099%
+80/tcp relaxed 1 10 0.815% 0.815% 1.177% 1.220%
+80/tcp relaxed 10 10 6.505% 6.549% 7.457% 7.946%
+80/tcp open 1 10 91.907% 50.486% 25.999% 26.186%
+80/tcp open 10 10 96.524% 78.875% 62.764% 67.534%
+137/tcp open 1 10 91.536% 51.254% N/A 7.041%
+137/tcp open 10 10 96.840% 79.597% N/A 64.888%
+Table4.Broadsecurityexperiments-numberofhostsinfectedperpolicyonthetestedports
+131
+0.1
+0.01
+0.001
+0 5 10 15 20 25
+FDCC
+1
+PSP/Strict
+PCSP/Strict
+PCSPP/Strict
+Extended COI/Strict
+PSP/Relaxed
+PP CC SS PP P/ /R Re el la ax xe ed d 0.8
+Extended COI/Relaxed
+0.6
+0.4
+0.2
+0
+0 200 400 600 800 1000 1200 1400 1600 1800
+Worm lifetime (rounds)
+Figure 11. Worm lifetimes on port 137,
+s=0.01,n=10
+FDCC
+PSP/Open
+PCSP/Open
+PCSPP/Open
+Extended COI/Open
+Baseline expected lifetime (119 hosts)
+Baseline expected lifetime (151 hosts)
+Worm lifetime (rounds)
+Figure 12. Worm lifetimes on port 137,
+s=0.01,n=10
+tendedCOI. The reasonforthis is thatthe thereare many due to its inability to accommodate ephemeral communi-
+hoststhatmaybeinfectable,butonlyaminutefewthatare cations. Among the throttling disciplines, n r Open
+− −
+actually within a particular Extended COI profile. Alter- hadgoodusabilitybutwaslargelyineffectiveagainstworm
+ingthepolicythresholdnsimilarlyaffectstheresult: there attacks, while n r Strict was veryeffectivein worm
+− −
+aredemonstrableresultchangesinalmostallpolicieswhen defense but lacked good usability. (iii) Allowing a small
+changingthe n parameter from 10 to 100. As the thresh- number(n=10)ofout-of-profilecommunicationsperhost
+oldincreases,thewormhasmoreopportunitytoinfectout- beforethethrottlingactionisinitiated,cansubstantiallyim-
+of-profilehosts. Hence, as is seen on port 135in the RE- provetheusability(byaccommodatingnewvalidcommu-
+LAXED TD, increasing n allows a containable worm to nications), while maintaining good security properties of
+saturatethenetwork. thepolicy. (iv)A simple securitypolicycomprisedofour
+ExtendedCOIprofileandn-r-RelaxedThrottlingDiscipline
+whichallowsasmallnumberofout-of-profilecommunica-
+7 ConclusionsandFuture Work
+tionsperhost,achievesbothhighprotectionagainstworms
+andotherthreats,aswellaslowimpactontheusabilityof
+Inthispaperwepresentedabrownfieldapproachtohard- endhosts.
+ening an enterprise network against internally spreading We have shown that our profiles are sufficiently stable
+malware. Wepresentedtechniquesforautomaticallyderiv- for weeks at a time, but still need to address how these
+ingfourdifferentindividualhostprofiles(PSP,PCSP, PC- profileswillbeupdatedascommunicationpatternschange
+SPP and extended COI) to capture historical communica- overlongertimeperiods. Onepossibleoptionistorecom-
+tionpatterns(i.e.,communityofinterest(COI))ofendhosts putetheprofilesperiodicallyincludingthenot-blockedout-
+withinanenterprisenetwork.Usingtracesfromalargeen- of-profile communications in the recomputation process.
+terprise network, we explore how three different security Analternateapproachis tohavethe networkoperatoradd
+policies based on these profiles and TDs impact both the rulesforlegitimateoutofprofilecommunicationsmanually
+usabilityoftheendhostaswellasthespreadofwormsand whenever the network operator investigates an event. We
+similarsecuritythreats. Themainconclusionsare: (i)The are currentlyinvestigatingthe tradeoffsof these and other
+resultsvalidateakeypremiseofourapproachthatiffuture options.
+communicationpatternsareconstrainedtohistorical “nor-
+mal” communicationpatterns, then the ability of malware
+8 Acknowledgements
+(e.g.,worms)toexploitvulnerabilitiesintheenterprisecan
+indeedbeseverelycurtailed.(ii)Whiletheoverallapproach
+is promising,the selectionof thecorrectprofileandthrot- WewouldliketothankHaowenChanforhismanycon-
+tlingdisciplinearebothcrucialtoachievingeffectivesecu- tributionstoearlyworkinautomatedpolicygeneration,to
+rityand usabilityproperties. PSP and PCSP possess good WillEnck,LisaJohansen,andPatrickVerkaikfortheired-
+usabilitybutweretoopermissiveresultinginpoorsecurity itorialcomments,andtotheanonymousreviewersfortheir
+impact,whilePCSPPhadgoodsecuritybutpoorusability, insightfultechnicalcomments.
+14References [10] A.Mayer,A.Wool,andE.Ziskind. Fang:AFirewallAnal-
+ysisEngine. In2000IEEESymposiumonSecurityandPri-
+[1] K. Al-Tawiland I. A.Al-Kaltham. Evaluation and testing vacy,pages177–187.IEEE,May2000. Oakland,CA.
+[11] D.Moore,V.Paxson,S.Savage,C.Shannon,S.Staniford,
+ofinternetfirewalls.InternationalJournalofNetworkMan-
+andN.W.ver.Insidetheslammerworm.IEEESecurityand
+agement,9(3):135–149,1999.
+[2] Y.Bartal,A.J.Mayer,K.Nissim,andA.Wool. Firmato:A Privacy,1(4):33–39,2003.
+[12] D. Moore, C. Shannon, G. M. Voelker, and S. Savage.
+novelfirewallmanagementtoolkit. InIEEESymposiumon
+Internet Quarantine: Requirements for Containing Self-
+SecurityandPrivacy,pages17–31,1999.
+[3] S. Bellovin. Distributed Firewalls. ;login:, pages 39–47, Propagating Code. In Proceedings of IEEE INFOCOM
+Nov.1999. 2003.IEEE,March2003. SanFrancisco,CA.
+[4] W.CheswickandS.Bellovin. FirewallsandInternetSecu- [13] S.Staniford.ContainmentofScanningWormsinEnterprise
+rity: RepellingtheWilyHacker. Addison-Wesley,Reading, Networks. JournalofComputerSecurity,2004. toappear.
+[14] S. Staniford, V. Paxson, and N. Weaver. How to own the
+MA,1994.
+[5] ChuckCranoret.al. Gigascope: astreamdatabasefornet- internet in your spare time. In Proceedings of the 11th
+workapplications. InProceedingsofACMSIGMOD,June USENIXSecuritySymposium,pages149–167.USENIXAs-
+2003. sociation,2002.
+[6] Cooperative Association for Internet Data Analysis [15] S. Staniford-Chen, S. Cheung, R. Crawford, M. Dilger,
+(CAIDA). The Spread of the Witty Worm, March 2004. J. Frank, J. Hoagland, K. Levitt, C. Wee, R. Yip, and
+http://www.caida.org/analysis/security/ D.Zerkle. GrIDSAGraph-BasedIntrusionDetectionSys-
+witty/. temforLargeNetworks.InProceedingsofthe19thNational
+[7] T.Hastie,R.Tibshirani,andJ.Friedman. TheElementsof InformationSystemsSecurityConference,1996.
+Statistical Learning: Data Mining, Inference and Predic- [16] W.Aiello,C.Kalmanek,P.McDaniel,S.Sen,O.Spatscheck
+tion. Springer,2001. andJ.VanderMerwe. AnalysisofCommunitiesofInterest
+[8] M. Hicks. Dynamic Software Updating. PhD thesis, De- in Data Networks, March 2005. Passive and Active Mea-
+partmentofComputerandInformationScience,University surementWorkshop.
+of Pennsylvania, August 2001. Winner of the 2002 ACM [17] M. M. Williamson. Throttling viruses: Restricting prop-
+SIGPLANDoctoralDissertationaward. agation to defeat malicious mobile code. In Proceedings
+[9] S.Ioannidis,A.D.Keromytis,S.Bellovin,andJ.M.Smith. ofthe18thAnnualComputerSecurityApplicationsConfer-
+Implementing a Distributed Firewall. In Proceedings of ence,pages61–68.IEEEComputerSociety,2002.
+[18] A. Wool. Architecting the Lumeta Firewall Analyzer. In
+ComputerandCommunicationsSecurity(CCS)2000,pages
+Proceedingsofthe10thUSENIXSecuritySymposium,pages
+190–199,Nov.2000. Athens,Greece.
+85–97,August2001. Washington,DC.
+15

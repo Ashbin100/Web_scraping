@@ -1,0 +1,781 @@
+Preventing Capability Leaks in Secure JavaScript Subsets
+MatthewFinifter,JoelWeinberger,andAdamBarth
+UniversityofCalifornia,Berkeley
+{finifter,jww,abarth}@cs.berkeley.edu
+Abstract over the entire window and entice users into downloading
+fakeanti-virussoftware. TheNewYorkTimesremovedthe
+Publishers wish to sandbox third-party advertisements adbutonlyafteranumberofvisitorswereaffected.
+to protect themselves from malicious advertisements. One To protect publishers and end users, advertising net-
+promising approach, used by ADsafe, Dojo Secure, and works have been experimenting with various approaches
+Jacaranda, sandboxes advertisements by statically verify- to defending against malicious advertisements. Although
+ing that their JavaScript conforms to a safe subset of the there are a wide variety of approaches, ranging from legal
+language.Thesesystemsblacklistknowndangerousproper- remediestoeconomicincentives,wefocusontechnological
+tiesthatwouldletadvertisementsescapethesandbox. Un- defenses. Atitscore,displayingthird-partyadvertisements
+fortunately, this approach does not prevent advertisements onapublisher’swebsiteisaspecialcaseofamashup. In
+fromaccessingnewmethodsaddedtothebuilt-inprototype this paper, we study whether existing techniques are well-
+objectsbythehostingpage.Inthispaper,weshowthatone- suitedforcontainingadvertisementsandproposeimprove-
+thirdoftheAlexaUSTop100websiteswouldbeexploitable mentstomashuptechniquesbasedonstaticverifiers.
+by an ADsafe-verified advertisement. We propose an im-
+Static verifiers, such as ADsafe [13], Dojo Secure [30],
+proved statically verified JavaScript subset that whitelists
+and Jacaranda [15], are a particularly promising mashup
+known-safe properties using namespaces. Our approach
+techniqueforadvertising. Inthisapproach,theadvertising
+maintainstheexpressivenessandperformanceofstaticver-
+network(andoneormoreofitssyndicates)verifiesthatthe
+ificationwhileimprovingsecurity.
+advertisement’s JavaScript source code conforms to a par-
+ticularsubsetoftheJavaScriptlanguagewithdesirablecon-
+tainment properties (see Figure 1). The precise JavaScript
+1 Introduction subsetvariesbetweensystems,butthecentralideaistore-
+strict the guest advertisement to a well-behaved subset of
+the language in which the guest can interact only with ob-
+Muchofthewebeconomyisfueledbyadvertisingrev-
+ject references explicitly and intentionally provided to the
+enue. In a typical advertising scenario, a publisher rents a
+guestbythehost,thuspreventingtheguestfrominterfering
+portion of his or her web page to an advertising network,
+withtherestofthepage.
+who,inturn,subletstheadvertisingspacetoanotheradver-
+tisingnetworkuntil,eventually,anadvertiserpurchasesthe Inthispaper,wefocusonevaluatingandimprovingthe
+impression. The advertiser then provides content (an ad- containment of safe JavaScript subsets that use static ver-
+vertisement)thatthebrowserdisplaysontheuser’sscreen. ification. Static verifiers are appealing because they pro-
+Recently,maliciousadvertisershavesoughttoexploitthese vide fine-grained control of the advertisement’s privileges.
+delegated trust relationships to inject malicious advertise- For example, the hosting page can restrict the advertise-
+ments into honest web sites [22, 27]. These attacks are ment to instantiating only fully patched versions of Flash
+particularly worrying because they undermine confidence Player,preventingamaliciousadvertisementfromexploit-
+inthecoreofthewebeconomy. ing known vulnerabilities in older versions of the plug-
+For example, a malicious advertisement exploited The in. However, existing static verifiers do not provide per-
+New York Times web site [28] on September 13, 2009. fectcontainment.Toproperlycontainadvertisements,these
+Althoughmostofitsadvertisementsareservedviaadnet- systemsimposerestrictionsonthepublisher: thepublisher
+works,TheNewYorkTimesalsoincludessomeadvertise- mustavoidusingcertainJavaScriptfeaturesthatletthead-
+mentsdirectlyfromadvertisers’servers. Inthiscase,ama- vertisementbreachcontainment.
+liciousadvertiserposedasVonageandboughtanadvertise- These static verifiers impose restrictions on publishers
+ment.Theadvertiserthenchangedtheadvertisementtotake because of a design decision shared by the existing staticPublisher
+Syndicated Major
+Web Page
+Advertiser Advertising Advertising
+Network Network
+<script>
+... Safe? Safe?
+</script>
+Figure 1. A publisher sells space on his or her page to an advertising network. This space may
+be resold through multiple advertising networks, until it is sold to an advertiser, who provides an
+advertisement written in a secure JavaScript subset. The advertisement is checked for safety by
+eachadvertisingnetwork,inturn,andultimatelyservedtovisitorsofthepublisher’swebpage.
+verifiers:theverifiersrestrictaccesstoobjectpropertiesus- Of the non-adult web sites in the Alexa US Top 100,
+ingastaticblacklist. Theblacklistpreventstheguestfrom we found that 59% (53 of 90) exposed new properties to
+accessingproperties,suchas__proto__,thatcanbeused the guest and that 37% (33 of 90) of these sites contained
+tobreachcontainment.Thedesignersofthesubsetswarrant atleastonemethodthatcouldbeexploited byanADsafe-
+thattheirblacklistissufficienttopreventanadvertisement verifiedadvertisementtomountacross-sitescripting(XSS)
+frombreachingcontainmentonanotherwiseemptypagein attack against the publisher. Although the publisher can
+their supported browsers (or else the subset would always avoid exposing exploitable methods, even seemingly in-
+fail to contain advertisements), but the blacklist approach nocuous methods are exploitable, such as this implemen-
+doesnotrestrictaccesstonewpropertiesintroducedbythe tationofrightfoundonpeople.com:
+publisher. For example, a publisher might add a right
+method to the string prototype that has not been vetted by String.prototype.right = function(n) {
+thesubsetdesigner. if (n <= 0) {
+Thisrestrictionraisesanaturalquestion:howcommonly return "";
+dopublishersviolatethisrequirement? Ifpublishersrarely } else if (n > String(this).length) {
+expose new methods (or rarely expose exploitable meth- return this;
+ods), thenthisrestrictionisfairlyinnocuous. Ifpublishers } else {
+commonly expose methods that are exploitable, however, var l = String(this).length;
+then we ought to consider improving these mashup tech- return String(this).
+niques. To answer this question, we designed and imple- substring(l, l - n);
+mentedananalysistoolthatdetectswhichhostmethodsare }
+exposed to guest advertisements. We ran our tool on the }
+non-adult web sites in the Alexa US Top 100 [1] to deter-
+mine(1)howoftensitesaddmethodstoprototypesand(2) WediscusstheexploitindetailinSection4.5. Ofthesites
+how many of these methods could be used to breach con- withmorethan20exposedproperties,onlytagged.com
+tainment. Tomeasure(1), werenderedthewebsitesinan managedtoavoidexposinganexploitablemethod.
+instrumentedbrowserthatrecordedthe“points-to”relation Insteadofrequiringpublisherstovettheirexposedmeth-
+among JavaScript objects in the JavaScript heap. Our tool ods,weproposeeliminatingthisattacksurfacebyreplacing
+then analyzed the heap and outputted the source code of the property blacklist with a whitelist, making static veri-
+methodscreatedbythehostingpagethatwouldhavebeen fiersmorerobust.Usingatechniquesimilartoscriptaccent-
+exposed to an ADsafe-verified advertisement. To answer ing[11],wepreventtheguestadvertisementfromaccessing
+(2), we manually analyzed the source code of these meth- propertiesdefinedbythehostingpageunlessthoseproper-
+ods to determine which sites would have been exploitable tiesareexplicitlygrantedtotheguest. Specifically, were-
+byamaliciousADsafe-verifiedadvertisement. strict the guest to a namespace by requiring all the guest’s
+propertynamestobeprefixedwiththeguest’spage-uniqueidentifier (which already exists in ADsafe). A guest re- consistsoftwopieces:aninstrumentedbrowserthatrecords
+strictedinthiswaywillnotbeabletoaccessmethodsadded the “points-to” relation among JavaScript objects in the
+to the prototype objects by the host because the names of JavaScriptheapandanalgorithmfordetecting“interesting”
+thosemethodsarenotintheguest’snamespace. edges. In this paper, we reuse the first piece of the frame-
+WeshowthatoursafeJavaScriptsubsetisasexpressive work in our experiment but replace the second piece with
+and as easy-to-use as ADsafe by implementing a simple anewalgorithmthatcolorsnodesbasedonwhetherornot
+compilerthattransformsanyADsafe-verifiedguestintoour theyareaccessibletoanadvertisementrunningbyitselfon
+proposedsubsetbyprependingthenamespaceidentifierto theemptypage. Incontrast,ourpreviousalgorithmdetects
+all property names. Our compiler is idempotent: the com- pointersleakedfromoneorigintoanother,whichisnotap-
+pilerdoesnotaltercodethatisalreadycontainedinthesub- plicableinthissettingbecausealltheobjectsthatparticipate
+set.Thispropertyletsususeourcompilerasastaticverifier inthissortofmashuparecontainedinthesameorigin.
+forthesubset. TocheckwhetherapieceofJavaScriptcode In a series of papers [25, 24, 23], Maffeis, Taly, and
+conformstothesubset,oneneedonlyrunthecodethrough Mitchell develop a formal semantics for JavaScript and
+thecompilerandcheckwhethertheoutputofthecompiler prove the correctness of a specific static verifier (based on
+isidenticaltotheinput. Idempotencyletseachadvertising FBJS)intheirformalmodel. Inthecourseofwritingtheir
+networkinthesyndicationchainapplythecompilertoeach proof,theydiscoveredthatthehostpagecancompromiseits
+advertisementwithoutworryingabouttransformingthead- security by extending the built-in prototype objects. They
+vertisementmorethanonce. Toprotectagainstamalicious reported this issue to the designers of ADsafe, who added
+advertisingnetwork,thedownstreamparties(e.g.,advertis- a restriction on the host’s behavior to ADsafe’s documen-
+ingnetworksorpublishers)canverifyeachadvertisement. tation. However, despite recognizing the issue, the lan-
+guage they propose [24] has the same limitations as other
+Contributions. Wemaketwomaincontributions: blacklist-based static verifiers. We recommend that they
+adoptourapproachandreplacetheirproperty-nameblack-
+• We show that existing static verifiers fall short of listwithawhitelist.
+defending against malicious advertisements because Finally, Yue and Wang study how often web sites use
+many publisher web sites use JavaScript features that potentially dangerous JavaScript language features, such
+lettheadvertisementsbreachcontainment. as eval [29]. Similar to our methodology, the authors
+render the web pages in question using an instrumented
+• We propose a modification these static verifiers that
+browser. Unlike their study, ours is focused on a specific
+lets publishers host malicious advertisements without
+security issue (extending the built-in prototype objects in
+requiringthepublisherstorewritetheirJavaScript.
+a way that lets a malicious advertisement breach contain-
+ment), whereas their study measures a number of general
+Organization. The remainder of this paper is organized “securityhygiene”properties.
+as follows. Section 2 surveys related work. Section 3 de-
+tailssafeJavaScriptsubsetsbasedonstaticallyverifiedcon-
+2.2 SecureMashupDesigns
+tainment. Section4describesourexperimentfordetecting
+breaches of containment and reports the results of the ex-
+Safelydisplayingthird-partyadvertisementsisaspecial
+periment. Section 5 proposes Blancura, a safe JavaScript
+case of the more general secure mashup problem in which
+subsetbasedonwhitelisting. Section6concludes.
+an integrator (e.g., a publisher) attempts to interact with a
+collection of untrusted gadgets (e.g., advertisements). The
+2 RelatedWork
+general mashup problem is more difficult than the adver-
+tising problem because general mashup techniques aim to
+Inthissection,wesurveyrelatedwork,whichfallsinto provide a high degree of interactivity between the integra-
+two categories: (1) techniques or experiments related to torandthegadgetsandalsoamongthegadgetsthemselves.
+those described herein and (2) other approaches for con- Anumberofresearchersproposemashupdesignsbased
+structingsecuremashups. onbrowserframes(see,forexample,[21,20,17,12,9]). In
+these designs, the gadget can include arbitrary HTML and
+2.1 RelatedTechniquesandExperiments JavaScriptinaframe. Theintegratorreliesonthebrowser’s
+security policy to prevent the gadget from interfering in
+Inpreviouswork[10],weusedourJavaScriptheapanal- its affairs. In general, these frame-based designs cover a
+ysisframeworktofindbrowserbugsthatcausecross-origin number of use cases, including advertising, but they have
+JavaScript capability leaks and compromise the browser’s a coarse-grained privilege model. For example, HTML5’s
+implementation of the same-origin policy. Our framework sandbox attribute [6] can restrict the frame’s privilegesin a number of enumerated ways, but language-based de- read write
+signscangrantfiner-grainedprivilegesnotpre-ordainedby Cajita 21% 20%
+browser vendors. Specifically, a language-based mashup Valija 1493% 1000%
+can restrict the gadget to certain (e.g., fully patched) ver- MicrosoftWebSandbox 1217% 634%
+sions of specific plug-ins (e.g., Flash Player), whereas the
+sandbox attribute is limited to allowing or denying all Table1.Slowdownonthe“read”and“write”
+plug-ins. micro-benchmarks,averageof10runs.
+Gatekeeper[19]isa“mostlystatic”enforcementmech-
+anismdesignedtosupportarichpolicylanguageforcom-
+plex JavaScript widgets. Although mostly a static ana- We ran the benchmarks in Firefox 3.5 on Mac OS X us-
+lyzer,Gatekeeperusesruntimeenforcementtorestrictsome ing the Caja Testbed [5] and the Microsoft Web Sandbox
+JavaScript features, such as eval. To confine widgets, Testbed[26].
+GatekeeperanalyzesthewholeJavaScriptprogram,includ- Our findings are summarized in Table 1. The Cajita
+ingthepagehostingthewidget. Thisuseofwholeprogram translation, which accepts a smaller subset of JavaScript,
+analysismakesGatekeeperanawkwardmechanismforre- slows down the two micro-benchmarks by approximately
+strictingtheprivilegesofadvertisementsbecausetheadver- 20%. Even though Cajita adds an access check to every
+tisingnetworktypicallydoesnothavetheentiresourcecode property access, the translator inlines the access check at
+ofeverypublisher’swebsite. everypropertyaccess,optimizingawayanexpensivefunc-
+Likethestaticverifierswestudyinthispaper, dynamic tion call at the expense of code size. Valija, which ac-
+enforcers, such as Caja [2] and Web Sandbox [3], restrict cepts a larger subset of JavaScript, slows down the read
+gadget authors to a subset of the JavaScript language with and write micro-benchmarks by 1493% and 1000%, re-
+easier-to-analyze semantics. Unlike static verifiers, dy- spectively. Valija translates every property access into a
+namicenforcerstransformthesourceprogrambyinserting JavaScriptfunctioncallthatperformstheaccesscheck,pre-
+a number of run-time security checks. For example, Caja venting the JavaScript engine from fully optimizing prop-
+adds a dynamic security check to every property access. erty accesses in its just-in-time compiled native code. Mi-
+Thesedynamicenforcementpointsgivethesedesignsmore crosoft Web Sandbox performs similarly to Valija because
+precisecontroloverthegadget’sprivileges,typicallyletting itstranslatoralsointroducesafunctioncallforeveryprop-
+themashupdesignerwhitelistknown-goodpropertynames. erty access. More information about Caja performance is
+Inserting dynamic access checks for every property ac- availableontheCajawebsite[7].
+cesshasaruntimeperformancecost.Toevaluatetheperfor- Dynamic enforcers are better suited for the generic
+mance overhead of these dynamic access checks, we used mashup problem than for the advertising use case specifi-
+the “read” and “write” micro-benchmarks from our previ- cally. Inparticular,advertisingnetworkstendtosyndicatea
+ousstudy[10],whichtestpropertyaccesstime. Weranthe portionoftheirbusinesstothird-partyadvertisingnetworks.
+benchmarksnatively,translatedbyeachofCaja’stwotrans- Whendisplayinganadvertisementfromasyndicationpart-
+lators (Cajita and Valija), and translated by Web Sandbox. ner, an advertising network must verify that the advertise-
+Wemodifiedtheexistingbenchmarksinthreeways: ment has been properly transformed, but verifying that a
+dynamicenforcer’stransformationhasbeenperformedcor-
+1. We modified our use of setTimeout between runs
+rectly is quite challenging. By contrast, static verifiers are
+toconformtotheJavaScriptsubsetundertestbyusing
+well-suitedtothistaskbecauseeachadvertisingnetworkin
+afunctioninsteadofastringasthefirstargument.
+the syndication chain can run the same static verification
+algorithm.
+2. Insteadofrunningthebenchmarkintheglobalscope,
+we ran the benchmark in a local scope created by a
+3 StaticallyVerifiedContainment
+closure. This improved the Valija benchmark enor-
+mouslybecauseaccessingglobalvariablesinValijais
+extremelyexpensive. One popular approach to designing a secure JavaScript
+subset is to statically verify containment. This approach,
+3. ForCajitaandValija,wereducedthenumberofitera- usedbyADsafe[13],DojoSecure[30],andJacaranda[15],
+tionsfromonebilliontoonemillionsothatthebench- verifiesthatthecontainedcodeisinawell-behavedsubset
+markwouldfinishinareasonableamountoftime. For oftheJavaScriptlanguage. Inthissection,wedescribethe
+Microsoft Web Sandbox, we reduced the number of characteristicsandlimitationsofthecurrentlanguagesthat
+iterations from one billion to 10,000 because the Mi- usethisapproach.
+crosoftWebSandboxtestbedappearstohaveanexe- One important use of these languages is to prevent
+cutiontimelimit. “guest” code (e.g., advertisements) from interfering withthe “host” web page running the guest code. The guest deployments, theselanguagesprovidetheguestscriptali-
+script should be contained by the language to run as if it braryforinteractingwiththehostpage. Forexample,AD-
+were run by itself on an otherwise empty page. ADsafe is safe provides widgets with a jQuery-style library for ac-
+specifically intended for this use [13], and proponents of cessing a subset of the hosting page’s Document Object
+Dojo Secure and Jacaranda also envision these languages Model (DOM). These libraries typically interpose them-
+usedforthispurpose[16,30]. selves between the guest script and the host objects, pre-
+ventingtheguestfrominteractingwiththehostinharmful
+3.1 ContainmentArchitecture ways. For example, the library might restrict the guest to
+partoftheDOMbyblockingaccesstotheparentNode.
+Even in languages that statically verify containment, these
+SecureJavaScriptsubsetsthatusestaticallyverifiedcon-
+librariesofteninvolvedynamicaccesschecks.
+tainment prevent guests from using three classes of lan-
+guagefeatures,describedbelow. Ifleftunchecked,aguest
+3.2 Limitations
+could use these language features to escalate its privileges
+and interfere with the host page. The details of these re-
+strictions vary from language to language. For the precise ADsafe,DojoSecure,andJacarandaallblockaccessto
+details, please refer to the specifications of ADsafe, Dojo dangerous properties using a blacklist. When analyzing a
+Secure,andJacaranda. guest script, the static verifier ensures that the script does
+notusethesespecificpropertynames. Thisapproachworks
+• GlobalVariables. Theselanguagespreventtheguest well on the empty page where the set of property names
+scriptfromreadingorwritingglobalvariables. Inpar- is known (at least for a fixed set of browsers), but this ap-
+ticular, these languages require that all variables are proach breaks down if the host inadvertently adds danger-
+declaredbeforetheyareused(topreventunboundvari- ous properties to built-in object prototypes because these
+ablesfromreferringtotheglobalscope)andforbidthe newpropertieswillnotbeontheverifier’sblacklist[24].
+guestfromobtainingapointertotheglobalobject(to
+When the host page extends the built-in object proto-
+prevent the guest from accessing global variables as
+typesbyaddingnewproperties,thosepropertiesarevisible
+properties of the global object). For example, these
+onallobjectsfromthatpage. Forexample,ifthehostpage
+languages ban the this keyword, which can refer to addedthefunctionrighttoString.prototype,then
+theglobalobjectinsomecontexts. therightpropertywouldbevisibleonallstringsbecause
+theJavaScriptvirtualmachineusesthefollowingalgorithm
+• DangerousProperties. Evenwithoutaccesstoglobal
+tolookupthevalueofapropertyofanobject:
+variables, the guest script might be able to interfere
+with the host page using a number of “special” prop-
+1. Checkwhetherthepropertyexistsontheobjectitself.
+ertiesofobjects. Forexample,iftheguestscriptwere
+Ifso,returnthevalueoftheproperty.
+abletoaccesstheconstructorpropertyofobjects,
+theguestcouldmanipulatetheconstructorsusedbythe 2. Otherwise, continue searching for the property on
+hostpage.Thelanguagesimplementthisrestrictionby the object’s prototype (identified by the __proto__
+blacklistingasetofknown-dangerouspropertynames. property),returningthevalueofthepropertyiffound.
+• Unverifiable Constructs. Because dynamically gen- 3. If the object does not have a prototype (e.g., be-
+erated scripts cannot be verified statically, these lan- cause it’s the root of the prototype tree), then return
+guages also ban language constructs, such as eval, undefined.
+thatrundynamicscript. Inadditiontodynamiccode,
+the languages also ban dynamic property access via All the prototype chains in a given page terminate in the
+thesubscriptoperator(e.g.,foo[bar])becausebar Object.prototype object. If the host page adds a
+mightcontainadangerouspropertynameatruntime. property to Object.prototype, the property will ap-
+These languages typically do allow dynamic prop- pearonallobjectsinthepage. Similarly,addingaproperty
+erty access via a library call, letting the library check toString.prototypeorArray.prototypecauses
+whether the property being accessed at runtime is on thepropertytoappearonallstringsorarrays(respectively).
+theblacklist,andifnot,allowtheaccess. Forthisreason,ADsafeexplicitlyadmonisheshostpages
+nottoextendbuilt-inprototypesindangerousways:
+These languages enforce the above-mentioned restrictions
+using a static verifier. The verifier examines the source None of the prototypes of the builtin types may
+code of the guest script and checks whether the script ad- beaugmentedwithmethodsthatcanbreech[sic]
+heres to the language’s syntactic restrictions. In typical ADsafe’scontainment.[13]However, ADsafe also says that “ADsafe makes it safe to • Vetted. The vetted objects are the JavaScript objects
+put guest code (such as third party scripted advertising or accessible by the guest script on the empty page. In
+widgets)onanywebpage”[13]. Thesetwostatementsap- particular,theobjectscreatedbytheguestscriptitself
+peartobeinconflictifwebsitescommonlyaugmentbuilt- arevetted,asareobjectsreachablefromthoseobjects
+intypeswithmethodsthatbreachADsafe’scontainment. on the empty page. We rely on the designer of the
+secure JavaScript subset to ensure that these objects
+4 DetectingContainmentBreaches aresafefortheguestscripttoaccess.
+• Unvetted. TheunvettedobjectsaretheJavaScriptob-
+Inthissection, weevaluatewhetherexistingstaticveri-
+jects that are not accessible by the guest script on the
+fierscanbeusedtosandboxadvertisementsonpopularweb
+empty page. For example, all the objects created by
+sites.Weautomaticallydetect“unvetted”functionsexposed
+the host page are unvetted because those objects are
+to guest scripts and then examine these function to deter-
+not present on the empty page. As another example,
+mine whether they introduce vulnerabilities that could be thedocumentobjectisunvettedbecauseitisnotac-
+exploitedifthepagehostedADsafe-verifiedads.
+cessible by the guest script on the empty page, even
+thoughdocumentexistsontheemptypage.
+4.1 Approach
+Weuseamaximalguest todetectthesetofvettedobjects.
+To detect when objects created by the host page are The maximal guest accesses the set of built-in objects al-
+accessible to the guest, we load the host page in an in- lowedbytherulesofthesafeJavaScriptsubset.1 Notethat
+strumented browser. The instrumented browser monitors creatingmultipleinstancesoftheseobjectsdoesnotexpand
+JavaScriptobjectsastheyarecreatedbytheJavaScriptvir- thesetofbuilt-inobjectsreachablebytheguest.
+tualmachine. Ourinstrumentationalsorecordsthe“points- WeclassifytheobjectsintheJavaScriptheapforagiven
+to”relationamongJavaScriptobjects.Wheneveroneobject pageasvettedorunvettedusingatwophasealgorithm. We
+isstoredasapropertyofanotherobject,werecordthatedge loadthepageinquestionviaaproxythatmodifiesthepage
+inagraphoftheJavaScriptheap. beforeitisrenderedbyaninstrumentedbrowser.
+Todeterminewhetheranobjectcreatedbythehostpage
+• Phase1: Beforeloadingthepage’sHTML,theproxy
+isaccessibletotheguest,wecomparethesetofJavaScript
+injectsascripttagcontainingthemaximalguest. The
+objects accessible to the guest script on the empty page
+instrumented browser seeds the set of vetted objects
+withthesetaccessibletotheguestscriptonthehostpage.
+by marking the objects created by the maximal guest
+We call an edge from an object in the first set to an object
+as vetted. We expand the set to its transitive closure
+in the second set suspicious. The designers of the secure
+bycrawlingthe“points-to”relationamongJavaScript
+JavaScriptsubsetvettheobjectsaccessibletothegueston
+objectsintheheapandmarkingeachvisitedobjectas
+theemptypagetoensurethatguestcodecannotbreachcon-
+vetted(withsomeexceptionsnotedbelow). Justprior
+tainmentusingthoseobjects(orelsethesubsetswouldfail
+to completing, the maximal guest calls a custom API
+to be secure on virtually every page), but the guest script
+toconcludethefirstphase.
+might still be able to leverage suspicious edges to escape
+thesandbox.
+• Phase 2: After the maximal guest finishes execut-
+Not all suspicious edges are exploitable. For example,
+ing, all the remaining JavaScript objects in the heap
+if the host exposes only the identity function to the guest,
+are marked as unvetted. As the instrumented browser
+the guest cannot leverage this function to escalate its priv-
+parses the host page’s HTML and runs the host’s
+ileges. However, if the host defines a function that calls
+scripts, the newly created objects are also marked as
+evalonitsargumentandexposesthatfunctiontotheguest
+unvetted. Whenevertheinstrumentedbrowserdetects
+script, thentheguestscriptcancompromisethehostcom-
+that the host page is adding an unvetted object as a
+pletely. Todeterminewhetherasuspiciousedgeletsaguest
+property of a vetted object, the browser marks the
+breachcontainment,weexaminedthesourcecodeofnewly
+accessiblefunctions. Ifweareabletoconstructaproof-of- 1ForADsafe,themaximalguestweconstructedinstantiatesoneeach
+concept guest script that exploits such a function, we say ofthefollowingobjecttypes: Function,Object,Array,RegExp,
+String, Error, EvalError, RangeError, ReferenceError,
+thatthehostpagehasviolatedthecontainmentpolicy.
+SyntaxError, TypeError, and URIError. The only built-in ob-
+jectsdefinedbyWebKitbutabsentfromthislistareNumber,Boolean,
+4.2 Design andDate. DateobjectsaredisallowedinADsafecode. Numericand
+Booleanliterals(butnotobjects)canbeconstructedbyADsafecode,but
+thesewerenotincludedinourmaximalguestduetoanimplementation
+Tocomputethesetofsuspiciousedges,weclassifyob-
+error.Becauseofthisandotherfactors,ourresultregardingthefractionof
+jectsinthehostpage’sJavaScriptheapintotwosets: exploitablesitesisalowerbound.Guest Guest Host
+Empty Page Empty Page
+(a) Beforeloadinghostcode (b) Duringloadingofhostcode
+Figure 2. Depiction of a simple heap graph. In (a), all nodes are vetted nodes. In (b), a suspicious
+edgehasbeendetected. Thehostcodehasaddedapointerthatprovidestheguestcodewithaccess
+toanunvettedobject. Thesuspiciousedgepointsfromtheprototypeofabuilt-inobjecttoamethod
+definedbythehost.
+corresponding edge in the heap graph as suspicious 4.3 Implementation
+andrecordsthesubgraphreachableviathissuspicious
+edge. The dashed line in Figure 2 represents such a We implemented our instrumented browser by modi-
+suspiciousedge. fying WebKit, the open-source browser engine that pow-
+ers Safari and Google Chrome. Our work builds off
+One difficulty is knowing when to end the second phase. of our previous JavaScript heap inspection implementa-
+In principle, a web page could continue to add suspicious tion [10]. We implemented our HTTP proxy in Perl
+edges indefinitely. In practice, however, most of the sus- using the HTTP::Proxy library. The proxy modifies
+picious edges we found were added by “library code” that text/htmlHTTPresponsesinflighttothebrowser. Be-
+is run while the page is loading so that most scripts in the causethebrowsercanparsemalformedHTMLdocuments
+pagecanmakeuseoftheextensionsprovidedbythelibrary. with a <script> before the main <html> and after the
+ToterminatePhase2,theproxyinsertsascripttagafterthe main </html>, we did not need to modify the response
+page’sHTMLthatcallsacustomAPI. excepttoprependandtoappendtherequiredscriptblocks.
+When computing the set of vetted objects as the tran-
+sitiveclosureoftheinitialvettedobjects, theinstrumented 4.4 Experiment
+browserconsidersonlyedgesinthe“points-to”relationthat
+can be traversed by guest scripts in the safe subset. For ToevaluatewhetherwebsitescommonlyuseJavaScript
+example, inADsafe, guestscriptscannotaccessproperties features that breach the containment of existing statically
+withcertainnames,suchasarguments,constructor, verified JavaScript subsets, we analyzed the Alexa US
+andeval. Additionally,ADsafeguestscannotaccessany Top 100 web sites using our breach detector for ADsafe.
+properties with names that begin with an underscore char- This set of web sites was chosen to represent the level of
+acter. These properties are ignored in computing the tran- complexityofJavaScriptcodefoundonpopularwebsites.
+sitive closure, with one notable exception: __proto__. Although this set might not be representative of all web
+Although the guest script cannot access __proto__ ex- sites, malicious advertisements on these web sites impact
+plicitly, the guest script can access the property implicitly alargenumberofusers.
+becausethispropertyisusedbythealgorithmdescribedin
+Section3.2forresolvingpropertynames.4.4.1 Methodology • We were able to construct proof-of-concept exploits
+for37%(33of90)ofthewebpages.
+We retrieved the list of Alexa US Top 100 web sites and
+tested those web sites in May 2009. Instead of using the Figure3summarizesourresults. Weobservedamaxof72
+homepageofeverysiteonthelist,wemadethefollowing suspiciousedgesandameanof16.2(n=90,σ =23.8).
+modifications:
+• We removed all 9 web sites with adult content. (We 4.4.3 Discussion
+were unsure whether our university permits us to
+Ourexperimentlowerboundsthenumberofanalyzedsites
+browsetothosewebpagesinourworkplace.)
+that could be exploitable by a malicious ADsafe-verified
+• Weremovedblogspot.combecauseitshomepage advertisementbecausewemightnothavefoundeverysus-
+redirected to blogger.com, which was also on the picious edge or every exploit. The histogram in Figure 3
+list. Theblogspot.comdomainhostsalargenum- showsthatthenumberofsuspiciousedgesiscorrelatedwith
+berofblogs, buttheAlexalistdidnotindicatewhich exploitability. Although not all functions are exploitable
+blogwasthemostpopular,andwewereunsurehowto (andnotallsuspiciousedgesleadtofunctions),manycom-
+determinea“representative”blog. mon JavaScript programming idioms (such as returning
+this) are exploitable. Of the sites with 20 or more sus-
+• Forsomewebsites,thehomepageismerelya“splash picious edges, all but one violate containment. The one
+page.” Forexample,thefacebook.comhomepage site that did not violate containment, tagged.com, did
+is not representative of the sorts of pages on Face- notcontainanyunvettedfunctions.
+book that contain advertisements. Using our judg-
+ment, we replaced such splash pages with more rep- 4.5 CaseStudies
+resentative pages from the site. For example, on
+facebook.com, we chose the first page presented
+We illustrate how a malicious guest can use functions
+totheuserafterlogin.
+suppliedbythehostpagetocompromisethesecurityofthe
+sandbox by examining two case studies from popular web
+Wethenusedthealgorithmdescribedabovetodetectsuspi-
+sites. Inallthecasesweexamined,whenaguestcouldes-
+ciousedgesintheJavaScriptheapgraphofthemainframe
+calateitsprivilegesusinghost-suppliedfunctions,theguest
+created by visiting each of the 90 web pages we selected
+could run arbitrary script with the authority of the hosting
+forourexperiment. Weobservedthenumberofsuspicious
+page,completelybreachingcontainment.
+edges for each page as well as the source code of the ex-
+posedmethods.Wethenmanuallyanalyzedthesourcecode
+oftheexposedmethodstodeterminewhetherthesuspicious 4.5.1 People
+edges would have been exploitable had the selected web
+pages hosted ADsafe-verified advertisements. Upon find- Wefirstexaminepeople.com, amagazine. Peopleaug-
+ingoneexploitablemethodforagivensite,westoppedour
+mentstheStringprototypeobjectwithanumberofutil-
+manualanalysisoftheremainingexposedmethodsforthat
+itymethods,includingamethodrightthatextractsthen
+sitebecauseanattackerneedsonlyonevulnerabilitytocon- right-mostcharactersofthestring. Asanoptimization,the
+structanexploit.
+functionreturnstheoriginalstring(designatedbythis)if
+One potentially fruitful area of future work is to auto- it contains fewer than n characters. Although apparently
+mate this manual analysis step to scale our analysis tech- benign,thisoptimizationletsaguestbreachcontainment.
+nique to a larger population of web sites (such as the When a JavaScript function is called as a method of an
+entire web). In fact, we used a crude static analysis object(e.g., asinobj.f()), thethiskeywordrefersto
+framework based on regular expressions (e.g., grep for that object (e.g., obj). However, if a function is called
+return\s+this and eval) to help us find vulnerabil- in the global scope (e.g., as in f()), then the this key-
+itiesfaster. Evenwiththesesimpletools,themanualanaly- word refers to the global object, commonly known as the
+sisrequiredonlyanumberofhours. window object. By removing the right function from
+a primitive string, as shown in Figure 4, a malicious guest
+can call the function in the global scope, binding this to
+4.4.2 Results
+the global object. By supplying a sufficiently large value
+Inourexperiment,weobservedthefollowing:
+forn,thehost’sfunctionwillreturntheglobalobjecttothe
+attacker. Oncetheattackerhasaccesstotheglobalobject,
+• Of the web pages, 59% (53 of 90) contained at least theattackercanuseanynumberofmethodsforrunningar-
+onesuspiciousedge. bitraryscriptwiththehost’sauthority.40
+35
+30
+No suspicious edges 25
+20
+At least one suspicious
+edge, no exploit found 15
+Exploitable 10
+5
+0
+0 1‐10 11‐20 21‐30 31‐40 41‐50 51‐60 61‐70 71‐72
+Exploitable No exploit found
+(a) Percentageofsiteswithnosuspiciousedges,thosewithsuspi- (b) Histogramdepictingthenumberofsitesfordifferentrangesof
+ciousedgesthatwewerenotabletoexploit,andthosethatwewere numbersofviolations,aswellasthefractionofthoseforwhichat
+abletoexploit. leastoneexploitwasfound.
+Figure3.Visualdepictionsoftheresultsoftheexperiment.
+String.prototype.right = function(n) { <div id="GUESTAD_">
+if (n <= 0) { <script>
+return ""; "use strict";
+} else if (n > String(this).length) { ADSAFE.go("GUESTAD_", function (dom, lib) {
+return this; var f = "Hello".right;
+} else { f(100).setTimeout("... attack code ...", 0);
+var l = String(this).length; });
+return String(this).substring(l, l - n); </script>
+} </div>
+}
+(a) Relevanthostcode (b) ADsafe-verifiedguestcodeimplementingexploit
+Figure4.Exploitforpeople.com
+4.5.2 Twitter Toprotectthemselvesfromthisattackvector, websites
+could remove all potentially exploitable functions, but this
+Next,weexaminetwitter.com,asocialnetwork. Twit-
+approach has two serious drawbacks. First, the publisher
+termakesuseofthePrototypeJavaScriptlibrary[8],which
+must modify its page to the specifications of the advertis-
+addsanumberofusefulfunctionstothedefaultJavaScript
+ingnetwork. Ifanadvertisingnetworkimposesrestrictions
+environment.TheexploitwedescribeforTwitterisapplica-
+on how their publishers code their web sites, publishers
+bletoeverywebsitethatusesthePrototypeLibrary,includ-
+are likely to sell their advertising space to another adver-
+ingnumerousprominentsites[4]. Moreover,wearguethat
+tising network rather than retrofit their web sites. Second,
+the particular function we exploit in the Prototype Library
+JavaScriptcontainsmanysubtlydangerousidioms. Evenif
+is not an isolated example because the primary purpose of
+a publisher can rid every page of these idioms, the idioms
+the Prototype Library is to augment the built-in prototype
+arelikelytoreturnasdevelopersmodifythesite. Insteadof
+objectswithuseful(butpotentiallyexploitable)functions.
+forcingeachpublishertomodifytheirwebpages, wesug-
+The Prototype Library adds a method to the String
+gest strengthening the sandbox to prevent these prototype
+prototype that calls eval on the contents of every
+modificationsfromallowingaguesttobreachcontainment.
+<script> tag found in the string. Exploiting this func-
+tion is trivial: a malicious advertisement need only cre-
+5 Blancura
+ate a string containing a <script> tag and call its
+evalScripts method (see Figure 5). This example il-
+lustratesthatlibrarydesignersdonotexpecttheirfunctions Current statically verified JavaScript subsets are not ro-
+to be called with untrusted arguments. This trust assump- busttoprototypeextensions. Ifawebsiteextendsabuilt-in
+tion is currently valid, as evidenced by the lack of actual prototypeobjectwithanewmethod,guestcodecanaccess
+exploitsagainstTwitter, butbecomesinvalidwhenhosting that method and, if that method is exploitable, breach the
+ADsafe-verifiedadvertisements. subset’s containment. We propose further restricting guest
+code to prevent this kind of containment breach. Instead
+ofusingablacklisttobanknown-dangerousproperties,ourString.prototype.extractScripts = function() { <div id="GUESTAD_">
+var matchAll = new RegExp( <script>
+Prototype.ScriptFragment, ’img’); "use strict";
+var matchOne = new RegExp( ADSAFE.go("GUESTAD_", function (dom, lib) {
+Prototype.ScriptFragment, ’im’); var expl = ’<script language="javascript">’ +
+return (this.match(matchAll) || []). ’... attack code ...<\/script>’;
+map(function(scriptTag) { expl.evalScripts();
+return (scriptTag.match(matchOne) || });
+[’’, ’’])[1]; </script>
+}); </div>
+}
+String.prototype.evalScripts = function() {
+return this.extractScripts().map(
+function(script) { return eval(script) });
+}
+(a) Relevanthostcode (b) ADsafe-verifiedguestcodeimplementingexploit
+Figure5.Exploitfortwitter.com
+system, Blancura, whitelistsknown-safeproperties. Inour randomizationtoguaranteeuniqueness,dodgingthethorny
+system,theguestcannotaccessexploitablemethodsdefined problemofverifyingstaticallythatapieceofcodewas“cor-
+bythehostbecausethosefunctionsarenotonthewhitelist. rectlyrandomized.”
+Using separate namespaces protects hosts that add vul-
+5.1 Design nerablemethodstobuilt-inprototypeobjects. Forexample,
+if the host page adds a vulnerable right method to the
+To improve isolation, we propose running the host and String prototype, a malicious guest would be unable to
+eachguestinseparateJavaScriptnamespaces. Byseparat- exploitthemethodbecausetheguestisunabletoaccessthe
+ingthenamespacesusedbydifferentparties,wecanletthe right property. In some sense, this design is analogous
+hostandguestinteractwiththesameobjects(e.g.,thestring to doing an access check on every property access where
+prototypeobject)withoutinterferingwithoneanother. Es- thepropertynameprefixistheprincipalmakingtheaccess
+sentially, our system whitelists access to property names request. Ideally, we would modify the host to use a sepa-
+withinthepropernamespaceandblocksaccesstoallother
+ratenamespace(e.g.,BLANCURA_HOST_),butadvertising
+property names. This approach is similar to script accent- networks are unable to rewrite the publisher’s JavaScript.
+ing [11] and the “untrusted” HTML attribute from [18], In practice, however, we do not expect publishers to add
+both of which separate the namespaces for each distinct propertiestothebuilt-inprototypeswithguestprefixes,an
+principal.Forexample,weprohibittheguestadvertisement expectationwhichisvalidatedbyourexperiment.
+fromcontainingthefollowingcode: After placing the guest in its own namespace, the guest
+is unable to access any of the built-in utility methods be-
+obj.foo = bar; cause those methods have not yet been whitelisted. How-
+ever,manyofthosefunctionsareusefulandsafetoexpose
+Instead,werequirefoohaveapage-uniqueprefix:
+to guest script. To expose these methods to the guest, the
+Blancuraruntimeaddstheappropriatepropertyname:
+obj.BLANCURA_GUEST1_foo = bar;
+String.prototype.
+The Blancura verifier enforces this property statically by
+BLANCURA_GUEST1_indexOf =
+parsingtheguest’sJavaScriptandrequiringthatallproperty
+String.prototype.indexOf;
+namesbeginwiththeprefix.Fordynamicpropertyaccesses
+(i.e., with the [] operator), Blancura enforces namespace The guest code can then call this function as usual using
+separationdynamicallyusingthesamemechanismADsafe itsprefixedpropertyname,incurringnegligibleruntimeand
+usestoblacklistpropertynames. memoryoverhead. Insteadofblacklistingdangerousbuilt-
+Togeneratethepage-uniqueprefix,weleveragethefact in methods such as concat, this approach lets the subset
+that ADsafe guests already contain a page-unique identi- designerexposecarefullyvettedmethodstotheguestindi-
+fier: the widget ID. ADsafe requires that guest JavaScript viduallyinsteadofpuntingtheissuetothedeveloperswho
+codeappearsinsidea<div>tagwithapage-uniqueidat- usethesubset.
+tribute,whichADsafeusestoidentifythewidget. Wesim- Addingprefixestopropertynamesdoesnotmeasurably
+plyusethisvalue,prefixedbyBLANCURA_,astheguest’s affectruntimeperformance. WhentheJavaScriptcompiler
+page-uniquenamespace. Thistechniqueletsusavoidusing parsers a JavaScript program, it transforms property namestringsintosymbolicvalues(typicallya32-bitinteger),and program. If the host page overrides these methods with
+the symbols generated with and without the prefix are the vulnerable functions, a malicious guest might be able to
+same. Whitelisting existing properties of a built-in object breach containment. In our experiment, the only site that
+doesincuratinymemoryoverheadbecausemoreentriesare overrodethesemethodswasFacebook,whichreplacedthe
+added to the object’s symbol table, but this memory over- toString method of functions with a custom, but non-
+headamountstoonlyahandfulofbytesperproperty. Em- exploitable,method.
+ulatingDOMinterfacesthatusegettersandsetters(suchas Ahostpagecanalsocompromiseitssecurityifitstoresa
+innerHTML) incurs some run-time cost because the run- propertywithasensitivenameinabuilt-inprototypeobject
+timemustinstallacustomgetterorsetterwiththeprefixed becauseguestscanobserveallthepropertynamesusingthe
+name. However,systemslikeADsafeoftenwrapthenative for(p in obj) language construct. Similarly, a guest
+DOMwithalibraryfreeofgettersandsetters[14]. can detect the presence of other guests (and their widget
+identifiers)usingthistechnique. Wecouldclosethisinfor-
+5.2 Implementation mationleakbybanningthislanguageconstructfromBlan-
+cura,butweretainittokeepcompatibilitywithADsafeand
+because, in our experiment, we did not observe any sites
+WeimplementedBlancurabymodifyingtheADsafever-
+storingsensitivepropertynamesinprototypeobjects.
+ifier. Usinga43linepatch, wereplacedtheblacklistused
+byADsafe’sstaticverifierwithawhitelist.Bymakingmin-
+imal modifications to the ADsafe verifier, we have a high 6 Conclusions
+levelofassurancethatourimplementationisatleastascor-
+rectasADsafe’simplementation,whichhasbeenvettedby Existing secure JavaScript subsets that use statically
+experts in a public review process. Additionally, Blancura verifiedcontainmentblacklistknown-dangerousproperties.
+isastrictlanguagesubsetofADsafe,ensuringthatanyvul- Thisdesignworkswellontheemptypagewherethesetof
+nerabilities in Blancura are also vulnerabilities in ADsafe. functions accessible from the built-in prototype objects is
+Ourverifierisavailablepubliclyathttp://webblaze.
+known to the subset designer. However, when verified ad-
+cs.berkeley.edu/2010/blancura/.
+vertisements are incorporated into publisher web sites, the
+TodemonstratethatBlancuraisasexpressiveasADsafe, advertisementcanseemethodsaddedtothebuilt-inproto-
+weimplementedasource-to-sourcecompilerthattranslates types by the publisher. If the publisher does not carefully
+ADsafe widgets into Blancura widgets by prefixing each vet all such functions, a malicious advertisement can use
+property name with the appropriate namespace identifier. theseaddedcapabilitiestobreachthesubset’scontainment
+We implemented our compiler by modifying the Blancura andcompromisethepublisher’spage.
+verifier to output its parsed representation of the widget. Todeterminewhetherthisinfelicityisaprobleminprac-
+Ourcompilerisidempotent: iftheinputprogramisalready tice, we analyzed the non-adult web sites from the Alexa
+in the Blancura subset, the output of the compiler will be Top 100 most-visited web sites in the United States. We
+identicaltotheinput. Thecompilercan, therefore, alsobe foundthatoverathirdofthesewebsitescontainfunctions
+usedasaBlancuraverifierbycheckingwhethertheoutput thatwouldbeexploitablebyanADsafe-verifiedadvertise-
+isidenticaltotheinput. ment displayed on their site. In fact, we found that once a
+AlthoughwehavebasedourimplementationofBlancura websiteaddsanon-trivialnumberoffunctionstothebuilt-
+on ADsafe, we can apply the same approach to the other inprototypes,thesiteislikelytobeexploitable.Fromthese
+JavaScriptsubsetsthatusestaticverification,suchasDojo observations, we conclude that JavaScript subsets that use
+SecureorJacaranda. Inaddition,ourapproachofwhitelist- staticallyverifiedcontainmentrequireimprovementsbefore
+ingpropertynamesisalsoapplicabletoFBJSeventhough theycanbedeployedwidely.
+FBJS is based on a source-to-source compiler and not a We propose improving these systems by revising a de-
+static verifier. In each case, using the Blancura approach signchoice. Insteadofblacklistingknown-dangerousprop-
+improvesthesecurityofthesystemwithminimalcost. erties, we suggest whitelisting known-safe properties by
+restricting the guest advertisement to accessing property
+5.3 ImperfectContainment names with a unique prefix. This mechanism prevents ad-
+vertisementsfromaccessingpropertiesinstalledbythehost
+Despiteimprovingthecontainmentofferedbystaticver- page while maintaining the performance and deployment
+ifiers,ahostpagecanstillcompromiseitssecurityandleta advantagesofstaticverification.Withourproposal,theweb
+guestadvertisementbreachcontainmentbecauseJavaScript sitesinourstudydonotneedtobemodifiedinordertohost
+programs can call some methods implicitly. For example, untrustedadvertisementssecurely.
+the toString and valueOf methods are often called
+without their names appearing explicitly in the text of theAcknowledgements. We would like to thank Douglas [12] Steven Crites, Francis Hsu, and Hao Chen. OMash:
+Crockford, David-Sarah Hopwood, Collin Jackson, Mark enablingsecurewebmashupsviaobjectabstractions.
+Miller, Vern Paxson, Koushik Sen, Dawn Song, David InCCS’08:Proceedingsofthe15thACMConference
+Wagner, and Kris Zyp for feedback and helpful conver- on Computer and Communications Security, pages
+sations throughout our work on this project. This ma- 99–108,NewYork,NY,USA.ACM.
+terial is based upon work partially supported by the Na-
+[13] Douglas Crockford. ADsafe. http://www.
+tionalScienceFoundationunderGrantNo.0430585andthe
+adsafe.org.
+AirForceOfficeofScientificResearchunderMURIGrant
+No.22178970-4170. [14] Douglas Crockford. ADsafe DOM API. http://
+www.adsafe.org/dom.html.
+References
+[15] David-Sarah Hopwood. Jacaranda Language Spec-
+ification, draft 0.3. http://www.jacaranda.
+[1] Alexa-TopSitesinUnitedStates.http://alexa. org/jacaranda-spec-0.3.txt.
+com/topsites/countries/US.
+[16] David-Sarah Hopwood. Personal Communication,
+[2] google-caja. http://code.google.com/p/ June2009.
+google-caja/.
+[17] Frederik De Keukelaere, Sumeer Bhola, Michael
+Steiner, Suresh Chari, and Sachiko Yoshihama.
+[3] Live Labs Web Sandbox. http://websandbox.
+SMash: secure component model for cross-domain
+livelabs.com/.
+mashupsonunmodifiedbrowsers. InWWW’08: Pro-
+[4] Who’s using Prototype. http://www. ceedingofthe17thinternationalconferenceonWorld
+prototypejs.org/real-world. Wide Web, pages 535–544, New York, NY, USA.
+ACM.
+[5] Caja Test Bed, August 2009. http:
+[18] Adrienne Felt, Pieter Hooimeijer, David Evans, and
+//cajadores.com/demos/testbed/.
+Westley Weimer. Talking to strangers without tak-
+ingtheircandy: isolatingproxiedcontent. InSocial-
+[6] HTML 5: A vocabulary and associated APIs for
+HTML and XHTML, April 2009. http://www. Nets’08: Proceedingsofthe1st WorkshoponSocial
+w3.org/TR/2009/WD-html5-20090423/. NetworkSystems,pages25–30,NewYork,NY,USA,
+2008.ACM.
+[7] Performance of cajoled code, August 2009. http:
+[19] Salvatore Guarnieri and Benjamin Livshits. Gate-
+//code.google.com/p/google-caja/
+keeper: Mostlystaticenforcementofsecurityandre-
+wiki/Performance.
+liability policies for javascript code. In Proc. of the
+18thUSENIXSecuritySymposium(USENIXSecurity
+[8] PrototypeJavaScriptFramework,May2009. http:
+//www.prototypejs.org/.
+2009).USENIXAssociation,August2009.
+[20] Jon Howell, Collin Jackson, Helen J. Wang, and Xi-
+[9] AdamBarth,CollinJackson,andWilliamLi. Attacks
+aofeng Fan. MashupOS: operating system abstrac-
+on JavaScript Mashup Communication. In Web 2.0
+tionsforclientmashups. InHotOS’07: Proceedings
+Security and Privacy Workshop 2009 (W2SP 2009),
+ofthe11thUSENIXworkshoponHottopicsinoperat-
+May2009.
+ingsystems,pages1–7,Berkeley,CA,USA.USENIX
+Association.
+[10] AdamBarth,JoelWeinberger,andDawnSong.Cross-
+originJavaScriptcapabilityleaks:Detection,exploita- [21] Collin Jackson and Helen J. Wang. Subspace: se-
+tion, and defense. In Proc. of the 18th USENIX Se- cure cross-domain communication for web mashups.
+curitySymposium(USENIXSecurity2009).USENIX In WWW ’07: Proceedings of the 16th international
+Association,August2009. conferenceonWorldWideWeb,pages611–620,New
+York,NY,USA,2007.ACM.
+[11] ShuoChen,DavidRoss,andYi-MinWang. Ananal-
+ysis of browser domain-isolation bugs and a light- [22] Dan Kaplan. Malicious banner ads
+weight transparent defense mechanism. In CCS ’07: hit major websites, September 2007.
+Proceedings of the 14th ACM Conference on Com- http://www.scmagazineus.com/
+puterandCommunicationsSecurity,pages2–11,New Malicious-banner-ads-hit-major-websites/
+York,NY,USA,2007.ACM. article/35605/.[23] S. Maffeis, J.C. Mitchell, and A. Taly. Run-time en-
+forcement of secure javascript subsets. In Proc of
+W2SP’09.IEEE,2009.
+[24] S. Maffeis and A. Taly. Language-based isolation of
+untrustedJavascript. InProc.ofCSF’09,IEEE,2009.
+See also: Dep. of Computing, Imperial College Lon-
+don,TechnicalReportDTR09-3,2009.
+[25] SergioMaffeis,JohnC.Mitchell,andAnkurTaly. An
+OperationalSemanticsforJavaScript. InAPLAS’08:
+Proceedingsofthe6thAsianSymposiumonProgram-
+mingLanguagesandSystems,pages307–325,Berlin,
+Heidelberg,2008.Springer-Verlag.
+[26] Microsoft Live Labs. Microsoft Web Sand-
+box. http://www.websandbox-code.org/
+Samples/genericSample.aspx.
+[27] Elinor Mills. Malicious Flash ads attack, spread via
+clipboard, August 2008. http://news.cnet.
+com/8301-1009_3-10021715-83.html.
+[28] Ashlee Vance. Times Web Ads Show Se-
+curity Breach, September 2009. http:
+//www.nytimes.com/2009/09/15/
+technology/internet/15adco.html.
+[29] Chuan Yue and Haining Wang. Characterizing in-
+secure JavaScript practices on the web. In WWW
+’09: Proceedingsofthe18thinternationalconference
+on World Wide Web, pages 961–970, New York, NY,
+USA,2009.ACM.
+[30] KrisZyp. SecureMashupswithdojox.secure. http:
+//www.sitepen.com/blog/2008/08/01/
+secure-mashups-with-dojoxsecure/.A AlexaUSTop100
+WelistherethesubsetofthesitesintheAlexaUSTop100sitesthatweusedinourexperiment. Notethatthesubsetdoes
+notincludethenineadultsiteslistedatthetimeofaccess,nordoesitincludeblogger.combecauseitisthesamesiteas
+blogspot.com. AlexawasaccessedonMay1,2009toobtainthelistofsites.
+Rank Website #SuspiciousEdges Rank Website #SuspiciousEdges
+1 google.com 0 51 reference.com 10
+2 yahoo.com 0 52 bbc.co.uk 0
+3 facebook.com 17 53 target.com 0
+4 youtube.com 2 54 tagged.com 44
+5 myspace.com 36 55 ning.com 0
+6 msn.com 14 56 careerbuilder.com 37
+7 live.com 0 57 dell.com 0
+8 wikipedia.org 0 59 disney.go.com 0
+9 craigslist.org 0 60 digg.com 1
+10 ebay.com 13 61 att.com 0
+11 aol.com 9 62 usps.com 63
+12 blogspot.com 13 63 typepad.com 0
+13 amazon.com 2 64 wsj.com 64
+14 go.com 0 65 ezinearticles.com 0
+15 cnn.com 33 66 bestbuy.com 1
+16 twitter.com 60 67 foxsports.com 0
+17 microsoft.com 35 68 livejournal.com 20
+18 flickr.com 12 69 thepiratebay.org 14
+19 espn.go.com 1 70 ehow.com 13
+20 photobucket.com 60 71 imageshack.us 2
+21 wordpress.com 0 72 tribalfusion.com 0
+22 comcast.net 62 74 aweber.com 0
+23 weather.com 0 75 ups.com 0
+24 imdb.com 0 76 megavideo.com 0
+25 nytimes.com 61 77 yelp.com 66
+26 about.com 0 78 mozilla.com 0
+27 doubleclick.com 1 79 deviantart.com 9
+29 linkedin.com 0 80 expedia.com 0
+30 apple.com 16 82 pandora.com 0
+31 cnet.com 72 83 nba.com 61
+32 verizon.net 0 84 newegg.com 28
+33 vmn.net 18 86 irs.gov 0
+34 netflix.com 17 87 washingtonpost.com 0
+35 hulu.com 63 88 cox.net 0
+36 mapquest.com 5 89 dailymotion.com 72
+37 att.net 0 91 download.com 72
+38 rr.com 70 92 reuters.com 2
+39 adobe.com 59 93 zedo.com 2
+40 foxnews.com 52 94 monster.com 17
+42 ask.com 0 95 people.com 1
+43 mlb.com 3 96 verizonwireless.com 37
+44 rapidshare.com 0 97 realtor.com 1
+45 answers.com 3 98 ign.com 9
+46 walmart.com 0 99 pogo.com 0
+48 fastclick.com 0 100 latimes.com 1
+Table2.SubsetoftheAlexaUSTop100sitesusedintheexperiment.

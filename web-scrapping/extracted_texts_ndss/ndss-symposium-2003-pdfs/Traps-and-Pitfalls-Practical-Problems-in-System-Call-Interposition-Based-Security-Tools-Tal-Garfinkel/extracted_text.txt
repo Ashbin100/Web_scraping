@@ -1,0 +1,1107 @@
+Traps and Pitfalls: Practical Problems in System Call Interposition Based
+Security Tools
+TalGarfinkel
+talg@cs.stanford.edu
+ComputerScienceDepartment,StanfordUniversity
+Abstract ownsystemcallinterposition-basedapplicationsandbox-
+ingtool,wehaveencounteredahostofmistakesandchal-
+lengesrelatedtobuildingthisclassofsystems. Giventhe
+Systemcallinterpositionisapowerfulmethodforreg- perspectiveof this experience, we believe that past work
+ulating and monitoring application behavior. In recent inthisareahasoftenpaintedanincompleteorinaccurate
+years,awidevarietyofsecuritytoolshavebeendeveloped pictureofthestepsrequiredtoensurethecorrectnessofan
+thatusethistechnique.Thisapproachbringswithitahost interposition-basedtool.Oftenthedetailsoftheinterposi-
+of pitfalls for the unwary implementer that if overlooked tionmechanism,toolarchitecture,andunderlyingOSse-
+canallowhistooltobeeasilycircumvented.Toshedlight manticsareonlygivencursoryconsideration. Mostwork
+on these problems, we present the lessons we learned in has insteadfocused on higher-levelissues such aspolicy
+the course of several design and implementation cycles specification [3, 8] and analysis of system call patterns
+withourownsystemcallinterposition-basedsandboxing [21, 15] for intrusion detection. Work that has focused
+tool.Wefirstpresentsomeoftheproblemsandpitfallswe onmechanism[13,11,16]hasbeenmoreconcernedwith
+encountered,includingincorrectlyreplicatingOSseman- general designissues andperformance than with the pit-
+tics, overlooking indirect paths to resources, race condi- falls of the mechanism’s use in practice, where interac-
+tions,incorrectlysubsettingacomplexinterface,andside tionsbetweeninterpositionmechanism,toolarchitecture,
+effects of denying system calls. We then present some andthesystemcallAPImustbetakenintoaccount.
+practicalsolutionstotheseproblems,andprovidegeneral We have found that the problems that arise from these
+principlesforavoidingthedifficultiesweencountered. interactionscanbequitesubtle. TheUnixAPIistremen-
+douslycomplex,asarethespecificsofprocess-tracingin-
+terfaces. Becauseworkonsystemcallinterpositionoften
+1 Introduction fails to take these detailsinto account, its results maybe
+based on assumptions that are incomplete, unjustified or
+The explosion of interest in OS-based intrusion detec- simplywrong.Overlookinga“minordetail”canoftenun-
+tion and confinement in recent years has brought with it dermineatool’ssecurity. Thechangesthatmustbemade
+a host of approaches to security that rely on system call to a tool’s architecture to deal with a “minor detail” can
+interposition1 for confinement[24, 2, 5, 3, 9, 11, 19, 14] besignificant,andcanhaveimportantimplicationsforthe
+andintrusion detection [15, 30, 21, 27]. Thesystem call system’sperformanceandtherangeofsecuritypoliciesit
+interfaceisacompellingboundaryonwhichtointerpose canenforce.
+, as it allows virtually all of an application’sinteractions PresentingadetailedanalysisofUnixforthepurposes
+with the network, filesystem, and other sensitive system ofbuildinginterpositiontoolsisfarbeyondthescopeofa
+resources to be monitored and regulated. Unfortunately, singlepaper. Inthisworkwewillinsteadpresentthepit-
+buildingtoolsthatsecurelyinterposeonthisinterfacecan fallsandproblemsweencounteredinthecourseofbuild-
+bequitesubtle. Iftheimplementerisnotcareful,histool ing Janus, the solutions that we explored, and the prin-
+caneasilybecircumvented. ciples we distilled out of our experience for designing,
+Over the course of several design and implementation building, and auditing this class of systems. Although
+iterations to build the current incarnation of Janus, our theselessonsarepresentedinthecontextofourworkona
+sandboxingtool,mostoftheproblemsandsolutionshave
+1Systemcallinterpositionissometimesreferredtoassystemcallin-
+terceptionorsystemcalltracing. Thelattertermtypicallyreferstoan equal relevance to intrusion detection tools that rely on
+architecturewherethesystemcallinterfaceispassivelymonitored.systemcallinterposition. face, anotherprominentprocesstracing mechanism, also
+Ourpaperwillproceedasfollows.InSection2wepro- doesnotprovideanidealmechanismforsecurityapplica-
+videbackgroundonthe currentversionofJanus, discuss tions[29].
+related work on system call interposition-based security To address the problem of supporting secure system
+tools andexamine the relationshipof interposition-based call interposition, the present version of Janus relies on
+sandboxingandintrusiondetectiontools. InSection3we its own dedicated system call interposition mechanism,
+provideabasicmodelofhowJanusworkstoprovidecon- implemented in Linux as a loadable kernel module. A
+text for our discussion. Section 4 discusses the pitfalls similarapproachtoaddressingthisproblemtakenbySys-
+and problems that we encountered while building Janus; trace [24], another system call interposition-based secu-
+thesearedividedintothefollowingcategories:incorrectly rity toolwhosedesigncloselyresembles thepresentver-
+replicatingOSsemantics,overlookingindirectpathstore- sionofJanus.
+sources,raceconditions,incorrectlysubsettingacomplex Severalgroupshavelookedatdevelopingnovelsystem
+interface, and side effects of denying system calls. We callinterpositionmechanismsforabroadersetofapplica-
+explain each category of error, then present concrete ex- tionsthansimplysandboxing.WorkonSLIC[13]andIn-
+amples in the context of Janus. In Section 5 we present terpositionAgents[17]lookedatprovidinganinfrastruc-
+solutions to some of the problems discussed in Section tureforusinginterpositionasageneralmechanismforOS
+4, considerthedesignchoicesandtrade-offswe madein extensibility. Ufo[4]examinedthepotentialforapplying
+Janus,andpresentsomealternativedesigns.Wealsooffer this technique as a means of implementing a user-level
+designprinciplestohelpavoidthetypesofpitfallsthatwe filesystem.
+encountered. Section6presentsadiscussionofsomere- Completely in-kernel system call interposition based
+mainingopenquestionsandtopicsforfutureworkinthe tools for application sandboxing have also been studied
+design of system call interposition-based security tools. by several groups [11, 2]. Several commercial products
+WeconcludeourdiscussioninSection7. usingthisapproacharecurrentlyavailable[8,9].
+Intrusiondetectionviaanalysisofsystemcalltraceshas
+2 Background and RelatedWork received a great deal of attention [10, 15, 21, 27]. Typ-
+ically this work abstracts away many of the real details
+The current Janus implementation was built through a
+of the system, choosing (explicitly or not) to work with
+processofsuccessiveimprovementsandre-writings,start-
+an idealized model of system call tracing. The problem
+ing from the original prototype described in Goldberg
+of secure system call tracing is similar to that of secure
+et. al. [14]. The original Janus work presented an archi-
+systemcallinterposition. Inthesystemcalltracingcase,
+tectureforrestrictinganapplication’sinteractionswiththe
+the “viewer” is only interested in what calls an applica-
+underlyingoperatingsystembyinterposingonthesystem
+tion makes,andnotin modifyingthemor denyingthem.
+callsmadebytheapplicationviastandardprocesstracing
+However,thesameproblemsthatcanallowasystemcall
+mechanisms. Several other systems for restricted execu-
+interposition-based sandbox to be circumventedcan also
+tion were subsequentlydevelopedbased upon this archi-
+beusedtoevadeasystemcalltracing-basedIDS.TheIDS
+tectureincludingMapBox[3]andConsh[5].
+caseisinsomewaysmoredifficult. Asandboxcandeny
+Unfortunately,asdetailedbyWagner[29],theptrace
+system calls that would make interpreting the effects of
+[22] interface, initially used byJanus for interposition in
+othercallsdifficult,andcanignoreissueslikebeingover-
+Linux, has a variety of limitations that make it a poor
+loadedbycallstoanalyze. AnIDSisgenerallyrestricted
+choice of mechanism for application sandboxing, and
+topassiveobservation,andthusmustdealwiththeseprob-
+other security-sensitive applications. Additional discus-
+lems. Additionally,usersareoftenwillingtopaytheover-
+sionofthelimitationsofptraceinthepresenceofhos-
+head associated with secure interposition for sandboxing
+tileapplicationsisofferedinCesare[7].
+for some additional “guaranteed” degree of security; the
+There have been attempts to overcome the limitations
+potential to simply detect an intruder may be less entic-
+associatedwithptracethroughthecreativeuseofother
+ing.
+standard Unix mechanisms; their results have been lack-
+Our discussion of system call interposition requires
+luster. Subterfugue [1] provides a means of overcoming
+some basic knowledgeof the Unix API. We recommend
+the problem of argument races (see Section 4.3.3) with
+readerslookingforadditionalbackgroundonthistopicre-
+standardUnixmechanisms;unfortunately,theirapproach
+fertoStevens[26]orMcKusicket. al. [22].
+exactsasevereperformancepenalty. JainandSekar[16]
+demonstrateamoreefficientuser-levelapproachtointer-
+3 TheJanusArchitecture
+position using ptrace, but as the authors note, it relies
+on a technique for avoiding system call argument races Intuitively,Januscanbethoughtofasafirewallthatsits
+that is not completely secure. The Solaris /proc inter- betweenanapplicationandtheoperatingsystem,regulat-Application
+janus
+process process
+Policy Engine
+process
+System Call Entry mod_janus
+Kernel Proper
+open("foo")
+Allow/Deny
+User Space
+Kernel Space
+)"oof"(nepo
+open("foo")
+Deny
+result
+Allow
+open("foo")
+tluser
+tluser
+Figure1.SystemCallInterpositioninJanus
+ingwhichsystemcallsareallowedtopass. Thisisanalo- applicationaccesstothedescriptorfortheresource.
+goustothewaythatafirewallregulateswhatpacketsare
+allowed to pass. Another way to think about Janus is as 5. TheprogramcontinuestorununderJanus’ssupervi-
+anextensionoftheOSreferencemonitorthatrunsatuser sion until it voluntarily ends its execution or is ex-
+level. plicitly killed by Janus for a policy violation. If a
+Concretely, Janus consists of mod janus, a kernel sandboxedprocessforks,itsnewchildrenwillhave
+modulethatprovidesamechanismforsecuresystemcall new descriptors attached to them, and will be sub-
+interposition, and janus, a user-level program that in- jected to the security policy of their parents by the
+terprets a user-specified policy in order to decide which janusprocess.
+systemcallstoallowordeny.
+TofurtherexaminehowJanusscreenssystemcalls,let
+To gaina betterunderstandingofJanus’sbasicoperat-
+us consider the sequence of events that occurs when a
+ingmodelwewilllookatthelifetimeofaprogrambeing
+sandboxed process attempts the call open("foo") as
+rununderJanus:
+depictedinFigure1.
+1. Atstartup,janusreadsinapolicyfilethatspecifies
+whichfilesandnetworkresourcesitwillallowaccess 1. A sandboxed process makes a system call
+to. open("foo"); this traps into the kernel at
+thesystemcallentrypoint.
+2. janus then forks, the child process relinquishes
+allofitsresources(closesallofitsdescriptors,etc.),
+2. A hook at the system call entry point redirects con-
+and the parent attaches to the child with the trac-
+troltomod janus,sinceopenisasensitivesystem
+inginterfaceprovidedviamod janus. Attheuser
+call.
+level, this consists of attaching a file descriptor to
+thechildprocess. janusthenselectsonthisde- 3. mod janus notifies janus that a system call has
+scriptor and waits to be notified of any interesting beenrequestedandputsthecallingprocesstosleep.
+events.
+4. janus wakes up and requests all relevant details
+3. Thechildexecsthesandboxedapplication.
+aboutthecallfrommod janus,whichitusestode-
+4. Allaccessestonewresourcesviaopen,bindetc.is cidewhethertoallowordenythecall.Itthennotifies
+firstscreenedbyJanustodecidewhethertoallowthe mod janusofitsdecision.5. Ifthecallisallowed,controlisreturnedtothekernel bind them. Our initial solution to this problem was to
+properandsystemcallexecutionisresumedasnor- recordasocket’sprotocoltypewhenitwascreated, then
+mal. If janus decides to deny the call, an error is laterlookupthisinformationwhentheneedarose.Unfor-
+returnedtothecallingprocessandthesystemcallis tunately, we had not takeninto account allof the system
+aborted. callsthatcould changeour descriptorspace. Asa result,
+a malicious process could fool Janus about the protocol
+ThisisthebasicmodelofaprogramrunninginaJanus
+type of a given socket, and violate certain security poli-
+sandbox. Readersmayalsowishtorefertoothersources
+cies. Considerthefollowingexample:
+[12,23]onhowjanusandmod januswork, aswell
+Suppose we are enforcing the following security pol-
+asreferringbacktothedescriptionoftheinitialJanuspro-
+icy: our application, for example a web server, is only
+totype[29].
+allowed to bind TCP sockets on port 80, and is not al-
+lowedtobindUDPsockets,butisstillallowedtocreate
+4 Problems andPitfalls
+andconnectthem,perhapstotalktoaDNSserver.
+Supposeweseethefollowingsequenceofcalls:
+This section presents a selection of problems and pit-
+falls encountered in the course of building Janus. These
+1. 6 = socket(UDP,...). Januslogs6asaUDP
+can be broken into the following general categories: in-
+socket.
+correctly replicating OS semantics, overlooking indirect
+pathstoresources,raceconditions,incorrectlysubsetting 2. 7 = socket(TCP,...). Januslogs7asaTCP
+a complex interface, and side effects of denying system socket.
+calls. Weintroduceeachproblemwithageneraldescrip-
+tion,thenpresentconcreteexamplesfromourownwork. 3. close(7).
+4.1 IncorrectlyReplicatingtheOS 4. dup2(6,7). Janus’s state about the type of 7 is
+now inconsistent as it still believes that 7 is a TCP
+In order to make policy decisions, Janus must obtain socket.
+and interpret OS state associated with the application it
+is monitoring. Achieving this can lead to replicating the 5. bind(7,...some address...port 80).
+OSin two ways. First, we maytry to replicateOSstate. Janusallowsthiscalltoproceedasitbelievesthat7
+Necessarily, we must keep around some state in order to hastypeTCP,oursecuritypolicyhasthusbeenvio-
+trackwhatprocesseswe aremonitoring. This stateover- lated.
+laps with state managed by the OS. In order to interpret
+Because we failed to take dup2 into account, the se-
+application behavior (e.g. the meaning of a system call)
+quenceofcallsshowncouldleaveJanusinastatewhere
+we must replicate OS functionality. In both cases, repli-
+itsinternalrepresentationoftheprocess’sdescriptorspace
+cationintroducesthepossibilityofinconsistencythatcan
+indicatesthat7hasprotocoltypeTCP,astateinconsistent
+leadtoincorrectpolicydecisions.
+withitsactualprotocoltypeofUDP.Wecouldhavemodi-
+fiedJanustoaccountforallpossiblemeansofduplicating
+4.1.1 IncorrectlyMirroringOSState
+descriptors;e.g.dup, dup2, fcntl,etc. butamore
+Janus often needsOSstate in orderto make a policyde- robustsolutionwassimplytoquerythekerneldirectly. 2
+cision. Forexample,ifweobservethataprocesswantsto Inthiscasethestatewasreadilyavailablefromthekernel;
+callioctlonadescriptor,wemightwanttoknowmore howevertheinterfacetoaccessitwasinitiallyoverlooked.
+aboutthatdescriptor. Isitopenread-only,orread-write? Wetookseverallessonsfromthis.
+Is it associated with a file or a socket? Does it have the First, avoid replicating state in the monitor. Any time
+O SYNCflagset? Onesolutiontothisproblemistoinfer oneattemptstoshadowOSstateatuserlevel,onerunsthe
+current OS state, by observing past applicationbehavior. risk that his copy will become inconsistent with the OS.
+Thisoptioniscertainlyattractiveinsomeways. Inferring Second, policydecisionsshould minimizethe amount of
+state means we don’t need to modify the OS if this in- statetheyrequire,asthisreducesthechanceofrelyingon
+formation is not readily available. It also eliminates the inconsistentstate. Anotherimportantlessonthismistake
+system call overhead of querying the OS. Unfortunately, illustratesisnottounderestimatethecomplexityofUnix
+trying to infer even the most trivial information can be interfacesemantics.Theinitiallyincorrectapproachtaken
+error-prone, as we discovered in the course of building tosolvingthisproblemwaswrittenbyprogrammerswith
+Janus.
+2DirectlyaccessingthisinformationwasachievedthroughtheJanus
+JanusneedstoknowtheprotocoltypeofIP socketsin
+kernel module, although using the /proc interface would also have
+ordertodecidedwhetherornottoletamonitoredprocess beenaviablesolution.significantexperienceintheUnixprogrammingenviron- duplication adds complexity to the tool in question, and
+ment. Theirmistakewasnotdetecteduntilarewrite,sev- oftentheduplicatedfunctionalityoverlookscornercases.
+eralyearslater,afteravarietyofotherpartieshadlooked
+overthecodeandfailedtodetecttheproblem. 4.2 OverlookingIndirectPathstoResources
+Resourcesareoftenaccessiblethroughwhatwecalldi-
+4.1.2 IncorrectlyMirroringOSCode rect paths and indirect paths. Direct paths are those that
+areobviousandclearlyspecified,andtypicallythosethat
+Operating systems often perform non-trivial processing
+are interposed upon. To access the Linux filesystem the
+to interpret system call arguments. Duplicating this pro-
+direct paths are “normal” file system API calls that are
+cessingrunstheriskofincorrectlyimplementingtheker-
+usedtoaccessdescriptorssuchasopenortomodifythe
+nel’s functionality or having the duplicate implementa-
+filesystem,suchasrenameorunlink. Mostmonitor-
+tionbecomeinconsistentovertime(real-worldkernelsdo
+ing and interposition tools will carefully guard these in-
+change,afterall). Anidealexampleofwherethistypeof
+terfaces. However, these same tools will often ignore or
+problemcanariseisthecanonicalizationofpathnames.
+overlook indirect routes to access the file system. Con-
+Janus needs canonical file names to allow files to
+siderthefollowingroutes:
+be uniquely specified in the context of its access con-
+trol policies, for example, suppose Janus sees the call
+open("../foo",O RDWR).It needstobeable totell
+thatthisisthesamefileas/tmp/fooinitssecuritypol-
+icy. Superficially,thisappearstobeasimpleproblem. If
+we are given a relative path then we simply need to re-
+solve its constituent parts. For example, if the path con-
+tains".."or"."weneedtoresolvethesetothecorrect
+directories,however,therearesomesubtleissueshere. If
+thelastcomponentofourpathisasymboliclink,should
+we expand it? What should we consider as our file sys-
+temrootwhenweresolveapathname? Iftheapplication
+being monitored is allowedto use chroot, it may have
+adifferentfilesystemrootthantheJanusprocesswatch-
+ingit. Evenindividualprocessesofthesameapplication
+mayhavedifferentroots. Basicpathresolutionregularly
+confoundsimplementers3ofapplicationsthatrequirethis
+functionality.
+Other subtleties can arise due to the fact that file sys-
+tembehaviormaydifferonaper-processbasis. Consider
+Linux,where/proc/selfcontainsinformationreflect-
+ingthestateoftheprocessaccessingthedirectory. Thus,
+if we resolve /proc/self/cwd (the current process’s
+current working directory) in the context of the monitor
+wemayfindaverydifferentresultthanifweresolvethis
+pathinthecontextoftheuntrustedprocessthatthemoni-
+toriswatching.
+Janusinitiallytriedtocanonicalizeatuserlevel,andgot
+itwrongbyoverlookinga fewofthese issues. Thesolu-
+tion we adopted was to canonicalizein the kernel, in the
+contextofthemonitoredprocess,bycallingtheappropri-
+atekernelfunctionafterfilenamesarecopiedintotheker-
+nel. Thecompletedescriptionofourapproachtodealing
+withthisproblemisgiveninSection5.4. DuplicatingOS
+functionality/code should be avoided at all costs. Such
+3AcursoryexaminationofrecentreportsonBUGTRAQrevealssev-
+eralseriousbugsinnetworkservicesthatgotcanonicalizationwrongthe
+firsttime.
+(cid:0)
+Unix domain sockets: Unix domain sockets can be
+bound to locations in the file system. While these
+cannot be openedlike normal files, theycanstill be
+usedtocreatethingslikelockfiles.
+(cid:0) Coredumps: Evenifanapplicationcannotopenany
+filesdirectly,itcanstillcreatefilesbydumpingcore.
+(cid:0)
+Descriptor passing: Unix domain sockets allow de-
+scriptors to be passed back and forth between pro-
+cesses via sendmsg and recvmsg. If this path is
+overlooked,applicationscangainaccesstounautho-
+rized files or network sockets without any checking
+from a monitor. Consider two sandboxedprocesses
+that have different network access policies, but ac-
+cess to a common portion of the file system where
+they can open and access Unixdomain sockets (but
+notfiles). Ifoneprocesshasaccesstosensitivedata
+but no access to an external network, and the other
+process has external network access, but no access
+sensitive data, the two processes can collaborate to
+leak sensitive data, and thus violate the system se-
+curity policy. Admittedly, this example could also
+utilize the presence of shared memory or other in-
+terfaces that processes can use to share data. In the
+limit, this runs up against the issue of the confine-
+mentproblem[20].
+(cid:0)
+Unhelpful processes: Another commonway that an
+applicationcangainaccesstopartsofthefilesystem
+not specified in its security policy is through other
+processes that unwittingly help it. An ideal exam-
+ple of this is the Name Service Cache Daemon (or
+nscd).nscdcanbeusedbyglibctoretrieveentries
+from/etc/passwdand/etc/groupsviainter-
+process communicationovera Unixdomain socket.
+Iftheunwaryusergrantsreadaccesstothestandard
+nscd socket in /var they mayinadvertentlygrantaccess to potentially sensitive parts of their system.
+Ifamaliciousprocessisabletocreatesocketsinthis
+partof the filesystem, itcan impersonatenscd, and
+thustrickotherprocessesintousingitsownversion
+ofthepasswdandgroupsfiles.
+One of the key difficulties of interposing on an inter-
+faceascomplexastheUnixAPIissimplyknowingallof
+thesideeffectsandnon-obviouswaysthatonecanaffect
+system resources. It is importantto identify everypossi-
+blewayforaprocesstoaccessormodifyresources,both
+aloneandworkinginconcertwithotherprocesses.
+4.3 RaceConditions
+Raceconditionsinsystemcallinterposition-basedsecu-
+ritytoolsmostcommonlyoccurduetothenon-atomicity
+of permission checking at user level in Janus and access
+grantinginthekernel[25]. Thesearesometimesreferred
+to as time-of-check/time-of-use bugs [6]. The following
+isabasicoutlineofwhatsucharaceconditionlookslike:
+1. Janus grants permission to perform an operation (cid:0) ,
+thatreliesonsomemutablesharedstate.
+2. Thatstate changes, makingthe result ofperforming
+operation (cid:0) illegal(i.e.themeaningof (cid:0) incontext
+haschanged).
+3. The operation (cid:0) is performed by the operating sys-
+tem (i.e. access is granted, but not the access that
+Janusapproved).
+Thistypeofraceconditionisasignificantproblemfor
+sandboxingtoolsandcanbeusedtomisleadintrusionde-
+tection systems. Often, operations that system calls per-
+formrelyonmutablesharedstatethatifalteredwillfun-
+damentallychangetheimpactofthesystemcall. Wewill
+see many examples of this type of race in the following
+sections.
+4.3.1 SymbolicLinkRaces
+Symboliclinkraces[6]areafamiliarproblemtothesecu-
+rityconsciousUnixprogrammer.Asymboliclinkraceoc-
+curswhenasymboliclinkismodifiedtopointtoadiffer-
+entfilebetweenthetimethatthefileitreferstoischecked
+foragivenproperty,andwhenanaccessthatreliesonthat
+checkoccurs. Considerthefollowingexample:
+SupposeJanusisenforcingasecuritypolicythatallows
+writeaccessto/tmp/fooand/tmp/barandreadac-
+cessto/tmp/baz.Alsosupposethat/tmp/fooisini-
+tiallyasymboliclinkpointingto/tmp/bar.
+Nowconsiderthefollowingsequenceofevents:
+1. Process (cid:0)
+2. Janus checks that access to both /tmp/foo and
+/tmp/bar is allowed and, noting that it is, it will
+allowthecalltoproceed.
+3. Process
+callsopen("/tmp/foo", O RDWR).
+(cid:1)
+removes /tmp/foo, and creates a
+new symbolic link /tmp/foo, that points to
+/tmp/baz.
+4. The OS executes open("/tmp/foo",O RDWR)
+for process (cid:0) , thereby granting write access to
+/tmp/baz.
+Process (cid:0) has justviolated our securitypolicysince it
+nowholdsadescriptorto/tmp/bazwithbothreadand
+writeaccess. Inthisexampleandinlaterexamples, Pro-
+cess
+(cid:1)
+doesnotnecessarilyneedtomakethecalltomod-
+ify/tmp/fooafterJanusmakesitscheck,themodifica-
+tionsjustneedtohappenafterJanus’schecki.e. theorder
+thatcallsaremadedoesnotstrictlydictatetheorderthat
+theycompletein.
+Symbolic link races are one of the most commonly
+known and frequently confounding problems in system
+call interposition based sandboxing tools. Frequently
+toolsattempttosolvetheproblemofsymboliclinkraces
+by first canonicalizing pathnames and then checking the
+canonical name against their policy, or in some cases,
+forcingtheapplicationtouseacanonicalizednameforfile
+systemaccessbyalteringtheargumentstothecallinques-
+tion.Thisalsodoesnotsolvetheproblemofsymboliclink
+races because it fails to address the root of the problem,
+whichisconcurrency.Evenafterresolving/tmp/footo
+/tmp/bar,anotherprocesscanstillchange/tmp/bar
+tobeasymlinkto/tmp/baz,beforetheopencallex-
+ecutes, they can even change /tmp to be a symlink to
+/etc if they have the appropriate permissions. We dis-
+cussthedifficultyofformulatingacorrectsolutiontothis
+problemandsomeofthemisstepsthatwemadeinSection
+4.4.
+4.3.2 RelativePathRaces
+Relative path races exploit the fact that the location of
+a given inode can change between the time that Janus
+resolves a path relative to that inode to check an access,
+and the time that the kernel resolves a path relative to
+that inodetoperformtheaccess. Toillustrate apotential
+exploit of this race, consider the following sequence of
+events:
+Assume the current working directory of Process (cid:0) is
+/tmp/foo/barandthatJanusallowsthemonitoredap-
+plicationreadandwriteaccessonlytothecontentsofthe
+/tmpdirectory.
+1. Process (cid:0) callsopen("../../etc/shadow",
+O RDWR).2. Janus resolves this path to /tmp/etc/shadow,
+notesthatthisisin/tmp,andallowsthecall.
+3. Process
+(cid:1)
+, also in the sandbox, renames
+/tmp/foo/barto/tmp/bar.
+4. TheOSexecutes
+open("../../etc/shadow",O RDWR) in the
+contextofProcess (cid:0) . Sincethecurrentworkingdi-
+rectory of (cid:0) is now /tmp/bar, Process (cid:0) gains
+readandwriteaccessto/etc/shadow.
+Relative path races have a similar flavor to symbolic
+linkraces,asbothrelyonmaliciousprocessescollaborat-
+ing to modify shared file system meta-data, and fool the
+monitor. Interestingly, relative path races are not a well
+studied problem like symbolic link races, in spite of the
+factthattheydonotappeartobeuniquetotheproblemof
+systemcallinterposition-basedsandboxing.
+4.3.3 ArgumentRaces
+An argument race occurs when arguments to a system
+call are modified betweenthe time that they are checked
+byJanus,andwhentheyareusedbytheoperatingsystem
+to perform the system call. Argument races can occur
+if system call arguments reside in a portion of memory
+thatisaccessiblebymorethanoneprocess. Considerthe
+followingscenario:
+Suppose Janus’s policy is to allow read access to
+/tmp/fooanddenyallotherfilesystemaccess.
+1. Process (cid:0) calls open(path,O_RDONLY),where
+pathis"/tmp/foo".
+2. Janustrapsprocess (cid:0) .
+3. Janusreadspathfromthememoryof (cid:0) ,notesthat
+/tmp/foo can be opened according to its policy,
+andallowsthecalltoproceed.
+4. Process
+(cid:1)
+not immediately copied from user memory into the ker-
+nel. Instead, they are copied by individual system calls
+immediatelybeforeuse. Thispotentiallyleavesawindow
+ofopportunityforanattackertostrike,afterthetimethat
+asystemcallhasbeeninitiatedandargumentshavebeen
+examined by Janus, but before the arguments have been
+copiedintothekernel.
+This type of race can only occur in the presence of
+shared memory. Examples of mechanisms supporting
+this in Linux include: the SYSV shared memory facili-
+ties,mmap,andmemorysharedamongmulti-threadscre-
+ated via the clone call. Debugging interfaces such as
+ptrace that allow processes to modify the memory of
+otherprocessesmustalsobetakenintoaccount.
+4.3.4 FileSystemInformationRaces
+InLinux,whentwothreadssharefilesysteminformation
+itmeansthatthosethreadssharetheirrootdirectoriesand
+current working directories. Sharing current working di-
+rectoriesishighlyproblematicasiteasilyfacilitatesarace
+foranyfilesystemoperationthatusesarelativepath. For
+example,considerthefollowingsequenceofcalls,assum-
+ingaccessto/etc/shadowisforbiddenbyJanus:
+1. Thread
+modifiespathtopoint/etc/shadow.
+5. TheOSexecutestheopencall,returningadescrip-
+torfor/etc/shadow.
+Generally, argument races are only a concern for non-
+scalar system call arguments. Scalar system call argu-
+ments are passed to the OS in registersthat are immedi-
+atelycopiedintothekernelbythesystemcalltraphandler.
+Scalarargumentsinthekernelcanonlybetamperedwith
+byuserspaceprocessesviaptraceandothertracingin-
+terfaces.
+Non-scalar arguments, such as path names and socket
+addresses (e.gthose used byconnect, bind, etc.) are
+(cid:0) calls open("shadow",...) with the
+currentworkingdirectory/tmp.
+2. Janustrapsandapprovesthecall.
+3. Thread
+(cid:1)
+calls chdir("/etc") and Janus ap-
+provesthecall.
+4. Thread (cid:0) ’s open("shadow",...) executes
+with the current working directory /etc, returning
+a descriptor to /etc/shadow. Thus, our security
+policyhasbeenviolated.
+Whilethisclassofraceconditionsseemssimilartothe
+previoustwo,itisreallyinaclassofitsown.Theproblem
+isnotthatfilesystem meta-dataisshared, butratherthat
+processmeta-dataissharedbetweentwoormorethreads.
+The sharing of root directories is also problematic as a
+similarraceconditioncanbeinducedusingchroot.
+4.3.5 SharedDescriptorSpaceRaces
+Inthecasewheretwothreadssharedescriptorspaceswe
+encounterthepossibilityforaraceinchecksthatrelyon
+thetypeofdescriptorsfortheircorrectness.
+For example, suppose that Janus has the policy that it
+only allows TCP socketsto be bound to port 80. By ex-
+ecuting the following sequence of calls a multi-threaded
+applicationwiththreads (cid:0) and
+(cid:1)
+canviolatethispolicy.
+1. Thread (cid:0) callssockettocreateaTCPsocket
+asfd7.2. Thread (cid:0) callssockettocreateaUDPsocket
+asfd6.
+3. Janustrapsacalltobindfromthread (cid:0) toattachfd
+7toport80,andallowsthecalltoproceedasfd7is
+aTCPsocket.
+4. Thread
+(cid:1)
+closesfd7.
+5. Thread
+(cid:1)
+callsdup2(6,7).
+6. Thread (cid:0)
+Theargumentforthecorrectnessofthissolutionisthat
+if we remove the untrusted applications ability to create
+symlinkswithagivenname, wehaveremoveditsability
+tocreatearace.
+Problems: Directory renaming and relative sym-
+links.
+Preventing symlinks from being renamed prevents the
+attackthat brokeour previoussolution, buttherearestill
+problems.Supposeforexamplethatouruntrustedprocess
+can rename /tmp to /quux and replace it with another
+’s bind call proceeds, binding a UDP
+directory, that also contains a file named foo, that is a
+sockettoport80,andviolatingthesecuritypolicy.
+symlink to ../quux/baz. Again, we can violate the
+Races of this type, along with argument races, make securitypolicy.Socompletelydisallowingdirectmanipu-
+dealing with multi-threaded application highly problem- lationofsymlinksdoesnotpreventthisattack.Thisattack
+atic.DuetothesedifficultiesJanuscurrentlydoesnotsup- isevenpossibleifwecheckthatallreachablesymlinksare
+portmulti-threadedapplications.Wediscussthisproblem safewhenwestartJanus.
+furtherinSection6. Attempt3: Denyaccessthroughsymlinks.
+Suppose that we give up on allowing access through
+4.4 IncorrectlySubsettingaComplexInterface symlinks in general. To implement this, we have Janus
+stat files before it allows access to them, and if they
+Applicationsandboxesgenerallyenforcepolicybyonly
+are symlinks, denythe call. Clearly our renamingattack
+allowthe use ofa subset ofthesystem callinterface, we
+abovestillworks,andweareawarethataracemightstill
+refertothispracticeassubsetting. Thesystemcallinter-
+occur, so we try so to ensure that our open will fail if
+face can be subsetted at the granularity of whole system
+someone does try to slip us a symlink. We modify the
+calls,(e.g.disallowchrootcalls)oronamoregranular
+opencallslightlybyaddingtheO NOFOLLOWflagbefore
+bydisallowingcertainargumentstocalls(e.g.onlyallow
+we let it execute. This flag will cause the open to fail if
+open(path)ifpath=foo).
+it finds that /tmp/foo is a symlink. It seems like now
+In spite of its seeming simplicity, subsetting can often
+we are safe, but as it turns out, we can still get burned,
+be tricky. Unanticipated interactions between different
+foranycomponentofthepath/tmp/foomaybeasym-
+systemcallscanmakeitdifficulttocheckthatasubsetting
+link, includingtmp. Thus,we areonlyprotectedbythis
+solutioniscorrect. Inordertobetterillustratethelimita-
+approachifourpathconsistsonlyoffoo.
+tionofthisapproach,andthetypeofdifficultiesthatcan
+Problem: Symlinks in intermediate components in
+arise,wewillconsideraseriesofincorrectsubsettingso-
+ourpath.
+lutionstotheproblemofsymlinkracesmotivatedbyour
+Providingageneralsolutiontothisproblemthatyields
+ownexperience.
+atoolthatisnotfragileinthepresenceofsymlinksdoes
+Attempt1: Denythe creationofsymlinkstofilesto
+notseempossibleusingjustsubsetting,however,thereare
+thatwedonotallowunrestrictedaccess.
+othermechanismsthatcanbecalledupon.Wewillpresent
+Theargumentforthecorrectnessofthissolutiongoes:
+some potential alternative approaches to addressing this
+ifanuntrustedapplicationisonlyallowedtocreatesym-
+probleminsection5.2.
+linkstofilesitcouldaccesswithoutrestrictiontheneven
+We believethat this example clearly illustrates the po-
+ifasymlinkraceoccursthereisnoharmdone.
+tentialformistakeswhensubsettingacomplexandstate-
+Problems: Pre-existing symlinks, other sources of
+fulinterfacesuchastheUnixfilesystem. Italsoservesas
+symlinks.
+aclearillustrationofthelimitationsofapurelysubsetting
+Thissolutionisagoodstart,butitisincomplete. Some
+approachtouserlevelapplicationsandboxing.
+notableoversightsincludetheimplicitassumptionthatwe
+areonlyworriedaboutsymlinksthattheuntrustedappli-
+4.5 SideEffectsofDenyingSystemCalls
+cationcreates. Thisignoresthepossibilityofpre-existing
+unsafesymlinksandunsafesymlinkscreatedbyotherpro- System call interposition-based sandboxes restrict an
+cesses. Ifeitheroftheseconditionsexists,thentheabove application’sbehaviorbypreventingtheexecutionofany
+policyis not sufficient to preventsymlink races. For ex- system call that would violate a predetermined security
+ample,theuntrustedapplicationcanrenameapre-existing policy.Preventingtheexecutionofasystemcall,orcaus-
+symlinktofacilitatearaceintheformercaseistrue. ing a system call to return in a manner inconsistent with
+Attempt2: Denythecreationandrenamingofsym- its normal semantics, can have a detrimental impact on
+links. the operation of the application, potentially underminingitsreliabilityandevenitssecurity. "/etc/shadow"inthememoryofanotherprocessthat
+Denyingcallsthatanapplicationusestodropprivilege has just used the string as an argument to an open call.
+frequentlyintroducesserioussecurityflaws. Thistypeof Hereweconsidertwoapproachestopreventingthisclass
+problem is most often found in applications that run as ofracecondition:
+rootanddropprivilegeusingsetuid.Manyapplications
+thatrelyonsetuidfailtocheckitsreturnvalue,andif
+setuidfails,willcontinuetofunctioninacompromised
+state. Uponcasualexaminationwewereabletodiscover
+thisconditioninseveralcommonFreeBSDdaemons,and
+itappearsthatthisproblemisquitewidespread. We also
+foundthatapplicationsfailtocheckthereturnvaluesfrom
+other privilege-reducing calls, or simply fail-open. We
+frequently saw failures being ignored for other privilege
+reducingcallsincluding:setrlimittoreduceresource
+limits,andfcntltodropprivilegefromdescriptors.
+Given that aborting privilege-dropping calls will often
+underminethesecuritymodelofasandboxedapplication,
+it seems generally advisable to allow all such calls. For
+setuidandrelatedcalls,itseemsmostprudenttoabort
+theapplicationentirelyifwewishtodenyacall.
+Forcing system calls to return with a value that is
+not part of its specified interface, or that the application
+designer simply did not anticipate, is another potential
+sourceofproblems.Forexample,theSolaris/procpro-
+cesstracinginterfacewillonlyallowabortedsystemcalls
+to return EINTR. This sometimes leads applications to
+hang,repeatedlyretryingtheabortedsystemcallwiththe
+expectationthatitwilleventuallycomplete[14,13].
+5 Solutionsand HelpfulHacks
+In this section we present techniques for solving or
+avoiding some of the problems that we presented in the
+ProblemsandPitfallsSection.Weconsiderseveraldiffer-
+entapproachesfor:avoidingargumentraces,avoidingfile
+systemraces,anddenyingsystemcallswithoutadversely
+effecting applications. For each set of solutions, we first
+provide a brief review of the problem being addressed,
+we then give a high level summary of the solutions. We
+then present the details of implementing these solutions
+and that trade-offs associated with each approach. We
+givespecialattentiontothesolutionswechoseforJanus,
+and the rationale behind our choices. We conclude with
+some more general principles for recognizingand avoid-
+ingproblemsinthisclassofsystem.
+5.1 AvoidingArgumentRaces
+Torecapourdiscussioninsection4.3.3,argumentraces
+occur when system call argumentsare modified between
+the time that a monitor reads the arguments for a per-
+mission check, and when the operating system uses the
+arguments. The canonical example of this problem is a
+process changing the argument string "/tmp/foo" to
+(cid:0)
+Copy arguments into a “safe” place in memory,
+e.g. private memory,4 kernel address space, or the
+address space of a trusted process. This guarantees
+thatsensitiveargumentscannotbemodifiedbetween
+whentheyarereadbythemonitorandwhentheyare
+usedbythekernel.
+(cid:0)
+Leave argumentsin place and ensurethat the mem-
+orytheyresideinisprivate(i.e.“safe”).
+Using these strategies we have sought to make argu-
+ments accessible only to the kernel and trusted process
+(e.g.Janus)andwhensafe,thethreadofcontrolrequest-
+ingthesystemcall.
+5.1.1 CopyingSensitiveArgumentsintotheKernel
+OSkernel’spreventargumentracesbycopyingarguments
+into kernel memory before use. This approach makes
+sense; the cost of this copy is usually minimal, and it is
+easy to verify the safety of this approach. mod janus
+protects system call arguments using a variation on this
+themebycopyingvolatilesystemcallargumentsintoker-
+nelmemorybeforetheyareused.
+When mod janus traps a system call it immediately
+looks in a table to see if this call has any arguments
+that reside in user memory. If arguments are present,
+mod janus will copy these arguments into a thread-
+specific buffer in the kernel and twiddle the argument
+pointers in the trapped thread’s registers to point to this
+newlocationinmemory. Itwillthensetaflagindicating
+to the kernel that it is OK for the current system call to
+obtain its arguments from kernel memory. When Janus
+subsequentlyexaminestheargumentsoftheuntrustedap-
+plication, it will fetch a copy of them directly from the
+thread-specific buffer, not from the memory of the un-
+trustedprocess.
+Theprimaryadvantageofthisapproachisthesimplicity
+ofverifyingitscorrectness.Wecansaywithahighdegree
+of certainty that arguments in a kernel buffer cannot be
+modified by untrusted processes, even in the presence of
+multi-threading.
+The disadvantageof this approach is that it addssome
+complexityto the kernelresident portionofJanus; about
+4For memory to be private in the sense we mean here, the mem-
+orymustbemodifiableonlybythemonitorprocessesandtheprocess
+that owns the memory. This means not only that the memory is not
+explicitlysharedbetweenprocesses(e.g. createdvia. mmapwiththe
+MAPPRIVATE flag), but also that it is not shared between multiple
+threads,modifiablevia.aprocesstracinginterface,etc.25%ofmod janusisdedicatedto performingthistask space wassufficientlyrestrictedandefficiencyleadus to
+(mod janus is well under 2K lines of C total, so this abandonthisapproachinJanus.
+is not a major penalty). Individual system calls require
+specialtreatmentinordertocopytheirargumentsintothe
+kernel.Fortunately,theargumentsofinterestaretypically 5.1.3 Checking that Arguments Do Not Reside in
+of two standard types, socket addresses and path names. SharedMemory
+Mostoftheworkofspecifyingper-callcopyingbehavior
+Argument races can only occur if arguments reside in
+is reduced to filling in a per-call entry in a table which
+unprotected shared memory. On approach to prevent-
+specifiesitsargumenttypes.
+ing this is restricting the interfaces that allow the cre-
+Another worrisome property of this approach is that
+ationof sharedmemory,such cloneforcreating multi-
+system calls are permitted to fetch their arguments from
+plethreads,certainusesofmmapandtheSYSVfacilities
+kernel memory instead of user memory. If mod janus
+forcreatingsharedmemoryareas.
+failedtotwiddleathreadsargumentpointers(orpointers
+For many applications this is a viable solution. Rel-
+in the arguments themselves, when there are arguments
+atively few Linux applications use multi-threading. The
+with nested pointers), the untrusted application might be
+same is true of the BSD-based operating systems, which
+able to gain unauthorized access to kernel memory. The
+until recently [31] did not provide kernel support for
+difficultyofverifyingthisissomewhatamelioratedbyour
+multi-threading. The use of other shared memory facil-
+table-driven approach. This minimizes code duplication
+itiesisalsonotterriblywidespread.
+andsimplifiesauditing.
+We can check that arguments do not reside in shared
+We considered the possibility of moving some of this
+memoryatuserlevelbyexaminingthepermissionsonthe
+complexity into Janus by giving it finer grained control
+virtualmemoryareathatargumentscurrentlyreside.This
+overmovingargumentstoandfromthisper-threadscratch
+canbeaccomplishedthroughthe/procfilesystemunder
+spaceatuserlevel,butweultimatelydecidedagainstthis
+Linux. Forthisapproachtobecorrectwemustbeensure
+approachaswebelieveitprovidedtoomuchpowertothe
+notonlythatthevirtualmemoryareathatanargumentre-
+tracing process, and greatly increased the possibility of
+sides in is not shared, but also that the untrusted process
+creatinganexploitableholeinmod janus,whichisin-
+has its own copy. For private mmaped memory regions
+tendedtobeaccessiblebyunprivilegedprocesses.
+thiscanbeenforcedbyreadingouroftheprocess’smem-
+oryandwritingthembacktothesamelocationtoensure
+thattheprocesshasaprivatecopy. Thisisnecessaryasa
+5.1.2 ProtectingArgumentsinUserMemory
+privatelymmaped files may reflect changes in the under-
+Another solution to the problem of preventing argument lyingfile,aprocessisnotguaranteedtogetitsowncopy
+races is copying arguments into a read-only section of ofanareaofanmmapedfileuntilitwritestothatarea.
+memoryintheaddressspaceoftheuntrustedprocess.Set- While this approach enforces some limitation on the
+ting up this section can be accomplished either by dedi- generalityofatool,itrequiresnokernelmodificationsand
+catedkernelcodeorbyforcingtheprocesstommapand minimaleffortonthepartoftheimplementer.
+mprotect a region of memory. Before system call ar-
+gumentsarechecked,theycanbecopiedintothisregion 5.2 AvoidingFileSystemRaceConditions
+by Janus. This approach was taken by earlier versions
+ofJanusthatwouldcreatearead-onlymemoryregionby In order to verify that Janus sees exactly what filesys-
+callingmmapinthecontextoftheuntrustedprocesswhen tem accesses a process makes, file system access must
+that process was “attached”, then keep track of the loca- takeplaceinamannerthatensuresthatnoracecondition
+tionofthisscratchspaceintheuntrustedapplication’sad- cantakeplace. Insection4.4wedemonstratedthattrying
+dress space. The correctness of this approach relies on toachievethisbysimplysubsettingawayproblematicbe-
+Janus judiciously guarding the mprotect, mmap and haviorsleftuswithapolicyforfilesystemaccessthatwas
+mremap interfaces to ensure that this read-only section quitecumbersomeanddifficulttousesafely. Inthissub-
+ofmemoryisnottamperedwith. section, wepresentsomepotentialapproachestosolving
+Thisapproachisattractive,asmuchlessworkmustbe thisproblem. Ourapproacheswork bycoercingapplica-
+done in the kernel in order to implement it. The Sub- tionsintoalwaysaccessingthefilesystemusinganaccess
+terfugue[1]systemactuallydoesthisusingonlyptrace, patternthatwecaneasilyverifyissafe(e.g.viasharedli-
+althoughtheinefficiencyofusingptracetocopyargu- braryreplacement),andthensimplydisallowingallaccess
+mentsmakesthisprohibitivelyexpensive,givenamoreef- that does not conform to this access pattern i.e. we even
+ficientmechanismthisseemslikeanattractiveapproach. disallow potentially safe operations which would simply
+Concerns about assuring that access to the user scratch behardtoverify.5.2.1 WhatisGoodBehavior? /tmp/foo would make the safe sequence of calls
+givenabove. Whenusingthisapproachwestillrely
+Unix applications can obtain access to files without en-
+only on Janus for the security of our system, the li-
+countering symlink races. This is important for normal
+braries arenot trusted, but merely serveto facilitate
+application programmers who, for example, might want
+easychecking.
+towriteanftpserverthatsecurelychecksfilesystemac-
+cessesagainstasecuritypolicy. Theprogrammercanac-
+complishthisbyleveragingthefactthatthecurrentwork- 3. Force access through a proxy: Instead of letting an
+ing directory of a process is private state5 and will not application access the file system directly we can
+changebetweenthetimethatitperformsacheckonafile require it to go through a proxy process which ac-
+relative to this directory, and the time that the call com- cesses the file system on the application’s behalf.
+pletes. The programmer can leverage this to perform a This proxy can in turn use safe operations when it
+racefreeopenbyrecursivelyexpanding(viareadlink) accessesfiles,preventingitfromfallingvictimtofile
+and following a path one component at a time until they system races. We have had promising results with
+havereachedafile,oruntiltheyhavefoundthatthepath preliminary experiments in facilitating proxy-based
+violatespolicy.Asimilarsequenceofcallscanbeusedto filesystemaccesswithsharedlibraryreplacement.It
+performotherfilesystemoperationswithoutraces. Ifwe is interesting to note that this approach also solves
+aremonitoringanapplicationperformingsuchasequence theproblemofargumentraces.
+ofcalls,wecanalsocheckeachcallinthesequencewith-
+outtheriskofaracecondition. Thisfollowsfromthefact 5.3 DenyingSystemCallswithoutBreakingAp-
+thatweperformourcheckaftertheapplicationmakesthe plications
+call,iftherecannotbearacethatcanfooltheapplication,
+therecannotbearacethat willfoolthemonitor. Clearly Often the reasonthat we wish to denya system callis
+thisisa veryspecificbehaviorpatternthatwe wouldnot that it allows a process to modify some sensitive global
+normallyexpectapplicationstoconformto. However,we state, such as a sensitive file, its own resource limits, or
+can play some tricks to coerce applications into always itsuid. However,itisoftenthecasethattheprocesscan
+conformingtogoodbehaviorpatterns. begivenitsownlocalcopyofthisstatewithoutaffecting
+its functionality. This approach of giving an application
+its own copy of some global state is what we call virtu-
+5.2.2 EnforcingGoodBehavior
+alization. Virtualization is a powerful technique because
+There are several mechanisms we can use to “force” an itallowsustoisolateanuntrustedapplicationfromsensi-
+applicationtoconformtoourdefinitionofgoodbehavior, tiveresources,whilepreservingnormalsystemsemantics,
+i.e.toaccessthefilesysteminamannerthatwecaneasily thus obviatingtherisk ofbreaking anapplication. There
+verifyissafe. are several ways that we can virtualize the sensitive re-
+sources.
+1. Induce safe call sequences: The monitored pro-
+We can emulate the normal semantics of an unau-
+cess can be forced to directly execute a safe se-
+thorized portion of the operating system interface using
+quence of calls using a process tracing mechanism.
+sharedlibraryreplacemente.g. thistechniquecanbeused
+For example, if a monitored process makes the call
+tosimulatethesemanticsofrunningasrootforprocesses
+open("/tmp/foo",...), we could force the
+runningwithoutprivilege.Thistechniqueisusedbytools
+operating system to make the appropriate safe se-
+likefakeroot[18],tosimplifypackagingsoftware.
+quenceofsystemcallsspecifiedaboveinthecontext
+Wecanredirectcallstosensitiveresourcestoacopyof
+ofthetracedprocess.
+those resources. Forexample, through modifyingthe ar-
+gumentstosystemcalls,eitherdirectlythroughthetracing
+2. Static or dynamic library replacement: 6 Using this
+mechanism as done in MapBox [3] or indirectly through
+approach we replace problematic library calls with
+sharedlibraryreplacement.
+code that convertsthese calls to their easy-to-check
+Wecanreplicateresourcesusingthenormaloperating
+counterparts. Again, we could have a shared li-
+systemfacilitiesforthistask;forexample,usingchroot
+brary replacement for open, which if called with
+we cangivean untrusted applicationits own copyofthe
+5AsmentionedaboveunderLinuxthisinvariantcanbeviolatedifwe filesystem.
+allowthreadstoclonethemselveswithsharedfilesystemstate. If possible it is always preferable to virtualize the re-
+6Thisapproachalsorequiresthatwealsouseamodifiedloader.This
+sourcesthandenyaccessasthisgivesusthehighestlevel
+“trick”doesnotworkwiththeloader,becausetheloadermustfirstac-
+ofcertaintythatwehavenotbrokenoursandboxedappli-
+cessthefilesystemdirectlyinordertoloadthesharedlibrariesbeforeit
+canusethem. cation.5.4 LettheKernelDotheWork
+Ifthekerneldoessomecomplexoperation,don’ttryto
+replicate that codeyourself, just callthe code in the ker-
+nel. In section 4.1 we discussed the problem of canon-
+icalizing file names. Sometimes the OS will provide a
+system call for just this purpose7. Janus addresses this
+problembyhavingmod januscanonicalizepathnames
+atthesame time thattheyarefetched fromtheuntrusted
+processuponsystemcallentry. This isadvantageousfor
+tworeasons. First,thefilesystemnamespacevariesona
+perprocessbasis,canonicalizingpathnamesintheexecu-
+tioncontextofthemonitoredprocessesensuresthatthese
+differences are taken into account. Second, because the
+Janus kernel module simply calls the kernel’s canonical-
+izationcode,wecanbesurethatwearegettingthecorrect
+canonicalization. A final advantage of letting the kernel
+dotheworkofcanonicalizationforusisthatitsimplifies
+ourpolicyenginebyseveralhundredlines.
+5.5 LessonsfortheImplementer
+Tosummarizethelessonsfromourexperience:
+(cid:0)
+Avoid replicating OS state and functionality. Reuse
+OSfunctionalityandquerytheOSdirectly forstate
+wheneverpossible. Bewareofinconsistency.
+(cid:0)
+Beconservativeinyourdesign. Don’tunderestimate
+thecomplexityofthesystemcallAPI.Don’toveres-
+timateyourunderstandingofitsnuances.
+(cid:0) Be aware ofrace conditions that can occur between
+theOSandmonitor.Considerallthestatethatasys-
+tem call relies upon to perform its function. Think
+aboutwhatpartsofthesystemcanmodifythatstate.
+Thinkaboutwhatcanhappenbetweenthetime you
+makeapolicydecisionaboutasystemcallandwhen
+thesystemcallfinishes.
+(cid:0)
+Be aware of the multi-threading semantics of your
+particularoperatingsystem.
+(cid:0)
+Beexplicit. Documentandjustifythedecisionsyou
+have made in your design and the assumptions that
+mustholdinorderforyourimplementationtobecor-
+rect. These assumptions may be violated as the OS
+evolves,whenyourtoolisportedtoanotherplatform,
+etc. The security of system call interposition-based
+toolsoftenrelyonacomplexsetofassumptionsthat
+rarelymakeitbeyondthemindoftheimplementer.
+7Solarisprovidestheresolvepathsystemcalltocanonicalizefile
+names. However, theresolvepathinterfaceisnotfoolproof. The
+issueofdifferencesinperprocessviewsofthefilesystemstillremains
+aproblem.Also,havingtocallresolvepathcouldaddseveraladdi-
+tionalsystemcallstoyourpolicyenginescriticalpath.
+(cid:0)
+Beawareofalldirectandindirectpathstoresources.
+Know all the ways that a process can modify the
+file system, network, and other sensitive system re-
+sources.
+(cid:0) The file system is a huge chunk of mutable shared
+state. It is fraught with race conditions of the obvi-
+ous and non-obvious variety. Dealing with the file
+system interface is the most difficult part of confin-
+ing/monitoringanapplication.
+(cid:0)
+Anytimeyouchangethebehaviorofyouroperating
+system, for example by aborting system calls, you
+riskbreakingyourapplicationsandpotentiallyintro-
+ducing new security holes. Avoid making changes
+that conflict with normally specified OS semantics,
+ordivergefromapplicationdesigner’sexpectations.
+6 Future Work
+Therearestillavarietyofproblemstobesolvedinorder
+todemonstrateasystemcallinterposition-basedsandbox
+thatcansupportthefullrangeofpotentialapplicationsin
+a secure fashion. The most notable omission in our list
+ofsolutionswasananswertothequestionofhowtosup-
+portmulti-threadedapplications.Wearenotawareofany
+user-levelsystemcallinterposition-basedsandboxingtool
+thathasaddressedthisproblem. Onepotentialsolutionis
+toofferfunctionalityinakernelmoduletoallowlocking
+of per thread meta-data. Since this is per-process state,
+andnotgloballysharedstatelikefilesystemmeta-data,it
+seemsquitepossiblethatauserlevelprocesscouldsafely
+be allowed to lock it. The performance implications of
+suchasolutionareunclearandrequirefurtherstudy.
+An important trend from first generation sandboxes
+suchastheJanusprototype,MapBox,Consh,etc.,tosec-
+ond generation sandboxes as exemplified by Janus and
+Systrace, has been to abandon a purely user-level ap-
+proach to application sandboxing and instead embrace
+a hybrid [24] solution where a dedicated kernel mod-
+ule/patch is used for tasks such as system call interposi-
+tion,canonicalizingpathnames,fetchingsystemcallargu-
+ments,etc. Significantperformanceandsecuritybenefits
+havealreadybeenrealizedthroughtherelianceonasmall
+amountofadditionalkernelcode(wellunder2Klinesof
+Cformod janus,andacomparablenumberintheSys-
+tracekernelpatch). Itisnotclearthatthecorrectbalance
+betweenuserandkernelspacefunctionalityhasyetbeen
+found. Pushingasmallamountofadditionalfunctionality
+intothekerneltodealwithfilesystemaccesspolicycould
+potentiallyeliminatetheracecheckingfilesystemaccess
+controlthatweexaminedinSections4.3.1and4.3.2.Sub-
+domain[8]hasdemonstratedthatsuchasolutionisfeasi-
+ble with the addition of a modest amount of additional
+kernelcode.Anotherimportantquestiontobeaddressediswhether vided the excellent research environment in which this
+the system call boundaryremains best place to interpose work was conducted. This material is based upon work
+onapplicationsaccesstosensitiveresourcesatall. Under supportedinpartbytheNationalScienceFoundationun-
+Linux, an alternative approach will likely soon be avail- der Grant No. 0121481 and in part by NSF CAREER
+ableintheformoftheLinuxSecurityModule(LSM)[32] CCR-0093337.
+thatprovideslow-levelhooksforaddingnewaccesscon-
+trol mechanisms to the kernel. LSM does not provide a References
+complete solution, however, it does provides a common
+[1] Subterfugue:stracemeetsexpect.
+foundationonwhichtobuildothermechanismsthatcould
+http://subterfugue.org/.
+potentially yield a cleaner abstraction for controlling ac- [2] D.A.,M.A.,R.R.,andS.D. Chakravyuha(cv): Asand-
+cesstosensitiveresources. boxoperatingsystemenvironmentforcontrolledexecution
+Wehavebrieflytouchedupontherelationshipbetween ofaliencode. TechnicalReport 20742, IBM T.J.Watson
+thiswork andhost-basedintrusiondetection. We believe ResearchCenter,Sept.1997.
+[3] A.AcharyaandM.Raje. MAPbox: Usingparameterized
+therearelikelytobechallengesuniquetothatapplication
+behaviorclassestoconfineuntrustedapplications. InPro-
+ofinterpositionandwould hopetoseecomparablestudy
+ceedingsoftheNinthUSENIXSecuritySymposium, Aug.
+examining the interactions between policy, mechanism
+2000.
+andimplementationinthecontextofarealinterposition- [4] A. Alexandrov, M. Ibel, K. Schauser, and C. Scheiman.
+based HIDS system. Currently the closest work to this Extending the operating system at the user level: the ufo
+has been work by Wagner et. al. [28] examining weak- globalfilesystem. InProc.oftheUSENIXAnnualTechni-
+nesses in the policy models of system call interposition- calConference,January1997.
+[5] A. Alexandrov, P. Kmiec, and K. Schauser. Consh: A
+basedanomalydetectiontoolssuchasthoseproposedby
+confinedexecutionenvironmentforinternetcomputations,
+Hofmeyret.al.[15].
+1998.
+[6] M. Bishop and M. Dilger. Checking for race conditions
+7 Conclusion infileaccesses. ComputingSystems,9(2):131–152,Spring
+1996.
+We have presented a variety of problems and pitfalls [7] S. Cesare. Linux anti-debugging techniques.
+thatcanoccurinthedesignandimplementationofsystem http://www.big.net.au/˜silvio/
+call interposition based security tools. We have broadly linux-anti-debugging.txt,January1999.
+[8] C.Cowan,S.Beattie,G.Kroach-Hartman,C.Pu,P.Wagle,
+categorized these problems under the headings of: in-
+andV. Gligor. Subdomain: Parsimoniousserversecurity.
+correctly replicating OS semantics, overlooking indirect
+InProceedingsoftheSystemsAdministrationConference,
+pathstoresources,raceconditions,incorrectlysubsetting
+Dec.2000.
+a complex interface, and side effects of denying system [9] Entercept Security Technologies. System call inter-
+calls.Wehaveshownhowtheseproblemscanallowsand- ceptionwhitepaper. http://www.entercept.com/
+boxesandrelatedtoolstobecircumvented.Wehavecon- whitepaper/systemcalls/.
+[10] S. Forrest, S. A. Hofmeyr, A. Somayaji, and T. A.
+sidered a variety of solutions to the problems we have
+Longstaff. A sense of self for unix processes. In Pro-
+identifiedinthisdomain,aswellasnotingprinciplesthat
+ceedingesofthe1996IEEESymposiumonResearchinSe-
+canaidtheimplementerinavoidingcommonpitfalls. Fi-
+curityandPrivacy,pages120–128.IEEEComputerSoci-
+nally, we have touched on a number of problems in this
+etyPress,1996.
+areathatwebelievemeritfurtherstudy. [11] T.Fraser, L.Badger, andM.Feldman. HardeningCOTS
+softwarewithgenericsoftware wrappers. InProceedings
+8 Acknowledgments oftheIEEESymposiumonSecurityandPrivacy,1999.
+[12] T. Garfinkel and D. Wagner. Janus: A practical tool for
+This work, and the present implementation of Janus applicationsandboxing.
+would not exist without the significant effort and guid-
+http://www.cs.berkeley.edu/˜daw/janus.
+[13] D.P.Ghormley,D.Petrou,S.H.Rodrigues,andT.E.An-
+ance provided by David Wagner. This work also could
+derson. Slic: Anextensibilitysystemforcommodityoper-
+not have been done without the development of the first
+atingsystems. pages39–52,June1998.
+versionofJanus of byIanGoldberg,DavidWagner, and [14] I. Goldberg, D. Wagner, R. Thomas, and E. Brewer. A
+MartiHearst. SteveGribble,andNikitaBorisovprovided secureenvironmentforuntrustedhelperapplications,1996.
+[15] S.A.Hofmeyr,S.Forrest,andA.Somayaji. Intrusionde-
+invaluable feedback and encouragement in the course of
+tectionusingsequencesofsystemcalls. JournalofCom-
+thiswork.Thisworkalsogreatlybenefitedfromfeedback
+puterSecurity,6(3):151–180,1998.
+anddiscussionswithNielsProvos,ConstantineSapunza-
+[16] K.JainandR.Sekar. User-levelinfrastructureforsystem
+kis,MichaelConstantandBenPfaff.BenPfaffandSteven call interposition: A platform for intrusion detection and
+Bergsiekerofferedsignificanteditorialhelp. EricBrewer, confinement. In Proc. Network and Distributed Systems
+David Culler, Mendel Rosenblum, and Dan Boneh pro- SecuritySymposium,2000.[17] M.B.Jones. Interpositionagents: Transparentlyinterpos-
+ing user code at the system interface. In Symposium on
+OperatingSystemsPrinciples,pages80–93,1993.
+[18] JoostWitteveen. fakeroot:afakerootenviroment.
+http://packages.debian.org/stable/
+utils/fakeroot.html.
+[19] C. Ko, T. Fraser, L. Badger, and D. Kilpatrick. Detect-
+ingandcounteringsystemintrusionsusingsoftwarewrap-
+pers. InProceedingsofthe9thUSENIXSecuritySympo-
+sium,August2000.
+[20] B. W. Lampson. A Note on the Confinement Problem.
+CommunicationsoftheACM,16(10):613–615,oct1973.
+[21] Y.LiaoandV.R.Vemuri. Usingtextcategorizationtech-
+niquesforintrusiondetection.InProc.11thUSENIXSecu-
+ritySymposium,August2002.
+[22] M.K.McKusick,K.Bostic,M.J.Karels,andJ.S.Quar-
+terman. The Design and Implimentation of the 4.4 BSD
+OperatingSystem. Addison-Wesley,1996.
+[23] V.Nakra. Architecturestudy: Janus-apracticaltoolfor
+applicationsandboxing.
+[24] N.Provos. Improvinghostsecuritywithsystemcallpoli-
+cies. TechnicalReport02-3,CITI,November2002.
+[25] SteveBellovin. ShiftingtheOdds,WritingMore
+Secure Software. http://www.research.att.
+com/˜smb/talks/odds.ps.
+[26] R.W.Stevens. AdvancedProgrammingintheUnixEnvi-
+ronment. Addison-Wesley,1992.
+[27] D.WagnerandD.Dean.Intrusiondetectionviastaticanal-
+ysis. InProc.IEEESymposiumonSecurityandPrivacy,
+2001.
+[28] D.WagnerandP.Soto. Mimicryattacksonhostbasedin-
+trusiondetectionsystems. InProc.NinthACMConference
+onComputerandCommunicationsSecurity,2002.
+[29] D.A.Wagner. Janus: anapproachforconfinementofun-
+trusted applications. Technical Report CSD-99-1056, 12,
+1999.
+[30] A. Wespi, M. Dacier, and H. Debar. Intrusion detection
+using variable length audit trail patterns. In RAID 2000,
+pages110–129,2000.
+[31] N. J. Williams. An implementation of scheduler activa-
+tionsonthenetbsdoperatingsystem. InUSENIXAnnual
+TechnicalConference,2002.
+[32] C.Wright,C.Cowan,J.Morris,S.Smalley,andG.Kroah-
+Hartman. Linux security modules: General security sup-
+portforthelinuxkernel. InLinuxSecurityModules: Gen-
+eralSecuritySupportfortheLinuxKernel,2002.

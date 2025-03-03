@@ -1,0 +1,1181 @@
+FiG: Automatic Fingerprint Generation
+JuanCaballero ShobhaVenkataraman PongsinPoosankam
+CarnegieMellonUniversity CarnegieMellonUniversity CarnegieMellonUniversity
+jcaballero@cmu.edu shobha@cs.cmu.edu ppoosank@cmu.edu
+MinGyungKang DawnSong AvrimBlum
+CarnegieMellonUniversity CarnegieMellonUniversity CarnegieMellonUniversity
+mgkang@cmu.edu dawnsong@cmu.edu avrim@cs.cmu.edu
+Abstract tions. SomefingerprintingtoolssuchasNmap[9]areused
+toidentifyhostsrunningaspecificoperatingsystem. There
+arealsotoolsthatcanbeusedtoidentifydifferentversions
+Fingerprintingisawidelyusedtechniqueamongthenet-
+ofthesameapplicationsuchasfpdns[2],Nmap,andNes-
+working and security communities for identifying different
+sus[8]. Thesetoolshelpnetworkadministratorstofindver-
+implementationsof the same piece of networking software
+sioninformationleakedbyasystem,inventorythehostsin
+runningonaremotehost.Afingerprintisessentiallyasetof
+anetwork,andcheckfortheexistenceofhostsrunningver-
+queriesandaclassificationfunctionthatcanbeappliedon
+sions with vulnerabilities, or versionsthat are not allowed
+theresponsestothequeriesinordertoclassifythesoftware
+underthesecuritypolicyofanetwork.
+intoclasses. Sofar,identifyingfingerprintsremainslargely
+an arduous and manual process. This paper proposes a However,identifyingthefingerprintsusedbythesetools,
+novel approach for automatic fingerprint generation, that the fingerprint generation, is currently a manual process
+automatically explores a set of candidate queries and ap- which is arduous, incomplete, and makes it difficult to
+pliesmachinelearningtechniquestoidentifythesetofvalid keep up-to-date with the numerous new implementations
+queries and to learn an adequate classification function. andnewversionupdates. Inthispaperweproposeanovel
+Ourresultsshowthatsuchanautomaticprocesscangener- approachfor automaticfingerprintgeneration. Thegoalis
+ateaccuratefingerprintsthatclassifyeachpieceofsoftware to automaticallyproducefingerprintsthat can differentiate
+intoitsproperclassandthatthesearchspaceforqueryex- among distinct implementations of the same specification
+plorationremainslargelyunexploited,withmanynewsuch andcanbeusedbydifferentfingerprintingtools.
+queriesawaitingdiscovery. Withapreliminaryexploration,
+Afingerprintcontains1)asetofqueries,and2)aclassi-
+weareabletoidentifynewqueriesnotpreviouslyusedfor
+ficationfunction.Tousethefingerprinttoidentifytheclass
+fingerprinting.
+towhichapieceofsoftwarebelongs,onesendsthequeries,
+collectstheresponsesandusestheclassificationfunctionto
+classifytheresponse.Intheremainderofthispaper,wewill
+1. Introduction usethetermclassifyingahostwhenwerefertoclassifying
+a pieceofnetworkingsoftwarerunningonthe host. Thus,
+foreaseofdescription,weassumethatthereisonlyonerel-
+Fingerprinting is a technique for identifying the differ- evantpieceofnetworkingsoftwarerunningonthehost;we
+encesamongimplementationsofthesamenetworkingsoft- caneasilyremovethisassumptionbyclassifyingeachpiece
+warespecification,beitapplications,operatingsystemsor ofnetworkingsoftwareonthehostseparately.
+TCP/IP stacks. It is well-known that even when the func-
+Inthispaper,wedemonstratehowtoautomaticallyiden-
+tionalityofapieceofsoftwareisdetailedinaspecification
+tify useful queries and classification functions. Our fin-
+or standard, different implementations of that same func-
+gerprint generation process contains three phases: First, a
+tionalitytendtodifferintheinterpretationofthespecifica-
+Candidate Query Exploration phase which outputs candi-
+tion,bymakingassumptionsorimplementingonlypartof
+date queries. Second, a Learning phase where those can-
+theoptionalfunctionality.
+didatequeriesaresenttodifferentimplementationsandthe
+In network security, fingerprinting has been used for responsesaregatheredandpassedtothelearningalgorithm.
+more than a decade [15] and it has a variety of applica-TheLearningphaseoutputsthequeryset,whichisasubset asetofcandidatequeriesQ ,whichcouldpotentiallypro-
+c
+of the set of candidate queries that includes only the can- duce differentresponses from hosts belonging to different
+didatequeriesthatareusefulforfingerprinting,andaclas- classes. Thisprocesstakesasinputtheprotocolsemantics
+sification function. The pair formed by the query set and intheformofprotocolstandardsanddomainknowledge.
+the classification functionis the fingerprint. Third, a Test-
+Then, given a set of training hosts T where the imple-
+ingphasewheretheproducedfingerprintsaretestedovera
+mentationclassofeveryhostinT isknownandisintheset
+larger number of different implementations to evaluate its
+I, the first step in the Learningphase is to send the set of
+accuracy.
+candidatequeriesQ toeachofthehostsinT usingapacket
+c
+Wealsostudywhattodowhenahostdoesnotmatchany injection tool and to gather the responses from each host.
+knownfingerprint. Onestraightforwardapproachwouldbe Theresponsesandtheclassesarethenpassedtothelearn-
+toclassifythehostasunknown,butonecouldalsoperform ing algorithm, which identifies a set of queries Q ⊆ Q ,
+c
+anapproximatematchingtothenearestknownclass. Inthis that produces different responses from hosts belonging to
+paper, we set outto validate if and whenthis approximate differentclasses,andaclassificationfunctionf .
+Q
+matchingcanbeperformed.
+Finally, in the Testing phase we need to verify that the
+Thispaperpresentsageneralmethodologyforautomatic pairhQ,f igeneratedintheLearningphasehassufficient
+Q
+fingerprintgenerationthatcoversallthreephasesandgener- accuracy. This phase uses a set of testing hosts E, where
+atesfingerprintsthatcanbeusedbydifferentfingerprinting none of the hosts in E should belong to the training set
+tools. We validateourmethodologybyapplyingiton two T, and each of the hosts in E should belongto one of the
+distinctproblems:1)generatingfingerprintstodifferentiate classes in I. Then, this classification is compared to the
+operatingsystemsand2)generatingfingerprintstodifferen- knownclassificationforEandiftheaccuracysatisfiessome
+tiateimplementationsofthesameapplication,namelyDNS predefinedmetrics,thepairhQ,f iisconsideredvalidand
+Q
+servers. becomes the output fingerprint. The fingerprints obtained
+can now be used by any fingerprintingtool to classify un-
+Ourexperimentalresultsshowthatthefingerprintsauto-
+known hosts by sending the query set Q to this host, and
+matically generated by our approach are accurate. With a
+applyingtheclassificationfunctionf ontheresponses.
+preliminaryexplorationofthesearchspace,weareableto Q
+findmanynovelfingerprintsthatarenotcurrentlyusedby Besidesautomaticallygeneratingthefingerprintsneeded
+fingerprintingtools. These novelfingerprintscan increase bythefingerprintingtools, we also wanttovalidateif itis
+theaccuracyandgranularityofcurrentfingerprintingtools. possible for a fingerprinting tool to perform approximate
+matching when the responses from a host cannot be clas-
+Therestofthispaperisstructuredasfollows: Section2
+sified into any knownclass. Approximatematching could
+introducestheautomaticfingerprintgenerationproblem.In
+then potentially be used to distinguish between hosts that
+Section3wepresentthecandidatequeryexplorationphase.
+doindeedbelongtoaclassnotyetseenandthusshouldbe
+The learning algorithms are explained in Section 4 and in
+classified as unknown, and hosts that have a slightly dif-
+Section5weevaluatetheirperformance.Section6presents
+ferent behavior (e.g. some networking parameters man-
+therelatedworkandweconcludeinSection7.
+ually tweaked) but actually belong to one of the known
+classes. For approximate matching to be meaningful, we
+2. Overview needtotestifthedifferentimplementationclassesarewell-
+separated.Wedothisbyclustering,andcalculatingthedis-
+tance betweenimplementationclasses. If the implementa-
+ProblemdefinitionGivenasetofkimplementationclasses tionclassesarewell-separated,wecan,undersomenatural
+I ={I ,I ,...,I },thegoaloffingerprintingistoclassify assumptions, find an approximate match for a given new
+1 2 k
+ahostH intooneofthosekclassesortoanotherunknown host. Thus, onlyif the new host is far from all the known
+class. The problem of automatic fingerprint generation is classesdoweclassifyitasunknown.
+tooutputasetofqueriesQandaclassificationfunctionf Q, In Section 3 we describe how to explore the candidate
+suchthatwhenwesendthesetofqueriesQtoahostH and queryspace,andinSection4wepresentthelearningalgo-
+collecttheresponsesR Q fromH,f Q(R Q)canclassifythe rithms,andhowtheyareusedtofindthefingerprints.
+hostintooneofthekclassesorintotheunknownclass. We
+refertothepairhQ,f iasthefingerprint.
+Q
+3.Candidate Query Exploration
+ApproachOurautomaticfingerprintgenerationcontains3
+stepsasshowninFigure1,namelytheCandidateQueryEx-
+plorationphase,theLearningphaseandtheTestingphase. In thissectionwe describethe CandidateQueryExplo-
+First,intheCandidateQueryExplorationphaseweproduce rationphase. Thisphaseneedsto select a set ofcandidateCandidate(cid:13) Learning(cid:13)
+Protocol(cid:13) Queries(cid:13)
+Semantics(cid:13) Ca Qn ud eid rya (cid:13)te(cid:13) (Q(cid:13) c(cid:13))(cid:13) Query(cid:13) R(cid:13) C(cid:13) Learning(cid:13) Q,f(cid:13) Q(cid:13) Testing(cid:13) Accuracy(cid:13) Q, f(cid:13) Q(cid:13)
+Injection(cid:13) Algorithm(cid:13) Satisfied?(cid:13)
+Exploration(cid:13) Yes(cid:13)
+Training(cid:13) Classes(cid:13) Testing(cid:13)
+hosts(cid:13) (I)(cid:13) hosts(cid:13)
+(T)(cid:13) (E)(cid:13)
+Figure1.Fingerprintgenerationprocess.
+queriesthatcanpotentiallyproducedistinctresponsesfrom 4.Learning Algorithms
+the different classes of hosts. During the Learning phase,
+thosecandidatequeriesthatindeedproducedistinguishing
+We formulate the fingerprint generation problem as a
+responseswillbeselectedaspartofthequerysetinthefinal
+classificationproblem:wearegivenasetofinstancesfrom
+fingerprint.
+different classes, along with the labels of the classes they
+To automate the process of query explorationwe could belong to, and we need to find propertiesthat hold within
+performanexhaustivesearchofallpossiblecombinations. aclassandaredifferentacrossclasses. Aninstanceisrep-
+Besides being automatic, it is also complete, guaranteeing resentedasacollectionofvaluesforasetoffeatures;thus,
+that it will find all useful queries. However, the problem an instanceis a pointin the featurespace. Givena family
+with this approach is that the search space is very large. of classification functions over these features, our goal is
+ForDNSfingerprintingwehaveatleast16bytesofheader tofindagoodfunctionwithinthisfamilythatseparatesthe
+fieldsinaDNSquery,requiring2128combinations.ForOS classes. Inourcasetheclassesarethedifferentimplemen-
+fingerprinting,thenumbersbecomeevenmoreintractable. tations of the same functionality and our goal is to output
+Even if we restrict the search to the TCP and IP headers thefingerprintcomposedbythesetofqueriesandtheclas-
+thereareatleast40bytesofheaderinformation,whichre- sificationfunction.
+quire2320combinations.
+Thus,weneedtodefinethefeaturespaceandthefamily
+Such exhaustive search does not take advantage of the ofclassificationfunctions,andthenlearntheclassification
+semanticsoftheprotocol,i.e. thefieldstructureinthepro- function,andturnitintoourfinalfingerprint. We describe
+tocolheaders,anditcangeneratealargenumberofqueries eachoftheseinturninthissection.First,inSection4.1we
+that are useless for fingerprinting, thus wasting both time describethefeaturespaceandhowtoobtaintheinstances,
+and resources. For example, a query that spoofs the IP neededbythelearningalgorithms,fromthequery/response
+source address becomes useless since the reply will never pairsobtainedfromthetraininghosts. Then,inSection4.2
+makeitbacktothesender. weintroducetheclassesoffunctionsweuseforclassifica-
+Wecombineexhaustivesearchwiththesemanticsofthe tion and briefly describe the learning algorithms. In Sec-
+protocolbyselectingsomefieldswithrichsemantics(such tion4.3wedescribehowtotaketheoutputofthelearning
+as the TCP or DNS flags) and performing an exhaustive algorithmsandconvertitintoourfinalfingerprints.Finally,
+search on those, while limiting the search to selected val- in Section 4.4 we describe how to obtain an approximate
+ues for other less interesting fields. This greatly reduces matching when there is no exact matching among the fin-
+the search space and requireslittle human intervention. It gerprints.
+alsoreducesthetimeandresourcesneededtocompletethe
+search and our results show that it is still possible to find 4.1.FeatureExtraction
+manyusefulqueriesnotyetusedforfingerprinting.
+InSection5.1wepresentthespecificTCP/IPandDNS The first step for using a learning algorithm is to de-
+fieldsthatweexplore. Oneexampleofhowcombiningse- fine the feature space, which allows us to convert the
+mantic and exhaustive search reduces the search space is query/response pairs into the input for the learning algo-
+byte12oftheTCPheader[25]whichcontainstheDataOff- rithms. Thus, an instance is the representation of the
+set(4bits)andReservedfields(4bits). Assumingthatthe query/responsepairs from a host in the feature space; and
+fieldsareindependent,ratherthansearchingthe28 combi- theinputtothelearningalgorithmsisasetofinstances.
+nationsinthewholebyte,wecanfixthevalueofonefieldat
+Our feature space For simplicity, we describe our fea-
+atime,whileperforminganexhaustivesearchontheother.
+ture space for the case when the following relationships
+Thiswouldrequireatotalof24+24 =32candidatequeries.
+hold between queriesand responses: (a) we consider onlya single response byte string for each query, and (b) we hardertointerpret.
+consider each response to be independent of every other
+GeneralizingthefeaturespaceThisfeaturespacecouldbe
+query/responsefromthathost. Withthesetworestrictions,
+generalizedinmanyways.Tobeginwith,wecouldgeneral-
+itissufficienttoanalyzeonlyresponsesthatcomefromdif-
+izeboththecasesmentionedaboveeasily.Ifweassumethat
+ferent hosts to the same query. Therefore, in this section,
+eachresponsedependsonthelastkquery-responsepairsof
+when we discuss a feature space, we refer to the feature
+the same host (rather than being independent of the other
+spacewithrespecttoasinglequery. We showlaterinthis
+query-responsepairs),wecantransformitintooursimpler
+subsectionhowtogeneralizethisfeaturespace.
+casebyconcatenatingeverykresponsesfromeachhost. If
+For a given query, we focus on the position-dependent
+a particular query gets multiple responses from the same
+substringsofresponses,whichwecallposition-substrings.
+host,wecanconcatenateallresponsestogethertoreduceit
+Inparticular,weaimtoextracttheposition-dependentbyte
+tothecasewherethereisjustoneresponse.
+substrings,thatareconsistentlypresentinanddistinctiveto
+We could also extract more complex relationships be-
+theresponsesofanimplementationclass(asimilaranalysis
+tween the various regions within a single byte sequence;
+couldalsobedoneatbitlevel).Featuresinvolvingposition-
+e.g.,wecouldexamineifacertainposition-dependentsub-
+substringsallowustoexploittheunderlyingstructureofthe
+stringisalwaysthesumofanotherposition-dependentsub-
+byte sequences, since we are analyzing network protocols
+stringinthesamebytesequence. Thestudyofthesemore
+thatusuallyhaveawelldefinedfieldstructure.
+complexrelationshipswithinasequence,andbetweendif-
+Specifically, a position-substringof a responsestring is
+ferentbytesequencesisleftasfuturework.
+atupleofthreeelements: thestartandendpositionsinthe
+original string and the bytes between these positions. So, GeneratinginstancesGivenaquery,foreachtraininghost,
+forexample,iftheoriginalbytestringisabcdefgabcd,then we extractall the possibleposition-substringsfromthere-
+wehavetwodistinctposition-substringsforthebytestring sponseof thathost. Then, we createthe unionsetU from
+abcd: the position-substring [1, 4, abcd] is distinct from the position-substrings of all the responses from different
+theposition-substring[8,11,abcd]. Aposition-substringis traininghoststothesamequery,orderedlexicographically.
+presentin a responseif itappearsattheproperpositionin Finally, we transform each response string into a vector
+theresponse. So,forexample,theresponsestringabcdefg v ∈ {0,1}n by setting the i-th bit of v to be one if the i-
+doesnot contain the position-substring[5, 7, abc], but the thposition-substringofU ispresentintheresponsestring,
+responsestringabcdabcdoes. andwecallthisvectoraninstance.
+With this definition of position-substrings, we can now Figure 2 showsthis processfor the responsesfromtwo
+describethe featuresets: foreachresponse,the setoffea- different hosts to the same query. The responses from
+turesextractedisthesetofallpossibleposition-substrings the hosts are the strings ac and ax. The set of position-
+in the response. For a collectionof responsesfrom differ- substringsP 1obtainedfromacis[1,1,a],[2,2,c],[1,2,ac],
+enthoststothesamequery,thecorrespondingfeaturesetis and the set of position-substrings P 2 obtained from ax
+the unionof all the features for each response string. The is [1,1,a],[2,2,x],[1,2,ax]. Taking the union of these
+feature space of a query is the feature set of the response two sets P 1 and P 2, in lexicographical order, we get
+stringsfromallthedifferenthoststothisquery.Inthissec- U = [1,1,a],[2,2,c],[2,2,x],[1,2,ac],[1,2,ax]. With
+tion,andinSection4.2,wewillconsidereachquerysepa- thisU,theinstancecorrespondingtoresponseacbecomes
+rately. Later in thissection, we illustrate the featurespace (1,1,0,1,0),sinceonlythefirst,secondandfourthelement
+withanexample,andshowhowindividualresponsestrings of U are present in the P 1. Likewise, the instance corre-
+arerepresentedinthespace. spondingtoresponseaxbecomes(1,0,1,0,1).
+In this feature space, all of the information contained Optimizations We may have very large sets of features if
+in theresponsestring getsencodedintothe features; there they are generated in this manner, and we might want to
+is no loss of information when transforming the response reducethenumberoffeaturesprovidedthereisnoinforma-
+string into the feature set. Such a property is good, be- tion loss. Sometimes(asin the conjunctionfingerprintsin
+cause the learning algorithm can then decide which in- Section4.2.1),wedonotneedtogeneratealltheseposition-
+formation is useful for classification. However, there are substringsexplicitly—ouralgorithmusesanequivalentset
+other feature spaces which have this property. We choose inamoreefficientmanner.Wedescribethisimplicitfeature
+the position-substring feature space because, in combina- spaceinSection4.2.1.
+tion with some simple families of classification functions,
+We can also use domain informationto reduce the fea-
+it provides meaningful fingerprints that are easy to inter-
+ture set. We do this in this paper: we use the semantics
+pret.Theclassificationfunctionwemightneedtolearnover
+ofthepacketheadertobreaktheresponsestringbyproto-
+otherfeaturespacesmayneedtobemorecomplexandthus,
+col fields; so, each field is treated as a separate position-ac {[1, 1, a], [2, 2, c], [1, 2, ac]} {[1, 1, a], [2, 2, c], [2, 2, x],
+v [1, 1, 0, 1, 0]
+[1, 2, ac], [1, 2, ax]} 1
+ax {[1, 1, a], [2, 2, x], [1, 2, ax]} v 2 [1, 0, 1, 0, 1]
+response strings position−substring sets P 1 and P 2 ordered union of P 1 and P 2 example vectors
+Figure2.Featuregeneration.
+substring. This procedure generates many fewer features such as conjunctions, decision lists, decision trees, etc.
+thantheoriginalfeaturespace,andfurther,usingthepacket We choosetheseoverclassificationfunctionsthatarereal-
+headersemanticstogeneratefeaturesresultsinfingerprints valued weighted functionsof their features(such as linear
+thatare mucheasier to understand. For this reason, in the separators,etc),becausethefingerprintsgeneratedbysuch
+analysisofthefingerprintsthatwepresentinSection5,we classification functions cannot be interpreted directly, and
+focusonlyonthisreducedfeatureset. wouldneedtobeconvertedintoasequenceofdecisionrules
+inordertobeinterpretedmeaningfully.
+Further, not all of the protocol fields contain only
+implementation-specificinformation.Forexample,weterm In this paper, we considertwo familiesof classification
+dynamicfieldstobeprotocolfieldsthatmightchangefrom functions: conjunctionsanddecisionlists [17]. We donot
+oneinstancetoanother,suchassession-specificfields(e.g. use decision trees, since (a) a restricted decision list has
+sessionid,time-to-live);host-specificfields(e.g.hostname, lower sample complexity than a similarly restricted deci-
+IPaddress,port);orconfiguration-specificfields(e.g. DNS sion tree, and (b) a sufficiently complex decision list can
+answer). The values of these dynamic fields are based on represent any decision tree. We discuss these two classes
+externalinformationandarelesslikelytocontaininforma- of fingerprints in more detail below. In Appendix A, we
+tionthathelpstoidentifytheimplementation. present the mistake-boundmodel for the analysis of these
+fingerprints,andshowimprovedboundsfortheconjunction
+The training data should include instances of different
+fingerprints.
+values for these dynamic fields; if it does not, they might
+showupinthefinalfingerprint. Forexample,ifweusethe Ourapproachtolearnfingerprintsisthefollowing:first,
+same open TCP port for fingerprinting all Windows hosts welearnabinary-fingerprintforeachimplementationclass,
+(e.g. 139)andadifferentoneforallLinuxhosts(e.g. 22), whichisafingerprintthatcandeterminewhetherornotthe
+then the conjunction fingerprint will include this field. In host belongs to that implementation class. Then we com-
+thispaper, we removethe dynamicfieldswhen generating binemanybinary-fingerprintstoobtainthefinalfingerprint
+the fingerprints, but keep them for approximate matching, thatcanclassifyhostsintooneofmultipleimplementation
+where we examine the effect of including these dynamic classes.
+fields.
+In the rest of this section, we focus on learning finger-
+printsforasinglequeryonly. Intheinterestofreadability,
+4.2.Algorithms we will use the terms fingerprint and binary-fingerprintto
+refer to the classification functionassociated with a single
+query. We will distinguish explicitly the fingerprint for a
+OverviewForeachquery,oncewehavetransformedthere- singlequeryfromtheoverallfinalfingerprintwhenitisnot
+sponsefromeachtraininghostintoaninstance,weneedto clearfromthecontext.
+find a classification function that separates the implemen-
+tation classes. We do this on the instances obtained using
+thetraininghosts,andtesttheresultingclassificationfunc- 4.2.1 LearningConjunctionBinary-Fingerprints
+tiononinstancesobtainedfromthetestinghosts. Sincewe
+cannotlookthroughallpossibleclassificationfunctions,we Givenaquery,theremaybeprotocolfieldsintheresponse
+searchwithinfamiliesofclassificationfunctionsforagood from a host that exhibit values specific to the implemen-
+classificationfunction.Thegoalofthelearningalgorithmis tation, and thus are different across implementations. We
+tofindagoodfunctionwithinagivenfamilythatseparates wanttoincludealloftheminthefingerprint. Forthisrea-
+thedifferentimplementationclasses. son,weevaluateconjunctionsofposition-substringsasone
+classofclassificationfunctions.
+We need classification functions that are easy to in-
+terpret, for understanding which queries are useful and A conjunction fingerprint C for a set of implemen-
+q,I
+when they are useful. Therefore, we choose classifica- tation classes I = {I } is a query q and a set of
+m 1≤m≤k
+tion functions that are boolean functions of the features, position-substrings{S } suchthatforeachim-
+(q,Im) 1≤m≤kplementation class I ∈ I, (a) all the position-substrings nootherbytesthatuniquelydistinguishtheimplementation
+m
+in S are always present in the response from ev- classes,wemaynotbeabletofindaconjunctionfingerprint.
+(q,Im)
+ery training host in the implementation class I , but (b)
+m Thistypeofbehaviormightoccurbecausetheremaybe
+not all of the position-substrings in S are present in
+(q,Im) slightdifferencesinthesameimplementationclass. Forex-
+any response from any host in anotherclass I for this
+z6=m ample, when collecting learning data one might think that
+query q, i.e., they are distinctive with respect to the re-
+WindowsXPSP2hostswillbehaveidenticallybutthenet-
+sponsesfromanimplementationclass. Thus, theconjunc-
+work behavior is affected by the patch level and language
+tionfingerprintforaqueryq canberepresentedasC =
+q,I versionamongothers.Thus,inordertocapturemultiplebe-
+{S ,S ,...S },whenI ={I ,I ...I }.
+(q,I1) (q,I2) (q,Ik) 1 2 k haviorsinanimplementationclass, weneedtouseamore
+generalclassof functions. Inthenextsection, wewill de-
+Using conjunction fingerprints A conjunction binary-
+scribesuchaclass,decisionlists.
+fingerprint for class I decides only whether a host be-
+m
+longs to class I or not. To use a conjunction binary-
+m
+fingerprinttoclassifywhetheranewhostisinI , wetest
+m
+if all the position-substrings in S in the conjunction 4.2.2 LearningDecisionListBinary-Fingerprints
+q,Im
+binary-fingerprint are present in the response of that host
+for the query q. If they are, the host belongs to the class A decision list can be viewed as an ordered sequence of
+I ,otherwiseitdoesnot. Wedescribehowtousethefinal multipleif-then-elsestatements,whereaconjunctioncanbe
+m
+conjunctionfingerprintinSection4.3. viewed as a single if-then-else statement. We will use de-
+cisionliststocapturethepresenceofmultiplebehaviorsin
+LearningconjunctionfingerprintsNotethatwedescribe
+asingleimplementationclass, thatarenotpresentinother
+how to learn conjunction binary-fingerprintshere; in Sec-
+implementationclasses.
+tion 4.3, we show how to turn binary-fingerprints into fi-
+The standard definition of a decision list [17] is
+nal fingerprints. For this, we use the standard algorithm
+as follows: a decision list over n boolean variables
+to learn conjunctionsfrom a set of labeled instances [17],
+Y = {Y ,Y ,...,Y } and k classes is a sequence L:
+with the following modification for efficiency. Instead of 1 2 n
+(c ,I ),(c ,I ),...,(c ,I ), wherec isa conjunctionon
+explicitly convertingeach host’s response into an instance 1 1 2 2 t k i
+Y andI denotestheclass.Wewillrefertoeachpair(c ,I )
+asdescribedinSection4.1,ouralgorithmfirstextractsthe i i i
+as a decision rule. A decision list is thus an ordered se-
+longest common position-substring for each starting posi-
+quenceofdecisionrules–theconditionc ofeachdecision
+tionineachimplementationclass,whileensuringthatthere i
+ruleistestedintheorderofitsappearanceinLandtheout-
+is no overlap between the position-substrings. It then re-
+putistheclassificationI correspondingtothefirstsatisfied
+moves common elements of these position-substrings that i
+decisionrule.Whennoneoftheconditionsaresatisfied,the
+are present in every implementation class. This way, the
+decisionlistoutputsunknown.
+algorithmislinearinthelengthoftheresponsestrings.
+Inoursetting,foreachquery,weusebooleanvariablesto
+We illustrate the operationof the algorithmwith an ex-
+denotethe presenceofposition-substringsin theresponse,
+ample.Figure3showsresponsestringsforfourhostsinI .
+1
+andeachconditionc isequivalenttothepresenceofalist
+The position-substringsthat we extract are [3, 8, cdefgh] i
+of position-substrings in that response. Thus, a decision
+and[11,12,kl]. Figure4showsthesameprocessforfour
+listfingerprintisaqueryandanorderedsequenceofrules,
+hostsinasecondclassI . Theposition-substringsthatwe
+2
+whereeachruleconsistsofalistofposition-substringsand
+extract are [3, 8, stufgw] and [11, 12, kl]. Then, in fig-
+anassociatedimplementationclass. Tousethedecisionlist
+ure 5 the algorithm removes[11,12,kl]and [6,7,fg] since
+fingerprinttoclassifyanewhost,wesendthequerytothe
+they are not useful for distinguishing between I and I .
+1 2
+hostandcollecttheresponse.Wethentesttheresponsewith
+Thus,weareleftwiththeposition-substrings[3,5,cde]and
+eachruleinturntoseeifalltheposition-substringsinthat
+[8,8,h]forclassI ,and[3,5,stu]and[8,8,w]forclassI .
+1 2
+rulearepresentin theresponse, andif theyare, weoutput
+Whiletheconjunctionfingerprintsaresimpleandeasyto
+theassociatedclass.
+interpret,theyhavelimitedexpressivity,andinsomecases,
+Asinthecaseoftheconjunctions,wefindadecisionlist
+they may not be sufficient. There might, for instance, be
+fingerprintforeachqueryseparately. Weusethestandard
+twokindsofresponsesgeneratedforaparticularqueryfrom
+algorithmtolearnadecisionlistforagivensetofresponses
+hostswithinan implementationclass, e.g., Windowshosts
+fromdifferenttraininghoststoasinglequery [17]. Aswith
+may always have one of two values for the TCP window,
+theconjunctions,thisdecisionlistisabinary-fingerprint;in
+neitherofwhichispresentinanyotherimplementation,and
+Section4.3,wedescribehowtoconvertthemintothefinal
+therefore,wecouldusethepresenceofeitheroftheseval-
+fingerprint.
+uesinaWindowsfingerprint. Forsuchaquery,ifthereare
+Notethatdecisionlistsareamoregeneralclassoffunc-a b c d e f g h i j k l w a s t u f g w 1 4 k l
+x y c d e f g h 1 2 k l x b s t u f g w 2 5 k l c d e f g h k l
+x y c d e f g h i j k l x c s t u f g w 1 6 k l s t u f g w k l
+x y c d e f g h 1 2 k l x d s t u f g w 2 7 k l
+Figure 3. Responses from Figure 4. Responses from Figure 5. Removing com-
+classI . classI . monposition-substrings.
+1 2
+tionsthanconjunctions,andthus,everytimewehaveacon- For some queries, the final fingerprint may not contain
+junctionfingerprintforaquerywewillalsohaveadecision a binary-fingerprintfor every implementationclass. If we
+listfingerprintbutthereverseisnotalwaystrue. However, have enough queries with complete final fingerprints, we
+since there is a larger space of candidate functions to be candiscardthese fingerprints;otherwise, we needto com-
+explored, the algorithms for learning decision lists have a binemultiplequerieswithpartially-completefingerprintsas
+higherspace and time complexitythan the algorithmsthat describedbelow.
+learnconjunctions.
+Toclassifyanewhostusingafinalfingerprint,weapply
+eachbinary-fingerprintBF inturntotheresponsesfrom
+m
+4.3.ObtainingtheFinalFingerprint thehost,andstorewhetherthehostbelongsinW orI ,
+m m
+foreachm ∈[1,k]. Then,ifthereisonlyoneminwhich
+Herewepresentthestepsneededtoobtainthefinalfin- the host belongs to I m, we outputthat class I m as the re-
+gerprintfromtheoutputofthelearningalgorithm. sult, otherwise, we report that the class is unknown. We
+describe an approximatematchingwe can use in this case
+Removing unusable queries As we explore the query
+inSection4.4.
+space, we may find that some queries do not induce dis-
+tinguishing behavior among the different implementation CombiningmultiplequeriesTheconjunctionanddecision
+classes,andthereforearenotusefulforfingerprinting. For list fingerprintsgenerated in Sections 4.2.1 and 4.2.2 only
+conjunctions, this happens when a query fails to produce consider the responses for a single query. Once we have
+different responses across different implementations and removedtheunusablequeries,ifthenumberofimplemen-
+thus an empty conjunctionbinary-fingerprintis generated. tation classes is large, we may notbe able to find a single
+For decision lists, it happens when the binary-fingerprint querythatcan classify allimplementationclasses simulta-
+generatedforonequerydoesnotcoverthecompletesetof neously. In that case, we create fingerprints for multiple
+instancesinaclass,usuallybecausethereisnotenoughdis- queriestogether,whereeachqueryisabletoidentifysome
+tinctbehaviorthatseparatesallhostsintheclassfromhosts subsetofthe implementationclasses, so thatthe combina-
+intheotherclass. Ourapproachistoremovethesequeries tion can classify all the implementation classes. We can
+andtheircorrespondingbinaryclassificationfunctionsfrom useagreedyalgorithmtocreatesuchafingerprintthatadds
+the binary-fingerprintsduring the Learning phase, leaving queries until all the implementation classes can be classi-
+onlytheusablequeries. fied. This algorithm is guaranteed to find a small set of
+queries, since the problem is equivalent to the Set-Cover
+Final fingerprints for classifying multiple implementa-
+problem[28].
+tion classes The conjunction and decision list algorithms
+as presented are designed for binary classification of the Testing the fingerprint Once the final classification func-
+responses to a single query. However, we can use these tion has been generated for each usable query, we test it
+binary classification algorithms for multi-class classifica- using a larger set of testing hosts whose implementation
+tion by repeating the following procedure for each imple- classesareknown,examiningforeachfingerprintifitclas-
+mentation class I . First, separate all hosts that belong sifiesallthehostscorrectly.Wethendiscardanyfingerprint
+m
+to I as a single group, and all hosts that belong to any that does not classify the hosts correctly. This may hap-
+m
+other implementation class as a second group, W = penifthetraininghostsarenotrepresentativeoftheimple-
+m
+I \{I }. Then, generate the binary-fingerprintBF for mentationclasses;however,inourexperiments,thisdidnot
+m m
+groups{I ,W } ,whichwilldistinguishtheimple- happen.
+m m 1≤m≤k
+mentationclassI fromallotherclasses. Oncethisproce-
+m
+durehasbeencompletedforallimplementationclasses,the
+finalfingerprintisthesetofallthebinary-fingerprints.4.4.ApproximateFingerprintMatching to a single query, as described in Section 4.1. We then
+removeall dynamicfields and use the remainingposition-
+substringsasfeatures. Inthesecondcase,foreachtraining
+Once shipped in a fingerprint tool, the fingerprints are
+host, we generatethe set of all distinct position-substrings
+used to classify new hosts. Sometimes, however, no fin-
+oflengthonebyteintheresponsetoasinglequery,anduse
+gerprint may match a new host and then one simple ap-
+thoseasthefeatures.Thissecondcaseisindependentofthe
+proachmightbetoclassifythehostasunknown.However,
+field structure of the protocoland we use it to analyze the
+it could happen that the host truly belongs to one of the
+impactofdynamicfieldscontainedintheresponses.Inboth
+known classes but has slight differences in its responses,
+cases,thefinalfeaturespaceisthecrossproductofthefea-
+e.g. some networkconfigurationparameterhasbeenman-
+ture spacesthat we have definedfor each query. Once the
+ually changed from the default. A more elaborate option
+finalfeaturespaceisdefined,theresponsesfromeachhost
+wouldbetotrytofindanapproximatematchbycalculating
+todifferentqueriesarethenturnedintoa{0,1}n vectorin
+the distance to all known classes and selecting the nearest
+these feature spaces. The distance metric we use for each
+class[13,19]. Inthiscase,onlyifthenewhostisfarfrom
+featurespaceisthesquaredEuclideandistance;so,thedis-
+all of the existing classes would the host be classified as
+tancebetweentwohostsistheirsquaredEuclideandistance
+unknown.
+whenrepresentedinthefeaturespace.
+SomecurrentfingerprintingtoolssuchasNmap1havean
+Withthez-gappropertyandafeaturespace,wecanap-
+optiontodoapproximatematching,wherethetoolwillprint
+plyanyclusteringalgorithmtotestifthereisagoodcluster-
+that no perfect match was found, but it was able to find a
+ingofthehosts. Here,weuseX-means[24],anextension
+match with some percentageoverlap. However, we need
+of the standard k-means algorithm to the case where k is
+to validate when such a match is meaningful: an approx-
+unknown. We choose X-meansoverk-meansbecause we
+imate matching is only meaningful when the behavior of
+donotknowk,andoverhierarchicalclusteringbecausewe
+each implementation class is well-separated from the oth-
+do not need to define a stopping criterion. In Section 5.4,
+ers. So,wewanttoanswerthefollowingquestion: givena
+we see that this algorithm performs well when the imple-
+feature-space,howcanwetellwhenwecandoapproximate
+mentationclassesarewell-separated.
+matching,andhowcanwedoapproximatematching?
+Given a new hostthatneedsan approximatematch, we
+We answer this in the following manner: (a) first we
+dothefollowing:wecomputethedistancefromthehostto
+useaclusteringalgorithmtoclustertheresponsesfromthe
+eachoftheclusters.Ifthehostiswithinadistanced/zfrom
+training hosts, (b) then, we examine the implementation
+thenearestcluster,wheredisthesmallestdistancebetween
+classesoftheresultingclusterstocheckiftheclusterstruly
+any two clusters, we classify it into the nearest cluster. If
+represent the implementation classes, that is, if each clus-
+the hostis fartheraway, we classify it as unknown. When
+ter consists of a single implementation class and is well-
+the z-gap propertyholds, this rule will give us the correct
+separated from the other clusters. If the implementation
+matches. In Section 5.4, we show the results of using this
+classes formwell-separated clusters, the training hosts are
+ruleforclassifyingnewhostsforOSandDNSfingerprint-
+representative of their respective implementation classes,
+ing.
+and any un-representedimplementation class is also well-
+separatedfromthese classes in this featurespace, then we
+can use approximate matching with this feature space to 5.Evaluation
+classifynewhoststhathavenoexactfingerprintmatch.
+Theremightbeclassesthatspreadovertwoormoreclus-
+We evaluate our results using 128 hosts from 3 differ-
+ters, for example because hosts in the same class exhibit
+entimplementationclassesfortheOSexperiments,and54
+oneof two distinctbehaviors. We define a z-gapproperty
+hostsfrom5differentimplementationclassesfortheDNS
+that takes this into account, and needs to hold for a well-
+experiments. Tables 1 and 2 show the number of hosts in
+separatedclustering:thedistancebetweenanytwohostsin
+eachimplementationclassfortheOSandDNSexperiments
+differentimplementationclassesneedstobeatleastztimes
+respectively. For the OS experiment we send queries to
+thedistancebetweenanytwohostsinthesamecluster,be-
+open TCP ports, i.e. port 139 on Windows or port 22 on
+longingtothesameimplementationclass.
+LinuxandSolaris.
+To do the clustering, we examine two natural feature
+spaces derived from the set of input candidate queries. In
+5.1.CandidateQueries
+thefirstcase,foreachtraininghost,wegeneratethesetof
+alldistinctposition-substringsforeachfieldintheresponse
+For OS fingerprinting several protocols such as TCP,
+1usingequivalentoptions–osscan-guessor–fuzzy UDPorICMPcanbeused. InthispaperwefocusonTCP,ClassID Hosts OSclass generation. For the OS experiments the features are ex-
+Class1 77 WindowsXPSP2 tractedfromtheTCP/IPheadersintheresponse,whilefor
+Class2 29 Linux2.6.11 theDNSexperimentsonlytheDNSheaderintheresponse
+Class3 22 Solaris9
+isused. Werunthelearningalgorithmsontheresponsesof
+70%ofthehostsineachclassandtesttheresultingfinger-
+Table1.HostsusedinTCP/IPevaluation.
+printsusingtheremaining30%hosts.Anyothersplitofthe
+ClassID Hosts DNSclass host set is valid as long as there are sufficient hosts in the
+Class4 10 BIND8.3.0-RC1–8.4.4 trainingset.
+Class5 12 BIND9.2.3rc1–9.4.0a0
+Class6 11 WindowsServer2003
+Class7 10 MyDNS
+5.2.1 BinaryandFinalFingerprints
+Class8 11 TinyDNS1.05
+Table 4 shows the number of binary and final fingerprints
+Table2.HostsusedinDNSevaluation.
+identifiedinbothstepsofthealgorithmfortheOSandDNS
+experiments.
+due to its rich semantics. As explained in Section 3, the
+Foreachexperiment,aseriesofcolumnsshowthenum-
+candidatequeryexplorationphaseusesdomainknowledge
+berofbinary-fingerprintsforthecorrespondingimplemen-
+toselectsomefieldstobeexploredexhaustivelyandothers
+tationclasses, whiletherightmostcolumnshowsthenum-
+tobeexploredonlywithselectedvalues.
+beroffinalfingerprints. Eachbinary-fingerprintforanim-
+Table 3 shows the 305 TCP/IP candidate queries that plementationclasscandecidewhetherornotahostbelongs
+wereexploredinthecandidatequeryexplorationphase.We tothatclass. Thefinalfingerprintcanclassifythehostinto
+emphasizethatthisexplorationcanbeeasilyexpandedand anyoftheknownclasses,orstatethattheclassisunknown.
+isbynomeanscomplete,thesecandidatequerieswerese- Asexpected,thedecisionlist algorithmoutputsa decision
+lectedasexamplestotestthevalidityofthefingerprintgen- list fingerprint in many cases where the conjunction algo-
+eration process. Three fields in the TCP header were ex- rithmcannotoutputaconjunctionfingerprint–thishappens
+plored using exhaustive search: the TCP flags byte (Byte whenthehoststhatbelongtheclassunderconsiderationex-
+12),andByte 13 whichcomprisestheData Offsetandthe hibitmultipletypesofbehavior.
+Reservedfields[25].ForreferencetheTCP&DNSheaders
+The Final columns in Table 4 show that there is no fi-
+are reproducedin Appendix B. The reason we performed
+nalconjunctionfingerprintthatcanseparatealltheclasses
+an exhaustive search on these fields is because they have
+in both the OS and DNS experiments. On the other hand,
+rich semantics, and because new functionality,such as the
+thereare66decisionlistfingerprintsintheOSexperiment
+flagsforExplicitCongestionNotification[26],hasnotbeen
+that can classify hosts of all 3 classes, and 19 in the DNS
+thoroughlyexplored. For the other fields, only a few cor-
+experimentthatcanclassifyhostsofall5classes.
+nercasesthatcouldpotentiallyholdinterestinginformation
+wereselected. Intuitively, as the number of known classes increases,
+we expect to find fewer queries that can classify hosts of
+For DNS fingerprinting, bytes 2 & 3 of the DNS
+all known classes simultaneously. For example, when we
+headerwereexhaustivelysearched.Thesebytescontainthe
+runtheconjunctionalgorithmusingonlytheWindowsand
+Opcode, RcodeandFlagsfields. Also theQtypefieldin
+Linux classes, we find 130 final fingerprints that can sep-
+the Question record [21] was exhaustively searched. Like
+arate Windowsand Linuxhosts, but whenwe addSolaris,
+the selected TCP fields, these fields were chosen because
+wefindnofinalfingerprintsthatcanclassifyhostsofallof
+theyhaverichsemanticsandsupportnumerousoptions.
+thethreeclassessimultaneously.Notethatasthenumberof
+classesgrows,wecanapplythelearningalgorithmsonsets
+5.2.ConjunctionandDecisionListFingerprints ofqueries,ratherthanonasinglequery. Thiswillgenerate
+fingerprintsthatcontainmultiplequeries,eachindividually
+As explained in Section 4.2, for each candidate query, coveringsome subset of knownclasses and the whole fin-
+the learning algorithm takes two steps in order to find the gerprintcoveringallclasses.
+final fingerprint. First, it generates binary-fingerprintsfor
+Testing We evaluatethe66OSand19DNSfinaldecision
+eachimplementationclass,whichdeterminewhetherahost
+listfingerprintsproducedduringthelearningphasebysend-
+belongs to this class or not. Then, the set of all binary-
+ingthecorrespondingqueries,inthefinalfingerprint,tothe
+fingerprintsforthesamequeryformsthefinalfingerprint.
+remaining 30% hosts in each implementation class. Each
+In our results, we show the number of binary and final of the final fingerprints properly classifies all hosts in the
+fingerprintsfoundforthecasesofOSandDNSfingerprint testingsetintotheirtrueOSorDNSclass.Field Size Type #Queries Testedvalues
+tcp sport 16 guided 9 0,8,255,1023-4,49151-2,55000,65535
+tcp offset 4 exhaustive 16 all
+tcp reserved 4 exhaustive 16 all
+tcp flags 8 exhaustive 256 all
+tcp window 16 guided 2 0,65535
+tcp checksum 16 guided 2 good,bad
+tcp urgentPtr 16 guided 4 invalidvaluewithURGflagset,valuewithURGflagnotset
+Table 3. Candidate queries for OS fingerprinting. A total 305 queries were tested. The field size is
+giveninbits.
+OS DNS
+Fingerprinttype Linux Solaris Windows Final Bind8 Bind9 Microsoft MyDNS TinyDNS Final
+Conjunctionfingerprints 42 53 53 0 0 0 22 2 9 0
+Decisionlistfingerprints 130 98 98 66 33 28 32 29 41 19
+Table4.Numberofbinaryandfinalfingerprintsoutputbythelearningphase.
+5.2.2 FingerprintExamples tcp_urgentPtr=0x0000)
+then NotLinux
+Inthissection,weshowanexampleoftheconjunctionand
+decisionlistfingerprintsforaspecificTCP/IPquery. First, Now, decision list binary-fingerprints exist for all three
+we show the conjunction binary-fingerprint that separates cases (Linux/NotLinux, Windows/NotWindows, and So-
+theLinuxclassfromtheotherclasses(werefertothiscase laris/NotSolaris)andthesystemcangeneratethefollowing
+asLinux/NotLinux): decisionlistfinalfingerprintthatcanclassifyahostintoone
+ofallthreeclassessimultaneously.
+Query: tcp_flags=S+P;
+if (Response: ip_id=0x0000,tcp_window=0x16d0) Query: tcp_flags=S+P;
+then Linux if (Response: tcp_window=0xffff)
+else NotLinux then Windows
+else if (Response: tcp_window=0x16d0)
+As shown in the first line of the conjunction binary- then Linux
+fingerprint, this query explores the tcp flags field and has else if (Response: tcp_window=0xc0a0)
+then Solaris
+theSYN+PUSHflagsset. Thisconjunctionfingerprintsays
+else if (Response: ip_verHdrLen=0x45,
+thatifintheresponse,theIPidentificationfieldhasavalue
+ip_tos=0x00, ip_len=0x002c,
+ofzeroandtheTCPwindowhasavalueof5,840thenthe
+ip_flags&offset=0x4000, ip_protocol=0x06,
+hostis Linux, otherwise it is NotLinux. The values of the
+tcp_offsetReserved=0x60, tcp_flags=0x12,
+otherfieldsintheresponsedonotmatter.
+tcp_window=0x40e8, tcp_urgentPtr=0x0000)
+The conjunctionbinary-fingerprintfor this query exists then Windows
+forthecasesofLinux/NotLinuxandSolaris/NotSolarisbut else Unknown
+not for the case Windows/NotWindows. Next, we show
+This final fingerprint shows that all Solaris hosts set the
+the corresponding decision list binary-fingerprint for the
+tcp window to 49,312 and all Linux hosts set the value to
+Linux/NotLinuxcase. Notethatthedecisionlistalgorithm
+5,840 but the Windows hosts use two different values for
+isabletoextractmorethanonerulefortheNotLinuxcase.
+thatfield: 65,535or16,616.
+Query: tcp_flags=S+P;
+if (Response: tcp_window=0xffff) 5.3.InterestingQueries
+then NotLinux
+else if (Response: tcp_window=0x16d0)
+Thefinalfingerprintsgeneratedinourexperimentscon-
+then Linux
+tain some especially interesting queries because we are
+else if (Response: ip_verHdrLen=0x45,
+ip_tos=0x00, ip_len=0x002c, not aware of any fingerprinting tool that currently uses
+ip_flags&offset=0x4000, ip_protocol=0x06, them.Here,wegivesomeselectedexamplesofthesenovel
+tcp_offsetReserved=0x60, tcp_flags=0x12, queries.First, we findthatthehostsintheWindowsandSolaris or from the complete TCP/IP or DNS headers. We name
+classesrespondtoquerieswithaninvalidvalueintheData these cases Chosen Fields and Full Header respectively.
+Offset field of the TCP header. This field represents the TheX-meansrangethatweuseisfromonetotwenty.This
+numberof32-bitwordsin the TCP header. Thecandidate rangeischosenconservatively,andwecheckthattheupper
+query should have a value of 5 (20 bytes) in this field but limitisneverreached.
+we deliberately send queries with this field set to smaller
+Table5showstheclusteringresultsfortheOSandDNS
+and larger values. Both Windows and Solaris hosts reply
+experiments. As expected, many of the classes defined in
+witha SYN+ACKifthevalueinthefieldislessthanfive,
+Tables 1 and 2 spread over more than one cluster, which
+whiletheLinuxhostsdonotreplytotheseincorrectvalues.
+indicatesthepresenceofmultiplebehaviorsinsidethesame
+Nohostinanyclassrepliestovalueslargerthanfive. This
+class. We manually check a few of the DNS clusters and
+revealsthatbothWindowsandSolarisfailtochecktheTCP
+find that some of them are due to multiple versions in the
+headerforthissimplecase.
+same class such as BIND 9.2.3 and 9.3.2 being placed in
+Second,weseethatWindowsandLinuxhostsignorethe thesameclassalthoughtheybehavedifferently.Also,some
+values of the ECN or CWR bits in the queries but certain BINDtagslike9.3.0representupto8differentversions(3
+combinationstriggeradifferentresponseforSolarishosts. betas,4releasescandidatesandthefinalversion)[1].
+For example, a query with the SYN+PUSH+ECN+CWR
+In order to analyze the differencesbetween the Chosen
+flagsallset,getsaSYN+ACKresponsefrombothWindows
+FieldsandFullHeadercasesandtocheckifhoststhatbe-
+andLinuxbutaSYN+ACK+ECNresponsefromSolaris.
+longtodifferentclassesarewell-separated,Figure6shows
+Finally,wefindthatLinuxandSolarishostssettheTCP the visualization of distances between hosts by projecting
+AcknowledgmentNumberinaRSTpackettozerobutWin- the feature space into the first two principal components.
+dowshostssetittothevaluethatwassentintheTCPAc- Allhostsbelongingto thesameclass areplottedusingthe
+knowledgementNumberfieldofthequery.Thisisinterest- same icon. This visualization does not reflect the precise
+ing because a single packet with the ACK flag set, that is distances,asthereareanumberoflesssignificantprincipal
+sent to a closed port, can distinguish Windows hosts from components,butthefirsttwoprincipalcomponentsaresig-
+boththeLinuxandSolarishosts. Thistypeofqueryisvery nificant enough to show the qualitative distances between
+inconspicuousandmightbedifficulttoflagasafingerprint- differentclusters.
+ingattempt.
+Figures 6(a) and 6(b) show the results with Chosen
+AmongtheDNSquerieswealsofindinterestingbehav- Fields. Theclassesin theOScase arewell-separatedwith
+ior. Forexample,DNSserversshouldcopythevalueofthe onlyoneWindowscluster(6hosts)fartherfromtherestof
+Qdcount field (i.e. the numberof DNS queries) from the theclassbutstillclearlyseparatedfromtheotherclasses. In
+querypacketto the responsepacket. Thisvalue is usually theDNScase,theclassesaremorespreadandthedistances
+one,butifthequeryisnotvalid,someimplementations,de- between hosts in the same class are larger. For example,
+pendingontheerror,willsetthefieldtooneintheresponse someoftheBIND9hostsareclosetotheBIND8hostsbut
+while others will keep it to zero. Note that current tools othersareclosetotheMyDNShosts. Thiscouldbedueto
+suchasfpdnsdonottestthisfieldbecausetheyconsiderit the evolution of versions of the same implementation that
+uninteresting. areexpectedtobeclosewhentheyshareasignificantcode
+baseandmovefartherapartastheevolutionofthenewver-
+Ourpreliminaryexplorationofthecandidatequeryspace
+sion progresses. With Chosen Fields, no cluster contains
+has been able to find multiple novel fingerprints, which
+hostsfromtwoimplementationclasses.
+reaffirms our intuition that the space of queries that could
+be used for fingerprinting remains largely unexploredand Figure6(c)showsthe resultswith thefullDNSheader.
+demonstratestheeffectivenessofourautomaticapproach. Results for the fullTCP/IP header are similar and omitted
+for brevity. Using the full header, the hosts in the same
+5.4.Clustering class are further apart and hosts from differentclasses are
+closerorevenoverlap.Forexample,inthiscaseonecluster
+containshostsfromtheBIND8andBIND9classes,shown
+Fortheclusteringexperiments,wegeneratetheclusters
+with the name Mixed in Table 5. These results indicate
+using70%ofthe hostsin eachclass andthenevaluateap-
+thatusinganapproachwithoutanydomainknowledge,that
+proximate matching using the remaining 30% hosts, sim-
+just considers the complete protocol header, does not ob-
+ilarly to the fingerprint generation experiments. To gen-
+tainwell-separatedclusters. Thisisbecausesomeprotocol
+erate the clusters, we run the X-Means algorithm on the
+fieldsthatincludesessionorhost-specificinformation,such
+two feature spaces that we described in Section 4.4, that
+astheDNSIDortheDNSanswers,mayhavemoreweight
+is, we compute the features either from a selected set of
+thantheimplementation-specificdifferences.
+fields that containsimplementation-dependentinformation6
+5
+4
+3
+2
+1
+0
+−1
+−2
+−3
+−4
+−6 −4 −2 0 2 4
+First Principal Component
+tnenopmoC
+lapicnirP
+dnoceS
+5
+Linux
+4 Solaris
+Windows 3
+2
+1
+0
+−1
+−2
+−3
+−2 −1 0 1 2 3 4 5
+First Principal Component
+(a) ChosenFields:OS
+tnenopmoC
+lapicnirP
+dnoceS
+1.5
+Bind8
+Bind9 1
+Win2003 0.5
+MyDNS TinyDNS 0
+−0.5
+−1
+−1.5
+−2
+−2 −1 0 1 2 3 4
+First Principal Component
+(b) ChosenFields:DNS
+tnenopmoC
+lapicnirP
+dnoceS
+Bind8
+Bind9
+Win2003
+MyDNS TinyDNS
+(c) FullHeader:DNS
+Figure6.PrincipalcomponentplotsoftheresponsesfromthehostsforbothOSandDNSclustering.
+OS DNS
+Fingerprinttype Linux Solaris Windows Bind8 Bind9 Microsoft MyDNS TinyDNS Mixed
+ChosenFields 1 1 10 2 3 3 2 1 -
+FullHeader 1 1 3 2 4 6 2 1 1
+Table 5. For each implementation class, the number of clusters that contain hosts from this class.
+Multipleclustersindicatedifferentbehaviorsinsidetheimplementationclass.
+Now, we quantitatively measure how well approximate TCPfingerprintingfocusedonstandardcompliancetesting
+matching works for the OS and DNS cases with Chosen toidentifyflaws,supportforoptionalfunctionality,protocol
+Fields. Weperformthefollowingexperiment: fromtheset violations and design decisions taken by the different im-
+ofimplementationclasses,weremoveoneclassandextract plementations[22]. Besidesactiveprobing,therehasbeen
+theclustersusing70%ofthehostsintheremainingclasses. researchonhowtopassivelyidentifyTCPimplementations
+Then, we perform approximate matching using the z-gap lookingat traffic traces [23] and how to passively classify
+rule on the remaining 30% hosts from the classes used to host’soperatingsystems[13, 19]. Franklinetal.[16]pro-
+extract the clusters, plus all the hosts from the class that posed a passive fingerprinting technique to identify wire-
+was removed. We repeatthisprocessmultiple times, each less device drivers on IEEE 802.11 compliant devices. In
+timeremovingadifferentclassandattheend,wecalculate the context of finding approximate matches, Lippmann et
+theaverageclassificationerrorfordifferentvaluesofz. al. [19] proposed to use a k-nearest-neighbor classifier to
+avoid hosts being classified as unknown when no exact
+The results show that the classification error is mini-
+matchwasfound.Ourapproximatematchingdiffersinthat
+mized with values z ≈ 2 for both the OS and DNS cases
+weuseaclusteringapproachandfocusonevaluatingwhen
+and that in the DNS case the error quickly increases for
+such approximate matching is possible. Hardware finger-
+other z values. The OS case does not show such a strong
+printing has also been proposed with applications such as
+increase. We show the corresponding graphs in Figure 7.
+remotelytrackingahostinanetwork[18]. However,tothe
+Settingthevalueofz tobe2,theclassificationerroris3%
+bestof ourknowledge,this is the firstwork to addressthe
+fortheOScaseand12%fortheDNScase. Thisindicates
+problemofautomaticallygeneratingfingerprints.
+thattheclassseparationforOSwithChosenFieldsismore
+robustandmightbe used forapproximatematchingbutin TCP/IP fingerprinting can also be used to identify the
+thecaseofDNSwithChosenFields,approximatematching operating system running on a host [3, 4]. There exists
+isunlikelytoyieldgoodresults. multipletoolsforbothactiveandpassiveOSfingerprinting.
+Themostcommonactivefingerprintingtoolinusetodayis
+Nmap[9]writtenbyFyodor,whichusesasimilarapproach
+6. Related Work
+tooldertoolssuchasQueso[11]. Otheractivefingerprint-
+ingtoolsincludeXprobe[12]thatfocusesonICMPprobes
+Fingerprintinghasbeenusedformorethanadecade. In andSnacktimethatidentifieshostsbasedontheTCPtime-
+1994 Comer and Lin proposed probingto find differences outand retransmissionpolicy. Passive fingerprintingtools
+between TCP implementations[15]. Early application for suchasp0f[10] andsiphon[6] donotneedto sendtraffic70
+60
+50
+40
+30
+20
+10
+0
+0 5 10 15 20
+z
+)%(
+rorre
+noitacifissalC
+50
+45
+40
+35
+30
+25
+20
+15
+10
+0 5 10 15 20
+z
+(a) ChosenFields:OS
+)%(
+rorre
+noitacifissalC
+(b) ChosenFields:DNS
+Figure7.Classificationerrorofapproximatematchingusingz-gaprulefordifferentvaluesofz.
+andcanbeusedtofingerprinthoststhatmightnotreplyto 8.Acknowledgements
+a query,such as those firewalled, but requireaccess to the
+trafficsentbyahost
+We would like to thank David Brumleyfor helpfuldis-
+TherehasalsobeenworkondefeatingOSfingerprinting. cussions.WewouldalsoliketothankFyodor,BruceMaggs
+Smart et al. [27] proposed a stack fingerprinting scrubber andthe anonymousreviewersfortheir valuablecomments
+thatsitsontheborderofaprotectednetworkandlimitsthe to improvethis paper. Juan Caballero would like to thank
+informationgatheredbyaremoteattackerbystandardizing laCaixaFoundationforthegeneroussupportthroughtheir
+theTCP/IPcommunication.Thisworkisbasedonthepro- fellowshipprogram.
+tocolscrubberproposedbyMalanetal.[20]. Morerecent
+tools such as Morph [7] and IPPersonality [5] operate on
+References
+thehost-levelandallowtochangetheresponsestospecific
+queriesbyfakingthebehaviorofachosenOS.
+[1] BIND. http://www.isc.org/index.pl?/sw/bind/.
+[2] fpdns. http://www.rfc.se/fpdns/.
+7. Conclusion
+[3] Fyodor. Remote OS detection via TCP/IP fingerprinting
+(2ndgeneration). http://insecure.org/nmap/osdetect/.
+[4] Fyodor. Remote OS detection via TCP/IP stack fin-
+Fingerprinting is a useful technique that allows us to
+gerprinting. Phrack 54, Vol. 8. December 25, 1998.
+identify different implementationsof the same functional-
+http://www.phrack.com/phrack/51/P51-11.
+ity. But,thefingerprintgenerationprocessisatlargeardu- [5] IPpersonality. http://ippersonality.sourceforge.net/.
+ousandmanual.Inthispaperwehaveproposedanovelap- [6] Know your enemy: Passive fingerprinting. identifying re-
+proach for automatic fingerprint generation, that produces mote hosts, without them knowing. Honeynet project.
+fingerprintswithminimalhumaninteraction. http://project.honeynet.org/papers/finger/.
+[7] Morph. http://www.synacklabs.net/projects/morph/.
+We have shown how to automatically generate finger-
+[8] Nessus. http://www.nessus.org/.
+prints and have demonstrated that our approachis flexible [9] Nmap. http://www.insecure.org/.
+andcanbeappliedtodifferentuses. Inthispaperwehave [10] p0f. http://lcamtuf.coredump.cx/p0f.shtml.
+presenteditsapplicationtotwoconcreteexamples: OSfin- [11] Queso. http://www.l0t3k.net/tools/FingerPrinting/.
+[12] Xprobe2. http://www.sys-security.com/.
+gerprintingandDNS fingerprinting. Our resultsshow that
+[13] R. Beverly. A robust classifier for passive TCP/IP finger-
+the producedfingerprints are accurate and can be used by
+printing. InProceedingsofthe5thPassiveandActiveMea-
+fingerprinting tools to classify unknown hosts into given
+surementWorkshop,2004.
+classes. We have also evaluated approximate matching as
+[14] A.Blum.On-linealgorithmsinmachinelearning.InOnline
+a techniqueto assign an unknownhost to a known imple- Algorithms,pages306–325,1996.
+mentationwhennoexactfingerprintmatchisavailable. [15] D.ComerandJ.C.Lin. ProbingTCPimplementations. In
+USENIXSummer,1994.
+Inaddition,ourpreliminaryexplorationofthecandidate
+[16] J.Franklin,D.McCoy,P.Tabriz,V.Neagoe,J.V.Randwyk,
+query space has been able to find new interesting queries,
+and D.Sicker. Passivedata linklayer 802.11 wirelessde-
+notcurrentlyusedbyfingerprintingtools.Thisconfirmsour
+vicedriverfingerprinting.InProceedingsofthe15thUsenix
+intuitionthatthespaceofcandidatequeriesremainslargely
+SecuritySymposium,2006.
+unexploredanddemonstratestheeffectivenessofourauto- [17] M. Kearns and U. Vazirani. An Introduction to Computa-
+maticapproach. tionalLearningTheory. MITPress,1994.[18] T.Kohno,A.Broido,andkcclaffy. Remotephysicaldevice setting,theseinitialfingerprintscouldbegeneratedoffline.
+fingerprinting. In Proceedings of the IEEESymposium on AfterlearningoverT andtestingoverE,wecanusethese
+SecurityandPrivacy,2005. offline fingerprints with online algorithms and guarantee
+[19] R. Lippmann, D. Fried, K. Piwowarski, and W. Streilein. thatoverthesetofallhostsclassified(i.e.,hostsclassified
+PassiveoperatingsystemidentificationfromTCP/IPpacket
+bythefingerprintafteritwasgeneratedusingEandT),the
+headers. In Proceedings of the ICDM Workshop on Data
+numberofmistakeswemakeisbounded. Obviously,small
+MiningforComputerSecurity,2003.
+mistake-boundsarewhatwewant.
+[20] G.Malan,D.Watson,andF.Jahanian. Transportandappli-
+cation protocol scrubbing. InProceedingsof IEEEINFO- We derive improved mistake bounds for learning con-
+COM,2000. junction fingerprints in this online model of learning. For
+[21] P.V.Mockapetris.RFC1035:Domainnames—implemen- theconjunctionfingerprint,Theorem1showsthatthemis-
+tationandspecification,1987.
+take bound is small: when the initial fingerprint has n
+[22] J.PadhyeandS.Floyd.IdentifyingtheTCPbehaviorofweb
+position-substringsand the true fingerprinthas t, the mis-
+servers. InProceedingsofACMSIGCOMM,2001.
+takeboundisn−t.Undercertainassumptions,itis⌈logn⌉,
+[23] V.Paxson. AutomatedpackettraceanalysisofTCPimple- t
+where n is the number of position-substrings considered,
+mentations. InProceedingsofACMSIGCOMM,1997.
+[24] D.PellegandA.Moore.X-means:Extendingk-meanswith andtisthenumberofposition-substringsintheconjunction
+efficientestimationofthenumber ofclusters. InProceed- fingerprint. This implies that we will make only ⌈logn⌉
+t
+ings of the Seventeenth International Conference on Ma- mistakes (under certain assumptions) before reaching the
+chineLearning,pages727–734,SanFrancisco,2000. rightconjunctionfingerprint.Themistakeboundforthede-
+[25] J. Postel. Transmission control protocol. RFC793 (Stan- cisionlistsismuchlarger[14]andtherefore,notpractically
+dard),1981.
+useful.
+[26] K.Ramakrishnan,S.Floyd,andD.Black. TheAdditionof
+Explicit Congestion Notification (ECN) to IP. RFC 3168 Wenowpresentthetheoremforthemistake-boundsfor
+(ProposedStandard),2001. conjunctionfingerprints. To do so, we need the following
+[27] M.Smart,G.R.Malan,andF.Jahanian. DefeatingTCP/IP definitions and notation, so that we can represent the fin-
+stackfingerprinting. InProceedingsofthe9thUSENIXSe- gerprintsandtheresponsestringsfromthehostsasboolean
+curitySymposium,2000. functionsandbooleanvectorsrespectively.
+[28] V.V.Vazirani. ApproximationAlgorithms. Springer-Verlag,
+Since our fingerprints denote the presence of position-
+Berlin,2001.
+substrings corresponding to pre-specified queries, we will
+APPENDIX define an element of a fingerprint to be a single position-
+substringalongwiththecorrespondingqueryidentifier.Let
+U bethesetofalltheelementsinthefingerprintsofallthe
+A.MistakeBounds forConjunctions implementationclassesunderconsideration,andlet|U| =
+n. AninstanceX representstheresponsestringsofahost
+j
+thatneedstobeclassified,andisavectorin{0,1}nwhere
+Wenowboundthenumberofmistakesafingerprintwill
+theithcoordinateis1if theith elementofU ispresentin
+makeundercertainassumptions. Wegivemistake-bounds
+theresponsestringsand0otherwise.
+in an online model of learning [14], where the algorithm
+startswithaninitialfingerprintandrefinesitwitheverymis- Next, we describe how to represent a fingerprint as a
+take. Sections4.2.1and4.2.2presentofflinealgorithmsfor booleanfunction. Lety i beabooleanvariablethatdenotes
+learningfingerprintsusingaset oftraininghostsT. How- the presence of the ith element in U (e.g., if the ith ele-
+ever,thesefingerprintsmaybetoospecifictoT.Evenafter ment of U must be present in the fingerprint, y i is in the
+testing the fingerprints over the set of hosts E, the finger- corresponding boolean function.) Let Y = {y 1,...,y n}.
+printsmay notbe sufficiently general. If T and E are not Let H be the class of monotone conjunctionsover Y (so,
+largeenoughorsufficientlyrepresentativeoftheimplemen- no negative literals of Y are allowed in the conjunctions).
+tation classes, the confidenceguaranteeswe geton the re- Let h 1,h 2 ∈ H be the conjunctionsthat representclasses
+sultingfingerprintsmightnotbeveryhigh.Thiscouldhap- 1 and 2 respectively. Let A 1 be the set of boolean vari-
+pen,forexample,whenoneisrestrictedtohostswithinthe ablespresentinh 1andletA 2bethesetofbooleanvariables
+localnetwork.Inthiscase,thegeneratedfingerprintsmight presentinh 2.
+betoospecifictothelocalnetwork. We give bounds under two cases: first, with no further
+Inanonlinemodeloflearning,analgorithmstartswith assumptions;second,underthefollowingtwoassumptions:
+an initial fingerprint, and keeps refining it every time it (1) A 1 and A 2 are disjoint, and (2) any instance that be-
+makes a mistake; i.e. the algorithm predicts a classifica- longstoh 2 containsnovariableinA 1 andviceversa. The
+tion based on the current fingerprint and is then given the firstassumptionisthatA 1 andA 2 aredisjoint;novariable
+rightanswer,whichitusestoupdateitsfingerprint. Inour presentinh 1isalsopresentinh 2andviceversa.Inourset-ting,thisimpliesthattheposition-substringspresentinone When we get a new instance X (from I or I ) that
+j 1 2
+conjunctionfingerprintarenotpresentintheother. Thisis needs to be classified, we do the following: If the num-
+notanunreasonableassumption;weseethisinthetesting, ber of variables in True (X ) is greater than the number
+S j
+especiallywhenthereareonlytwoimplementationclasses ofvariablesinFalse (X ), weclassifyX astrue,other-
+S j j
+underconsideration. The secondassumptionis thatnoin- wise we classify it as false. If we make a mistake on an
+stance that belongs to h contains the variables in A and instance which doesnotbelongto h (so we report“true”
+2 1 1
+vice versa. We might, for example, expect this to be true when we shouldhave reportedfalse), we removethe vari-
+when all the position-substrings consist of distinct values ables in True (X ) fromS. If we make a mistake on an
+S j
+forthesamefieldsoftheunderlyingpacketheaders. instance that belongs to h (so we report false when we
+1
+shouldhavereportedtrue),wewillremoveallthevariables
+Theorem 1. Assume that there are two implementation
+inFalse (X )fromS.
+S j
+classes, each of which has fingerprints that can be rep-
+Thisprocedurewillgiveusaboundofatmost⌈log(n)⌉
+resented by a conjunction of position-substrings. Let H t
+mistakes, since each mistake causes us to remove at least
+be the class of monotone conjunctions over Y, and let
+halfthe variablesthatare presentin S, butare notpresent
+h ,h ∈H denotetheconjunctionfingerprintswithtvari-
+1 2 in the true hypothesis. So, if we make a mistake on an
+ablesforclassI andI respectively.LetA andA denote
+1 2 1 2 instance that belongs to h , at least half the variables in
+variablespresentinh andh respectively. Withnofurther 1
+1 2 S must have been false in X . All of these will belong
+assumptions, h and h have a mistake bound of n − t. j
+1 2 to False (X ). Now, none of these variables will be
+WhenA andA aredisjoint,andwheneveryinstancethat S j
+1 2 present in A : since X belongs to h and h is a mono-
+is consistent with h does not contain any variable in A 1 j 1 1
+1 2 tone conjunction, all variables in A must be set to true
+andviceversa,wecanlearnaconjunctionfingerprintwith 1
+in X (i.e., A ⊆ Ones(X )). So, A is disjoint from
+tvariableswith amistakeboundof⌈log(n)⌉ oninstances j 1 j 1
+t Zeros(X ),therefore,noneofthevariablesinA willbein
+thatbelongtoI andI . j 1
+1 2 False (X ). Thereforewecanremoveallofthevariables
+S j
+inFalse (X )fromS.
+Wenowpresenttheproofofthistheorem. S j
+Likewise,ifwemakeamistakeonaninstancethatdoes
+notbelongtoh , atleasthalfthevariablesinS musthave
+Proof. We will show how to use a conjunctionfingerprint 1
+been true in X . Let Y denote the set of variables
+to get a bounded number of mistakes for each case in the j rem
+in Y that are not in A or A ; so Y = Y − (A ∪
+theoremstatement. LetS denotethesetofvariablesinthe 1 2 rem 1
+A ). Since this instance X belongs to I , by assump-
+current conjunction hypothesis for I . Let X ∈ {0,1}n 2 j 2
+1 j tion, Ones(X ) ⊆ A ∪ Y . None of these variables
+denotethecurrentinstance. LetTrue (X )denotetheset j 2 rem
+S j canbepresentinA (sinceA andA aredisjoint),sothey
+of variables in X that are set to true and are also present 1 1 2
+j can be discardedfrom S. Therefore, since True (X ) ⊆
+in S. Let False (X ) denote the set of variables in X S j
+S j j Ones(X ),wecandiscardthesetTrue (X )fromS.
+that are set to false are also present in S. Let Ones(X ), j S j
+j
+Zeros(X ) denote the sets of variables in Y that are set Thus, since we reduce the set of variables in the con-
+j
+to true and false respectively in the instance X . Note junctionby at least half with everymistake, we will make
+j
+thatTrue (X ) = Ones(X )∩S, whileFalse (X ) =
+⌈log(n)⌉mistakeswhenwestartwithaconjunctionofsize
+S j j S j t
+Zeros(X )∩S. n,andourtrueconjunctionisofsizet.
+j
+Theproofforthefirstcaseiswellknownbutwesketch
+it for completeness. In the first case, we will begin with
+themostspecificconjunctionoverY: theconjunctiony ∧ Therearealsomistake-boundsforlearningdecisionlists
+1
+y ...∧y . So,webeginwithS =Y. Wedothefollowing: in the literature [14], however, they are quite loose and
+2 n
+every time we make a mistake on an instance X ∈ h , thereforenotofpracticaluse.
+j 1
+we remove all the variables in False (X ) from S. We
+S j
+never make a mistake on an instance X ∈/ h since we
+j 1
+startwithS ⊇A andneverremoveavariableinA . Thus,
+1 1
+thenumberofmistakeswecanmakeisboundedbyn−t.
+Next, we outline the proof for the second case. We
+willanalyzethenumberofmistakesmadetoreachthecor-
+rectconjunctionfortheimplementationclassI ,onthein-
+1
+stancesthatcomefromI andI . Webeginwiththemost
+1 2
+specificconjunctionoverY:theconjunctiony ∧y ...∧y .
+1 2 n
+So,webeginwithS =Y.B. Headers
+TCPheaderfrom[25]withaddedECEandCWRflags.
+0 1 2 3
+0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Source Port | Destination Port |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Sequence Number |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Acknowledgment Number |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Data | |C|E|U|A|P|R|S|F| |
+| Offset|Reserv.|W|C|R|C|S|S|Y|I| Window |
+| | |R|E|G|K|H|T|N|N| |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Checksum | Urgent Pointer |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Options | Padding |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| data |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+DNSheaderfromRFC1035[21].
+Header
+1 1 1 1 1 1
+0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
++--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ +------------------+
+| ID | | Header |
++--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ +------------------+
+|QR| Opcode |AA|TC|RD|RA| Z | RCODE | | Question |
++--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ +------------------+
+| QDCOUNT | | Answer |
++--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ +------------------+
+| ANCOUNT | | Authority |
++--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ +------------------+
+| NSCOUNT | | Additional |
++--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+ +------------------+
+| ARCOUNT |
++--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+Question
+1 1 1 1 1 1
+0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
++--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+| |
+/ QNAME /
+/ /
++--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+| QTYPE |
++--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+| QCLASS |
++--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+

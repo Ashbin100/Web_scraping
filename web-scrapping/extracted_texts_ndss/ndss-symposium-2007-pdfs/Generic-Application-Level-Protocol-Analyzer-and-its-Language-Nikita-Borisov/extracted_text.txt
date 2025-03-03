@@ -1,0 +1,970 @@
+A Generic Application-Level Protocol Analyzer and its Language
+NikitaBorisov DavidJ.Brumley HelenJ.Wang
+UIUC CarnegieMellonUniversity MicrosoftResearch
+nikita@uiuc.edu dbrumley@cs.cmu.edu helenw@microsoft.com
+JohnDunagan PallaviJoshi ChuanxiongGuo
+MicrosoftResearch UCBerkeley ICENanjing
+jdunagan@microsoft.com pallavi@eecs.berkeley.edu xguo@ieee.org
+Abstract toanetwork-exploitablevulnerability. Indoingso,theyre-
+quireamuchmoredetailedunderstandingofbothnetwork
+The Shield project relied on application protocol an- protocols and application context. Therefore, each signa-
+alyzers to detect potential exploits of application vulner- tureperformssomeformofprotocolanalysis,parsingnet-
+abilities. We present the design of a second-generation workmessageformatsandreconstructingcontext.
+genericapplication-levelprotocolanalyzer(GAPA)thaten- TheoriginalShieldprototypeincludedadomain-specific
+compasses a domain-specific language and the associated language for performing protocol analysis necessary for a
+run-time. We designed GAPA to satisfy three important signature. However,thelanguagewasincompleteanddiffi-
+goals: safety, real-time analysis and response, and rapid culttouseforsomeprotocols,inparticular,text-basedones
+development of analyzers. We have found that these goals andcomplexonesinvolvingmultiplelayers. Thispaperde-
+arerelevantformanynetworkmonitorsthatimplementpro- scribes the design, implementation, and evaluation of the
+tocolanalysis. Therefore,webuiltGAPAtobereadilyinte- second-generationlanguageforShield,supportingrapidde-
+gratedintotoolssuchasEtherealaswellasShield. velopmentofmemory-safeandDoS-resilientprotocolana-
+GAPA preserves safety through the use of a memory- lyzers.
+safe language for both message parsing and analysis, and
+In building the language and its runtime, we had sev-
+through various techniques to reduce the amount of state
+eralgoals. Themostimportantonewassafety: asShieldis
+maintained in order to avoid denial-of-service attacks. To
+intended to ensure the reliable operation of applications in
+support online analysis, the GAPA runtime uses a stream-
+a potentially adversarial environment, it is imperative that
+processing model with incremental parsing. In order to
+Shield analyzers do not introduce new sources of failure
+speed protocol development, GAPA uses a syntax similar
+or vulnerabilities. We therefore wanted to avoid memory
+tomanyprotocolRFCsandotherspecifications,andincor-
+corruptionerrorsandprovideresistancetodenial-of-service
+porates many common protocol analysis tasks as built-in
+attacks. Alloftheanalysisisperformedwithinamemory-
+abstractions. We have specified 10 commonly used proto-
+safe language, and we introduced further restrictions into
+colsintheGAPAlanguageandfounditexpressiveandeasy
+thelanguagetolimittheamountofmemoryandCPUused
+to use. We measured our GAPA prototype and found that
+byprotocolanalysis.
+itcanhandleanenterpriseclientHTTPworkloadatupto
+The second goal was one of real-time analysis and re-
+60Mbps,sufficientperformanceformanyend-hostfirewal-
+sponse. Shield acts as a “bump in the wire”; therefore, it
+l/IDSscenarios. Atthesametime,thetrustedcodebaseof
+must not buffer data for too long to avoid application de-
+GAPAisanorderofmagnitudesmallerthanEthereal.
+laysorevendeadlock,andatthesametimeitmustnotde-
+liver data to the application until it can be sure that it is
+safeandwillnotresultinavulnerability. Thelanguageand
+1 Introduction
+runtime are therefore designed based on a streaming data
+model, parsing, analyzing, and enacting decisions on po-
+The Shield project [54] introduced the concept of tentiallyincompleteapplicationmessages. Intermsofper-
+vulnerability-specific, exploit-generic signatures for intru- formance, our prototype implementation can process data
+sion prevention. These signatures differ from traditional atspeedsmatchingthetrafficdemandsofbusywebservers,
+exploit-specificsignaturesbydescribingallpathsthatlead allowingforonlineoperation.Ourthirdgoalwastosupportrapiddevelopmentofpro- many of the features using the specification for the HTTP
+tocolanalyzersandvulnerabilitysignatures. Thetimelyde- protocolinFigure1.
+ploymentofvulnerabilitysignaturesisessentialtoShield’s
+effectiveness.Tofacilitatethedevelopmentofprotocolana- 2.1 Message Parsing
+lyzersinShield,weincorporatedcommontasksinvolvedin
+protocolanalysis, suchassessionmanagementandbuffer-
+Eachprotocoldefinesaparticularmessageformatforex-
+ingofincompletedata,asfeaturesofthelanguageandthe
+changingdata. Theseformatscanroughlybeclassifiedinto
+associatedruntime. Westructuredthedomain-specificlan-
+textandbinary. TextformatsuseASCIItexttoencodeboth
+guagetobesimilartotheBNFspecificationsfoundinmany
+the structure and the content of messages, following some
+RFCs that describe protocols. We also introduced a visi-
+sort of grammar that is often formalized in Backus-Naur
+tor syntax to separate vulnerability-specific analysis logic
+form (BNF). Binary formats use machine structures to en-
+frommessageparsingandprotocolcontextreconstruction,
+codedata,overlayingC-likeconstructedtypesontothedata
+so that the latter can be reused among many vulnerability
+stream.Agenericprotocolanalyzermust,ofcourse,beable
+signaturesforasingleprotocolorapplication.
+toparsebothtypesofprotocols.
+Although our initial motivation came from the Shield
+The original Shield prototype language was mostly ori-
+project, we recognized that the above goals are important
+ented towards parsing binary protocols, with the language
+forothertoolsthatperformapplication-levelprotocolanal-
+describing data structures that form messages. Text pro-
+ysis. Inparticular, networkmonitoringtoolssuchasEthe-
+tocols were supported by switching from byte to word or
+real [50] and tcpdump [31], intrusion detection systems
+token positions; a decision that we ultimately found too
+suchasSnort[51]andBro[45],andapplication-levelfire-
+cumbersomeforeasyprotocolspecification. Inthesecond-
+wallssuchasHogwash[28]allperformsomeformofpro-
+generationlanguage,wehaveadoptedaBNF-likegrammar
+tocolanalysis,buteachtoolinvolveshand-codingtheana-
+for specifying message formats. This grammar makes it
+lyzers in a general-purpose, low-level language such as C.
+easytorepresenttextprotocols,andthereisanaturalmap-
+This approach is both expensive and error-prone, resulting
+ping of binary protocols to this grammar as well, making
+in dozens of security vulnerabilities that have been found
+thelanguageveryversatile.
+in recent years in the popular tools Ethereal and tcpdump.
+The grammar section of a GAPAL specification con-
+We therefore designed our language and runtime to be a
+sists of production rules that specify a mostly (see be-
+genericcomponentthatcanbeincorporatedintosuchtools
+low) context-free language. Each production maps a non-
+and perform the protocol analysis in a secure fashion. We
+terminal(variable)toasequenceofterminals(tokens)and
+calledourtoolGAPA,theGenericApplication-levelProto-
+non-terminals;additionally,analternationoperationcanbe
+colAnalyzer,anditsassociatedlanguageGAPAL.Theuse
+used toselect among multiplesuch sequences. This struc-
+of GAPA could reduce the trusted code base of tools like
+turecloselymirrorsBNFnotation,andwefoundthatmuch
+Etherealbyoveranorderofmagnitudeandgreatlyreduce
+ofthetaskofspecifyingtextprotocolscanbeaccomplished
+the risk ofworms that exploit the parsing logic of security
+merely by copying the BNF specification out of an RFC.
+tools,suchasWitty[49].
+Each item in the sequence on the right-hand side of a pro-
+The rest of the paper is organized as follows. We de-
+duction can also be annotated with a symbol name, in the
+scribetheGAPAlanguageinsectionSection2,andthelan-
+form of <symbol>:<type>. The symbol name can be
+guage runtime in Section 3. We present our evaluation in
+usedtorefertothatpartofthemessagelaterduringproto-
+Section 4. In Section 5, we compare and contrast GAPA
+colanalysis.
+withrelatedwork. Finally,weconcludeinSection6.
+Expressing binary protocols is also straightforward. In
+this case, the terminals represent base types, such as bytes
+2 GAPALanguage ork-bitintegers,non-terminalsrepresentstructures,andal-
+ternation is used to encode unions. We also support array
+AprotocolanalyzerspecificationintheGAPAlanguage notation,withbothstaticallyanddynamically-sizedarrays.
+(GAPAL),calledaSpec, takescareofthreetasks. First, it RFCsoftenuseBNFnotationtodescribeaprotocol,but
+specifieshowtoparsethemessageformatusedbyaproto- these specifications are not in general context-free gram-
+col. Second,itneedstocorrectlytracksessionandapplica- mars; they contain ambiguities that are resolved based on
+tioncontext. Finally,itneedstoperformanalysisbasedon otherfieldsinamessageorprotocolstate.Ratherthanforce
+themessagecontentandtheapplicationcontext,andpoten- GAPALauthorstorewritespecificationstobecontext-free,
+tiallycarryoutdecisions,suchasterminatingaconnection. weincorporatetheconceptofdirectedparsing,whereapro-
+In this section, we discuss the language features for these grammercanuseaninterpretedC-likelanguageandembed
+three tasks and then present some of the important safety code to specify how a certain field should be parsed based
+features built into the GAPA language. We will illustrate on variables computed from parsing previous fields. For
+2} else if (name == "Connection"
+protocol HTTPProtocol {
+&& value == " keep-alive") {
+transport = (80/TCP);
+keep_alive = true;
+}
+/* Session variables */
+};
+int32 content_length = 0;
+bool chunked = false;
+NormalBody ->
+bool keep_alive = false;
+bodypart:byte[content_length]
+{
+/* message format specification
+/* ‘‘send’’: sending "bodypart" to
+in BNF-like format */
+the upper layer (e.g., RPC)
+grammar {
+for further parsing */
+WS = "[ \t]+";
+send(bodypart);
+CRLF = "\r\n";
+} ;
+[...]
+%%
+}; // Grammar
+HTTP_message -> Request | Response;
+state-machine httpMachine
+Request-> RequestLine HeadersBody;
+{
+Response-> ResponseLine HeadersBody;
+(S_Request,IN)->H_Request;
+(S_Response,OUT)->H_Response;
+HeadersBody ->
+{
+initial_state=S_Request;
+chunked = false; keep_alive = false;
+final_state=S_Final;
+content_length = 0;
+};
+}
+Headers CRLF
+/* Always expect a response after a request */
+{
+handler H_Request (HTTP_message) {
+/* message_body’s type is resolved
+int headerCount = 0;
+(:=) at runtime based on
+Transfer-Encoding */
+/* visitor syntax */
+if (chunked)
+@GeneralHeader->{
+message_body := ChunkedBody;
+print ("header name = %v \n", name);
+else
+headerCount ++;
+message_body := NormalBody;
+}
+}
+print(‘‘Total number of headers: %v\n’’,
+message_body:?;
+headerCount);
+return S_Response;
+Headers -> GeneralHeader Headers | ;
+};
+GeneralHeader->
+name:"[A-Za-z0-9-]+" ":"
+handler H_Response(HTTP_message) {
+value:"[ˆ\r\n]*" CRLF
+if (keep_alive) {
+{
+return S_Request;
+if (name == "Content-Length") {
+} else {
+content_length = strtol(value,10);
+return S_Final;
+} else if (name=="Transfer-Encoding"
+}
+&& value==" chunked") {
+};
+/* slight simplification */
+chunked = true;
+}; // protocol
+Figure1.AbbreviatedHTTPspecificationinGAPAL.
+example, the length of the body of an HTTP message is example,inourHTTPspecification(Figure1),thetypeof
+specifiedbytheheaderfieldContent-Lengthaspartof message body (as part of HeadersBody) depends on
+GeneralHeader;inFigure1thecontentlengthvalueis thevalueofTransfer-Encodingheader. Itispossible
+saved inside a variable and retrieved in the NormalBody torewritethesegrammarstoavoidtheresolveoperatorand
+production. Codeblocksarealsohelpfulwhenthetypeof becontext-free,buttheresultingspecificationismuchmore
+asymbolisbestdeterminedatruntime. Weintroduceare- awkward.Directedparsingisalsousefulinbinaryprotocols
+solveoperator,denoted:=,whichallowsthestatementsto tosupportsuchidiomsastaggedunions.
+specifyhowtoparsesubsequentfields. Aresolveassignsa
+type (or a non-terminal), specified on the right-hand side,
+to a symbol name on the left-hand side. A dynamically
+resolved symbol name is denoted with the ‘?’ type. For
+32.2 Tracking Context The syntax assigns the non-terminal (or its alternation) a
+codeblocktoruneverytimeafterthenon-terminal(orthe
+A typical protocol interaction involves the exchange of alternation)isparsed.
+multiple messages from both sides. Therefore, a GAPAL Thesecodeblocksworksimilarlytotheblocksinserted
+specification must track the protocol context (and the cor- intothegrammar,however,wewanttoenableacleansep-
+responding application context) across multiple messages arationbetweentheparsinglogicandthespecificprotocol
+withinasingleinteraction,orsession. Wedefineasession analysistaskssothatthesameparsinglogiccanbere-used
+to be a group of related messages; for many protocols this fordifferenttasks. Essentially,thevisitorsinahandlerrep-
+corresponds directly to a single TCP connection, and this resent the handler’s customization of message parsing for
+is the default session grouping used by GAPA. Other pro- thepurposeofaprotocolanalysistask. Consequently,visi-
+tocols, such as those running over UDP, may encode ex- torsarealwaysexecutedbeforetherestofthehandlercode.
+plicit session identifiers inside messages or have other im-
+As an example, in our HTTP specification in Fig-
+plicit session identification mechanisms. To support such
+ure 1, handler H Request contains a visitor statement
+protocols,weallowaprogrammertodefineasessionidenti-
+that “visits” non-terminal GeneralHeader, counts the
+ficationhandler,whichparsesamessage(perhapspartially)
+number of headers, and prints all header names. Ev-
+and returns the session identifier that the message belongs
+ery time GeneralHeader is traversed during parsing,
+to. SuchhandlerscanbeusedinbothTCPandUDPproto-
+headerCount is incremented, and the header name is
+cols.
+printed. Whentheentiremessageisparsed,thetotalnum-
+Onceasessionhasbeenselected,parsingoccursaccord-
+berofheadersisprinted.
+ingtoastatemachine. Themachinespecifieswhatkindof
+messages may be received from which end of the connec-
+tioninagivenstate. Onceamessageisreceivedandfully
+2.4 Layering
+parsed,GAPAcallsahandler,writtenintheinterpretedlan-
+guage,todeterminethenextstate. Thehandlersareneces-
+sarybecausethestatetransitionmaydependonthecontent
+ofamessage. Handlersarealsousedforprotocolanalysis, Protocolscanbelayeredontopofotherprotocols,with
+asdescribedbelow. a GAPAL Spec at each layer performing protocol analysis
+TheHTTPstatemachine,showninFigure1,isconcep- and sending data up to the next layer. A Spec can indi-
+tuallysimple,alternatelyexpectingarequestmessagefrom catealowerlayerSpecwithausesstatement,ordirectly
+theclientoraresponsefromtheserver. Theresponsehan- bind to the transport layer with a transport statement.
+dler in this case will either go to a final state or start wait- The lower layer Specs use the send call to pass data to
+ingforanotherrequestbasedonavariablesavingthevalue upperlayers, whereitappearsasanincomingdatapacket.
+of the HTTP Connection header. Other protocols may Each layer has its own session identifiers, grammar, state
+have more complicated state machines, with messages po- machine,andhandlers.
+tentiallyarrivingfrombothsides. We also use our layering mechanism as a general way
+ofcomposingdataprocessinglogic,verymuchinthesame
+2.3 Visitors spiritastheUnixpipe. Inparticular,weuselayeringtoim-
+plementapplication-levelprotocolfragmentationanddata-
+Toperformanalysis,handlerswillneedtorefertofields gram reordering. The lower layer parses out the fragment
+of a message according to the recursive grammar. In sim- dataandusesaspecialversionofthesendcalltoindicate
+plecases,dotnotationsuchasa.b.ccouldbeuseful. How- to GAPA the fragment sequence metadata for the current
+ever, the dot notation becomes cumbersome in cases with datagram. GAPA then performs fragment reassembly be-
+deep recursion or alternation, which occur in both binary fore passing the data to the upper layer, which parses the
+and text-based protocols. For example, RPC may have up reassembleddataintomeaningfulmessagecomponents.
+to 11 different alternations with each alternation 4 levels
+The HTTP Spec in Figure 1 shows an example us-
+deep. In the case of alternation, one must explicitly check
+age of send for protocol layering: the HTTP message
+which case was chosen in the current message in order to
+body, parsed into the bodypart variable under the non-
+avoidreferringtofieldsthatarenotpresent.
+terminals NormalBody and Chunk, is “sent”to thenext
+To address the difficulty of dot notation, we allow the
+protocollayer,say,RPC,forfurtherprocessing. Asanother
+programmertowritegrammarvisitors[25]insidehandlers.
+example, we used layering to implement the vulnerability
+Avisitorisablockofcodethatisexecutedeachtimearule
+filterforCodeRed: theHTTPprotocolidentifiestheURLs
+isvisited. Thesyntaxforavisitoris:
+intheHTTPrequestsandpipesthemontoaCodeRedURL
+@<non terminal> > ... <code block> ... parserwhichdetectsandblocksCodeRed.
+− − { }
+42.5 Safety gine executes code fragments, both those embedded in the
+messagegrammarandthoseresultingfromthevisitorpat-
+Safety is a primary goal for the GAPA language. First terninthehandlers(Section2.3).Thehandlersuseboththe
+and foremost, we want to ensure that GAPA analyzers do parse tree and any other session state updated by the code
+not suffer from crashes or buffer overruns due to memory fragmentstocarryouttask-specificlogicandtoupdatethe
+errors. To avoid this, the GAPA interpreted language is currentprotocolstate.
+strictlytyped,withboundschecksonarrayaccessesandno Whenever the analysis engine fails to parse a message,
+dynamicmemoryallocation. Thelackofdynamicmemory it alerts the application containing GAPA, which can then
+allocationisalsohelpfultopreventunboundedmemoryus- react appropriately. For example, a firewall would likely
+age. Thisplacesarestrictiononprogrammerstoimplement dropthemessage,whileanetworkmonitorsuchasEthereal
+certain kinds of logic, but in our experience, we have not coulddisplayanuninterpretedbytestream.
+foundthistobeaninconvenience. In the remainder of the section, we focus on our tech-
+Wealsomakesurethatstoringthepartially-parsedmes- niques to limit the state in order to resist state-holding at-
+sage does not result in unbounded memory usage. The tacksandtoachievefidelityintheengine’sinterpretationof
+GAPA engine is designed to free memory for those mes- thecurrentcommunicationstateofanapplication.
+sage fields that will no longer be referenced, and to apply
+computationtomessagefieldsasearlyaspossiblethrough 3.1 Limiting State
+incremental execution (see Section 3.1). This allows us to
+parsevariable-sizedmessagecomponentssuchasarraysin
+To prevent state-holding, we structure our analysis en-
+astreamingfashion: theprogrammerwritescodetoberun
+gine to perform filtering decisions as quickly as possible
+on each element using the visitor syntax or a foreach
+withtheuseofincrementalexecution. Afterreceivingeach
+loop, and this code gets executed as each array element is
+packet, the appropriate handler is executed, even if the
+beingparsed,afterwhichthememoryforthatelementisre-
+application-levelmessageisincomplete. Thehandlerisrun
+leased. Theprogrammercanretainsomeoftheinformation
+untilitreferencesamessagefieldthatisnotyetfilledwitha
+from the variable-sized arrays by storing it in a statically
+value.Atthatpoint,itsexecutionissuspendedandacontin-
+bounded buffer. For other types of message components,
+uationissaved,toberesumedwhenthenextpacketarrives.
+suchastokensspecifiedbyregularexpressions,weenforce
+Ifthenextpacketcontainsthereferencedfield,thehandler
+astaticboundontheirlength.
+executioncontinues,otherwise,itissuspendedonceagain.
+To avoid excessive CPU consumption, we allow only a
+If the handler completes, the rest of the message is parsed
+single looping construct within GAPAL — the aforemen-
+withoutsavinganystate.
+tionedforeachstatement. Theforeachstatementiter-
+This approach allows the handlers to make filtering de-
+ates over all items inside a safe array. It is limited to for-
+cisionsonincompletemessages. If,forexample,filteringis
+ward traversal [36]. The purpose of our foreach loop
+based on the content of a certain field, a handler perform-
+istoallowparsingofiterativestructuresinmessagesorto
+ing such a check will be executed as soon as that field is
+performaconstantnumberofiterationsofcertaintasks. It
+fully parsed. We therefore pass packets containing incom-
+ispossibletonestforeachstatementsforparsingnested,
+pletemessagestotheapplicationassoonastheincremental
+iterative structures in messages, but nesting foreach on
+executionofallthehandlersiscomplete.
+thesamearrayisdisallowedasthisisincompatiblewiththe
+One subtle issue raised by incremental execution in the
+streamingmodel. InourexperienceusingGAPAL,wefind
+thislimitediterationissufficient. Theforeachdesignal- firewall scenario is that a partial field that is passed to the
+application during incremental execution could trigger an
+lowstheCPUcostperbyteofnetworktraffictobestatically
+application vulnerability such as a buffer overrun to be
+bounded.
+exploited before the full field is parsed and examined by
+GAPA. To address this issue, GAPA uses a stream-based
+3 TheAnalysisEngine
+rather than buffer-based implementation for built-in func-
+tions(e.g.,lengthfunctionsorregularexpressions)formes-
+The analysis engine is the GAPAL runtime. It parses sage fields whose sizes are unpredictable, such as a byte
+messagesusingarecursivedescentparser. Theanalysisen- sequence field that ends with some terminator symbol. In
+ginefirstfindstheappropriateGAPALSpecforthecurrent thefollowingexample,
+packet to be analyzed. The engine then follows the gram-
+mar that specifies the message format to generate a parse if (strlen(field) > 1024) ...
+tree. Since the engine may receive packets containing in-
+completemessages,itperformsparsingincrementally,sav- strlen is stream-based: the comparison completes as
+ingparsingstatebetweenpackets. Duringparsing, theen- soon as the engine parses a packet that causes field to
+5have more than 1024 characters even if field has more
+A
+bytestocome.
+Timeout(T)
+Theprogrammingsemanticsexposedbyincrementalex- Receive X
+ecutiontoGAPALhandlersisthatamessagefieldispassed Timeout
+totheapplicationafteritisparsedandthehandlerhasbeen B Receive X S Ee rrn od r
+givenanopportunitytoprocessit. Thisworkswellwhena
+programmer processes message fields in the order of their Send Y Error
+arrival, which istypically thecase. However, whena han- C
+dler implementation processes multiple message fields in
+a different order from their parsing order, this can lead to
+unintended behavior: a handler may be suspended as it is A Timeout(T-Δ) Timeout(2Δ)
+waiting for a later field while the earlier potentially mali- Receive X
+MaybeTimeout
+cious field is passed up to the application. We make the Timeout
+B Receive X Send Error
+designdecisiontoplaceresponsibilityofavoidingsuchun- Send
+TimeoutOrB Receive X Error
+intendedbehavioronGAPALprogrammersbecauseother- Send Y Send Y Error
+wise, the engine would need to buffer packets until all the C
+message fields have arrived, resulting in unbounded state
+accumulation. To help programmers follow our program-
+ming semantics, we apply static analysis to identify such Figure 2. Application state machine and
+occurrencesinGAPALprograms. Inthefuture,weplanto GAPA-maintainedstatemachine
+investigatethepossibilityofautomaticallyreorderingcode
+when there are no control- or data-flow dependencies be-
+tweenstatements.
+creatingmanyconcurrentsessionsandcausingouranalysis
+With this semantics of the incremental execution, only enginetomaintainsessionstateforeach.Themonitoredap-
+onepartialfield(ortoken)issavedacrosspackets; andthe plication can itself be attacked this way even when GAPA
+othercompletedfieldsthatarecarriedbythecurrentpacket is absent. Our goal is to make the engine at least as scal-
+arereleasedimmediatelyafterthehandlerexecutionforthe ableastheapplication. Theper-sessionstatemaintainedby
+packet. To bound the saved state of the partial field, we theengineforparsingshouldbesubstantiallylessthanthe
+chosetomirrorthebehavioroftheapplications,whichusu- per-session state in the application. To deal with an attack
+allyinvolvesimposinganartificiallimitonthesizeofsuch using many concurrent sessions, we mirror the application
+tokens (e.g., Apache has a configurable maximum header behavior. For example, if an application explicitly closes
+token size [52]). We allow the programmer to specify the outdated sessions, GAPA observes the socket close events
+maximum length of any token, as well as a global maxi- andfollowssuitbydiscardingallthecorrespondingsession
+mum for all tokens in the message, and stop parsing the state.Theapplicationmayalsouseatimertoexpireunused
+incompletetokenoncethislengthisexceeded. sessions with no externally-visible action; in this case, we
+Incremental execution applies naturally to session dis- use the timer support in GAPA, described below, to copy
+patching as well. When a message is received, we incre- theapplicationbehavior.
+mentally execute the session identifier logic, followed by
+theappropriatehandlerofthedispatchedsession. Thetran- 3.2 Achieving Fidelity
+sition between the dispatcher and the handler happens au-
+tomatically at the point when enough of the session infor- GAPA’sinterpretationoftheapplicationcommunication
+mationhasbeenparsedtodecidewhichsession’shandlerto state must stay synchronized with that of the application
+run. process. Inthemajorityofcases,applicationstatechanges
+Whenmultiplelayeredspecsareused,weincrementally areeithercausedbyorfollowedbyanetworkmessage,and
+execute the handlers at each layer before passing a packet therefore it is easy to maintain fidelity in the GAPA state.
+ontotheapplication,sinceeachlayermaydecidetofilterthe However, in cases of timeouts there may be a state transi-
+current message or session. We avoid data being buffered tionwithoutanynetworkmessages,posingachallengefor
+atalowerlayerbothtoreducethememoryfootprintandto GAPA. In this section, we discuss how we achieve better
+ensurethatfilteringdecisionsattheupperlayerscanhappen fidelityfortimeoutevents.
+asearlyaspossible. Tosupportthis, weincrementallyex- Protocolstatemachinesoftenhavetimeouteventsforre-
+ecute the send operation on incomplete fields by sending triesorforsessionstatecleanup, incaseofremotehostor
+thepartialfielduptotheupperlayeraftereachpacket. connectivityfailures. Ifthetimeoutintheapplicationtrig-
+An attacker can also perform a state-holding attack by gers a network event, such as a retry message or a closed
+6socket,GAPAcanmonitorforsucheventsandavoidmain- inGAPAL.Thereasonforthisisthatwhilebugsintheen-
+tainingthetimingitself. However,fornetwork-silenttime- ginecanpotentiallycauseapplicationcompromise,bugsin
+outs, GAPA has no choice but to maintain a timer. Main- GAPALSpecswill,atworst,causeincorrectprotocolanal-
+taining timing in GAPA is tricky because the timers in ysis.
+GAPA may not be precisely synchronized with those used Wecontrastthiswiththetraditionalprotocolanalysisap-
+bytheapplication. Suchinconsistenciescanleadtoincor- proachusedintoolssuchasthewidely-usedEthereal[50]
+rect analysis. Our implementation of network-silent time- suiteofprotocolanalyzers. InEthereal,boththeengineand
+outsisincomplete,butweincludeourdesignhere. protocol analyzers are written in C, and bugs in either can
+A handler in GAPA can set a timeout using the causeapplicationcompromise. Therefore,weneedtoclas-
+timeout(time)built-infunction. Ifnostatetransitionoc- sifybothcomponentsaspartofthetrustedcodebase.
+curs when the specified time has elapsed, a timeout han- A direct comparison of Ethereal and GAPA is inap-
+dleriscalled. Tocopewithtiminginconsistenciesbetween propriate, sinceEtherealincludesmanymorecomponents,
+GAPAandtheapplication,weapplybifurcatinganalysisas such as a UI and support for numerous file components.
+usedinBro[45];inaddition,weassumethatonedirection We therefore eliminate all engine components and focus
+ofthetrafficcomesfromatrustedsource. Insteadoftran- only on the protocol analyzers. Luckily, the Ethereal code
+sitioningtoaTimeout state, GAPAcantakeatransitionto baseusesnamingconventionstodistinguishbetweenbroad
+a MaybeTimeout state early enough to account for timing classesoffunctionality: muchoftheprotocol-analysisspe-
+error tolerances (specified by the programmer). From this cificcodeisinaspecificsub-directory,epan/dissectors.
+point,allmessagesfromonedirectionareprocessedalong Lookingatonlythecodeinthatsub-directory,wecount
+anambiguouspath,untilamessagefromtheotherdirection 779thousandlinesofcodethatareusedforprotocolanaly-
+resolvestheambiguity. Suchbifurcatinganalysiscanbein- sis. ThisnumberdwarfsthesizeoftheGAPAtrustedcode
+corporatedintotheprotocolstatemachineautomatically. base by over an order of magnitude: the GAPA engine is
+Forexample,ifanincomingmessagewouldcauseatran- only 24 thousand lines of code. Therefore, securing Ethe-
+sitiontostateBfromanon-timedoutstate,weuseittotran- realwillbeamuchmoredifficulttaskthansecuringGAPA.
+sitionfromMaybeTimeouttoTimeoutOrB.IfGAPAisused This is not just a theoretical concern, either; a search for
+tofiltermalicioustraffic,thistransitionmustcheckformes- “ethereal dissector” reveals 69 vulnerabilities recorded in
+sagesthatarepotentiallydangerouseitheronthetimedout the Common Vulnerabilities and Exposures database [16].
+orthenormalpathintheapplication.Theresponsefromthe Furthermore, this problem is likely to only get worse, as
+applicationwillletGAPAresolvetheambiguityandtransi- newprotocolsareaddedtotheEtherealdissectorcollection.
+tiontothecorrectstate. In contrast, adding new Specs to GAPA does not affect
+IfnotrafficisreceivedintheMaybeTimeoutstate,GAPA itssecurity,andalthoughourcurrentGAPAimplementation
+cantransitiontotheTimeoutstateafterwaitinglongenough could have some security defects, the significantly smaller
+to make sure that the application timeout has certainly ex- trusted code base presents a much more appealing target
+pired, accounting for synchronization errors. Since GAPA for standard security best practices, such as code reviews,
+isrunonthesamehostastheapplication,weexpectthese penetrationtesting,fuzztesting,andstaticanalysis.
+timing tolerances can be quite small, but we have not yet Rewriting the Ethereal protocol analyzers in a general-
+performed experiments to study this in more detail. Fig- purposememory-safelanguage,suchasJava,wouldelimi-
+ure3.2showsthestatemachinesmaintainedintheapplica- natemany,butnotall,oftheabovevulnerabilities. Inpar-
+tionandtheanalysisengineforthisexample. ticular,aboutaquarterofthedissectorvulnerabilitiesresult
+indenialofservicethroughexcessivememoryorCPUcon-
+sumption;thesevulnerabilitieswouldstillexist. Thishigh-
+4 Evaluation
+lightstheimportanceoftheresourcelimitationsimposedby
+GAPALthatmakeitimpossibletointroducesuchvulnera-
+4.1 GAPA Safety bilitiesinprotocolanalyzerSpecs.
+We evaluate the safety of GAPA using the metric of 4.2 GAPA Language Ease-of-Use
+trustedcodebasesize. Thoughcrude,thismetrichasbeen
+appliedinthepasttoguideresearchinsecuringothercriti- The goal of our GAPA language evaluation is to show
+calsystems,suchastheJavaVirtualMachine[3].Asmaller that the language is complete enough to express many im-
+trusted code base is easier to analyze and is less likely to portantprotocolsandvulnerabilitiesintheseprotocols,that
+containsecurity-criticalbugs. the amount of effort required for the specification is rea-
+TheGAPAtrustedcodebaseincludestheGAPAengine, sonable, and that the language features are helpful in this
+writteninC++,butexcludesprotocolspecificationswritten task. To this end, we have specified a number of proto-
+7cols: HTTP [21], RPC [47] (over both TCP and UDP), C-likestruct,buttoallowunitsof“offset”and“size”tobe
+DNS[37],SIP[26],BitTorrent[10],DHCP[18],SSH[55] definedaswords(madeofcharacters),inadditiontobytes.
+andTLS[17]. Thisrepresentsadiversecollection,includ- Thisrequiresmanuallyconvertingtherecursionsandalter-
+ing text and binary protocols, both stream- and datagram- nations in BNF rules of text-based protocols to these rigid
+oriented. In all cases, we specified the protocol in at least structs,whichisoftenverydifficult. GAPAL’suseofBNF
+theamountofdetailasiscontainedinthedescriptionofthe eliminatesthisdifficulty.
+message format in the RFC. We also implemented vulner- TheShieldlanguagealsofailedtocleanlyseparatepro-
+ability signatures on top of the HTTP, RPC-over-TCP, and tocol analysis from vulnerability filtering. The GAPA de-
+DNSspecifications. ForHTTP,weimplementedsignatures signallowsmaintainingacompleteandwell-testedprotocol
+for both the HostHeader [29] and the CodeRed [15] vul- specification. When a new vulnerability is discovered, the
+nerabilities. For RPC, we implemented a signature for the visitor syntax makes adding a corresponding filter as easy
+MSBlast [38] vulnerability. For DNS, we implemented a as adding a few vulnerability-specific checks. The visitor
+signatureforaDoSvulnerabilitycommontomultipleDNS syntaxalsomakesmergingvulnerabilityfilterstrivial(just
+implementationsresultingfrompointersintheDNSrecord runallthevisitors),anditavoidsShield’srequirementthat
+formingaloop[40],whichwerefertoasthepointer-cycle the specification indicate fields that do not require parsing
+vulnerability. Filtering for the pointer-cycle vulnerability using the “SKIP” keyword (the GAPAL compiler instead
+required parsing the values of the pointers and following canusethevisitorstoderivetheunneededfields).
+themuntilacycleisfound. ThisisanexampleofaGAPAL
+filter that could not have been implemented using regular 4.3 GAPA Performance
+expressions,evenwhenthepointervaluesareexposedbya
+DNSprotocolanalyzer,asisthemodelinnumerousIDSs,
+We evaluated the performance of GAPA using traces
+e.g.,Snort[51].
+collected in two different production networks. The
+In all cases, we found the specification process to be WebServertracecontains500megabytesoftrafficfroma
+straightforward, as we can start with an RFC using BNF, linkconnectingtoahigh-volumecommercialwebsite. The
+copy-and-paste, and then annotate it with additional pars- EdgeRouter trace contains 1 gigabyte of traffic from a
+ingandprotocollogic. Wewereabletoconstructaninitial linkconnectingasubnetcontaininghundredsofPCstothe
+specificationformostprotocolswithinafewhours.Noneof restofalargecorporateintranet.
+the9protocolspecificationsrequiredmorethan300semi-
+We chose three protocol analyzers for our evaluation,
+colons(theGAPALend-of-statementmarker).
+HTTP,RPC,andDNS.HTTPisprimarilyatext-basedpro-
+Our experience with GAPAL is that the language fea- tocol,whileRPCisprimarilyabinaryprotocol. DNSisof
+turesofembeddedcodeblocks,visitors,andlayeringwere particular interest because it contains both variable-length
+quitehelpful. Embeddedcodeblockswereessentialinev- fields and pointers. We manually verified each analyzer’s
+ery protocol where the length of a later field is specified correctnessonsmalltraces.
+by an earlier field (e.g., BitTorrent, HTTP, and RPC). We Theprimarymetricweuseintheevaluationisthrough-
+used the visitor syntax in all our vulnerability signatures putforthespecificprotocol’strafficafterextractingitfrom
+to avoid modifying the protocol specification itself. Fi- ourtrace. Wechosethismetrictoavoidallowingtheexact
+nally, thelayeringfeaturemadecompositionoflogiceasy. fraction of the various protocols in our traces to influence
+Forexample,theHTTPprotocolidentifiestheURLsinthe ourresults.
+HTTP requests, parses and processes escapes in the URL We conducted the measurements on a PC with a 3GHz
+encoding, and passes them on to a URL parser using the Xeon microprocessor and 2 GB of RAM. Averages and
+layering mechanism. The URL parser only requires 25 standarddeviationsweretakenover10runs. TheCPUwas
+linesofGAPAcodetofilterforCodeRed. Weverifiedthat saturatedinallcases. Allmeasurementsweretakenonal-
+the filter detects a real CodeRed infection packet and pro- readyreconstructedTCPstreams, tofocusonthethrough-
+ducesnofalsepositivesona500MBtracefromahighvol- put of our GAPA prototype, which integrates into an end-
+umecommercialwebsite. Additionally,thesignaturenatu- host above the transport layer. A larger system incorpo-
+rallyhandlesCodeRedIIandevenpolymorphicvariantsof rating GAPA, such as a web server protected by a GAPA-
+CodeRed,becauseitoccursaftertheURLhasbeenparsed drivenfirewallontopofahostTCPstack,wouldnaturally
+andescapesremoved. have some lower total throughput reflecting the additional
+OurexperiencewithGAPAListhatitisasignificantim- workperformedbythewebserver.
+provement over the Shield language. The Shield language In Figure 3 we show the throughput of each protocol
+wasmostlysuitableforbinaryprotocolssuchasRPC[47], analyzer with and without vulnerability signatures on the
+not text-based protocols such as HTTP [21]. Shield’s ap- EdgeRouter trace. (We use a box plot [14] to show the
+proachwastotreattextmessageslikebinaryones,usinga variabilitybetweenseveralmeasurements;theboxcontains
+8●
+PTTH +
+PTTH
+rdHtsoH +
+PTTH
+deRedoC CPR +
+CPR
+retsalB SND +
+SND
+elcyCretnioP
+Throughput on Edge Router Trace
+100
+80
+60
+40
+20
+0
+)spbM(
+tuphguorhT
+Figure3.EdgeRouterTrace
+●
+PTTH +
+PTTH
+rdHtsoH +
+PTTH
+deRedoC
+Throughput on Web Server Trace
+25
+20
+15
+10
+5
+0
+)spbM(
+tuphguorhT
+Figure4.WebServerTrace
+themiddle50%ofthedataandthelinerepresentstheme-
+dian.) We found that the performance of our implementa-
+tionofourHTTPanalyzerwaswithinafactorof3ofpub-
+lishednumbersoncommercialHTTPprotocolanalyzersin
+firewallproducts[24]. TheadditionofeithertheCodeRed
+or the HostHeader vulnerability filters caused only minor
+dropsintotalthroughput. ThethroughputforRPCwassig-
+nificantlygreaterthanfortheHTTPanalyzer. Thethrough-
+put for the DNS analyzer was quite low, and the addition
+ofthepointercyclevulnerabilityfiltercausedittodecrease
+evenfurther. Theorder-of-magnitudedifferenceinparsing
+ratebetweenHTTPandDNSisconsistentwiththefindings
+ofotherresearchonprotocolanalyzers[43]; DNSismore
+complicatedtoparseforprotocolanalyzerswritteninCas
+well.
+In Figure 4 we show the throughput of the HTTP pro-
+tocolanalyzerwithandwithoutvulnerabilitysignatureson
+the WebServer trace. The addition of vulnerability sig-
+naturescausedminordegradationsinthroughput,asbefore.
+ThroughputisapproximatelyhalfwhatitwasontheEdgeR-
+outertrace.
+Thedramaticvariationinbpsthroughputforthedifferent
+PTTH egdE PTTH beW CPR SND
+Throughput in Tokens per Second
+25000
+20000
+15000
+10000
+5000
+0
+Figure5.Comparisonofthroughputusingto-
+kenspersecond
+protocol analyzers, and for the same protocol analyzer on
+different traces, can be explained by the complexity of the
+analysisbeingperformed. InFigure5,weshowthenumber
+oftokensgeneratedeachsecondbythevariousprotocolan-
+alyzers.Thethroughputintokenspersecondismuchcloser
+acrossprotocolanalyzersthanitisinbps.Thissuggeststhat
+thecurrentdominantperformancecostsinourdesignareall
+per-tokencosts.
+We first analyze the difference in throughput of the
+HTTP analyzer on the two different traces. Although the
+throughput in bps is higher on the EdgeRouter trace,
+the analyzer is parsing more tokens per second in the
+WebServertrace.Manualinspectionrevealedthattheav-
+erage packet length in the WebServer trace is only 446
+bytes, approximately half that of the EdgeRouter trace.
+BecausetheHTTPanalyzertreatsthebodyoftheHTTPre-
+questasanopaquearrayofbytes,thebodyismuchfasterto
+parsethantheheaders. IntheWebServertrace,thebod-
+iesweremuchshorter,leadingtolessthroughputunderthe
+bpsmetric. Asimilareffectexplainsthehigherthroughput
+in bps for the RPC analyzer when compared to the HTTP
+analyzer: theRPCbodiesarelongerthantheHTTPbodies,
+leadingtoahigherthroughputinbps.
+TheDNSanalyzer’sparsingrateintokenspersecondis
+comparable to the parsing rate of HTTP. The difference in
+tokens per second seems largely due to the need for addi-
+tional code blocks for determining the meaning of parsed
+fields. In particular, distinguishing between record names
+and record pointers, and switching appropriately, required
+examining individual bytes using the interpreted language
+muchmoreoftenthanwasthecaseforHTTPheaders. This
+explainsthedifferencebetweenthetokenspersecondrates
+forthetwoanalyzers. Themuchlargerdifferenceinbpsis
+explainedsimplybythefactthatDNShasnolarge“body”
+againstwhichtheparsingcostscanbeamortized.
+In Figure 6, we analyze the current costs of the various
+9Overhead of GAPA Subsystems
+100% 90%
+80%
+70%
+60%
+50%
+40%
+30%
+20%
+10%
+0%
+HTTP- HTTP- RPC DNS
+Web Edge
+Protocol
+latoT
+fO
+noitcarF
+tocolanalysisonlyaimstodecodecommunicationsessions
+ofalready-implementedanddeployedprotocols,andsocan
+Other (e.g., memory forgofunctionalityrequiredintheseotherdomains,e.g.,dy-
+allocation)
+RegEx namicallyallocatingnewportsorgeneratingresponsepack-
+ets. In this subsection, we explain how GAPA is better
+SharedNamespace
+suitedtothetaskofprotocolanalysis.
+Interpreter
+Languages based on formal methods [4], such as Es-
+Grammar telle[12],Promela++[6],LOTOS[53],andSDL[48]were
+originally targeted at protocol specification, emphasizing
+validationandverificationofprotocollogicthroughtheuse
+offinitestatemachines.StateCharts[27]andEsterel[8]are
+Figure6.GAPAperformancebreakdown formal method-based languages that are more suitable for
+implementation. RTAG[2](real-timeasynchronousgram-
+mars)isalsosuchalanguage,thoughitusesacontext-free
+components of the GAPA engine. The label “Grammar” grammar to define the protocol behavior. GAPAL’s use
+referstoBNF-directedparsing. “Interpreter”referstotime of finite state machines with code-directed transitions has
+executing handlers and embedded code blocks. “Shared- close parallels in some of these languages, e.g., Esterel’s
+Namespace” refers to time spent reading and writing the use of code to decide the next state. However, these lan-
+grammar variables by the handlers and embedded code guages do not provide built-in abstractions for specifying
+blocks. “RegEx”referstotimespentintheregularexpres- protocolmessageformats.Forexample,inboththeEsterel-
+sionmatchinglibrary. “Other”referstomemoryallocation, based[13]andRTAG-based[2]TCPimplementations, the
+copying,andinitializationcosts. TCP protocol state machine is specified in Esterel/RTAG,
+In the two lower throughput cases (HTTP-Web and but packet access and manipulation have to be coded in
+DNS), we find that a significant fraction of time is going C. GAPAL provides BNF with embedded code blocks for
+to the BNF-directed parsing and to the interpreter. In the message format specification. Compared to C-based data
+two higher throughput cases (HTTP-Edge and RPC), we manipulation,GAPALprovidesmemorysafetyandDoSre-
+findthatmostoftheCPUtimeisgoingtomemoryalloca- silience,e.g.,GAPALdoesnotallowgeneral-purposeloops
+tion,copying,andinitializationcosts. TheCPUcostofin- ordynamicmemoryallocation.
+terpreterinitializationalreadyincorporatestheoptimization
+Kohler et al [34] proposed Prolac, a statically-typed,
+of sharing interpreted code across sessions, so the remain-
+object-orientedlanguagefornetworkprotocolimplementa-
+ingcostissimplyallocatingandinitializingdata. Although
+tion,withthegoalofimprovingreadability,implementabil-
+previous work on interpreters [46] has found that they of-
+ity,andextensibility. Prolaccanbeusedtoimplementany
+tenimposeslowdownsrangingfromafactorof10toovera
+network protocols, while GAPAL is more special-purpose
+factorof100,thecombinedcostofthegrammarinterpreter
+with explicit, built-in support for abstractions needed for
+and the C-subset interpreter is the dominant problem only
+protocolanalysis(messageparsing,protocolstatemachine,
+forthelowerthroughputcases(HTTP-WebandDNS).For
+visitors,layering,sessiondispatching). Likeotherprotocol
+thehigherthroughputcases(HTTP-EdgeandRPC),thema-
+implementationlanguages,Prolacsupportsarbitraryrecur-
+jorbottleneckistheclassicproblemofmemoryallocations
+sion,whileGAPALdoesnot.
+and copies. In all cases, regular expression matching was
+The x-Kernel framework provides protocol, session,
+a small fraction of overall CPU overhead. Our estimation
+and message objects along with a set of support routines
+is that all of the areas except regular expression matching
+for buffer management, identifier mapping, and timers.
+are open to significant additional optimization. Compila-
+Through this uniform interface among protocols, x-Kernel
+tiontechniquesseemlikeaparticularlypromisingapproach
+aims to improve the structure and performance of proto-
+toperformanceimprovement.
+col layering. In accordance with GAPA’s focus on proto-
+col analysis rather than implementation, GAPA provides
+5 RelatedWork
+very different operations on protocols, sessions and mes-
+sage. Forexample,GAPAsupportsmessageparsingusing
+5.1 Languages and Frameworks for Pro- BNF with embedded code, while x-Kernel supports mes-
+tocol Design, Verification and Imple- sage parsing by providing library functions that efficiently
+mentation add or remove headers as a message moves down or up
+the protocol stack; GAPA uses the abstraction of a proto-
+Many languages and frameworks have been developed col state machine to track protocol state, while x-Kernel
+for protocol design, verification and implementation. Pro- uses the protocol object to organize functionality (e.g., the
+10IP layer code is in the IP protocol object). Furthermore, based protocol messages can be more easily expressed us-
+GAPAL’s type safety and DoS resilience are absent in the ingBNFwithembeddedcodeblocks; amoredetaileddis-
+C-basedx-Kernel. cussioncan befound inour ease-of-useevaluationin Sec-
+Protocolconformancetestingtoolsalsosharesomesim- tion4.2. ParsergeneratorssuchasYacc[33],ANTLR[44]
+ilaritieswithGAPA,astheyalsomustparseprotocolmes- and JavaCUP [30] use BNF and embedded code for pars-
+sages and verify certain properties. However, testing sce- ing;GAPAadditionallyprovidessupportforprotocolanal-
+narios differ from the context of firewalls or intrusion de- ysisspecificabstractionsandatype-safeDoS-resilientlan-
+tection systems, as there is no need to worry about adver- guagefortheembeddedcodeblocks. Asomewhatorthog-
+sarial traffic trying to compromise or DoS the testing tool. onal piece of work is Erlang’s bit syntax [41], an Erlang
+Indeed, testing tools do not even need to operate online: languageextensionthatsupportsbinarypatternmatching.
+Bishopetal[9]performdetailedconformancecheckingon
+Recently,PADS[22]wasproposedasadomain-specific
+TCP traces at 500 bps. The different emphasis in domain
+language for specifying both text and binary data. Their
+also manifests itself in the language design: Bishop et al
+goal is rapid parser generation for many kinds of ad hoc
+choosealanguageofferinglogicoperations,suchasquanti-
+data such as web logs, finance records, firewall rules, etc..
+fiers,whileGAPALincludesBNFwithembeddedcodeand
+Despitesomedifferencesinlanguageappearance,PADSis
+otherfeaturestofacilitateprotocolanalysis.
+similartothemessageformatspecificationpartofGAPAL:
+GAPAL’s use of BNF with embedded code block is mir-
+5.2 IDS/Firewall Languages
+rored by PADS’s use of “switched PUnion” and code-
+directed parsing. Both GAPAL and PADS target text and
+SnortandHogWash[51]useregularexpressionsasrules binarydata,andbotharrivedatasimilarparsingdesign.
+formatchingmaliciousnetworkinput. Toobtainmorepro-
+tocolcontextforsuchmatching,theysupportprotocolana-
+lyzers written in C as plug-ins. As discussed in Section 1,
+5.4 Packet Filters and Other Systems
+usingCincursbothahighdevelopmentcostandahighse-
+curityrisk.
+The Bro [45] language is designed to specify network
+monitoringandintrusiondetectionpoliciesbasedonknown
+Packet filters [36, 20, 7, 32] are programmable criteria
+attackbehaviors,suchasportscanning. TheBrolanguage
+for classifying or selecting packets from a packet stream
+does not support implementing protocol analysis, but the
+basedonheadersforprotocollayer4orbelow. Becauseof
+Brosystemallowsincorporatingprotocolanalyzerswritten
+packetfilters’emphasisonspeed, theyexposeonlysimple
+inC.
+rules for packet classification, such as predicates on byte
+The Binpac [43] language has similar goals to GAPAL
+values at fixed offsets. This makes them inappropriate for
+andnaturallysharesmanyofitsfeatures(theBinpacauthors
+protocol analysis above the transport layer, which requires
+reference our early design document [11] in their work).
+parsingmulti-packetmessagesandkeepingtrackofproto-
+Binpac is intended to perform message parsing only, pro-
+colstate.
+vidinganinterfaceforanalyzerswritteninalanguagesuch
+asC++,whereGAPALencompassesbothparsingandreac- SPINE[23]andFLAME[1]aresystemsdesignedtoal-
+tion.BinpacisalsocompiledtoC++andusesC++forparts lowuntrustedcodetoprocessnetworkmessagesintheker-
+ofitsparsinglogic. Forourpurposes,C++posesanunac- nel. Theymaintainisolationfromarbitrarymemoryaccess
+ceptablesafetyriskandweuseourinterpretedlanguagefor within the kernel by using type-safe languages (Modula-
+thispurposeinstead. 3 and Cyclone, respectively), and they guard against un-
+bounded CPU consumption by using timeouts. GAPAL’s
+protocol-analysis specific abstractions and the analysis en-
+5.3 Data Description Languages
+gine’sbuilt-insupportforastreamprocessingmodelareab-
+sentfromSPINEandFLAME.Also,SPINEandFLAME’s
+GAPALismorethanadatadescriptionlanguage;italso
+timeout approach to DoS-resilience was inappropriate for
+includesprotocolanalysis-specificfeaturessuchasthepro-
+ourtargetscenarioofafirewall;timeoutsmayleadtofalse
+tocol state machine, layering, and visitors. In this section,
+positives.
+wecomparethemessageformatpartoftheGAPALdesign
+topreviouswork. Proof-Carrying Code [39]is a technique for conveying
+ASN.1 [19], NDR [47], and USC [42] target describ- program properties like type safety or bounded execution
+ing binary data structures. Datascript [5] and Packet- time. IfGAPAwerecompiledtomachinecode,insteadof
+Types [35] specify binary data and enhance the specifica- beinginterpreted,ProofCarryingCodewouldbeapromis-
+tion with predicate-directed parsing. We found that text- ingtechniqueforavoidingatrustedcompiler.
+116 ConcludingRemarks [8] G.Berry. TheEsterelPrimer.
+[9] S. Bishop, M. Fairbairn, M. Norrish, P. Sewell, M. Smith,
+Protocolanalysisisimportantinnumerousapplications, and K. Wansbrough. Rigorous specification and confor-
+suchasintrusiondetection,firewalling,andnetworkmoni- mancetestingtechniquesfornetworkprotocols,asapplied
+to TCP, UDP, and sockets. In Proceedings of ACM SIG-
+toring. Wehavepresentedthedesign,implementation,and
+COMM,2006.
+evaluationofagenericapplication-levelprotocolanalyzer,
+[10] BitTorrentprotocolspecification.
+GAPA,and itslanguage. GAPAis thefirstsystem that al-
+http://www.bittorrent.org/protocol.html/.
+lowsrapiddevelopmentofprotocolanalyzerswhileprovid-
+[11] N.Borisov,D.Brumley,H.Wang,J.Dunagan,P.Joshi,and
+ing memory safety and DoS resilience. To achieve these C.Guo. Genericapplication-levelprotocolanalyzerandits
+properties,GAPALusestechniquessuchasBNFwithem- language. TechnicalReportMSR-TR-2005-133,Microsoft
+beddedcodeblocks,visitorsforseparatingparsing-specific Research,Feb.2005.
+andtask-specificlogic,incrementalexecution,andlayering. [12] S.BudkowskiandP.Dembinski.AnintroductiontoEstelle:
+OurevaluationindicatesthatGAPALissafe,expressiveand Aspecificationlanguagefordistributedsystems. Computer
+easytouseandourGAPAsystemprototypecanhandlean NetworksandISDNSystems,1991.
+[13] C. Castelluccia, W. Dabbous, and S. O’Malley. Generat-
+enterprise client HTTP workload at up to 60 Mbps, suffi-
+ingefficientprotocolcodefromanabstractspecification. In
+cient performance for many end-host firewall/IDS scenar-
+ProceedingsoftheACMSIGCOMM,1996.
+ios.
+[14] J. Chambers, W. Cleveland, B. Kleiner, and P. Tukey.
+GraphicalMethodsforDataAnalysis.Wadsworth&Brook-
+7 Acknowledgments s/Cole,1983.
+[15] Microsoft Security Bulletin MS01-033, November 2003.
+Andrew Begel, John Douceur, Jon Howell, and Dawn http://www.microsoft.com/technet/treeview/
+Song gave us invaluable critiques on the drafts of our pa- default.asp?url=/technet/security/bulletin/MS01-033.asp.
+[16] M. corporation. Common vulnerabilities and exposures
+per. OurworkalsobenefitedfromdiscussionswithRonnie
+database(CVE). www.cve.mitre.org.
+Chaiken, Jon Pincus, Dan Simon, Zhendong Su, and Zhe
+[17] T.DierksandC.Allen. RFC2246: TheTLSprotocolver-
+Yang. GeoffNordlandkindlyprovidedussomeofthenet-
+sion1.0,January1999. http://www.ietf.org/rfc/rfc2246.txt.
+work traces used in our evaluation upon our short-noticed
+[18] R.Droms. Rfc2131-dynamichostconfigurationprotocol,
+requests. The anonymous referees offered many helpful March1997. http://www.faqs.org/rfcs/rfc2131.html.
+suggestions. Wearethankfultoeveryone’shelp. [19] O.Dubuisson. ASN.1-CommunicationBetweenHeteroge-
+neousSystems. MorganKaufmannPublishers,2000.
+[20] D. Engler and M. Kaashoek. DPF: Fast, flexible message
+References
+demultiplexingusingdynamiccodegeneration.InProceed-
+ingsofACMSIGCOMM,1996.
+[1] K. Anagnostakis, M. Greenwald, S. Ioannidis, and
+[21] R. Fielding, J. Gettys, J. Mogul, H. Frystyk, L. Masinter,
+S. Miltchev. Open packet monitoring on FLAME: Safety,
+P.Leach,andT.Berners-Lee. RFC2616: HypertextTrans-
+performanceandapplications. In4thInternationalWorking
+ferProtocol–HTTP/1.1,June1999.
+ConferenceonActiveNetworks,2002.
+[22] K.FisherandR.Gruber.PADS:Adomain-specificlanguage
+[2] D. Anderson. Automated protocol implementation with
+for processing ad hoc data. In Proceedings of PLDI, June
+RTAG. IEEETransactionsinsoftwareengineering, 14(3),
+2005.
+March1988.
+[23] M. Fiuczynski, R. Martin, B. Bershad, and D. Culler.
+[3] A.AppelandD.C.Wang. JVMTCB:Measurementsofthe
+SPINE: An operating system for intelligent network
+trustedcomputingbaseofJavavirtualmachines. Technical
+adapters. Technical Report TR-98-08-01, University of
+ReportCSTR-647-02,PrincetonUniversity,Apr.2002.
+[4] F.BabichandL.Deotto. Formalmethodsforspecification Washington,1998.
+andanalysisofcommunicationprotocols. IEEECommuni- [24] M.Fratto. Application-levelfirewalls:Smallernet,tighter
+cationsSurveysandTutorials,December2002. filter,March2003.
+[5] G. Back. DataScript — A specification and scripting http://www.nwc.com/1405/1405f32.html.
+language for binary data. In Proceedings of Generative [25] E.Gamma,R.Helm,R.Johnson,andJ.Vlissides. Design
+Programming and Component Engineering, volume 2487. Patterns. Addison-WesleyProfessional,1995.
+LNCS,2002. [26] M.Handley,H.Schulzrinne,E.Schooler,andJ.Rosenberg.
+[6] A. Basu, M. Hayden, G. Morrisett, and T. von Eicken. A RFC2543:SIP:Sessioninitiationprotocol,March1999.
+language-basedapproachtoprotocolconstruction. InPro- [27] D.Harel. Statecharts: Avisualformalismforcomplexsys-
+ceedings of the ACM SIGPLAN workshop on domain spe- tems. ScienceofComputerProgramming,pages231–274,
+cificlanguages,1997. 1987.
+[7] A. Begel, S. McCanne, and S. Graham. Bpf+: Exploiting [28] Hogwash. http://sourceforge.net/projects/hogwash/.
+global data-flow optimizations in a generalized packet fil- [29] Malformed HOST header causes IIS DoS, October 2002.
+ter architecture. Computer Communication Review, 29(4), http://www.securiteam.com/windowsntfocus/
+1999. 6C00C1F5QA.html.
+12[30] S. Hudson. CUP: LALR parser generator for Java. [52] Apachecorefeatures.
+http://www2.cs.tum.edu/projects/cup/. http://httpd.apache.org/docs/1.3/mod/core.html.
+[31] V.Jacobson,C.Leres,andS.McCanne. Tcpdump. www. [53] P. H. J. van Eijk, C. A. Vissers, and M. D. (Editors). The
+tcpdump.org. formaldescriptiontechniqueLOTOS.
+[32] M.JayaramandR.Cytron. Efficientdemultiplexingofnet- [54] H. Wang, C. Guo, D. Simon, and A. Zugenmaier. Shield:
+work packets by automatic parsing. In Proceedings of the Vulnerability-driven network filters for preventing known
+WorkshoponCompilerSupportforSystemsSoftware,1996. vulnerabilityexploits. InProceedingsofACMSIGCOMM,
+[33] S.Johnson. Yacc—YetAnotherCompiler-Compiler,1979. 2004.
+UNIXProgrammer’sManual. [55] T.YlonenandC.Lonvick. InternetDraft-SSHTransport
+[34] E.Kohler, M.Kaashoek, andD.Montgomery. Areadable LayerProtocol,March2005.
+TCP in the Prolac protocol language. In Proceedings of
+ACMSIGCOMM,1999.
+[35] P.J.McCannandS.Chandra. PacketTypes: Abstractspec-
+ification ofnetworkprotocol messages. In Proceedings of
+ACMSIGCOMM,2000.
+[36] S. McCanne and V. Jacobson. The BSD packet filter: A
+newarchitectureforuser-levelpacketcapture. InUSENIX
+Symposium,1992.
+[37] P. Mockapetris. RFC 1035 — Domain names —
+implementation and specification, November 1987.
+http://www.faqs.org/rfcs/rfc1035.html.
+[38] Microsoft Security Bulletin MS03-026, September 2003.
+http://www.microsoft.com/technet/treeview/
+default.asp?url=/technet/security/bulletin/MS03-026.asp.
+[39] G.Necula. Proof-carryingcode. InProceedingsofthe24th
+ACMSIGPLAN-SIGACTSymposiumonPrinciplesofPro-
+gramming Langauges (POPL ’97), pages 106–119, Paris,
+Jan.1997.
+[40] NISCC Vulnerability Advisory DNS - 589088, May
+2005. http://www.niscc.gov.uk/niscc/docs/al-20050524-
+00433.html.
+[41] P.Nyblom. Thebitsyntax—thereleasedversion. InSixth
+InternationalErlang/OTPUserConference,October2000.
+[42] S.W.O’Malley,T.A.Proebsting,andA.B.Montz.USC:A
+universalstubcompiler.InProceedingsofACMSIGCOMM,
+1994.
+[43] R.Pang, V.Paxson, R.Sommer, andL.Peterson. binpac:
+A yacc for writing application protocol parsers. In ACM
+InternetMeasurementConference,Oct.2006.
+[44] T.ParrandR.Quong. ANTLR:Apredicated-LL(k)parser
+generator. Software: PracticeandExperience, 25(7):789–
+810,1995.
+[45] V.Paxson.Bro:Asystemfordetectingnetworkintrudersin
+real-time. ComputerNetworks,Dec1999.
+[46] T. H. Romer, D. Lee, G. Voelker, A. Wolman, W. Wong,
+J.-L.Baer,B.Bershad,andH.Levy. Thestructureandper-
+formance of interpreters. In Proceedings of the 7th Inter-
+nationalConferenceonArchitecturalSupportforProgram-
+mingLanguagesandOperatingSystem(ASPLOS),volume
+31:9,pages150–159,NewYork,NY,1996.ACMPress.
+[47] DCE1.1:RemoteProcedureCall.
+http://www.opengroup.org/onlinepubs/9629399/.
+[48] http://www.sdl-forum.org/Publications/index.htm.
+[49] C.ShannonandD.Moore. ThespreadoftheWittyworm.
+http://www.caida.org/analysis/security/witty,2004.
+[50] R.Sharpe,E.Warnicke,andU.Lamping. Ethereal. www.
+ethereal.com.
+[51] The Open Source Network Intrusion Detection System.
+http://www.snort.org/.
+13

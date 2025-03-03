@@ -1,0 +1,402 @@
+Deconstructing Xen
+Lei Shi, Yuming Wu, Yubin Xia, Nathan Dautenhahn, Haibo Chen, Binyu Zang,
+Haibing Guan, Jinming Li
+Shanghai Jiao Tong University, University of Pennsylvania, Huawei Inc.
+/ 27
+7
+NDSS’1Hypervisors have Bugs
+• Xen is used by Amazon EC2 250
+200
+• Xen’s CVE is growing
+150
+210 XSA (Xen Security Advisories)
+100
+Xen’s LoC is growing from
+50
+45K (v2.0) to 270K (v4.0)
+0
+• KVM also has 100+ CVEs
+2011 2012 2013 2014 2015 2016 2017
+Data from https://xenbits.xen.org/xsa/
+2 / 27Analyze 201 of Xen’s Vulnerabilities (XSA)
+191
+144
+(75% of 191)
+47
+10
+• 144 are in the hypervisor • 47 are not in hypervisor• 10 are ignored
+E.g., Host DoS, privilege Some are in Domain-0 7 numbers are not used
+escalation, etc.
+Some are in Qemu XSA-161 was withdrawn
+Use hypervisor to attack VM
+XSA-99 is irrelevant
+XSA-166 is too vague
+Focus on this part
+3 / 273 Dimensions to Categorize (144 Hypervisor
+bugs)
+Which component to attack? How to attack? Attack for what?
+Hypervisor Hypervisor Hypervisor
+Attack targets Key steps of attack Results of attack
+Memory management: 25.7% Memory corruption: 45.1% Host DoS: 61.8%
+CPU virtualization: 21.5% Misuse of hardware: 22.2% Privilege escalation: 15.3%
+Code emulation: 13.2% Live lock: 8.3% Info leak: 13.9%
+... ... ...
+4 / 271. Xen Components with Bugs
+Memory management 25.69
+%
+CPU virtualization 21.53
+%
+Code emulation 13.19
+• Components with bugs
+%
+I/O
+25.69%: Memory management
+Exception handling
+21.53%: CPU virtualization
+Grant table
+13.19%: Code emulation
+Global
+Domain control
+• Observations:
+Domain building
+Some components are more
+Event channel
+attractive to attackers
+XSM
+Memory management is critical
+Scheduler
+and hard to get right
+Others
+0.00% 5.00% 10.00% 15.00% 20.00% 25.00% 30.00% 5 / 272. The Types of Key Step of Attack
+Memory curruption 45.1
+%
+Misuse of hardware 22.2
+%
+Live lock • Memory corruption: 45.14%
+Illegal memory read
+Infinite loop
+E.g., out-of-boundary
+False BUG_ON
+Illegal memory write
+General fault
+E.g., write to an invalid pointer
+Run out of resource
+Dead lock
+0% 5% 10% 15% 20% 25% 30% 35% 40% 45% 50% 6 / 273. The Consequences of Attack
+Host DoS 61.8%
+Privilege escalation (to host) 15.3%
+• Host DoS: more than 60%
+All DoS: more than 70%
+Information leak 13.9%
+• Guest to guest attack
+Guest DoS (itself)
+Some guest app leverages hypervisor
+Guest DoS (other) to DoS its own guest VM
+Privilege escalation (to
+guest)
+0% 20% 40% 60% 80%
+7 / 27Summary: Observations
+• Hypervisors have bugs
+– Some previous studies focused on bugs of dom-0 or host OS
+– Some systems (e.g., nested virtualization) can solve the
+problem but may cause performance overhead due to nested
+levels
+• Some components have more vulnerabilities (found)
+– Take consideration on mem management, code emulation, etc.
+• DoS cannot be ignored
+– Need to tolerant DoS for availability
+8 / 27Deconstruction for Isolation
+NEXEN: NESTED XEN
+It’s a palindrome!
+9 / 27From Observations to Nexen
+• Hypervisors have bugs
+– Deconstruct the hypervisor to isolated components
+– “Nesting” within single hardware privilege for performance
+• Some components have more vulnerabilities
+(found)
+– Isolate vulnerabilities in the boundary of VM
+• DoS cannot be ignored
+– Isolate failure in the boundary of VM
+10 / 27Deconstructing Xen
+Dom-0 Para-VM Full-VM
+Virtual Machine
+Hypervisor
+Shared
+Xen Slice Xen Slice Xen Slice
+Service
+Security Monitor
+Partition Xen into several internal domains, all the domains run in the same hardware privilege
+11 / 27Xen Slice
+Dom-0 Para-VM Full-VM
+Virtual Machine
+Hypervisor
+Shared
+Xen Slice Xen Slice Xen Slice
+Service
+Same code,
+Different instances
+Security Monitor
+Each Xen slice serves only one VM, containing the VM’s metadata and handling its VMExits
+12 / 27Shared Service
+Dom-0 Para-VM Full-VM
+Virtual Machine
+Hypervisor
+Serve all
+Shared
+the Xen slices
+Xen Slice Xen Slice Xen Slice
+Service
+Security Monitor
+Only one shared service. It does not interact directly with VM, just serves Xen slices.
+13 / 27Xen Destruction
+• Questions
+– Which parts to put in Xen slices?
+– Which parts to put in shared service?
+• Principles
+– Least privilege
+– Minimize runtime communication
+– Separate mechanism from policy
+14 / 27Component Original Xen Vulnerabilities
+s
+15
+/ 27Component Xen Shared Service Vulnerabilities
+s Slice
+16 / 27Security Monitor: Controls the MMU
+Isolation
+Dom-0 Para-VM Full-VM
+Virtual Machine
+Hypervisor
+Shared
+Xen Slice Xen Slice Xen Slice
+Service
+Security Monitor
+The security monitor controls guest page tables and EPTs. It offers interfaces & does security checks.
+17 / 27Protecting the Security Monitor
+• MMU virtualization
+– Get higher software privilege in the same hardware privilege
+– Similar with the nested-kernel architecture [ASPLOS’16]
+• Only the monitor can modify page tables
+– Page tables are mapped as read-only to other components
+– No page table operation instructions out of the monitor
+– Enforce security policies on each operation of page table
+– Bootstrap security: through Intel TXT or TPM
+18 / 27Same Memory, Different Views
+RW RW RW
+RO RW RW RW
+RW RW
+RW RW
+RO RO RW
+Guest Shared Security
+Xen Slice
+VM Service Monitor
+19 / 27Call Gate: Intercept Switches between
+Slices
+Dom-0 Para-VM Full-VM
+Virtual Machine
+Hypervisor
+Shared
+Xen Slice Xen Slice Xen Slice
+Service
+call gate
+Security Monitor
+Intercept switches between Xen slices & shared service, as well as VM & its Xen slice
+20 / 27Summary: What Nexen can/cannot Defend?
+Malicious Steal or tamper with
+Host DoS Guest DoS
+VM’s data
+Component
+VM (user) N.A. Considered Considered
+VM (kernel) Not considered Considered N.A.
+Other VM Considered Considered Considered
+Xen Slice Considered Considered Not considered
+Shared Service Considered Not considered Not considered
+Nexen cannot defend against attacks through legal interfaces (aka., Iago
+attack)
+21 / 27Security & Performance
+EVALUATION
+22 / 27Security Evaluation on 144 XSAs
+10/144 (7%): attack through
+interface, depends on semantic
+107/144 (74%): Defended
+27/144 (19%): target the shared service and can cause host failure
+23 / 27Case Study: XSA-108
+VM VM
+• Type:
+Out-of-boundary mem access in
+Xen
+code emulation causes info leak Xen
+Slic
+Slice
+e
+• Description
+Security Monitor
+– Xen’s code emulation for APIC erroneously emulates
+read and write permissions for 1024 MSRs where
+there are actually 256 MSRs. A read operation can go
+beyond the page set up and potentially get sensitive
+data from the hypervisor or other VMs
+- case MSR_IA32_APICBASE_MSR ... MSR_IA32_APICBASE_MSR +
+0x3ff: + case MSR_IA32_APICBASE_MSR ... MSR_IA32_APICBASE_MSR
+24 / 27
++ 0xff:!SPEC CPU2006 (less than 1%)
+/ 27IOzone (2.4% on average)
+/ 27Conclusion
+• Methodology of deconstruction
+– Analyze 201 Xen’s vulnerabilities
+– Derive boundary of isolation from the result
+– Deconstructing system to internal domains and security monitor
+• Nexen implementation
+– Deconstruct Xen to multiple Xen slices and one shared service
+– Using nested kernel design to protect the security monitor
+107 (1 744 %4 o f( 7154%4) of 191) 47 10
+Thanks!
+• More info: http://ipads.se.sjtu.edu.cn/xsa
+27 / 27BACKUP SLIDES
+28 / 27Same Memory, Different Views
+Secure
+Monitor
+Xen Slice Shared
+Code Service Code
+Xen Slice Xen Slice Shared
+Data Data Service Data
+/ 27
+ecapS
+yromeM
+…
+Xen Slice 1 Xen Slice n Shared Service
+29Event chaSncnheeld uler Others
+Domain XSM
+2% 1% 3%
+building 1%
+Memory
+4%
+Domain control management
+4% 26%
+Global
+4%
+Grant table
+5%
+Excep9on
+handling
+6%
+I/O
+9% CPU
+virtualiza9on
+22%
+Code emula9on
+13%
+30 / 27The Control Flow
+• Gate keeper in the monitor
+• Switch between memory spaces
+• Intercept transferring between:
+• Guest VM & Hypervisor
+• Xen slice & shared service
+• Complete mediation
+• Cannot be bypassed
+31 / 27Case Study: XSA-191
+• Type
+‒ Misuse of H/W feature in code emulation causes privilege
+escalation to guest kernel
+• Description
+‒ Intel hardware uses NULL segment selectors to prevent
+access. Xen code emulator fails to check this condition and
+may erroneously permit invalid access. An unprivileged guest
+user program may be able to elevate its privilege to that of
+the guest operating system
+32 / 27Case Study: XSA-191
+• How to trigger?
+1. try to set kernel data segment selector to NULL
+2. trigger an instruction that requires emulation, the side effect
+of which changes an entry of kernel page table
+3. the instruction emulated, changing the page table entry,
+giving the user program access to some kernel data
+33 / 27Case Study: XSA-191
+• Why cannot defend?
+‒ Not harming other VMs: the process completely finish in code
+emulator of one VM
+‒ Iago attack: logic error of code emulator
+34 / 27Performance Evaluation: Negligible
+Overhead
+SPEC CPU2006 (less than 1%)
+IOzone (2.4% on average)
+35 / 27Case Study: XSA-83
+• Type
+– Memory corruption in shared service causes privilege escalation
+• Description
+– Out-of-memory condition yielding memory corruption during IRQ
+setup. When setting up the IRQ for a passed through physical
+device, a flaw in the error handling could result in a memory
+allocation being used after it is freed, and then freed a second
+time
+36 / 27Case Study: XSA-83
+• Patch
+@@ -1590,8 +1590,7 @@ int pirq_guest_bind(struct vcpu *v, stru !
+printk(XENLOG_G_INFO !
+“Cannot bind IRQ%d to dom%d. Out of memory.\n”, !
+pirq->pirq, v->domain->domain_id); !
+- rc = -ENOMEM; !
+- goto out; !
++ return -ENOMEM; !
+}!
+37 / 27Case Study: XSA-83
+• Why cannot Nexen defend?
+Dom-0
+– Since the shared service is
+critical in Nexen, exploiting a bug
+in this part will allow the attacker
+Shared
+Xen Slice
+to do almost anything destructive Service
+towards the whole system
+– VM’s data are still protected
+Security Monitor
+38 / 27Comparing with Related Work
+Hypervisor illegally Guest apps attack its
+Guest causes host
+accesses guest’s own VM by
+DoS
+data hypervisor
+Disaggregated Xen No No No
+Xoar No No No
+Turtles KVM No Yes No
+DeHype No Yes No
+HyperLock No Yes No
+CloudVisor Yes No Yes
+Nexen Yes Yes Yes
+39 / 27Comparing with Related Work
+40 / 27Internal Domain API
+• Domains interaction
+– Create a Xen slice
+– Allocate protected memory to a Xen slice
+– Specify policy for a piece of memory
+41 / 27Case Study: XSA-111
+• Type
+– False BUG_ON in CPU virtualization causes host DoS
+• Description
+– A piece of hypercall parameter translation code assumes
+that only the lower 32 bits of a 64-bit register variable are
+used, violation of which will trigger a BUG_ON that kills the
+hypervisor
+42 / 27Case Study: XSA-111
+• How to trigger?
+– This condition can be deliberately violated by an HVM guest
+by temporarily changing to 64-bit mode and passing an
+invalid 64-bit parameter
+int hypercall_xlat_continuation(unsigned int
+*id, unsigned int nr, unsigned int mask, ...) { !
+... !
+regs = guest_cpu_user_regs(); !
+...!
+BUG_ON(*reg != (unsigned int)*reg);!
+}!
+43 / 27Case Study: XSA-111
+• How to defend?
+– In Nexen, the vulnerable code
+Dom-0 Para-VM
+runs in the context of a Xen slice
+– The modified BUG_ON logic will
+only kill current Xen slice VM
+Xen Slice Xen Slice
+when it is triggered
+Security Monitor
+44 / 27
